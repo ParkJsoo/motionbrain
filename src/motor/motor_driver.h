@@ -183,7 +183,7 @@ private:
   static const uint8_t PIN_BIN2_2 = 32;     // 모터 B 방향 2
   static const uint8_t PIN_PWMB_2 = 33;     // 모터 B PWM
   
-  // TB6612FNG #3 (모터 M5, M6은 미사용)
+  // TB6612FNG #3 (모터 M5)
   static const uint8_t PIN_STBY_3 = 2;      // Standby 핀
   static const uint8_t PIN_AIN1_3 = 12;     // 모터 A 방향 1 (M5)
   static const uint8_t PIN_AIN2_3 = 13;     // 모터 A 방향 2 (M5)
