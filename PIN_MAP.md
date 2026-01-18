@@ -25,7 +25,6 @@ ESP32와 TB6612FNG 모터 드라이버 간의 핀 연결 정보
 | **VCC**      | ESP32 5V    | 로직 전원    | -        | -      |
 | **GND**      | ESP32 GND   | 공통 GND     | -        | -      |
 | **VM**       | 외부 전원 + | 모터 전원    | -        | -      |
-| **STBY**     | GPIO 4      | Standby 제어 | -        | OUTPUT |
 | **AIN1**     | GPIO 16     | M1 방향 1    | -        | OUTPUT |
 | **AIN2**     | GPIO 17     | M1 방향 2    | -        | OUTPUT |
 | **PWMA**     | GPIO 18     | M1 PWM       | 채널 0   | PWM    |
@@ -41,7 +40,6 @@ ESP32와 TB6612FNG 모터 드라이버 간의 핀 연결 정보
 
 ```cpp
 // TB6612FNG #1
-static const uint8_t PIN_STBY_1 = 4;      // Standby 핀
 static const uint8_t PIN_AIN1_1 = 16;     // 모터 A 방향 1
 static const uint8_t PIN_AIN2_1 = 17;     // 모터 A 방향 2
 static const uint8_t PIN_PWMA_1 = 18;     // 모터 A PWM
@@ -61,7 +59,6 @@ static const uint8_t PIN_PWMB_1 = 22;     // 모터 B PWM
 | **VCC**      | ESP32 5V    | 로직 전원    | -        | -      |
 | **GND**      | ESP32 GND   | 공통 GND     | -        | -      |
 | **VM**       | 외부 전원 + | 모터 전원    | -        | -      |
-| **STBY**     | GPIO 5      | Standby 제어 | -        | OUTPUT |
 | **AIN1**     | GPIO 23     | M3 방향 1    | -        | OUTPUT |
 | **AIN2**     | GPIO 25     | M3 방향 2    | -        | OUTPUT |
 | **PWMA**     | GPIO 26     | M3 PWM       | 채널 2   | PWM    |
@@ -77,7 +74,6 @@ static const uint8_t PIN_PWMB_1 = 22;     // 모터 B PWM
 
 ```cpp
 // TB6612FNG #2
-static const uint8_t PIN_STBY_2 = 5;      // Standby 핀
 static const uint8_t PIN_AIN1_2 = 23;     // 모터 A 방향 1
 static const uint8_t PIN_AIN2_2 = 25;     // 모터 A 방향 2
 static const uint8_t PIN_PWMA_2 = 26;     // 모터 A PWM
@@ -97,13 +93,12 @@ static const uint8_t PIN_PWMB_2 = 33;     // 모터 B PWM
 | **VCC**      | ESP32 5V    | 로직 전원    | -        | -      | -                            |
 | **GND**      | ESP32 GND   | 공통 GND     | -        | -      | -                            |
 | **VM**       | 외부 전원 + | 모터 전원    | -        | -      | -                            |
-| **STBY**     | GPIO 2      | Standby 제어 | -        | OUTPUT | 부팅 시 LED 점등             |
 | **AIN1**     | GPIO 12     | M5 방향 1    | -        | OUTPUT | 부팅 시 주의                 |
 | **AIN2**     | GPIO 13     | M5 방향 2    | -        | OUTPUT | -                            |
 | **PWMA**     | GPIO 14     | M5 PWM       | 채널 4   | PWM    | -                            |
 | **A01**      | M5 모터 +   | 모터 출력    | -        | -      | -                            |
 | **A02**      | M5 모터 -   | 모터 출력    | -        | -      | -                            |
-| **BIN1**     | GPIO 15     | 미사용       | -        | OUTPUT | 부팅 시 HIGH 필요            |
+| **BIN1**     | GPIO 15     | 미사용       | -        | -      | Strapping pin (부팅 시 HIGH 필요) |
 | **BIN2**     | GPIO 0      | 미사용       | -        | -      | **사용 금지** (부팅 모드 핀) |
 | **PWMB**     | GPIO 35     | 미사용       | -        | -      | **사용 불가** (INPUT ONLY)   |
 
@@ -111,7 +106,6 @@ static const uint8_t PIN_PWMB_2 = 33;     // 모터 B PWM
 
 ```cpp
 // TB6612FNG #3
-static const uint8_t PIN_STBY_3 = 2;      // Standby 핀
 static const uint8_t PIN_AIN1_3 = 12;     // 모터 A 방향 1 (M5)
 static const uint8_t PIN_AIN2_3 = 13;     // 모터 A 방향 2 (M5)
 static const uint8_t PIN_PWMA_3 = 14;     // 모터 A PWM (M5)
@@ -171,13 +165,12 @@ ESP32 GND ──┬── TB6612FNG #1 GND
 ### ✅ 정상 사용 가능 핀
 
 - GPIO 4, 5, 16, 17, 18, 19, 21, 22, 23, 25, 26, 27, 32, 33: 모두 정상
-- GPIO 2: 부팅 시 LED 점등되지만 사용 가능
 - GPIO 13, 14: 정상 사용 가능
 
 ### ⚠️ 주의 필요 핀
 
 - **GPIO 12**: 부팅 시 플래시 전압에 민감 (현재 사용 중, 문제 없으면 계속 사용)
-- **GPIO 15**: 부팅 시 HIGH로 유지 필요 (현재 미사용 모터 B에 할당, 실제 사용 안 함)
+- **GPIO 15**: Strapping pin (부팅 시 HIGH 필요, 현재 미사용)
 
 ### ❌ 사용 금지 핀
 
@@ -209,11 +202,7 @@ AIN1 = LOW, AIN2 = LOW  (또는 BIN1 = LOW, BIN2 = LOW)
 PWMA (또는 PWMB) = 0
 ```
 
-### STBY 제어
-
-- **STBY = LOW**: 드라이버 비활성화 (모터 차단)
-- **STBY = HIGH**: 드라이버 활성화 (모터 제어 가능)
-- 시스템 상태가 **ARMED**일 때만 STBY = HIGH
+**참고**: STBY 핀은 사용하지 않습니다. 모터 제어는 PWM과 방향 핀만으로 수행됩니다.
 
 ---
 
@@ -228,7 +217,6 @@ PWMA (또는 PWMB) = 0
 
 ### 제어 핀 연결
 
-- [ ] GPIO 4 → TB6612FNG #1 STBY
 - [ ] GPIO 16 → TB6612FNG #1 AIN1
 - [ ] GPIO 17 → TB6612FNG #1 AIN2
 - [ ] GPIO 18 → TB6612FNG #1 PWMA
@@ -236,7 +224,6 @@ PWMA (또는 PWMB) = 0
 - [ ] GPIO 21 → TB6612FNG #1 BIN2
 - [ ] GPIO 22 → TB6612FNG #1 PWMB
 
-- [ ] GPIO 5 → TB6612FNG #2 STBY
 - [ ] GPIO 23 → TB6612FNG #2 AIN1
 - [ ] GPIO 25 → TB6612FNG #2 AIN2
 - [ ] GPIO 26 → TB6612FNG #2 PWMA
@@ -244,7 +231,6 @@ PWMA (또는 PWMB) = 0
 - [ ] GPIO 32 → TB6612FNG #2 BIN2
 - [ ] GPIO 33 → TB6612FNG #2 PWMB
 
-- [ ] GPIO 2 → TB6612FNG #3 STBY
 - [ ] GPIO 12 → TB6612FNG #3 AIN1
 - [ ] GPIO 13 → TB6612FNG #3 AIN2
 - [ ] GPIO 14 → TB6612FNG #3 PWMA

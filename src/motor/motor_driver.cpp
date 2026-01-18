@@ -5,13 +5,6 @@
 // 전역 객체 참조 (main.cpp에 선언됨)
 extern SystemStateManager systemState;
 
-// STBY 핀 배열 정의
-const uint8_t MotorControl::STBY_PINS[NUM_DRIVERS] = {
-  PIN_STBY_1,  // 드라이버 #1
-  PIN_STBY_2,  // 드라이버 #2
-  PIN_STBY_3   // 드라이버 #3
-};
-
 /**
  * MotorControl 생성자
  */
@@ -43,21 +36,18 @@ bool MotorControl::init() {
   
   // 1. 핀 모드 설정
   // TB6612FNG #1
-  pinMode(PIN_STBY_1, OUTPUT);
   pinMode(PIN_AIN1_1, OUTPUT);
   pinMode(PIN_AIN2_1, OUTPUT);
   pinMode(PIN_BIN1_1, OUTPUT);
   pinMode(PIN_BIN2_1, OUTPUT);
   
   // TB6612FNG #2
-  pinMode(PIN_STBY_2, OUTPUT);
   pinMode(PIN_AIN1_2, OUTPUT);
   pinMode(PIN_AIN2_2, OUTPUT);
   pinMode(PIN_BIN1_2, OUTPUT);
   pinMode(PIN_BIN2_2, OUTPUT);
   
   // TB6612FNG #3
-  pinMode(PIN_STBY_3, OUTPUT);
   pinMode(PIN_AIN1_3, OUTPUT);
   pinMode(PIN_AIN2_3, OUTPUT);
   pinMode(PIN_BIN1_3, OUTPUT);
@@ -85,10 +75,7 @@ bool MotorControl::init() {
   DebugLog::debug("PWM channels configured (freq: %d Hz, resolution: %d-bit)", 
                   PWM_FREQUENCY, PWM_RESOLUTION);
   
-  // 3. 안전: 모든 STBY 핀을 LOW로 설정 (차단)
-  setSTBYAll(false);
-  
-  // 4. 모든 PWM 출력을 0으로 설정 (5개 모터만)
+  // 3. 모든 PWM 출력을 0으로 설정 (5개 모터만)
   ledcWrite(PWM_CHANNEL_M1, 0);  // M1: 그리퍼
   ledcWrite(PWM_CHANNEL_M2, 0);  // M2: 손목
   ledcWrite(PWM_CHANNEL_M3, 0);  // M3: 팔꿈치
@@ -109,7 +96,7 @@ bool MotorControl::init() {
   digitalWrite(PIN_BIN1_3, LOW);
   digitalWrite(PIN_BIN2_3, LOW);
   
-  DebugLog::motor("INIT", "TB6612FNG initialized - STBY=LOW (safe), all motors stopped");
+  DebugLog::motor("INIT", "TB6612FNG initialized - all motors stopped (PWM=0, direction pins=LOW)");
   DebugLog::info("Motor control ready (Phase 1-5: Step 1 - Power connection only)");
   
   return true;
@@ -391,10 +378,7 @@ void MotorControl::emergencyStop() {
     }
   }
   
-  // 모든 STBY 핀을 LOW로 설정 (물리 차단)
-  setSTBYAll(false);
-  
-  DebugLog::safety("EMERGENCY_STOP", "All motors emergency stopped - STBY=LOW (physical block)");
+  DebugLog::safety("EMERGENCY_STOP", "All motors emergency stopped - PWM=0, direction pins=LOW");
   DebugLog::motor("emergencyStop", "FORCED STOP - all %d motors", NUM_MOTORS);
 }
 
@@ -485,11 +469,6 @@ void MotorControl::update() {
       // PWM 출력 0
       uint8_t pwmChannel = i;
       ledcWrite(pwmChannel, 0);
-      
-      // 드라이버별 STBY 핀 제어
-      uint8_t motorId = indexToMotorId(i);
-      uint8_t driverId = getDriverId(motorId);
-      setSTBY(driverId, false);
       
       continue;
     }
@@ -643,14 +622,6 @@ bool MotorControl::setMotorSpeedInternal(uint8_t motorId, int16_t speed) {
     }
   }
   
-  // STBY 핀 제어: ARMED 상태에서만 HIGH
-  SystemState currentState = getCurrentState();
-  if (currentState == SystemState::ARMED) {
-    setSTBY(driverId, true);
-  } else {
-    setSTBY(driverId, false);
-  }
-  
   // 상태 업데이트
   currentSpeed_[index] = speed;
   enabled_[index] = (speed != 0);
@@ -665,32 +636,6 @@ bool MotorControl::setMotorSpeedInternal(uint8_t motorId, int16_t speed) {
   }
   
   return true;
-}
-
-/**
- * STBY 핀 제어
- */
-void MotorControl::setSTBY(uint8_t driverId, bool enable) {
-  if (driverId >= NUM_DRIVERS) {
-    return;
-  }
-  
-  digitalWrite(STBY_PINS[driverId], enable ? HIGH : LOW);
-  
-  if (enable) {
-    DebugLog::debug("STBY driver #%d: HIGH (enabled)", driverId);
-  } else {
-    DebugLog::debug("STBY driver #%d: LOW (disabled)", driverId);
-  }
-}
-
-/**
- * 모든 STBY 핀 제어
- */
-void MotorControl::setSTBYAll(bool enable) {
-  for (uint8_t i = 0; i < NUM_DRIVERS; i++) {
-    setSTBY(i, enable);
-  }
 }
 
 /**

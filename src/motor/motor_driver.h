@@ -13,7 +13,7 @@ class SystemStateManager;
  * 
  * Phase 1-5: TB6612FNG 연동
  * - 3개 TB6612FNG로 5개 모터 제어 (로봇팔용)
- * - 실제 PWM 출력 및 STBY 핀 제어
+ * - PWM 출력 및 방향 핀 제어
  * - 안전 규칙 강제
  * 
  * 모터 번호 체계 (Gripper Robot Arm):
@@ -31,8 +31,7 @@ class SystemStateManager;
  * 안전 규칙:
  * - SystemState가 ARMED일 때만 제어 가능
  * - BOOT/IDLE/FAULT 상태에서는 모든 명령 거부
- * - 부팅 시 STBY = LOW (차단)
- * - ARMED 상태에서만 STBY = HIGH
+ * - 모터 정지는 PWM=0, 방향 핀=LOW로 처리
  */
 class MotorControl {
 public:
@@ -132,7 +131,7 @@ public:
   
   /**
    * 비상 정지 (상태 무시하고 즉시 정지)
-   * 모든 모터 정지 및 STBY = LOW
+   * 모든 모터 정지 (PWM=0, 방향 핀=LOW)
    */
   void emergencyStop();
   
@@ -166,7 +165,6 @@ public:
 private:
   // TB6612FNG 핀 정의
   // TB6612FNG #1 (모터 M1, M2)
-  static const uint8_t PIN_STBY_1 = 4;      // Standby 핀
   static const uint8_t PIN_AIN1_1 = 16;     // 모터 A 방향 1
   static const uint8_t PIN_AIN2_1 = 17;     // 모터 A 방향 2
   static const uint8_t PIN_PWMA_1 = 18;     // 모터 A PWM
@@ -175,7 +173,6 @@ private:
   static const uint8_t PIN_PWMB_1 = 22;     // 모터 B PWM
   
   // TB6612FNG #2 (모터 M3, M4)
-  static const uint8_t PIN_STBY_2 = 5;      // Standby 핀
   static const uint8_t PIN_AIN1_2 = 23;     // 모터 A 방향 1
   static const uint8_t PIN_AIN2_2 = 25;     // 모터 A 방향 2
   static const uint8_t PIN_PWMA_2 = 26;     // 모터 A PWM
@@ -184,7 +181,6 @@ private:
   static const uint8_t PIN_PWMB_2 = 33;     // 모터 B PWM
   
   // TB6612FNG #3 (모터 M5)
-  static const uint8_t PIN_STBY_3 = 2;      // Standby 핀
   static const uint8_t PIN_AIN1_3 = 12;     // 모터 A 방향 1 (M5)
   static const uint8_t PIN_AIN2_3 = 13;     // 모터 A 방향 2 (M5)
   static const uint8_t PIN_PWMA_3 = 14;     // 모터 A PWM (M5)
@@ -218,9 +214,6 @@ private:
   
   // 드라이버별 오류 상태 추적
   bool driverError_[NUM_DRIVERS];      // 각 드라이버 오류 상태
-  
-  // STBY 핀 배열 (각 드라이버마다)
-  static const uint8_t STBY_PINS[NUM_DRIVERS];
   
   /**
    * 안전 검사 (private)
@@ -263,19 +256,6 @@ private:
    * @return 성공 여부
    */
   bool setMotorSpeedInternal(uint8_t motorId, int16_t speed);
-  
-  /**
-   * STBY 핀 제어
-   * @param driverId 드라이버 번호 (0 ~ 2)
-   * @param enable 활성화 여부 (true = HIGH, false = LOW)
-   */
-  void setSTBY(uint8_t driverId, bool enable);
-  
-  /**
-   * 모든 STBY 핀 제어
-   * @param enable 활성화 여부 (true = HIGH, false = LOW)
-   */
-  void setSTBYAll(bool enable);
   
   /**
    * 모터 번호로 드라이버 번호 가져오기

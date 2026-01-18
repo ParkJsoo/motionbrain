@@ -54,11 +54,11 @@
 
 | TB6612FNG 핀 | ESP32 GPIO | 기능         | 비고                         |
 | ------------ | ---------- | ------------ | ---------------------------- |
-| STBY         | GPIO 2     | Standby 제어 | OUTPUT (부팅 시 LED 점등)    |
+| STBY         | GPIO 15    | Standby 제어 | OUTPUT (Strapping pin, 부팅 시 HIGH 필요, 부팅 후 LOW 가능) |
 | AIN1         | GPIO 12    | M5 방향 1    | OUTPUT (부팅 시 주의)        |
 | AIN2         | GPIO 13    | M5 방향 2    | OUTPUT                       |
 | PWMA         | GPIO 14    | M5 PWM       | PWM (채널 4)                 |
-| BIN1         | GPIO 15    | 미사용       | OUTPUT (부팅 시 HIGH 필요)   |
+| BIN1         | GPIO 15    | STBY #3      | OUTPUT (Strapping pin, 부팅 시 HIGH 필요, 부팅 후 LOW 가능) |
 | BIN2         | GPIO 0     | 미사용       | **사용 금지** (부팅 모드 핀) |
 | PWMB         | GPIO 35    | 미사용       | INPUT ONLY (사용 불가)       |
 
@@ -79,7 +79,7 @@
 #### ✅ 정상 핀
 
 - GPIO 4, 5, 16, 17, 18, 19, 21, 22, 23, 25, 26, 27, 32, 33: 모두 정상 사용 가능
-- GPIO 2: 부팅 시 LED 점등되지만 사용 가능
+- GPIO 15: Strapping pin이지만 부팅 후 사용 가능 (STBY #3)
 - GPIO 13, 14: 정상 사용 가능
 
 #### ⚠️ 주의 필요 핀
@@ -137,7 +137,7 @@
 
    - TB6612FNG #1 STBY (GPIO 4): **예상값: 0.00V**
    - TB6612FNG #2 STBY (GPIO 5): **예상값: 0.00V**
-   - TB6612FNG #3 STBY (GPIO 2): **예상값: 0.00V**
+   - TB6612FNG #3 STBY (GPIO 15): **예상값: 0.00V**
    - **모든 STBY 핀이 0V여야 정상** (안전 차단 상태)
 
 4. **방향 핀 전압 측정** (모두 LOW 확인)
@@ -207,7 +207,7 @@
 
    - TB6612FNG #1 STBY (GPIO 4): **예상값: 3.3V**
    - TB6612FNG #2 STBY (GPIO 5): **예상값: 3.3V**
-   - TB6612FNG #3 STBY (GPIO 2): **예상값: 3.3V**
+   - TB6612FNG #3 STBY (GPIO 15): **예상값: 3.3V**
    - **모든 STBY 핀이 3.3V여야 정상** (드라이버 활성화)
 
 4. **DISARM 후 STBY LOW 확인**
