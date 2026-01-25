@@ -28,39 +28,36 @@
 
 #### TB6612FNG #1 (M1: 그리퍼, M2: 손목)
 
-| TB6612FNG 핀 | ESP32 GPIO | 기능         | 비고         |
-| ------------ | ---------- | ------------ | ------------ |
-| STBY         | GPIO 4     | Standby 제어 | OUTPUT       |
-| AIN1         | GPIO 16    | M1 방향 1    | OUTPUT       |
-| AIN2         | GPIO 17    | M1 방향 2    | OUTPUT       |
-| PWMA         | GPIO 18    | M1 PWM       | PWM (채널 0) |
-| BIN1         | GPIO 19    | M2 방향 1    | OUTPUT       |
-| BIN2         | GPIO 21    | M2 방향 2    | OUTPUT       |
-| PWMB         | GPIO 22    | M2 PWM       | PWM (채널 1) |
+| TB6612FNG 핀 | ESP32 GPIO | 기능      | 비고         |
+| ------------ | ---------- | --------- | ------------ |
+| AIN1         | GPIO 16    | M1 방향 1 | OUTPUT       |
+| AIN2         | GPIO 17    | M1 방향 2 | OUTPUT       |
+| PWMA         | GPIO 18    | M1 PWM    | PWM (채널 0) |
+| BIN1         | GPIO 19    | M2 방향 1 | OUTPUT       |
+| BIN2         | GPIO 21    | M2 방향 2 | OUTPUT       |
+| PWMB         | GPIO 22    | M2 PWM    | PWM (채널 1) |
 
 #### TB6612FNG #2 (M3: 팔꿈치, M4: 어깨)
 
-| TB6612FNG 핀 | ESP32 GPIO | 기능         | 비고         |
-| ------------ | ---------- | ------------ | ------------ |
-| STBY         | GPIO 5     | Standby 제어 | OUTPUT       |
-| AIN1         | GPIO 23    | M3 방향 1    | OUTPUT       |
-| AIN2         | GPIO 25    | M3 방향 2    | OUTPUT       |
-| PWMA         | GPIO 26    | M3 PWM       | PWM (채널 2) |
-| BIN1         | GPIO 27    | M4 방향 1    | OUTPUT       |
-| BIN2         | GPIO 32    | M4 방향 2    | OUTPUT       |
-| PWMB         | GPIO 33    | M4 PWM       | PWM (채널 3) |
+| TB6612FNG 핀 | ESP32 GPIO | 기능      | 비고         |
+| ------------ | ---------- | --------- | ------------ |
+| AIN1         | GPIO 23    | M3 방향 1 | OUTPUT       |
+| AIN2         | GPIO 25    | M3 방향 2 | OUTPUT       |
+| PWMA         | GPIO 26    | M3 PWM    | PWM (채널 2) |
+| BIN1         | GPIO 27    | M4 방향 1 | OUTPUT       |
+| BIN2         | GPIO 32    | M4 방향 2 | OUTPUT       |
+| PWMB         | GPIO 33    | M4 PWM    | PWM (채널 3) |
 
 #### TB6612FNG #3 (M5: 베이스)
 
-| TB6612FNG 핀 | ESP32 GPIO | 기능         | 비고                         |
-| ------------ | ---------- | ------------ | ---------------------------- |
-| STBY         | GPIO 15    | Standby 제어 | OUTPUT (Strapping pin, 부팅 시 HIGH 필요, 부팅 후 LOW 가능) |
-| AIN1         | GPIO 12    | M5 방향 1    | OUTPUT (부팅 시 주의)        |
-| AIN2         | GPIO 13    | M5 방향 2    | OUTPUT                       |
-| PWMA         | GPIO 14    | M5 PWM       | PWM (채널 4)                 |
-| BIN1         | GPIO 15    | STBY #3      | OUTPUT (Strapping pin, 부팅 시 HIGH 필요, 부팅 후 LOW 가능) |
-| BIN2         | GPIO 0     | 미사용       | **사용 금지** (부팅 모드 핀) |
-| PWMB         | GPIO 35    | 미사용       | INPUT ONLY (사용 불가)       |
+| TB6612FNG 핀 | ESP32 GPIO | 기능      | 비고                  |
+| ------------ | ---------- | --------- | --------------------- |
+| AIN1         | GPIO 12    | M5 방향 1 | OUTPUT (부팅 시 주의) |
+| AIN2         | GPIO 13    | M5 방향 2 | OUTPUT                |
+| PWMA         | GPIO 14    | M5 PWM    | PWM (채널 4)          |
+| BIN1         | GPIO 0     | 미사용    | **사용 금지** (부팅 모드 핀) |
+| BIN2         | GPIO 35    | 미사용    | INPUT ONLY (사용 불가) |
+| PWMB         | -          | 미사용    | -                     |
 
 ### 전원 연결
 
@@ -78,14 +75,12 @@
 
 #### ✅ 정상 핀
 
-- GPIO 4, 5, 16, 17, 18, 19, 21, 22, 23, 25, 26, 27, 32, 33: 모두 정상 사용 가능
-- GPIO 15: Strapping pin이지만 부팅 후 사용 가능 (STBY #3)
+- GPIO 16, 17, 18, 19, 21, 22, 23, 25, 26, 27, 32, 33: 모두 정상 사용 가능
 - GPIO 13, 14: 정상 사용 가능
 
 #### ⚠️ 주의 필요 핀
 
 - **GPIO 12**: 부팅 시 플래시 전압에 민감 (현재 사용 중, 문제 없으면 계속 사용)
-- **GPIO 15**: 부팅 시 HIGH로 유지 필요 (현재 미사용 모터 B에 할당, 실제 사용 안 함)
 
 #### ❌ 사용 금지 핀
 
@@ -122,25 +117,18 @@
 
 2. **시리얼 모니터 확인**
 
-   - 초기화 로그 확인:
+     - 초기화 로그 확인:
      ```
      === Motor Control Initialization (Phase 1-5: TB6612FNG) ===
      Number of motors: 5
      Number of drivers: 3
      GPIO pins configured
      PWM channels configured (freq: 1000 Hz, resolution: 8-bit)
-     [MOTOR] INIT: TB6612FNG initialized - STBY=LOW (safe), all motors stopped
+     [MOTOR] INIT: TB6612FNG initialized - all motors stopped
      Motor control ready (Phase 1-5: Step 1 - Power connection only)
      ```
 
-3. **STBY 핀 전압 측정** (안전 상태 확인)
-
-   - TB6612FNG #1 STBY (GPIO 4): **예상값: 0.00V**
-   - TB6612FNG #2 STBY (GPIO 5): **예상값: 0.00V**
-   - TB6612FNG #3 STBY (GPIO 15): **예상값: 0.00V**
-   - **모든 STBY 핀이 0V여야 정상** (안전 차단 상태)
-
-4. **방향 핀 전압 측정** (모두 LOW 확인)
+3. **방향 핀 전압 측정** (모두 LOW 확인)
 
    - TB6612FNG #1:
      - AIN1 (GPIO 16): **예상값: 0.00V**
@@ -155,7 +143,6 @@
    - TB6612FNG #3:
      - AIN1 (GPIO 12): **예상값: 0.00V**
      - AIN2 (GPIO 13): **예상값: 0.00V**
-     - BIN1 (GPIO 15): **예상값: 0.00V** (미사용)
 
 5. **PWM 핀 전압 측정** (모두 0V 확인)
    - PWMA_1 (GPIO 18): **예상값: 0.00V**
@@ -164,31 +151,111 @@
    - PWMB_2 (GPIO 33): **예상값: 0.00V**
    - PWMA_3 (GPIO 14): **예상값: 0.00V**
 
-**완료 기준**:
+6. **PWM 핀 전압 측정 (선택사항, ARMED 상태에서 모터 명령 시)**
+
+   **목적**: PWM 신호가 정상적으로 출력되는지 사전 확인
+
+   **작업 순서**:
+
+   a. **시스템 ARM**
+      ```
+      arm
+      ```
+      또는 웹 UI에서 "ARM" 버튼 클릭
+
+   b. **낮은 PWM 값으로 모터 명령** (시리얼 명령)
+      ```
+      motor forward 1 10
+      ```
+      - M1을 10% 속도로 정방향 구동 명령
+      - **주의**: 모터는 아직 연결하지 않았으므로 실제로는 회전하지 않습니다.
+
+   c. **PWM 핀 전압 측정**
+
+      **측정 방법**:
+      - 멀티미터를 **DC 전압 모드**로 설정
+      - 빨간색 프로브를 **PWMA_1 (GPIO 18) 핀**에 연결
+      - 검은색 프로브를 **GND**에 연결
+      - 멀티미터 화면에 표시되는 전압 값을 확인
+
+      **예상값**:
+      - **10% PWM**: 약 **0.3V ~ 0.4V** (멀티미터 평균값)
+      - **20% PWM**: 약 **0.6V ~ 0.7V**
+      - **50% PWM**: 약 **1.6V ~ 1.7V**
+      - **100% PWM**: 약 **3.2V ~ 3.3V**
+
+      **이유**: PWM 신호는 빠르게 ON/OFF를 반복하므로, 멀티미터는 이를 평균 전압으로 표시합니다.
+      - 10% PWM = 10% 시간 동안 3.3V, 90% 시간 동안 0V → 평균 약 0.33V
+      - 실제 측정값은 약간의 오차가 있을 수 있습니다.
+
+   d. **다른 모터들도 테스트** (선택사항)
+
+      ```
+      motor forward 2 10
+      motor forward 3 10
+      motor forward 4 10
+      motor forward 5 10
+      ```
+
+      각 모터의 PWM 핀 전압을 측정:
+      - M2: PWMB_1 (GPIO 22)
+      - M3: PWMA_2 (GPIO 26)
+      - M4: PWMB_2 (GPIO 33)
+      - M5: PWMA_3 (GPIO 14)
+
+   e. **방향 핀 확인** (선택사항)
+
+      - M1 정방향: AIN1 (GPIO 16) = 3.3V, AIN2 (GPIO 17) = 0.00V
+      - M1 역방향: AIN1 (GPIO 16) = 0.00V, AIN2 (GPIO 17) = 3.3V
+
+   f. **모든 모터 정지**
+      ```
+      motor stop all
+      ```
+      - 모든 PWM 핀: **예상값: 0.00V**
+      - 모든 방향 핀: **예상값: 0.00V**
+
+   **완료 기준 (선택사항)**:
+   - [ ] ARMED 상태에서 PWM 명령 실행 가능
+   - [ ] PWM 핀에서 전압 변화 확인 (멀티미터 평균값)
+   - [ ] PWM 값에 비례하여 전압이 증가하는지 확인
+   - [ ] STOP 명령으로 모든 핀 0V 복귀
+
+   **주의사항**:
+   - 모터는 아직 연결하지 않음
+   - PWM 값이 너무 높으면 드라이버 과열 가능 (10% 이하 권장)
+   - 멀티미터는 PWM 신호의 평균값을 표시하므로, 실제 PWM 주파수와는 무관하게 평균 전압만 확인 가능
+
+**완료 기준 (필수)**:
 
 - [ ] 시리얼 모니터에서 초기화 로그 정상 출력
-- [ ] 모든 STBY 핀: 0.00V
 - [ ] 모든 방향 핀: 0.00V
-- [ ] 모든 PWM 핀: 0.00V
+- [ ] 모든 PWM 핀: 0.00V (IDLE 상태)
 - [ ] 드라이버 과열 없음
+
+**완료 기준 (선택사항 - PWM 핀 전압 측정)**:
+
+- [ ] ARMED 상태에서 PWM 명령 실행 가능
+- [ ] PWM 핀에서 전압 변화 확인 (멀티미터 평균값)
+- [ ] PWM 값에 비례하여 전압이 증가하는지 확인
+- [ ] STOP 명령으로 모든 핀 0V 복귀
 
 **예상 문제 및 해결**:
 
-- **STBY 핀이 3.3V**: 코드 확인, GPIO 핀 연결 확인, 펌웨어 재업로드
 - **방향 핀이 3.3V**: 코드 확인, GPIO 핀 연결 확인
 - **시리얼 로그 없음**: 시리얼 포트 선택, 보드레이트 확인 (115200)
 
 ---
 
-### Step 2: STBY/ENABLE 차단 검증
+### Step 2: PWM 핀 전압 측정 (선택사항, Step 3으로 진행 가능)
 
-#### Step 2-1: ARMED 상태에서 STBY HIGH 확인
+**목표**: ARMED 상태에서 모터 명령 시 PWM 핀의 전압 변화를 확인하여 PWM 신호가 정상적으로 출력되는지 검증
 
-**목표**: 시스템이 ARMED 상태일 때만 STBY 핀이 HIGH가 되는지 확인
+**참고**: 이 단계는 선택사항입니다. Step 1-2의 기본 검증이 완료되면 바로 Step 3으로 진행할 수 있습니다. 다만, PWM 신호가 정상적으로 출력되는지 사전에 확인하고 싶다면 이 단계를 수행하세요.
 
 **작업 순서**:
 
-1. **시리얼 명령으로 ARM**
+1. **시스템 ARM**
 
    ```
    arm
@@ -203,24 +270,74 @@
    [COMMAND] arm: System armed
    ```
 
-3. **STBY 핀 전압 측정** (ARMED 상태)
+3. **낮은 PWM 값으로 모터 명령** (시리얼 명령)
 
-   - TB6612FNG #1 STBY (GPIO 4): **예상값: 3.3V**
-   - TB6612FNG #2 STBY (GPIO 5): **예상값: 3.3V**
-   - TB6612FNG #3 STBY (GPIO 15): **예상값: 3.3V**
-   - **모든 STBY 핀이 3.3V여야 정상** (드라이버 활성화)
+   ```
+   motor forward 1 10
+   ```
 
-4. **DISARM 후 STBY LOW 확인**
+   - M1을 10% 속도로 정방향 구동 명령
+   - **주의**: 모터는 아직 연결하지 않았으므로 실제로는 회전하지 않습니다.
+
+4. **PWM 핀 전압 측정**
+
+   **측정 방법**:
+   - 멀티미터를 **DC 전압 모드**로 설정
+   - 빨간색 프로브를 **PWMA_1 (GPIO 18) 핀**에 연결
+   - 검은색 프로브를 **GND**에 연결
+   - 멀티미터 화면에 표시되는 전압 값을 확인
+
+   **예상값**:
+   - **10% PWM**: 약 **0.3V ~ 0.4V** (멀티미터 평균값)
+   - **20% PWM**: 약 **0.6V ~ 0.7V**
+   - **50% PWM**: 약 **1.6V ~ 1.7V**
+   - **100% PWM**: 약 **3.2V ~ 3.3V**
+
+   **이유**: PWM 신호는 빠르게 ON/OFF를 반복하므로, 멀티미터는 이를 평균 전압으로 표시합니다.
+   - 10% PWM = 10% 시간 동안 3.3V, 90% 시간 동안 0V → 평균 약 0.33V
+   - 실제 측정값은 약간의 오차가 있을 수 있습니다.
+
+5. **다른 모터들도 테스트**
+
    ```
-   disarm
+   motor forward 2 10
+   motor forward 3 10
+   motor forward 4 10
+   motor forward 5 10
    ```
-   - 모든 STBY 핀: **예상값: 0.00V** (안전 차단)
+
+   각 모터의 PWM 핀 전압을 측정:
+   - M2: PWMB_1 (GPIO 22)
+   - M3: PWMA_2 (GPIO 26)
+   - M4: PWMB_2 (GPIO 33)
+   - M5: PWMA_3 (GPIO 14)
+
+6. **방향 핀 확인** (선택사항)
+
+   - M1 정방향: AIN1 (GPIO 16) = 3.3V, AIN2 (GPIO 17) = 0.00V
+   - M1 역방향: AIN1 (GPIO 16) = 0.00V, AIN2 (GPIO 17) = 3.3V
+
+7. **모든 모터 정지**
+
+   ```
+   motor stop all
+   ```
+
+   - 모든 PWM 핀: **예상값: 0.00V**
+   - 모든 방향 핀: **예상값: 0.00V**
 
 **완료 기준**:
 
-- [ ] IDLE 상태: 모든 STBY 핀 = 0.00V
-- [ ] ARMED 상태: 모든 STBY 핀 = 3.3V
-- [ ] DISARM 후: 모든 STBY 핀 = 0.00V
+- [ ] ARMED 상태에서 PWM 명령 실행 가능
+- [ ] PWM 핀에서 전압 변화 확인 (멀티미터 평균값)
+- [ ] PWM 값에 비례하여 전압이 증가하는지 확인
+- [ ] STOP 명령으로 모든 핀 0V 복귀
+
+**주의사항**:
+
+- 모터는 아직 연결하지 않음
+- PWM 값이 너무 높으면 드라이버 과열 가능 (10% 이하 권장)
+- 멀티미터는 PWM 신호의 평균값을 표시하므로, 실제 PWM 주파수와는 무관하게 평균 전압만 확인 가능
 
 ---
 
@@ -476,15 +593,14 @@
 
 - [x] 전원 연결 및 측정 완료
 - [ ] 펌웨어 업로드
-- [ ] STBY 핀 검증 (0V)
 - [ ] 방향 핀 검증 (0V)
 - [ ] PWM 핀 검증 (0V)
 
-### Step 2: STBY/ENABLE 차단 검증
+### Step 2: PWM 핀 전압 측정 (선택사항)
 
-- [ ] IDLE 상태: STBY = 0V
-- [ ] ARMED 상태: STBY = 3.3V
-- [ ] DISARM 후: STBY = 0V
+- [ ] ARMED 상태에서 PWM 명령 실행
+- [ ] PWM 핀 전압 변화 확인
+- [ ] PWM 값에 비례한 전압 증가 확인
 
 ### Step 3: PWM 신호 출력 테스트
 
