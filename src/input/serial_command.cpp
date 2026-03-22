@@ -244,6 +244,7 @@ void SerialCommand::handleHelp() {
   DebugLog::info("  motor forward <id> [percent]  - Motor forward (default: 100%%)");
   DebugLog::info("  motor reverse <id> [percent]  - Motor reverse (default: 100%%)");
   DebugLog::info("  motor stop <id>               - Stop specific motor");
+  DebugLog::info("  motor stop all               - Stop all motors (stay ARMED)");
   DebugLog::info("  motor status                 - Show all motor status");
   DebugLog::info("  motor default <speed>        - Set default speed (0-255)");
   DebugLog::info("");
@@ -354,6 +355,7 @@ void SerialCommand::handleMotor(const char* args) {
     DebugLog::info("  motor forward <id> [percent]");
     DebugLog::info("  motor reverse <id> [percent]");
     DebugLog::info("  motor stop <id>");
+    DebugLog::info("  motor stop all");
     DebugLog::info("  motor status");
     DebugLog::info("  motor default <speed>");
     return;
@@ -463,19 +465,26 @@ void SerialCommand::handleMotor(const char* args) {
     }
   }
   else if (strcmp(action, "stop") == 0) {
+    // motor stop all  — 모든 모터 정지 (ARMED 상태 유지)
+    if (strcasecmp(rest, "all") == 0) {
+      motorControl_->stopAll();
+      DebugLog::info("All motors stopped (system remains ARMED)");
+      return;
+    }
+
     // motor stop <id>
     int motorId = 0;
-    
+
     if (sscanf(rest, "%d", &motorId) < 1) {
       DebugLog::error("Invalid motor ID");
       return;
     }
-    
+
     if (motorId < 1 || motorId > 5) {
       DebugLog::error("Invalid motor ID: %d (valid range: 1-5)", motorId);
       return;
     }
-    
+
     bool result = motorControl_->stop(motorId);
     if (result) {
       DebugLog::info("Motor M%d: stopped", motorId);

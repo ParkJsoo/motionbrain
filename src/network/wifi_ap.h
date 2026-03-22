@@ -78,11 +78,12 @@ private:
   // 안전 규칙: 단일 클라이언트만 허용 (명령 충돌 방지)
   static const uint8_t MAX_CLIENTS = 1;
 
-  bool active_;              // AP 활성화 여부
-  IPAddress apIP_;           // AP IP 주소
-  const char* ssid_;         // AP SSID
-  const char* password_;     // AP 비밀번호
-  uint32_t lastCheckTime_;   // 마지막 접속 체크 시간
+  bool active_;                   // AP 활성화 여부
+  IPAddress apIP_;                // AP IP 주소
+  const char* ssid_;              // AP SSID
+  const char* password_;          // AP 비밀번호
+  uint32_t lastCheckTime_;        // 마지막 접속 체크 시간
+  uint8_t lastClientCount_{255};  // 이전 클라이언트 수 (255: 초기값, 항상 다르게)
 
   /**
    * 클라이언트 접속 상태 체크 (private)

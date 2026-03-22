@@ -133,22 +133,20 @@ void WiFiAP::checkClients() {
   }
 
   uint8_t clientCount = WiFi.softAPgetStationNum();
-  
+
   // 클라이언트 수가 변경되었을 때만 로그 출력
-  static uint8_t lastClientCount = 255;  // 초기값 (항상 다르게)
-  
-  if (clientCount != lastClientCount) {
-    if (clientCount > lastClientCount) {
+  if (clientCount != lastClientCount_) {
+    if (clientCount > lastClientCount_) {
       if (clientCount >= MAX_CLIENTS) {
         DebugLog::info("WiFi AP: Client connected (Total: %d/%d - MAX REACHED)", clientCount, MAX_CLIENTS);
         DebugLog::warn("WiFi AP: Maximum clients reached - new connections will be rejected");
       } else {
         DebugLog::info("WiFi AP: Client connected (Total: %d/%d)", clientCount, MAX_CLIENTS);
       }
-    } else if (clientCount < lastClientCount && lastClientCount != 255) {
+    } else if (clientCount < lastClientCount_ && lastClientCount_ != 255) {
       DebugLog::info("WiFi AP: Client disconnected (Total: %d/%d)", clientCount, MAX_CLIENTS);
     }
-    lastClientCount = clientCount;
+    lastClientCount_ = clientCount;
   }
 }
 

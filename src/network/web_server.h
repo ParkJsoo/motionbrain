@@ -65,8 +65,8 @@ public:
   bool isActive() const;
 
 private:
-  // ESP32 WebServer 객체
-  ::WebServer server_;  // ::WebServer는 전역 네임스페이스의 WebServer 클래스
+  // ESP32 WebServer 객체 (포트 80으로 명시적 초기화)
+  ::WebServer server_{80};  // ::WebServer는 전역 네임스페이스의 WebServer 클래스
 
   bool active_;         // 웹 서버 활성화 여부
   uint16_t port_;       // HTTP 서버 포트

@@ -133,6 +133,7 @@ motor forward 1   # M1 정방향 (기본 속도)
 motor forward 1 50 # M1 정방향 (50% 속도)
 motor reverse 2   # M2 역방향
 motor stop 3      # M3 정지
+motor stop all    # 모든 모터 정지 (ARMED 상태 유지)
 motor status      # 모든 모터 상태 확인
 motor default 150 # 기본 속도 설정 (1-255)
 ```
@@ -200,11 +201,10 @@ motionbrain/
 ### 현재 진행 중
 
 - 🔄 **Phase 1-5**: TB6612FNG 연동 (물리 제어 시작)
-  - ✅ Step 1-1: 드라이버 전원 연결 및 측정 완료
-  - 🔄 Step 1-2: 펌웨어 업로드 및 GPIO 핀 검증 (진행 중)
-  - 📋 Step 2: PWM 핀 전압 측정 (선택사항)
-  - 📋 Step 3: PWM 신호 출력 테스트
-  - 📋 Step 4: 모터 1개 연결 및 낮은 PWM 테스트
+  - ✅ Step 1: 드라이버 전원 연결 및 측정 완료
+  - ✅ Step 2: PWM 핀 전압 측정 완료
+  - ✅ Step 3: PWM 신호 출력 테스트 완료
+  - 🔄 Step 4: 모터 1개 연결 및 낮은 PWM 테스트 (진행 중)
   - 📋 Step 5: 듀얼 모터 확장 테스트
   - 📋 Step 6: 모든 모터 연결 및 통합 테스트
 
