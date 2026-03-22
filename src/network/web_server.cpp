@@ -27,16 +27,16 @@ bool MotionBrainWebServer::init(SystemStateManager* systemState, MotorControl* m
   DebugLog::info("=== Web Server Initialization ===");
   DebugLog::info("Port: %d", port_);
 
-  // ESP32 WebServer 객체 초기화
-  server_.begin(port_);
-
-  // HTTP 라우트 등록
+  // HTTP 라우트 등록 (begin() 이전에 먼저 등록해야 함)
   // 람다 함수를 사용하여 클래스 메서드 호출
   server_.on("/", HTTP_GET, [this]() { this->handleRoot(); });
   server_.on("/status", HTTP_GET, [this]() { this->handleStatus(); });
   server_.on("/command", HTTP_POST, [this]() { this->handleCommand(); });
   server_.on("/motor", HTTP_POST, [this]() { this->handleMotor(); });
   server_.onNotFound([this]() { this->handleNotFound(); });
+
+  // ESP32 WebServer 시작
+  server_.begin();
   
   DebugLog::info("Web Server: Routes registered");
   DebugLog::debug("  GET  /         -> Dashboard");

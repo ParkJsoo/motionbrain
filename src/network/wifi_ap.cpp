@@ -36,6 +36,9 @@ bool WiFiAP::init(const char* ssid, const char* password, IPAddress ip) {
   // Wi-Fi 모드 설정 (AP 모드)
   WiFi.mode(WIFI_AP);
 
+  // IP 주소 설정 (softAP() 이전에 호출해야 적용됨)
+  WiFi.softAPConfig(ip, ip, IPAddress(255, 255, 255, 0));
+
   // AP 시작 (최대 연결 수 제한 - 안전 규칙: 단일 클라이언트만 허용)
   // WiFi.softAP(ssid, password, channel, hidden, max_connection)
   bool result = false;
@@ -52,9 +55,6 @@ bool WiFiAP::init(const char* ssid, const char* password, IPAddress ip) {
     active_ = false;
     return false;
   }
-
-  // IP 주소 설정
-  WiFi.softAPConfig(ip, ip, IPAddress(255, 255, 255, 0));
 
   // AP 활성화 확인
   active_ = WiFi.softAPgetStationNum() >= 0;  // AP가 시작되었는지 확인

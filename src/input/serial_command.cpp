@@ -158,6 +158,9 @@ void SerialCommand::clearCommand() {
  * 한 문자씩 읽어서 버퍼에 저장
  */
 void SerialCommand::processSerialInput() {
+  // 이전 명령어 처리 완료 전까지 새 입력 무시 (\r\n 연속 수신 시 버퍼 오염 방지)
+  if (commandReady_) return;
+
   // 시리얼 데이터가 있는지 확인
   while (Serial.available() > 0) {
     char c = Serial.read();
@@ -201,22 +204,22 @@ void SerialCommand::processCommand(const char* cmdName, const char* args) {
   // 명령어 이름 비교 (대소문자 구분 없이)
   // strcmp를 사용하여 문자열 비교
   
-  if (strcmp(cmdName, "help") == 0) {
+  if (strcasecmp(cmdName, "help") == 0) {
     handleHelp();
   }
-  else if (strcmp(cmdName, "status") == 0) {
+  else if (strcasecmp(cmdName, "status") == 0) {
     handleStatus();
   }
-  else if (strcmp(cmdName, "arm") == 0) {
+  else if (strcasecmp(cmdName, "arm") == 0) {
     handleArm();
   }
-  else if (strcmp(cmdName, "disarm") == 0) {
+  else if (strcasecmp(cmdName, "disarm") == 0) {
     handleDisarm();
   }
-  else if (strcmp(cmdName, "stop") == 0) {
+  else if (strcasecmp(cmdName, "stop") == 0) {
     handleStop();
   }
-  else if (strcmp(cmdName, "motor") == 0) {
+  else if (strcasecmp(cmdName, "motor") == 0) {
     handleMotor(args);
   }
   else {

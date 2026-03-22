@@ -47,11 +47,9 @@ bool MotorControl::init() {
   pinMode(PIN_BIN1_2, OUTPUT);
   pinMode(PIN_BIN2_2, OUTPUT);
   
-  // TB6612FNG #3
+  // TB6612FNG #3 (모터 A만 사용 - M5, BIN1/BIN2는 GPIO0/15이므로 사용 금지)
   pinMode(PIN_AIN1_3, OUTPUT);
   pinMode(PIN_AIN2_3, OUTPUT);
-  pinMode(PIN_BIN1_3, OUTPUT);
-  pinMode(PIN_BIN2_3, OUTPUT);
   
   DebugLog::debug("GPIO pins configured");
   
@@ -93,8 +91,6 @@ bool MotorControl::init() {
   digitalWrite(PIN_BIN2_2, LOW);
   digitalWrite(PIN_AIN1_3, LOW);
   digitalWrite(PIN_AIN2_3, LOW);
-  digitalWrite(PIN_BIN1_3, LOW);
-  digitalWrite(PIN_BIN2_3, LOW);
   
   DebugLog::motor("INIT", "TB6612FNG initialized - all motors stopped (PWM=0, direction pins=LOW)");
   DebugLog::info("Motor control ready (Phase 1-5: Step 1 - Power connection only)");
@@ -109,10 +105,6 @@ bool MotorControl::setDefaultSpeed(uint8_t speed) {
   // 속도 범위 검증 (1-255만 유효, 0은 모터가 움직이지 않으므로 기본 속도로는 무의미)
   if (speed == 0) {
     DebugLog::error("Default speed cannot be 0 - motors will not move. Valid range: 1-255");
-    return false;
-  }
-  if (speed > 255) {
-    DebugLog::error("Default speed out of range: %d. Valid range: 1-255", speed);
     return false;
   }
   
@@ -335,7 +327,7 @@ void MotorControl::emergencyStop() {
   // 모든 모터 즉시 정지
   for (uint8_t i = 0; i < NUM_MOTORS; i++) {
     uint8_t motorId = indexToMotorId(i);
-    uint8_t index = motorIdToIndex(motorId);
+    uint8_t index = i;
     
     // 목표 속도와 현재 속도를 모두 0으로 설정 (즉시 정지)
     targetSpeed_[index] = 0;
@@ -368,13 +360,9 @@ void MotorControl::emergencyStop() {
         digitalWrite(PIN_BIN2_2, LOW);
       }
     } else {
-      if (motorIndex == 0) {
-        digitalWrite(PIN_AIN1_3, LOW);
-        digitalWrite(PIN_AIN2_3, LOW);
-      } else {
-        digitalWrite(PIN_BIN1_3, LOW);
-        digitalWrite(PIN_BIN2_3, LOW);
-      }
+      // TB6612FNG #3: 모터 A(M5)만 사용
+      digitalWrite(PIN_AIN1_3, LOW);
+      digitalWrite(PIN_AIN2_3, LOW);
     }
   }
   
@@ -437,12 +425,16 @@ void MotorControl::update() {
   // 시스템 상태 확인: ARMED 상태가 아니면 모든 모터 정지
   SystemState currentState = getCurrentState();
   if (currentState != SystemState::ARMED) {
-    // ARMED 상태가 아니면 모든 모터의 목표 속도를 0으로 설정
+    // ARMED 상태가 아니면 Ramp 없이 모든 모터 즉시 정지 (안전 최우선)
     for (uint8_t i = 0; i < NUM_MOTORS; i++) {
-      if (targetSpeed_[i] != 0) {
+      if (currentSpeed_[i] != 0 || targetSpeed_[i] != 0) {
         targetSpeed_[i] = 0;
+        currentSpeed_[i] = 0;
+        enabled_[i] = false;
+        ledcWrite(i, 0);
       }
     }
+    return;
   }
   
   uint32_t currentTime = millis();

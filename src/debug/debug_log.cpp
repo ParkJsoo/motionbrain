@@ -60,7 +60,7 @@ void DebugLog::debug(const char* format, ...) {
   char buffer[256];
   vsnprintf(buffer, sizeof(buffer), format, args);
   va_end(args);
-  log(LogLevel::DEBUG, buffer);
+  log(LogLevel::DEBUG, "%s", buffer);
 }
 
 /**
@@ -72,7 +72,7 @@ void DebugLog::info(const char* format, ...) {
   char buffer[256];
   vsnprintf(buffer, sizeof(buffer), format, args);
   va_end(args);
-  log(LogLevel::INFO, buffer);
+  log(LogLevel::INFO, "%s", buffer);
 }
 
 /**
@@ -84,7 +84,7 @@ void DebugLog::warn(const char* format, ...) {
   char buffer[256];
   vsnprintf(buffer, sizeof(buffer), format, args);
   va_end(args);
-  log(LogLevel::WARN, buffer);
+  log(LogLevel::WARN, "%s", buffer);
 }
 
 /**
@@ -96,7 +96,7 @@ void DebugLog::error(const char* format, ...) {
   char buffer[256];
   vsnprintf(buffer, sizeof(buffer), format, args);
   va_end(args);
-  log(LogLevel::ERROR, buffer);
+  log(LogLevel::ERROR, "%s", buffer);
 }
 
 /**

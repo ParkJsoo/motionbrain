@@ -181,7 +181,7 @@ private:
   static const uint8_t PIN_PWMB_2 = 33;     // 모터 B PWM
   
   // TB6612FNG #3 (모터 M5)
-  static const uint8_t PIN_AIN1_3 = 12;     // 모터 A 방향 1 (M5)
+  static const uint8_t PIN_AIN1_3 = 4;      // 모터 A 방향 1 (M5) — GPIO12에서 변경 (strapping pin 회피)
   static const uint8_t PIN_AIN2_3 = 13;     // 모터 A 방향 2 (M5)
   static const uint8_t PIN_PWMA_3 = 14;     // 모터 A PWM (M5)
   static const uint8_t PIN_BIN1_3 = 15;     // 모터 B 방향 1 (미사용)
