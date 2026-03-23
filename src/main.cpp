@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include "system/system_init.h"
 #include "motor/motor_driver.h"  // MotorControl 사용
+#include "motion/robot_arm.h"    // RobotArm 사용 (Phase 2-A)
 #include "input/serial_command.h"  // SerialCommand 사용
 #include "network/wifi_ap.h"  // WiFiAP 사용
 #include "network/web_server.h"  // MotionBrainWebServer 사용
@@ -8,9 +9,10 @@
 
 // 전역 객체 생성
 SystemStateManager systemState;
-MotorControl motorControl;  // MotorControl 객체 생성
-SerialCommand serialCommand;  // SerialCommand 객체 생성
-WiFiAP wifiAP;  // WiFiAP 객체 생성
+MotorControl motorControl;       // MotorControl 객체 생성
+RobotArm robotArm(&motorControl); // RobotArm 객체 생성 (Phase 2-A)
+SerialCommand serialCommand;     // SerialCommand 객체 생성
+WiFiAP wifiAP;                   // WiFiAP 객체 생성
 MotionBrainWebServer webServer;  // MotionBrainWebServer 객체 생성
 
 /**
