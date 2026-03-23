@@ -54,7 +54,7 @@ void setup() {
   }
   
   // 7. 시리얼 명령 모듈 초기화
-  serialCommand.init(&systemState, &motorControl);
+  serialCommand.init(&systemState, &motorControl, &robotArm);
   
   // 8. Wi-Fi AP 초기화
   const char* apSSID = "MotionBrain-AP";
