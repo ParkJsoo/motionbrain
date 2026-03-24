@@ -86,6 +86,7 @@ private:
   char commandBuffer_[BUFFER_SIZE];      // 명령어 버퍼
   bool commandReady_;                    // 명령어 수신 완료 플래그
   size_t bufferIndex_;                   // 현재 버퍼 인덱스
+  bool overflowDropping_;                // 오버플로우 후 '\n'까지 버리는 플래그
 
   /**
    * 시리얼 입력 처리 (private)

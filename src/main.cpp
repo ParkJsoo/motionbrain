@@ -58,8 +58,7 @@ void setup() {
   
   // 8. Wi-Fi AP 초기화
   const char* apSSID = "MotionBrain-AP";
-  const char* apPassword = nullptr;  // 공개 AP (비밀번호 없음)
-  // const char* apPassword = "motionbrain123";  // 비밀번호 설정 시 주석 해제
+  const char* apPassword = "motionbrain";  // WPA2 보호 — 배포 전 반드시 변경
   
   if (!wifiAP.init(apSSID, apPassword)) {
     DebugLog::error("Wi-Fi AP initialization failed");
@@ -71,7 +70,7 @@ void setup() {
   }
   
   // 9. 웹 서버 초기화 (Wi-Fi AP 이후에 초기화)
-  if (!webServer.init(&systemState, &motorControl)) {
+  if (!webServer.init(&systemState, &motorControl, &robotArm)) {
     DebugLog::error("Web server initialization failed");
     // 웹 서버 실패는 치명적 오류는 아니므로 계속 진행
   } else {
@@ -108,6 +107,6 @@ void loop() {
   // 웹 서버 업데이트 (HTTP 요청 처리)
   webServer.update();
   
-  // 작은 딜레이 (CPU 부하 완화)
-  delay(10);
+  // 최소 딜레이 (CPU 부하 완화 + 웹 서버 응답성 개선)
+  delay(1);
 }

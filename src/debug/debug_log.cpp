@@ -52,15 +52,25 @@ void DebugLog::log(LogLevel level, const char* format, ...) {
 }
 
 /**
+ * 내부 va_list 기반 로그 (이중 포맷 방지)
+ */
+void DebugLog::vlog(LogLevel level, const char* format, va_list args) {
+  if (!initialized_) {
+    init();
+  }
+  char buffer[256];
+  vsnprintf(buffer, sizeof(buffer), format, args);
+  Serial.printf("[%s] %s\n", levelToString(level), buffer);
+}
+
+/**
  * DEBUG 레벨 로그
  */
 void DebugLog::debug(const char* format, ...) {
   va_list args;
   va_start(args, format);
-  char buffer[256];
-  vsnprintf(buffer, sizeof(buffer), format, args);
+  vlog(LogLevel::DEBUG, format, args);
   va_end(args);
-  log(LogLevel::DEBUG, "%s", buffer);
 }
 
 /**
@@ -69,10 +79,8 @@ void DebugLog::debug(const char* format, ...) {
 void DebugLog::info(const char* format, ...) {
   va_list args;
   va_start(args, format);
-  char buffer[256];
-  vsnprintf(buffer, sizeof(buffer), format, args);
+  vlog(LogLevel::INFO, format, args);
   va_end(args);
-  log(LogLevel::INFO, "%s", buffer);
 }
 
 /**
@@ -81,10 +89,8 @@ void DebugLog::info(const char* format, ...) {
 void DebugLog::warn(const char* format, ...) {
   va_list args;
   va_start(args, format);
-  char buffer[256];
-  vsnprintf(buffer, sizeof(buffer), format, args);
+  vlog(LogLevel::WARN, format, args);
   va_end(args);
-  log(LogLevel::WARN, "%s", buffer);
 }
 
 /**
@@ -93,10 +99,8 @@ void DebugLog::warn(const char* format, ...) {
 void DebugLog::error(const char* format, ...) {
   va_list args;
   va_start(args, format);
-  char buffer[256];
-  vsnprintf(buffer, sizeof(buffer), format, args);
+  vlog(LogLevel::ERROR, format, args);
   va_end(args);
-  log(LogLevel::ERROR, "%s", buffer);
 }
 
 /**

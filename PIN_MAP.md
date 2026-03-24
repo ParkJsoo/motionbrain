@@ -99,8 +99,8 @@ static const uint8_t PIN_PWMB_2 = 33;     // 모터 B PWM
 | **A01**      | M5 모터 +   | 모터 출력    | -        | -      | -                            |
 | **A02**      | M5 모터 -   | 모터 출력    | -        | -      | -                            |
 | **BIN1**     | GPIO 15     | 미사용       | -        | -      | Strapping pin (부팅 시 HIGH 필요) |
-| **BIN2**     | GPIO 0      | 미사용       | -        | -      | **사용 금지** (부팅 모드 핀) |
-| **PWMB**     | GPIO 35     | 미사용       | -        | -      | **사용 불가** (INPUT ONLY)   |
+| **BIN2**     | N/C (미연결) | 미사용      | -        | -      | **절대 연결 금지** — GPIO0는 부팅 모드 핀, PIN_UNUSED(0xFF) 처리 |
+| **PWMB**     | N/C (미연결) | 미사용      | -        | -      | **절대 연결 금지** — GPIO35는 INPUT ONLY, PIN_UNUSED(0xFF) 처리 |
 
 ### 코드 상수 정의
 
@@ -109,9 +109,9 @@ static const uint8_t PIN_PWMB_2 = 33;     // 모터 B PWM
 static const uint8_t PIN_AIN1_3 = 4;      // 모터 A 방향 1 (M5) — GPIO12에서 변경
 static const uint8_t PIN_AIN2_3 = 13;     // 모터 A 방향 2 (M5)
 static const uint8_t PIN_PWMA_3 = 14;     // 모터 A PWM (M5)
-static const uint8_t PIN_BIN1_3 = 15;     // 모터 B 방향 1 (미사용)
-static const uint8_t PIN_BIN2_3 = 0;      // 모터 B 방향 2 (미사용)
-static const uint8_t PIN_PWMB_3 = 35;     // 모터 B PWM (미사용)
+static const uint8_t PIN_BIN1_3 = 15;          // 모터 B 방향 1 (미사용)
+static const uint8_t PIN_BIN2_3 = PIN_UNUSED;  // GPIO0 부트핀 회피
+static const uint8_t PIN_PWMB_3 = PIN_UNUSED;  // GPIO35 입력전용 회피
 ```
 
 ---
@@ -202,7 +202,8 @@ AIN1 = LOW, AIN2 = LOW  (또는 BIN1 = LOW, BIN2 = LOW)
 PWMA (또는 PWMB) = 0
 ```
 
-**참고**: STBY 핀은 사용하지 않습니다. 모터 제어는 PWM과 방향 핀만으로 수행됩니다.
+**참고**: STBY 핀은 소프트웨어에서 제어하지 않습니다. 모터 제어는 PWM과 방향 핀만으로 수행됩니다.
+TB6612FNG가 동작하려면 STBY 핀이 HIGH여야 합니다. 브레이크아웃 보드를 사용하는 경우 보드 내장 풀업 저항으로 자동 처리됩니다. 직접 IC를 배선하는 경우 STBY 핀을 VCC(3.3V 또는 5V)에 직접 연결하세요.
 
 ---
 

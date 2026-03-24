@@ -5,6 +5,11 @@
 // 전역 객체 참조 (main.cpp에 선언됨)
 extern SystemStateManager systemState;
 
+// PWM 채널 배열 정의 (헤더 선언에 대응) — 산술 대신 명시적 배열로 채널 매핑
+const uint8_t MotorControl::PWM_CHANNELS[MotorControl::NUM_MOTORS] = {
+  PWM_CHANNEL_M1, PWM_CHANNEL_M2, PWM_CHANNEL_M3, PWM_CHANNEL_M4, PWM_CHANNEL_M5
+};
+
 /**
  * MotorControl 생성자
  */
@@ -47,7 +52,7 @@ bool MotorControl::init() {
   pinMode(PIN_BIN1_2, OUTPUT);
   pinMode(PIN_BIN2_2, OUTPUT);
   
-  // TB6612FNG #3 (모터 A만 사용 - M5, BIN1/BIN2는 GPIO0/15이므로 사용 금지)
+  // TB6612FNG #3 (모터 A만 사용 - M5, BIN1=GPIO15 strapping핀, BIN2=PIN_UNUSED(GPIO0 회피) — 사용 금지)
   pinMode(PIN_AIN1_3, OUTPUT);
   pinMode(PIN_AIN2_3, OUTPUT);
   
@@ -143,23 +148,26 @@ bool MotorControl::forward(uint8_t motorId, uint8_t percent) {
     return false;
   }
   
+  // percent=0은 stop()을 사용해야 함 (enabled_=true/speed=0 불일치 방지)
+  if (percent == 0) {
+    DebugLog::warn("Motor M%d: forward(0%%) is a no-op — use stop() instead", motorId);
+    return false;
+  }
+
   // 속도 비율 범위 제한
   if (percent > 100) percent = 100;
-  
+
   // 속도 비율을 실제 속도로 변환
   uint8_t speed = percentToSpeed(percent);
-  
+
   // 목표 속도 설정
   uint8_t index = motorIdToIndex(motorId);
   targetSpeed_[index] = speed;
   enabled_[index] = true;
-  
+
   // 타임아웃 타이머 리셋 (모터 명령 수신으로 간주)
   systemState.resetTimeout();
-  
-  // 로그는 serial_command에서 출력하므로 여기서는 제거
-  // DebugLog::debug("Motor M%d: forward at %d%% speed (%d)", motorId, percent, speed);
-  
+
   return true;
 }
 
@@ -185,9 +193,15 @@ bool MotorControl::reverse(uint8_t motorId, uint8_t percent) {
     return false;
   }
   
+  // percent=0은 stop()을 사용해야 함 (enabled_=true/speed=0 불일치 방지)
+  if (percent == 0) {
+    DebugLog::warn("Motor M%d: reverse(0%%) is a no-op — use stop() instead", motorId);
+    return false;
+  }
+
   // 속도 비율 범위 제한
   if (percent > 100) percent = 100;
-  
+
   // 속도 비율을 실제 속도로 변환 (음수로)
   uint8_t speed = percentToSpeed(percent);
   int16_t reverseSpeed = -(int16_t)speed;
@@ -281,18 +295,10 @@ bool MotorControl::stop(uint8_t motorId) {
     return false;
   }
   
-  // 안전 검사: ARMED 상태에서만 허용
-  if (!checkSafety("stop")) {
-    return false;
-  }
-  
-  // 목표 속도를 0으로 설정 (점진적 정지)
+  // 정지 명령은 모든 상태에서 허용 (안전 최우선)
   uint8_t index = motorIdToIndex(motorId);
   targetSpeed_[index] = 0;
-  
-  // 타임아웃 타이머 리셋 (모터 명령 수신으로 간주)
-  systemState.resetTimeout();
-  
+
   DebugLog::debug("Motor M%d: target speed set to 0 (will ramp down gradually)", motorId);
   
   return true;
@@ -302,19 +308,11 @@ bool MotorControl::stop(uint8_t motorId) {
  * 모든 모터 정지 (점진적 정지)
  */
 bool MotorControl::stopAll() {
-  // 안전 검사: ARMED 상태에서만 허용
-  if (!checkSafety("stopAll")) {
-    return false;
-  }
-  
-  // 모든 모터의 목표 속도를 0으로 설정
+  // 정지 명령은 모든 상태에서 허용 (안전 최우선)
   for (uint8_t i = 0; i < NUM_MOTORS; i++) {
     targetSpeed_[i] = 0;
   }
-  
-  // 타임아웃 타이머 리셋 (모터 명령 수신으로 간주)
-  systemState.resetTimeout();
-  
+
   DebugLog::debug("All motors: target speed set to 0 (will ramp down gradually)");
   
   return true;
@@ -327,17 +325,15 @@ void MotorControl::emergencyStop() {
   // 모든 모터 즉시 정지
   for (uint8_t i = 0; i < NUM_MOTORS; i++) {
     uint8_t motorId = indexToMotorId(i);
-    uint8_t index = i;
-    
+
     // 목표 속도와 현재 속도를 모두 0으로 설정 (즉시 정지)
-    targetSpeed_[index] = 0;
-    currentSpeed_[index] = 0;
-    enabled_[index] = false;
-    lastUpdateTime_[index] = 0;
-    
-    // PWM 출력 0
-    uint8_t pwmChannel = index;  // 배열 인덱스 = PWM 채널 번호
-    ledcWrite(pwmChannel, 0);
+    targetSpeed_[i] = 0;
+    currentSpeed_[i] = 0;
+    enabled_[i] = false;
+    lastUpdateTime_[i] = 0;  // 0 = "한 번도 업데이트 안 됨" — 다음 update() 즉시 실행
+
+    // PWM 출력 0 (명시적 채널 배열 사용 — 산술 의존 없음)
+    ledcWrite(PWM_CHANNELS[i], 0);
     
     // 방향 핀 LOW
     uint8_t driverId = getDriverId(motorId);
@@ -431,7 +427,7 @@ void MotorControl::update() {
         targetSpeed_[i] = 0;
         currentSpeed_[i] = 0;
         enabled_[i] = false;
-        ledcWrite(i, 0);
+        ledcWrite(PWM_CHANNELS[i], 0);
       }
     }
     return;
@@ -452,39 +448,25 @@ void MotorControl::update() {
       continue;  // 아직 업데이트 시간이 안 됨
     }
     
-    // ARMED 상태가 아니면 즉시 정지
-    if (currentState != SystemState::ARMED) {
-      currentSpeed_[i] = 0;
-      enabled_[i] = false;
-      targetSpeed_[i] = 0;
-      
-      // PWM 출력 0
-      uint8_t pwmChannel = i;
-      ledcWrite(pwmChannel, 0);
-      
-      continue;
-    }
-    
-    // 점진적 속도 변경
+    // 점진적 속도 변경 (newSpeed만 계산 — currentSpeed_는 setMotorSpeedInternal이 단일 관리)
     int16_t diff = targetSpeed_[i] - currentSpeed_[i];
     int16_t step = (diff > 0) ? RAMP_STEP_SIZE : -RAMP_STEP_SIZE;
-    
-    // 차이가 단계 크기보다 작으면 목표 속도로 바로 설정
+    int16_t newSpeed;
+
     if (abs(diff) <= RAMP_STEP_SIZE) {
-      currentSpeed_[i] = targetSpeed_[i];
+      newSpeed = targetSpeed_[i];
     } else {
-      currentSpeed_[i] += step;
+      newSpeed = currentSpeed_[i] + step;
     }
-    
-    // 목표 속도가 0이고 현재 속도도 0에 가까우면 비활성화
-    if (targetSpeed_[i] == 0 && abs(currentSpeed_[i]) < RAMP_STEP_SIZE) {
-      currentSpeed_[i] = 0;
-      enabled_[i] = false;
+
+    // 목표 속도가 0이고 거의 0에 가까우면 강제 0으로 완전 정지
+    if (targetSpeed_[i] == 0 && abs(newSpeed) < RAMP_STEP_SIZE) {
+      newSpeed = 0;
     }
-    
-    // 실제 PWM 출력 업데이트
+
+    // 실제 PWM 출력 업데이트 (currentSpeed_[i]와 enabled_[i]는 여기서 단일 갱신)
     uint8_t motorId = indexToMotorId(i);
-    setMotorSpeedInternal(motorId, currentSpeed_[i]);
+    setMotorSpeedInternal(motorId, newSpeed);
     
     // 마지막 업데이트 시간 갱신
     lastUpdateTime_[i] = currentTime;
@@ -559,7 +541,6 @@ bool MotorControl::setMotorSpeedInternal(uint8_t motorId, int16_t speed) {
   // 드라이버 번호 및 드라이버 내 모터 인덱스 가져오기
   uint8_t driverId = getDriverId(motorId);
   uint8_t motorIndex = getMotorIndexInDriver(motorId);
-  uint8_t pwmChannel = index;  // 배열 인덱스 = PWM 채널 번호
   
   // 드라이버 오류 상태 확인
   if (driverError_[driverId]) {
@@ -573,18 +554,17 @@ bool MotorControl::setMotorSpeedInternal(uint8_t motorId, int16_t speed) {
   uint8_t pwmValue = (speed < 0) ? -speed : speed;  // 절댓값
   
   // 드라이버별 핀 설정
+  // 방향 핀 제어 (드라이버별)
   if (driverId == 0) {
     // TB6612FNG #1
     if (motorIndex == 0) {
       // 모터 A (M1: 그리퍼)
       digitalWrite(PIN_AIN1_1, forward ? HIGH : LOW);
       digitalWrite(PIN_AIN2_1, reverse ? HIGH : LOW);
-      ledcWrite(PWM_CHANNEL_M1, pwmValue);
     } else {
       // 모터 B (M2: 손목)
       digitalWrite(PIN_BIN1_1, forward ? HIGH : LOW);
       digitalWrite(PIN_BIN2_1, reverse ? HIGH : LOW);
-      ledcWrite(PWM_CHANNEL_M2, pwmValue);
     }
   } else if (driverId == 1) {
     // TB6612FNG #2
@@ -592,12 +572,10 @@ bool MotorControl::setMotorSpeedInternal(uint8_t motorId, int16_t speed) {
       // 모터 A (M3: 팔꿈치)
       digitalWrite(PIN_AIN1_2, forward ? HIGH : LOW);
       digitalWrite(PIN_AIN2_2, reverse ? HIGH : LOW);
-      ledcWrite(PWM_CHANNEL_M3, pwmValue);
     } else {
       // 모터 B (M4: 어깨)
       digitalWrite(PIN_BIN1_2, forward ? HIGH : LOW);
       digitalWrite(PIN_BIN2_2, reverse ? HIGH : LOW);
-      ledcWrite(PWM_CHANNEL_M4, pwmValue);
     }
   } else {
     // TB6612FNG #3
@@ -605,14 +583,15 @@ bool MotorControl::setMotorSpeedInternal(uint8_t motorId, int16_t speed) {
       // 모터 A (M5: 베이스)
       digitalWrite(PIN_AIN1_3, forward ? HIGH : LOW);
       digitalWrite(PIN_AIN2_3, reverse ? HIGH : LOW);
-      ledcWrite(PWM_CHANNEL_M5, pwmValue);
     } else {
-      // 모터 B는 미사용
-      // 이 코드는 실행되지 않아야 함 (motorId 1~5만 유효)
+      // 모터 B는 미사용 — 이 코드는 실행되지 않아야 함 (motorId 1~5만 유효)
       DebugLog::error("Invalid motor configuration: driver #%d motor B (M6 not used)", driverId);
       return false;
     }
   }
+
+  // PWM 출력 — PWM_CHANNELS[] 배열 사용 (산술 의존 없음, emergencyStop/update와 동일 패턴)
+  ledcWrite(PWM_CHANNELS[index], pwmValue);
   
   // 상태 업데이트
   currentSpeed_[index] = speed;

@@ -33,22 +33,7 @@ SystemState SystemStateManager::getState() const {
  * @return 상태 문자열 ("BOOT", "IDLE", "ARMED", "FAULT")
  */
 const char* SystemStateManager::getStateString() const {
-  switch (currentState_) {
-    case SystemState::BOOT:
-      return "BOOT";
-    
-    case SystemState::IDLE:
-      return "IDLE";
-    
-    case SystemState::ARMED:
-      return "ARMED";
-    
-    case SystemState::FAULT:
-      return "FAULT";
-    
-    default:
-      return "UNKNOWN";  // 예상치 못한 상태
-  }
+  return stateToString(currentState_);
 }
 
 // ===== 상태 전환 메서드 =====

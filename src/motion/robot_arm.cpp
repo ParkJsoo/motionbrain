@@ -36,6 +36,7 @@ bool RobotArm::gripperClose(uint8_t percent) {
 }
 
 bool RobotArm::gripperStop() {
+  if (motorControl_ == nullptr) return false;
   bool result = motorControl_->stop(MotorControl::MOTOR_1);
   if (result) DebugLog::info("[ARM] Gripper: stop");
   return result;
@@ -56,6 +57,7 @@ bool RobotArm::wristDown(uint8_t percent) {
 }
 
 bool RobotArm::wristStop() {
+  if (motorControl_ == nullptr) return false;
   bool result = motorControl_->stop(MotorControl::MOTOR_2);
   if (result) DebugLog::info("[ARM] Wrist: stop");
   return result;
@@ -76,6 +78,7 @@ bool RobotArm::elbowDown(uint8_t percent) {
 }
 
 bool RobotArm::elbowStop() {
+  if (motorControl_ == nullptr) return false;
   bool result = motorControl_->stop(MotorControl::MOTOR_3);
   if (result) DebugLog::info("[ARM] Elbow: stop");
   return result;
@@ -96,6 +99,7 @@ bool RobotArm::shoulderDown(uint8_t percent) {
 }
 
 bool RobotArm::shoulderStop() {
+  if (motorControl_ == nullptr) return false;
   bool result = motorControl_->stop(MotorControl::MOTOR_4);
   if (result) DebugLog::info("[ARM] Shoulder: stop");
   return result;
@@ -116,6 +120,7 @@ bool RobotArm::baseRight(uint8_t percent) {
 }
 
 bool RobotArm::baseStop() {
+  if (motorControl_ == nullptr) return false;
   bool result = motorControl_->stop(MotorControl::MOTOR_5);
   if (result) DebugLog::info("[ARM] Base: stop");
   return result;

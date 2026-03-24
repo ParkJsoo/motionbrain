@@ -7,10 +7,10 @@
 WiFiAP::WiFiAP()
   : active_(false)
   , apIP_(192, 168, 4, 1)
-  , ssid_(nullptr)
-  , password_(nullptr)
   , lastCheckTime_(0)
 {
+  ssid_[0] = '\0';
+  password_[0] = '\0';
 }
 
 /**
@@ -23,8 +23,14 @@ bool WiFiAP::init(const char* ssid, const char* password, IPAddress ip) {
     return false;
   }
 
-  ssid_ = ssid;
-  password_ = password;
+  strncpy(ssid_, ssid, sizeof(ssid_) - 1);
+  ssid_[sizeof(ssid_) - 1] = '\0';
+  if (password != nullptr) {
+    strncpy(password_, password, sizeof(password_) - 1);
+    password_[sizeof(password_) - 1] = '\0';
+  } else {
+    password_[0] = '\0';
+  }
   apIP_ = ip;
 
   DebugLog::info("=== Wi-Fi AP Initialization ===");
@@ -43,10 +49,13 @@ bool WiFiAP::init(const char* ssid, const char* password, IPAddress ip) {
   // WiFi.softAP(ssid, password, channel, hidden, max_connection)
   bool result = false;
   if (password != nullptr && strlen(password) >= 8) {
-    // 비밀번호가 있는 경우
+    // 비밀번호가 있는 경우 (WPA2: 최소 8자)
     result = WiFi.softAP(ssid, password, 1, false, MAX_CLIENTS);
   } else {
-    // 공개 AP (비밀번호 없음)
+    // 공개 AP (비밀번호 없음 또는 8자 미만 — WPA2 최소 요건 미충족)
+    if (password != nullptr && strlen(password) > 0) {
+      DebugLog::warn("WiFi AP: Password too short (< 8 chars) — starting as OPEN AP");
+    }
     result = WiFi.softAP(ssid, nullptr, 1, false, MAX_CLIENTS);
   }
 
@@ -56,18 +65,12 @@ bool WiFiAP::init(const char* ssid, const char* password, IPAddress ip) {
     return false;
   }
 
-  // AP 활성화 확인
-  active_ = WiFi.softAPgetStationNum() >= 0;  // AP가 시작되었는지 확인
-
-  if (active_) {
-    DebugLog::info("WiFi AP: Started successfully");
-    DebugLog::info("AP IP: %s", WiFi.softAPIP().toString().c_str());
-    DebugLog::info("AP MAC: %s", WiFi.softAPmacAddress().c_str());
-    DebugLog::info("Max clients: %d (SAFETY: single connection only - fixed)", MAX_CLIENTS);
-  } else {
-    DebugLog::error("WiFi AP: Failed to verify AP status");
-    return false;
-  }
+  // AP가 softAP() 성공으로 이미 확인됨
+  active_ = true;
+  DebugLog::info("WiFi AP: Started successfully");
+  DebugLog::info("AP IP: %s", WiFi.softAPIP().toString().c_str());
+  DebugLog::info("AP MAC: %s", WiFi.softAPmacAddress().c_str());
+  DebugLog::info("Max clients: %d (SAFETY: single connection only - fixed)", MAX_CLIENTS);
 
   lastCheckTime_ = millis();
   return true;

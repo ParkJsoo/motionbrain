@@ -10,6 +10,7 @@
 SerialCommand::SerialCommand()
   : commandReady_(false)
   , bufferIndex_(0)
+  , overflowDropping_(false)
   , systemState_(nullptr)
   , motorControl_(nullptr)
   , robotArm_(nullptr)
@@ -168,27 +169,36 @@ void SerialCommand::processSerialInput() {
   while (Serial.available() > 0) {
     char c = Serial.read();
     
-    // 줄바꿈 또는 캐리지 리턴이면 명령어 완성
+    // 줄바꿈 또는 캐리지 리턴이면 명령어 완성 (또는 오버플로우 드롭 종료)
     if (c == '\n' || c == '\r') {
-      if (bufferIndex_ > 0) {
+      if (overflowDropping_) {
+        // 오버플로우 후 나머지 문자 버리기 완료 — 다음 명령어 대기
+        overflowDropping_ = false;
+        bufferIndex_ = 0;
+        commandBuffer_[0] = '\0';
+      } else if (bufferIndex_ > 0) {
         // 명령어 완성
         commandBuffer_[bufferIndex_] = '\0';  // 문자열 종료
         commandReady_ = true;
         bufferIndex_ = 0;  // 다음 명령어를 위해 인덱스 리셋
-        
+
         // 디버그 로그 (나중에 제거 가능)
         DebugLog::debug("Command received: %s", commandBuffer_);
       }
+    }
+    // 오버플로우 드롭 중이면 '\n' 전까지 모두 버림
+    else if (overflowDropping_) {
+      // no-op: discard
     }
     // 일반 문자면 버퍼에 추가
     else if (bufferIndex_ < BUFFER_SIZE - 1) {
       commandBuffer_[bufferIndex_] = c;
       bufferIndex_++;
     }
-    // 버퍼 오버플로우 방지
+    // 버퍼 오버플로우 — '\n'까지 나머지 문자 버림
     else {
-      DebugLog::warn("Command buffer overflow - command too long");
-      // 버퍼 초기화
+      DebugLog::warn("Command buffer overflow - command too long, discarding until newline");
+      overflowDropping_ = true;
       bufferIndex_ = 0;
       commandBuffer_[0] = '\0';
     }
@@ -244,7 +254,7 @@ void SerialCommand::handleHelp() {
   DebugLog::info("  status    - Show current system status");
   DebugLog::info("  arm       - Arm the system (IDLE -> ARMED)");
   DebugLog::info("  disarm    - Disarm the system (ARMED -> IDLE)");
-  DebugLog::info("  stop      - Emergency stop (any state -> IDLE)");
+  DebugLog::info("  stop      - Emergency stop / FAULT 상태 복구");
   DebugLog::info("");
   DebugLog::info("=== Motor Control Commands ===");
   DebugLog::info("  motor forward <id> [percent]  - Motor forward (default: 100%%)");
@@ -301,7 +311,7 @@ void SerialCommand::handleStatus() {
     // 각 모터 상태 표시
     DebugLog::info("=== Motor Status ===");
     const char* motorNames[] = {"Gripper", "Wrist", "Elbow", "Shoulder", "Base"};
-    for (uint8_t i = 1; i <= 5; i++) {
+    for (uint8_t i = 1; i <= MotorControl::NUM_MOTORS; i++) {
       int16_t speed = motorControl_->getSpeed(i);
       bool enabled = motorControl_->isEnabled(i);
       DebugLog::info("  M%d (%s): speed=%d, enabled=%s", 
@@ -354,7 +364,9 @@ void SerialCommand::handleStop() {
   }
   
   // 비상 정지
-  systemState_->enterSafe();
+  if (!systemState_->enterSafe()) {
+    DebugLog::warn("STOP: enterSafe() failed - state may already be safe");
+  }
   
   // 모터도 비상 정지
   if (motorControl_ != nullptr) {
@@ -414,7 +426,7 @@ void SerialCommand::handleMotor(const char* args) {
   }
   
   // action에 따라 처리
-  if (strcmp(action, "forward") == 0) {
+  if (strcasecmp(action, "forward") == 0) {
     // motor forward <id> [percent]
     int motorId = 0;
     int percent = 100;  // 기본값
@@ -434,16 +446,20 @@ void SerialCommand::handleMotor(const char* args) {
       }
     }
     
-    if (motorId < 1 || motorId > 5) {
+    if (motorId < 1 || motorId > MotorControl::NUM_MOTORS) {
       DebugLog::error("Invalid motor ID: %d (valid range: 1-5)", motorId);
       return;
     }
-    
+
     if (percent < 0 || percent > 100) {
       DebugLog::error("Invalid percent: %d (valid range: 0-100)", percent);
       return;
     }
-    
+    if (percent == 0) {
+      DebugLog::error("Use 'motor stop %d' for 0%% speed", motorId);
+      return;
+    }
+
     bool result = motorControl_->forward(motorId, percent);
     if (result) {
       DebugLog::info("Motor M%d: forward at %d%% speed", motorId, percent);
@@ -451,7 +467,7 @@ void SerialCommand::handleMotor(const char* args) {
       DebugLog::warn("Failed to set motor M%d forward", motorId);
     }
   }
-  else if (strcmp(action, "reverse") == 0) {
+  else if (strcasecmp(action, "reverse") == 0) {
     // motor reverse <id> [percent]
     int motorId = 0;
     int percent = 100;  // 기본값
@@ -471,16 +487,20 @@ void SerialCommand::handleMotor(const char* args) {
       }
     }
     
-    if (motorId < 1 || motorId > 5) {
+    if (motorId < 1 || motorId > MotorControl::NUM_MOTORS) {
       DebugLog::error("Invalid motor ID: %d (valid range: 1-5)", motorId);
       return;
     }
-    
+
     if (percent < 0 || percent > 100) {
       DebugLog::error("Invalid percent: %d (valid range: 0-100)", percent);
       return;
     }
-    
+    if (percent == 0) {
+      DebugLog::error("Use 'motor stop %d' for 0%% speed", motorId);
+      return;
+    }
+
     bool result = motorControl_->reverse(motorId, percent);
     if (result) {
       DebugLog::info("Motor M%d: reverse at %d%% speed", motorId, percent);
@@ -488,7 +508,7 @@ void SerialCommand::handleMotor(const char* args) {
       DebugLog::warn("Failed to set motor M%d reverse", motorId);
     }
   }
-  else if (strcmp(action, "stop") == 0) {
+  else if (strcasecmp(action, "stop") == 0) {
     // motor stop all  — 모든 모터 정지 (ARMED 상태 유지)
     if (strcasecmp(rest, "all") == 0) {
       motorControl_->stopAll();
@@ -504,7 +524,7 @@ void SerialCommand::handleMotor(const char* args) {
       return;
     }
 
-    if (motorId < 1 || motorId > 5) {
+    if (motorId < 1 || motorId > MotorControl::NUM_MOTORS) {
       DebugLog::error("Invalid motor ID: %d (valid range: 1-5)", motorId);
       return;
     }
@@ -516,20 +536,20 @@ void SerialCommand::handleMotor(const char* args) {
       DebugLog::warn("Failed to stop motor M%d", motorId);
     }
   }
-  else if (strcmp(action, "status") == 0) {
+  else if (strcasecmp(action, "status") == 0) {
     // motor status
     DebugLog::info("=== Motor Status ===");
     DebugLog::info("Default speed: %d", motorControl_->getDefaultSpeed());
     
     const char* motorNames[] = {"Gripper", "Wrist", "Elbow", "Shoulder", "Base"};
-    for (uint8_t i = 1; i <= 5; i++) {
+    for (uint8_t i = 1; i <= MotorControl::NUM_MOTORS; i++) {
       int16_t speed = motorControl_->getSpeed(i);
       bool enabled = motorControl_->isEnabled(i);
       const char* direction = (speed > 0) ? "forward" : (speed < 0) ? "reverse" : "stopped";
       DebugLog::info("  M%d (%s): speed=%d (%s), enabled=%s", i, motorNames[i-1], speed, direction, enabled ? "YES" : "NO");
     }
   }
-  else if (strcmp(action, "default") == 0) {
+  else if (strcasecmp(action, "default") == 0) {
     // motor default <speed>
     int speed = 0;
     
@@ -538,8 +558,8 @@ void SerialCommand::handleMotor(const char* args) {
       return;
     }
     
-    if (speed < 0 || speed > 255) {
-      DebugLog::error("Invalid speed: %d (valid range: 0-255)", speed);
+    if (speed < 1 || speed > 255) {
+      DebugLog::error("Invalid speed: %d (Speed must be 1-255 (0 = no movement, rejected))", speed);
       return;
     }
     
@@ -625,6 +645,12 @@ void SerialCommand::handleJoint(const char* args) {
     } else {
       DebugLog::warn("Invalid percent value — using default (%d%%)", percent);
     }
+  }
+
+  // percent=0은 동작 명령에 사용 불가 — stop 명령 사용
+  if (percent == 0 && strcasecmp(action, "stop") != 0) {
+    DebugLog::warn("joint %s %s: Use 'stop' for 0%% speed", jointName, action);
+    return;
   }
 
   // 관절별 처리
