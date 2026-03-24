@@ -107,7 +107,8 @@ private:
    * 로그 레벨을 문자열로 변환
    */
   static const char* levelToString(LogLevel level);
-  
+  static void vlog(LogLevel level, const char* format, va_list args);
+
   /**
    * 초기화 여부
    */

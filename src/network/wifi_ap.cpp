@@ -7,10 +7,10 @@
 WiFiAP::WiFiAP()
   : active_(false)
   , apIP_(192, 168, 4, 1)
-  , ssid_(nullptr)
-  , password_(nullptr)
   , lastCheckTime_(0)
 {
+  ssid_[0] = '\0';
+  password_[0] = '\0';
 }
 
 /**
@@ -23,8 +23,14 @@ bool WiFiAP::init(const char* ssid, const char* password, IPAddress ip) {
     return false;
   }
 
-  ssid_ = ssid;
-  password_ = password;
+  strncpy(ssid_, ssid, sizeof(ssid_) - 1);
+  ssid_[sizeof(ssid_) - 1] = '\0';
+  if (password != nullptr) {
+    strncpy(password_, password, sizeof(password_) - 1);
+    password_[sizeof(password_) - 1] = '\0';
+  } else {
+    password_[0] = '\0';
+  }
   apIP_ = ip;
 
   DebugLog::info("=== Wi-Fi AP Initialization ===");
@@ -36,14 +42,20 @@ bool WiFiAP::init(const char* ssid, const char* password, IPAddress ip) {
   // Wi-Fi 모드 설정 (AP 모드)
   WiFi.mode(WIFI_AP);
 
+  // IP 주소 설정 (softAP() 이전에 호출해야 적용됨)
+  WiFi.softAPConfig(ip, ip, IPAddress(255, 255, 255, 0));
+
   // AP 시작 (최대 연결 수 제한 - 안전 규칙: 단일 클라이언트만 허용)
   // WiFi.softAP(ssid, password, channel, hidden, max_connection)
   bool result = false;
   if (password != nullptr && strlen(password) >= 8) {
-    // 비밀번호가 있는 경우
+    // 비밀번호가 있는 경우 (WPA2: 최소 8자)
     result = WiFi.softAP(ssid, password, 1, false, MAX_CLIENTS);
   } else {
-    // 공개 AP (비밀번호 없음)
+    // 공개 AP (비밀번호 없음 또는 8자 미만 — WPA2 최소 요건 미충족)
+    if (password != nullptr && strlen(password) > 0) {
+      DebugLog::warn("WiFi AP: Password too short (< 8 chars) — starting as OPEN AP");
+    }
     result = WiFi.softAP(ssid, nullptr, 1, false, MAX_CLIENTS);
   }
 
@@ -53,21 +65,12 @@ bool WiFiAP::init(const char* ssid, const char* password, IPAddress ip) {
     return false;
   }
 
-  // IP 주소 설정
-  WiFi.softAPConfig(ip, ip, IPAddress(255, 255, 255, 0));
-
-  // AP 활성화 확인
-  active_ = WiFi.softAPgetStationNum() >= 0;  // AP가 시작되었는지 확인
-
-  if (active_) {
-    DebugLog::info("WiFi AP: Started successfully");
-    DebugLog::info("AP IP: %s", WiFi.softAPIP().toString().c_str());
-    DebugLog::info("AP MAC: %s", WiFi.softAPmacAddress().c_str());
-    DebugLog::info("Max clients: %d (SAFETY: single connection only - fixed)", MAX_CLIENTS);
-  } else {
-    DebugLog::error("WiFi AP: Failed to verify AP status");
-    return false;
-  }
+  // AP가 softAP() 성공으로 이미 확인됨
+  active_ = true;
+  DebugLog::info("WiFi AP: Started successfully");
+  DebugLog::info("AP IP: %s", WiFi.softAPIP().toString().c_str());
+  DebugLog::info("AP MAC: %s", WiFi.softAPmacAddress().c_str());
+  DebugLog::info("Max clients: %d (SAFETY: single connection only - fixed)", MAX_CLIENTS);
 
   lastCheckTime_ = millis();
   return true;
@@ -133,22 +136,20 @@ void WiFiAP::checkClients() {
   }
 
   uint8_t clientCount = WiFi.softAPgetStationNum();
-  
+
   // 클라이언트 수가 변경되었을 때만 로그 출력
-  static uint8_t lastClientCount = 255;  // 초기값 (항상 다르게)
-  
-  if (clientCount != lastClientCount) {
-    if (clientCount > lastClientCount) {
+  if (clientCount != lastClientCount_) {
+    if (clientCount > lastClientCount_) {
       if (clientCount >= MAX_CLIENTS) {
         DebugLog::info("WiFi AP: Client connected (Total: %d/%d - MAX REACHED)", clientCount, MAX_CLIENTS);
         DebugLog::warn("WiFi AP: Maximum clients reached - new connections will be rejected");
       } else {
         DebugLog::info("WiFi AP: Client connected (Total: %d/%d)", clientCount, MAX_CLIENTS);
       }
-    } else if (clientCount < lastClientCount && lastClientCount != 255) {
+    } else if (clientCount < lastClientCount_ && lastClientCount_ != 255) {
       DebugLog::info("WiFi AP: Client disconnected (Total: %d/%d)", clientCount, MAX_CLIENTS);
     }
-    lastClientCount = clientCount;
+    lastClientCount_ = clientCount;
   }
 }
 

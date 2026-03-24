@@ -26,6 +26,7 @@ ESP32는 실시간성, 안전성, 물리 제어를 책임지는 **모션 제어 
 - ✅ **Wi-Fi AP**: 무선 네트워크를 통한 웹 접근
 - ✅ **모바일 최적화**: 반응형 웹 UI, 터치 이벤트 지원
 - ✅ **여러 조이스틱 동시 조작**: 각 조이스틱이 독립적으로 동작
+- ✅ **관절 제어 (Phase 2-A)**: gripper/wrist/elbow/shoulder/base 관절 추상화 API, Hold-to-Move 웹 UI
 
 ### 모터 구성
 
@@ -94,7 +95,7 @@ ESP32는 실시간성, 안전성, 물리 제어를 책임지는 **모션 제어 
 
 1. ESP32 전원을 켭니다
 2. Wi-Fi 네트워크 목록에서 `MotionBrain-AP`를 찾습니다
-3. 비밀번호 없이 연결합니다 (또는 설정된 비밀번호 입력)
+3. WPA2로 보호됨 (기본 비밀번호는 배포 전 반드시 변경하세요)
 4. 브라우저에서 `http://192.168.4.1` 접속
 
 #### 2. 웹 대시보드 사용
@@ -110,6 +111,7 @@ ESP32는 실시간성, 안전성, 물리 제어를 책임지는 **모션 제어 
 - **버튼 모드**: 각 모터별 Forward/Reverse 버튼으로 제어
 - **조이스틱 모드**: 조이스틱을 드래그하여 연속 제어
 - **속도 조절**: 버튼 모드에서 슬라이더로 속도 조절 (0-100%)
+- **관절 제어 카드**: 각 관절(Gripper/Wrist/Elbow/Shoulder/Base)별 Hold-to-Move 버튼, 독립 속도 슬라이더
 
 **키보드 단축키 (버튼 모드):**
 
@@ -133,8 +135,20 @@ motor forward 1   # M1 정방향 (기본 속도)
 motor forward 1 50 # M1 정방향 (50% 속도)
 motor reverse 2   # M2 역방향
 motor stop 3      # M3 정지
+motor stop all    # 모든 모터 정지 (ARMED 상태 유지)
 motor status      # 모든 모터 상태 확인
-motor default 150 # 기본 속도 설정 (1-255)
+motor default 150       # 기본 속도 설정 (1-255)
+joint gripper open      # 그리퍼 열기 (기본 속도)
+joint gripper open 50   # 그리퍼 열기 (50% 속도)
+joint gripper close     # 그리퍼 닫기
+joint wrist up 75       # 손목 위로 (75% 속도)
+joint wrist down        # 손목 아래로
+joint elbow up          # 팔꿈치 위로
+joint shoulder down 30  # 어깨 아래로 (30% 속도)
+joint base left         # 베이스 왼쪽 회전
+joint base right 60     # 베이스 오른쪽 회전 (60% 속도)
+joint gripper stop      # 그리퍼 정지
+joint stop              # 모든 관절 정지 (ARMED 상태 유지)
 ```
 
 ## 📁 프로젝트 구조
@@ -154,6 +168,9 @@ motionbrain/
     ├── motor/               # 모터 제어
     │   ├── motor_driver.h
     │   └── motor_driver.cpp
+    ├── motion/              # 모션 추상화 계층
+    │   ├── robot_arm.h
+    │   └── robot_arm.cpp
     ├── input/               # 입력 처리
     │   ├── serial_command.h
     │   └── serial_command.cpp
@@ -196,21 +213,21 @@ motionbrain/
 - ✅ **Phase 1.5-1**: Wi-Fi AP 입력 채널
 - ✅ **Phase 1.5-2**: 웹 UI (대시보드 + 명령)
 - ✅ **Phase 1.5-3**: 키보드 / 모바일 입력
+- ✅ **Phase 2-A**: RobotArm 관절 추상화 계층 (gripper/wrist/elbow/shoulder/base)
 
 ### 현재 진행 중
 
 - 🔄 **Phase 1-5**: TB6612FNG 연동 (물리 제어 시작)
-  - ✅ Step 1-1: 드라이버 전원 연결 및 측정 완료
-  - 🔄 Step 1-2: 펌웨어 업로드 및 GPIO 핀 검증 (진행 중)
-  - 📋 Step 2: PWM 핀 전압 측정 (선택사항)
-  - 📋 Step 3: PWM 신호 출력 테스트
-  - 📋 Step 4: 모터 1개 연결 및 낮은 PWM 테스트
-  - 📋 Step 5: 듀얼 모터 확장 테스트
-  - 📋 Step 6: 모든 모터 연결 및 통합 테스트
+  - ✅ Step 1: 드라이버 전원 연결 및 측정 완료
+  - ✅ Step 2: PWM 핀 전압 측정 완료
+  - ✅ Step 3: PWM 신호 출력 테스트 완료
+  - ✅ Step 4: 모터 1개 실물 구동 완료 (M1, 정방향/역방향)
+  - ✅ Step 5: 듀얼 모터 독립 제어 완료 (M1+M2 동시 구동)
+  - 📋 Step 6: 모든 모터 연결 및 통합 테스트 (점퍼 케이블 추가 후)
 
 ### 다음 단계
 
-- 📋 **Phase 2**: 모션 추상화 계층
+- 🔄 **Phase 2**: 모션 추상화 계층 (2-A 완료, 나머지 진행 예정)
 - 📋 **Phase 3**: 입력 · 판단 계층 분리 확장
 - 📋 **Phase 4**: AI 연계 (장기 목표)
 
@@ -250,9 +267,10 @@ motionbrain/
 
 ```cpp
 const char* apSSID = "MotionBrain-AP";
-const char* apPassword = nullptr;  // 공개 AP
-// const char* apPassword = "your-password";  // 비밀번호 설정
+const char* apPassword = "YOUR_PASSWORD";  // 반드시 변경 (WPA2 보호)
 ```
+
+**주의**: 기본 비밀번호는 배포 전 반드시 변경하세요.
 
 ### 안전 타임아웃 설정
 
@@ -307,4 +325,4 @@ systemState.setTimeout(30000);  // 30초 (밀리초 단위)
 
 ---
 
-**현재 버전**: Phase 1-5 진행 중 (Step 1-2)
+**현재 버전**: Phase 1-5 진행 중 (Step 6 — 점퍼 케이블 확보 후 진행)

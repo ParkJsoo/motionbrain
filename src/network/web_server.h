@@ -8,6 +8,7 @@
 // 전방 선언 (순환 참조 방지)
 class SystemStateManager;
 class MotorControl;
+class RobotArm;
 
 /**
  * MotionBrain Web Server Module
@@ -49,7 +50,7 @@ public:
    * @param port HTTP 서버 포트 (기본값: 80)
    * @return 초기화 성공 여부
    */
-  bool init(SystemStateManager* systemState, MotorControl* motorControl, uint16_t port = 80);
+  bool init(SystemStateManager* systemState, MotorControl* motorControl, RobotArm* robotArm = nullptr, uint16_t port = 80);
 
   /**
    * 업데이트 (주기적으로 호출)
@@ -65,8 +66,8 @@ public:
   bool isActive() const;
 
 private:
-  // ESP32 WebServer 객체
-  ::WebServer server_;  // ::WebServer는 전역 네임스페이스의 WebServer 클래스
+  // ESP32 WebServer 객체 (포트 80으로 명시적 초기화)
+  ::WebServer server_{80};  // ::WebServer는 전역 네임스페이스의 WebServer 클래스
 
   bool active_;         // 웹 서버 활성화 여부
   uint16_t port_;       // HTTP 서버 포트
@@ -74,6 +75,7 @@ private:
   // 외부 객체 참조 (상태 조회 및 명령 처리용)
   SystemStateManager* systemState_;
   MotorControl* motorControl_;
+  RobotArm* robotArm_;
 
   // ===== HTTP 라우트 핸들러 (private) =====
   // Step 2에서 구현 예정
@@ -101,6 +103,12 @@ private:
    * 모터 제어 (forward, reverse, stop, default)
    */
   void handleMotor();
+
+  /**
+   * POST /joint 처리
+   * 관절 제어 (gripper/wrist/elbow/shoulder/base)
+   */
+  void handleJoint();
 
   /**
    * 404 Not Found 처리

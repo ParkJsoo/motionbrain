@@ -6,6 +6,7 @@
 // 전방 선언 (순환 참조 방지)
 class SystemStateManager;
 class MotorControl;
+class RobotArm;
 
 /**
  * MotionBrain Serial Command Module
@@ -40,7 +41,7 @@ public:
    * @param systemState SystemStateManager 참조 (명령어 처리용)
    * @param motorControl MotorControl 참조 (명령어 처리용)
    */
-  void init(SystemStateManager* systemState, MotorControl* motorControl);
+  void init(SystemStateManager* systemState, MotorControl* motorControl, RobotArm* robotArm = nullptr);
 
   /**
    * 업데이트 (주기적으로 호출)
@@ -85,6 +86,7 @@ private:
   char commandBuffer_[BUFFER_SIZE];      // 명령어 버퍼
   bool commandReady_;                    // 명령어 수신 완료 플래그
   size_t bufferIndex_;                   // 현재 버퍼 인덱스
+  bool overflowDropping_;                // 오버플로우 후 '\n'까지 버리는 플래그
 
   /**
    * 시리얼 입력 처리 (private)
@@ -139,9 +141,17 @@ private:
    */
   void handleMotor(const char* args);
 
+  /**
+   * joint 명령어 처리 (Phase 2-A)
+   * 관절 이름으로 제어 (gripper/wrist/elbow/shoulder/base)
+   * @param args 명령어 인자 (예: "gripper open 50", "wrist up", "stop" 등)
+   */
+  void handleJoint(const char* args);
+
   // 외부 객체 참조 (명령어 처리용)
   SystemStateManager* systemState_;
   MotorControl* motorControl_;
+  RobotArm* robotArm_;
 };
 
 #endif // SERIAL_COMMAND_H

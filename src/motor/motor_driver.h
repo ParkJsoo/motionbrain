@@ -181,12 +181,13 @@ private:
   static const uint8_t PIN_PWMB_2 = 33;     // 모터 B PWM
   
   // TB6612FNG #3 (모터 M5)
-  static const uint8_t PIN_AIN1_3 = 12;     // 모터 A 방향 1 (M5)
+  static const uint8_t PIN_AIN1_3 = 4;      // 모터 A 방향 1 (M5) — GPIO12에서 변경 (strapping pin 회피)
   static const uint8_t PIN_AIN2_3 = 13;     // 모터 A 방향 2 (M5)
   static const uint8_t PIN_PWMA_3 = 14;     // 모터 A PWM (M5)
-  static const uint8_t PIN_BIN1_3 = 15;     // 모터 B 방향 1 (미사용)
-  static const uint8_t PIN_BIN2_3 = 0;      // 모터 B 방향 2 (미사용)
-  static const uint8_t PIN_PWMB_3 = 35;     // 모터 B PWM (미사용)
+  static const uint8_t PIN_UNUSED = 0xFF;   // 미사용 핀 센티넬 (절대 pinMode 호출 금지)
+  static const uint8_t PIN_BIN1_3 = 15;     // 모터 B 방향 1 (미사용 — 상수 정의만 존재, pinMode/digitalWrite 호출 없음)
+  static const uint8_t PIN_BIN2_3 = PIN_UNUSED;  // 모터 B 방향 2 (미사용 — GPIO0 부트핀 회피)
+  static const uint8_t PIN_PWMB_3 = PIN_UNUSED;  // 모터 B PWM (미사용 — GPIO35 입력전용 회피)
   
   // PWM 채널 정의
   static const uint8_t PWM_CHANNEL_M1 = 0;  // 모터 M1 (그리퍼) PWM 채널
@@ -194,6 +195,8 @@ private:
   static const uint8_t PWM_CHANNEL_M3 = 2;  // 모터 M3 (팔꿈치) PWM 채널
   static const uint8_t PWM_CHANNEL_M4 = 3;  // 모터 M4 (어깨) PWM 채널
   static const uint8_t PWM_CHANNEL_M5 = 4;  // 모터 M5 (베이스) PWM 채널
+  // PWM 채널 배열 — emergencyStop/update 루프에서 산술 의존 방지
+  static const uint8_t PWM_CHANNELS[NUM_MOTORS];
   
   // PWM 설정
   static const uint32_t PWM_FREQUENCY = 1000;  // 1kHz

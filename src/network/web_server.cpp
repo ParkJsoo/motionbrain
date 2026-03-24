@@ -1,6 +1,7 @@
 #include "web_server.h"
 #include "system/system_init.h"  // SystemStateManager 사용
 #include "motor/motor_driver.h"   // MotorControl 사용
+#include "motion/robot_arm.h"     // RobotArm 사용
 #include "debug/debug_log.h"
 
 /**
@@ -11,6 +12,7 @@ MotionBrainWebServer::MotionBrainWebServer()
   , port_(80)
   , systemState_(nullptr)
   , motorControl_(nullptr)
+  , robotArm_(nullptr)
 {
   // 생성자에서는 초기화만 수행
   // 실제 서버 시작은 init()에서 수행
@@ -19,30 +21,37 @@ MotionBrainWebServer::MotionBrainWebServer()
 /**
  * 웹 서버 초기화
  */
-bool MotionBrainWebServer::init(SystemStateManager* systemState, MotorControl* motorControl, uint16_t port) {
+bool MotionBrainWebServer::init(SystemStateManager* systemState, MotorControl* motorControl, RobotArm* robotArm, uint16_t port) {
   systemState_ = systemState;
   motorControl_ = motorControl;
+  robotArm_ = robotArm;
   port_ = port;
 
   DebugLog::info("=== Web Server Initialization ===");
   DebugLog::info("Port: %d", port_);
 
-  // ESP32 WebServer 객체 초기화
-  server_.begin(port_);
-
-  // HTTP 라우트 등록
+  // HTTP 라우트 등록 (begin() 이전에 먼저 등록해야 함)
   // 람다 함수를 사용하여 클래스 메서드 호출
   server_.on("/", HTTP_GET, [this]() { this->handleRoot(); });
   server_.on("/status", HTTP_GET, [this]() { this->handleStatus(); });
   server_.on("/command", HTTP_POST, [this]() { this->handleCommand(); });
   server_.on("/motor", HTTP_POST, [this]() { this->handleMotor(); });
+  server_.on("/joint", HTTP_POST, [this]() { this->handleJoint(); });
   server_.onNotFound([this]() { this->handleNotFound(); });
+
+  // CSRF 방지: X-MotionBrain 헤더 수집
+  const char* csrfHeader[] = {"X-MotionBrain"};
+  server_.collectHeaders(csrfHeader, 1);
+
+  // ESP32 WebServer 시작
+  server_.begin();
   
   DebugLog::info("Web Server: Routes registered");
   DebugLog::debug("  GET  /         -> Dashboard");
   DebugLog::debug("  GET  /status   -> JSON status");
   DebugLog::debug("  POST /command  -> Execute command");
   DebugLog::debug("  POST /motor    -> Motor control");
+  DebugLog::debug("  POST /joint    -> Joint control");
 
   active_ = true;
 
@@ -180,6 +189,7 @@ void MotionBrainWebServer::handleRoot() {
   server_.sendContent(".loading { display: inline-block; width: 12px; height: 12px; border: 2px solid #f3f3f3; border-top: 2px solid #667eea; border-radius: 50%; animation: spin 1s linear infinite; }");
   server_.sendContent("@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }");
   server_.sendContent(".last-update { text-align: center; color: rgba(255,255,255,0.8); font-size: 12px; margin-top: 20px; }");
+  server_.sendContent(".joint-speed-row { display: flex; gap: 10px; align-items: center; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #eee; }");
   server_.sendContent("</style></head><body>");
   
   // HTML 본문 전송
@@ -220,13 +230,13 @@ void MotionBrainWebServer::handleRoot() {
   // 모터 목록 (M1~M5) 전송 - 버튼 모드
   const char* motorNames[] = {"Gripper", "Wrist", "Elbow", "Shoulder", "Base"};
   server_.sendContent("<div class=\"button-container active\" id=\"button-container\">");
-  for (int i = 1; i <= 5; i++) {
+  for (int i = 1; i <= MotorControl::NUM_MOTORS; i++) {
     String motorCard = "<div class=\"motor-card\"><div class=\"motor-header\"><div><div class=\"motor-name\">M" + String(i) + "</div><div class=\"motor-role\">" + String(motorNames[i-1]) + "</div></div><div class=\"motor-status\" id=\"motor-status-" + String(i) + "\">STOPPED</div></div><div class=\"motor-controls\"><input type=\"range\" id=\"speed-" + String(i) + "\" min=\"0\" max=\"100\" value=\"100\" class=\"speed-slider\" oninput=\"updateSpeedValue(" + String(i) + ")\"><span class=\"speed-value\" id=\"speed-value-" + String(i) + "\">100%</span><button class=\"btn-forward\" id=\"btn-forward-" + String(i) + "\" onmousedown=\"motorStart(" + String(i) + ", 'forward', event)\" onmouseup=\"motorStop(" + String(i) + ", event)\" onmouseleave=\"motorStop(" + String(i) + ", event)\" ontouchstart=\"motorStart(" + String(i) + ", 'forward', event)\" ontouchend=\"motorStop(" + String(i) + ", event)\" ontouchcancel=\"motorStop(" + String(i) + ", event)\">Forward</button><button class=\"btn-reverse\" id=\"btn-reverse-" + String(i) + "\" onmousedown=\"motorStart(" + String(i) + ", 'reverse', event)\" onmouseup=\"motorStop(" + String(i) + ", event)\" onmouseleave=\"motorStop(" + String(i) + ", event)\" ontouchstart=\"motorStart(" + String(i) + ", 'reverse', event)\" ontouchend=\"motorStop(" + String(i) + ", event)\" ontouchcancel=\"motorStop(" + String(i) + ", event)\">Reverse</button><button class=\"btn-motor-stop\" onclick=\"motorStop(" + String(i) + ", event)\">Stop</button></div></div>";
     server_.sendContent(motorCard);
   }
   server_.sendContent("</div>");
   server_.sendContent("<div class=\"joystick-container\" id=\"joystick-container\">");
-  for (int i = 1; i <= 5; i++) {
+  for (int i = 1; i <= MotorControl::NUM_MOTORS; i++) {
     String isVertical = (i <= 4) ? "vertical-only" : "horizontal-only";
     String centerLine = (i <= 4) ? "<div class=\"joystick-center-line\"></div>" : "<div class=\"joystick-center-line horizontal\"></div>";
     String joyCard = "<div class=\"joystick-motor-card\"><div class=\"motor-header\"><div><div class=\"motor-name\">M" + String(i) + "</div><div class=\"motor-role\">" + String(motorNames[i-1]) + "</div></div><div class=\"joystick-header-speed\" id=\"joy-speed-" + String(i) + "\">0%</div></div><div class=\"joystick-wrapper\"><div class=\"joystick-area " + isVertical + "\" id=\"joystick-" + String(i) + "\">" + centerLine + "<div class=\"joystick-handle\" id=\"handle-" + String(i) + "\"></div></div><div class=\"joystick-info\"><div class=\"joystick-direction\" id=\"joy-direction-" + String(i) + "\">STOPPED</div></div></div></div>";
@@ -235,37 +245,67 @@ void MotionBrainWebServer::handleRoot() {
   server_.sendContent("</div>");
   
   server_.sendContent("</div>");
+  // Joint Control 카드
+  server_.sendContent("<div class=\"card\"><div class=\"card-title\">Joint Control</div>");
+  server_.sendContent("<div class=\"joint-speed-row\"><label>Speed:</label><input type=\"range\" id=\"joint-speed\" min=\"1\" max=\"100\" value=\"50\" style=\"flex:1;\" oninput=\"updateJointSpeed()\"><span class=\"speed-value\" id=\"joint-speed-value\">50%</span></div>");
+  const char* jointNames[]    = {"gripper", "wrist", "elbow", "shoulder", "base"};
+  const char* jointLabels[]   = {"Gripper", "Wrist", "Elbow", "Shoulder", "Base"};
+  const char* jointPosLabels[] = {"Open", "Up",   "Up",   "Up",   "Left"};
+  const char* jointNegLabels[] = {"Close", "Down", "Down", "Down", "Right"};
+  const char* jointPosActions[] = {"open", "up",   "up",   "up",   "left"};
+  const char* jointNegActions[] = {"close","down", "down", "down", "right"};
+  for (int i = 0; i < MotorControl::NUM_MOTORS; i++) {
+    String jn = String(jointNames[i]);
+    String jl = String(jointLabels[i]);
+    String posL = String(jointPosLabels[i]);
+    String negL = String(jointNegLabels[i]);
+    String posA = String(jointPosActions[i]);
+    String negA = String(jointNegActions[i]);
+    String card = "<div class=\"motor-card\"><div class=\"motor-header\"><div><div class=\"motor-name\">" + jl + "</div></div><div class=\"motor-status\" id=\"joint-status-" + jn + "\">STOPPED</div></div><div class=\"motor-controls\">";
+    card += "<button class=\"btn-forward\" onmousedown=\"jointStart('" + jn + "','" + posA + "',event)\" onmouseup=\"jointStop('" + jn + "',event)\" onmouseleave=\"jointStop('" + jn + "',event)\" ontouchstart=\"jointStart('" + jn + "','" + posA + "',event)\" ontouchend=\"jointStop('" + jn + "',event)\" ontouchcancel=\"jointStop('" + jn + "',event)\">" + posL + "</button>";
+    card += "<button class=\"btn-reverse\" onmousedown=\"jointStart('" + jn + "','" + negA + "',event)\" onmouseup=\"jointStop('" + jn + "',event)\" onmouseleave=\"jointStop('" + jn + "',event)\" ontouchstart=\"jointStart('" + jn + "','" + negA + "',event)\" ontouchend=\"jointStop('" + jn + "',event)\" ontouchcancel=\"jointStop('" + jn + "',event)\">" + negL + "</button>";
+    card += "<button class=\"btn-motor-stop\" onclick=\"jointStopNow('" + jn + "')\">Stop</button>";
+    card += "</div></div>";
+    server_.sendContent(card);
+  }
+  server_.sendContent("</div>");
+
   server_.sendContent("<div class=\"last-update\">Last update: <span id=\"last-update\">-</span></div></div>");
   
   // JavaScript 전송
   server_.sendContent("<script>");
   server_.sendContent("const stateColors = { \"BOOT\": \"state-BOOT\", \"IDLE\": \"state-IDLE\", \"ARMED\": \"state-ARMED\", \"FAULT\": \"state-FAULT\" };");
   server_.sendContent("function showMessage(text, isError) { const msg = document.getElementById(\"message\"); msg.textContent = text; msg.className = \"message \" + (isError ? \"error\" : \"success\"); msg.style.display = \"block\"; setTimeout(() => { msg.style.display = \"none\"; }, 3000); }");
-  server_.sendContent("function sendCommand(cmd) { const btn = document.getElementById(\"btn-\" + cmd); btn.disabled = true; fetch(\"/command?cmd=\" + cmd, { method: \"POST\" }).then(r => r.json()).then(data => { btn.disabled = false; showMessage(data.message || \"Command sent\", !data.success); updateStatus(); }).catch(err => { btn.disabled = false; showMessage(\"Error: \" + err.message, true); }); }");
+  server_.sendContent("function sendCommand(cmd) { const btn = document.getElementById(\"btn-\" + cmd); btn.disabled = true; fetch(\"/command?cmd=\" + cmd, { method: \"POST\", headers: {\"X-MotionBrain\": \"1\"} }).then(r => r.json()).then(data => { btn.disabled = false; showMessage(data.message || \"Command sent\", !data.success); updateStatus(); }).catch(err => { btn.disabled = false; showMessage(\"Error: \" + err.message, true); }); }");
   server_.sendContent("function updateStatus() { fetch(\"/status\").then(r => { if (!r.ok) { throw new Error(\"HTTP \" + r.status + \": \" + r.statusText); } return r.text(); }).then(text => { try { const data = JSON.parse(text); const state = data.state || \"UNKNOWN\"; const badge = document.getElementById(\"state-badge\"); if (badge) { badge.textContent = state; badge.className = \"status-badge \" + (stateColors[state] || \"state-LOADING\"); } const motorEl = document.getElementById(\"motor\"); if (motorEl) motorEl.textContent = data.motorEnabled ? \"YES\" : \"NO\"; const lastUpdate = document.getElementById(\"last-update\"); if (lastUpdate) lastUpdate.textContent = new Date().toLocaleTimeString(); updateButtons(state); if (data.motors) updateMotorStatus(data); } catch (e) { console.error(\"JSON parse error:\", e, \"Response:\", text); } }).catch(err => { console.error(\"Status update error:\", err); }); }");
-  server_.sendContent("function updateButtons(state) { const btnArm = document.getElementById(\"btn-arm\"); const btnDisarm = document.getElementById(\"btn-disarm\"); const btnStop = document.getElementById(\"btn-stop\"); btnArm.disabled = (state === \"ARMED\" || state === \"FAULT\" || state === \"BOOT\"); btnDisarm.disabled = (state !== \"ARMED\"); btnStop.disabled = (state === \"IDLE\" || state === \"FAULT\"); const isArmed = (state === \"ARMED\"); for (let i = 1; i <= 5; i++) { const joystickArea = document.getElementById(\"joystick-\" + i); if (joystickArea) { if (isArmed) { joystickArea.classList.remove(\"disabled\"); } else { joystickArea.classList.add(\"disabled\"); } } } }");
+  server_.sendContent("function updateButtons(state) { const btnArm = document.getElementById(\"btn-arm\"); const btnDisarm = document.getElementById(\"btn-disarm\"); const btnStop = document.getElementById(\"btn-stop\"); btnArm.disabled = (state === \"ARMED\" || state === \"FAULT\" || state === \"BOOT\"); btnDisarm.disabled = (state !== \"ARMED\"); btnStop.disabled = (state === \"IDLE\" || state === \"FAULT\"); const isArmed = (state === \"ARMED\"); for (let i = 1; i <= MOTOR_COUNT; i++) { const joystickArea = document.getElementById(\"joystick-\" + i); if (joystickArea) { if (isArmed) { joystickArea.classList.remove(\"disabled\"); } else { joystickArea.classList.add(\"disabled\"); } } } }");
   server_.sendContent("function updateSpeedValue(motorId) { const slider = document.getElementById(\"speed-\" + motorId); const value = document.getElementById(\"speed-value-\" + motorId); value.textContent = slider.value + \"%\"; }");
   server_.sendContent("function validateDefaultSpeed() { const speedInput = document.getElementById(\"default-speed\"); const btnSet = document.getElementById(\"btn-set-speed\"); const validationMsg = document.getElementById(\"speed-validation\"); const value = speedInput.value.trim(); if (value === \"\") { btnSet.disabled = true; validationMsg.textContent = \"Please enter a speed value (1-255)\"; validationMsg.className = \"validation-message\"; speedInput.style.borderColor = \"#f44336\"; return false; } if (value.indexOf(\".\") !== -1 || value.indexOf(\",\") !== -1) { btnSet.disabled = true; validationMsg.textContent = \"Please enter an integer (no decimals)\"; validationMsg.className = \"validation-message\"; speedInput.style.borderColor = \"#f44336\"; return false; } const speed = parseInt(value); if (isNaN(speed)) { btnSet.disabled = true; validationMsg.textContent = \"Please enter a valid number\"; validationMsg.className = \"validation-message\"; speedInput.style.borderColor = \"#f44336\"; return false; } if (speed < 1 || speed > 255) { btnSet.disabled = true; validationMsg.textContent = \"Speed must be between 1 and 255\"; validationMsg.className = \"validation-message\"; speedInput.style.borderColor = \"#f44336\"; return false; } btnSet.disabled = false; validationMsg.textContent = \"Valid speed value\"; validationMsg.className = \"validation-message valid\"; speedInput.style.borderColor = \"#4caf50\"; return true; }");
-  server_.sendContent("function setDefaultSpeed() { if (!validateDefaultSpeed()) { return; } const speedInput = document.getElementById(\"default-speed\"); const btnSet = document.getElementById(\"btn-set-speed\"); const speed = parseInt(speedInput.value); btnSet.disabled = true; fetch(\"/motor?action=default&speed=\" + speed, { method: \"POST\" }).then(r => r.json()).then(data => { btnSet.disabled = false; showMessage(data.message || \"Default speed set\", !data.success); if (data.success) { const validationMsg = document.getElementById(\"speed-validation\"); validationMsg.textContent = \"Speed set successfully\"; validationMsg.className = \"validation-message valid\"; } }).catch(err => { btnSet.disabled = false; showMessage(\"Error: \" + err, true); }); }");
+  server_.sendContent("function setDefaultSpeed() { if (!validateDefaultSpeed()) { return; } const speedInput = document.getElementById(\"default-speed\"); const btnSet = document.getElementById(\"btn-set-speed\"); const speed = parseInt(speedInput.value); btnSet.disabled = true; fetch(\"/motor?action=default&speed=\" + speed, { method: \"POST\", headers: {\"X-MotionBrain\": \"1\"} }).then(r => r.json()).then(data => { btnSet.disabled = false; showMessage(data.message || \"Default speed set\", !data.success); if (data.success) { const validationMsg = document.getElementById(\"speed-validation\"); validationMsg.textContent = \"Speed set successfully\"; validationMsg.className = \"validation-message valid\"; } }).catch(err => { btnSet.disabled = false; showMessage(\"Error: \" + err, true); }); }");
+  server_.sendContent("const MOTOR_COUNT = " + String(MotorControl::NUM_MOTORS) + ";");
   server_.sendContent("let activeMotors = {};");
   server_.sendContent("let joystickActive = {};");
   server_.sendContent("let joystickLastUpdate = {};");
   server_.sendContent("const JOYSTICK_UPDATE_INTERVAL = 100;");
   server_.sendContent("let currentMode = 'button';");
   server_.sendContent("let activeJoysticks = {};");
-  server_.sendContent("function switchMode(mode) { currentMode = mode; const btnMode = document.getElementById('mode-button'); const joyMode = document.getElementById('mode-joystick'); const btnContainer = document.getElementById('button-container'); const joyContainer = document.getElementById('joystick-container'); if (mode === 'button') { btnMode.classList.add('active'); joyMode.classList.remove('active'); btnContainer.classList.add('active'); joyContainer.classList.remove('active'); stopAllMotors(); for (let motorId in joystickActive) { const handle = document.getElementById('handle-' + motorId); if (handle) { handle.style.transform = 'translate(-50%, -50%)'; handle.classList.remove('active'); } document.getElementById('joy-speed-' + motorId).textContent = '0%'; document.getElementById('joy-direction-' + motorId).textContent = 'STOPPED'; fetch('/motor?action=stop&id=' + motorId, { method: 'POST' }).catch(() => {}); } joystickActive = {}; for (let motorId in activeJoysticks) { const handle = activeJoysticks[motorId].handle; if (handle) { handle.style.transform = 'translate(-50%, -50%)'; handle.classList.remove('active'); } document.getElementById('joy-speed-' + motorId).textContent = '0%'; document.getElementById('joy-direction-' + motorId).textContent = 'STOPPED'; fetch('/motor?action=stop&id=' + motorId, { method: 'POST' }).catch(() => {}); } activeJoysticks = {}; } else { btnMode.classList.remove('active'); joyMode.classList.add('active'); btnContainer.classList.remove('active'); joyContainer.classList.add('active'); stopAllMotors(); } }");
-  server_.sendContent("function motorStart(motorId, direction, e) { if (currentMode !== 'button') return; if (e && e.preventDefault) e.preventDefault(); const speed = document.getElementById('speed-' + motorId).value; const btnId = direction === 'forward' ? 'btn-forward-' + motorId : 'btn-reverse-' + motorId; const btn = document.getElementById(btnId); if (btn) btn.classList.add('btn-pressed'); activeMotors[motorId] = direction; const action = direction === 'forward' ? 'forward' : 'reverse'; fetch('/motor?action=' + action + '&id=' + motorId + '&percent=' + speed, { method: 'POST' }).then(r => r.json()).then(data => { if (!data.success) { showMessage(data.message || 'Motor control failed', true); motorStop(motorId); } }).catch(err => { showMessage('Error: ' + err, true); motorStop(motorId); }); }");
-  server_.sendContent("function motorStop(motorId, e) { if (currentMode !== 'button') return; if (e && e.preventDefault) e.preventDefault(); if (activeMotors[motorId]) { const direction = activeMotors[motorId]; const btnId = direction === 'forward' ? 'btn-forward-' + motorId : 'btn-reverse-' + motorId; const btn = document.getElementById(btnId); if (btn) btn.classList.remove('btn-pressed'); delete activeMotors[motorId]; fetch('/motor?action=stop&id=' + motorId, { method: 'POST' }).then(r => r.json()).then(data => { updateStatus(); }).catch(err => { console.error('Stop error:', err); }); } }");
+  server_.sendContent("function switchMode(mode) { currentMode = mode; const btnMode = document.getElementById('mode-button'); const joyMode = document.getElementById('mode-joystick'); const btnContainer = document.getElementById('button-container'); const joyContainer = document.getElementById('joystick-container'); if (mode === 'button') { btnMode.classList.add('active'); joyMode.classList.remove('active'); btnContainer.classList.add('active'); joyContainer.classList.remove('active'); stopAllMotors(); for (let motorId in joystickActive) { const handle = document.getElementById('handle-' + motorId); if (handle) { handle.style.transform = 'translate(-50%, -50%)'; handle.classList.remove('active'); } document.getElementById('joy-speed-' + motorId).textContent = '0%'; document.getElementById('joy-direction-' + motorId).textContent = 'STOPPED'; fetch('/motor?action=stop&id=' + motorId, { method: 'POST', headers: {'X-MotionBrain': '1'} }).catch(() => {}); } joystickActive = {}; for (let motorId in activeJoysticks) { const handle = activeJoysticks[motorId].handle; if (handle) { handle.style.transform = 'translate(-50%, -50%)'; handle.classList.remove('active'); } document.getElementById('joy-speed-' + motorId).textContent = '0%'; document.getElementById('joy-direction-' + motorId).textContent = 'STOPPED'; fetch('/motor?action=stop&id=' + motorId, { method: 'POST', headers: {'X-MotionBrain': '1'} }).catch(() => {}); } activeJoysticks = {}; } else { btnMode.classList.remove('active'); joyMode.classList.add('active'); btnContainer.classList.remove('active'); joyContainer.classList.add('active'); stopAllMotors(); } }");
+  server_.sendContent("function motorStart(motorId, direction, e) { if (currentMode !== 'button') return; if (e && e.preventDefault) e.preventDefault(); const speed = document.getElementById('speed-' + motorId).value; const btnId = direction === 'forward' ? 'btn-forward-' + motorId : 'btn-reverse-' + motorId; const btn = document.getElementById(btnId); if (btn) btn.classList.add('btn-pressed'); activeMotors[motorId] = direction; const action = direction === 'forward' ? 'forward' : 'reverse'; fetch('/motor?action=' + action + '&id=' + motorId + '&percent=' + speed, { method: 'POST', headers: {'X-MotionBrain': '1'} }).then(r => r.json()).then(data => { if (!data.success) { showMessage(data.message || 'Motor control failed', true); motorStop(motorId); } }).catch(err => { showMessage('Error: ' + err, true); motorStop(motorId); }); }");
+  server_.sendContent("function motorStop(motorId, e) { if (currentMode !== 'button') return; if (e && e.preventDefault) e.preventDefault(); if (activeMotors[motorId]) { const direction = activeMotors[motorId]; const btnId = direction === 'forward' ? 'btn-forward-' + motorId : 'btn-reverse-' + motorId; const btn = document.getElementById(btnId); if (btn) btn.classList.remove('btn-pressed'); delete activeMotors[motorId]; fetch('/motor?action=stop&id=' + motorId, { method: 'POST', headers: {'X-MotionBrain': '1'} }).then(r => r.json()).then(data => { updateStatus(); }).catch(err => { console.error('Stop error:', err); }); } }");
   server_.sendContent("function stopAllMotors() { for (let motorId in activeMotors) { motorStop(parseInt(motorId)); } }");
-  server_.sendContent("function motorForward(motorId) { const speed = document.getElementById(\"speed-\" + motorId).value; fetch(\"/motor?action=forward&id=\" + motorId + \"&percent=\" + speed, { method: \"POST\" }).then(r => r.json()).then(data => { showMessage(data.message || \"Motor M\" + motorId + \" forward\", !data.success); updateStatus(); }).catch(err => { showMessage(\"Error: \" + err, true); }); }");
-  server_.sendContent("function motorReverse(motorId) { const speed = document.getElementById(\"speed-\" + motorId).value; fetch(\"/motor?action=reverse&id=\" + motorId + \"&percent=\" + speed, { method: \"POST\" }).then(r => r.json()).then(data => { showMessage(data.message || \"Motor M\" + motorId + \" reverse\", !data.success); updateStatus(); }).catch(err => { showMessage(\"Error: \" + err, true); }); }");
-  server_.sendContent("function updateMotorStatus(data) { if (data.motors) { for (let i = 1; i <= 5; i++) { const motor = data.motors[\"M\" + i]; if (motor) { const statusEl = document.getElementById(\"motor-status-\" + i); const joySpeedEl = document.getElementById(\"joy-speed-\" + i); const joyDirectionEl = document.getElementById(\"joy-direction-\" + i); if (motor.enabled) { const statusText = motor.direction.toUpperCase() + \" (\" + motor.speed + \")\"; if (statusEl) { statusEl.textContent = statusText; statusEl.className = \"motor-status active\"; } if (joySpeedEl) joySpeedEl.textContent = Math.abs(motor.speed) + '%'; if (joyDirectionEl) joyDirectionEl.textContent = motor.direction.toUpperCase(); } else { if (statusEl) { statusEl.textContent = \"STOPPED\"; statusEl.className = \"motor-status\"; } if (joySpeedEl) joySpeedEl.textContent = '0%'; if (joyDirectionEl) joyDirectionEl.textContent = 'STOPPED'; } } } } }");
-  server_.sendContent("function initJoystick(motorId) { const area = document.getElementById('joystick-' + motorId); const handle = document.getElementById('handle-' + motorId); if (!area || !handle) return; const isVertical = motorId >= 1 && motorId <= 4; const isHorizontal = motorId === 5; let centerX = 0; let centerY = 0; let radius = 0; function updateCenter() { const rect = area.getBoundingClientRect(); centerX = rect.left + rect.width / 2; centerY = rect.top + rect.height / 2; radius = rect.width / 2 - 10; } function updateJoystick(clientX, clientY) { if (area.classList.contains('disabled')) return; const dx = clientX - centerX; const dy = clientY - centerY; let x = 0; let y = 0; let speedPercent = 0; let isForward = false; if (isVertical) { const distance = Math.abs(dy); const limitedDistance = Math.min(distance, radius); y = dy < 0 ? -limitedDistance : limitedDistance; speedPercent = Math.round((limitedDistance / radius) * 100); isForward = dy < 0; } else if (isHorizontal) { const distance = Math.abs(dx); const limitedDistance = Math.min(distance, radius); x = dx < 0 ? -limitedDistance : limitedDistance; speedPercent = Math.round((limitedDistance / radius) * 100); isForward = dx < 0; } handle.style.transform = 'translate(calc(-50% + ' + x + 'px), calc(-50% + ' + y + 'px))'; const direction = isForward ? 'FORWARD' : (speedPercent < 5 ? 'STOPPED' : 'REVERSE'); document.getElementById('joy-speed-' + motorId).textContent = speedPercent + '%'; document.getElementById('joy-direction-' + motorId).textContent = direction; if (speedPercent > 5) { const action = isForward ? 'forward' : 'reverse'; const now = Date.now(); if (!joystickLastUpdate[motorId] || now - joystickLastUpdate[motorId] >= JOYSTICK_UPDATE_INTERVAL) { joystickLastUpdate[motorId] = now; fetch('/motor?action=' + action + '&id=' + motorId + '&percent=' + speedPercent, { method: 'POST' }).then(r => r.json()).then(data => { if (!data.success) { console.error('Joystick control failed:', data); } }).catch(err => { console.error('Joystick error:', err); }); } joystickActive[motorId] = { action: action, percent: speedPercent }; } else { if (joystickActive[motorId]) { fetch('/motor?action=stop&id=' + motorId, { method: 'POST' }).catch(err => console.error('Stop error:', err)); delete joystickActive[motorId]; } } } function getTouchPoint(e, storedTouchId, joystickArea) { if (e.touches && storedTouchId !== null) { for (let i = 0; i < e.touches.length; i++) { if (e.touches[i].identifier === storedTouchId) { return { x: e.touches[i].clientX, y: e.touches[i].clientY }; } } return null; } if (e.clientX !== undefined && e.clientY !== undefined) { const rect = joystickArea.getBoundingClientRect(); if (e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom) { return { x: e.clientX, y: e.clientY }; } } return null; } function findTouchInArea(e, joystickArea) { if (e.touches && e.touches.length > 0) { const rect = joystickArea.getBoundingClientRect(); const usedTouchIds = new Set(); for (let id in activeJoysticks) { if (activeJoysticks[id] && activeJoysticks[id].touchId !== null) { usedTouchIds.add(activeJoysticks[id].touchId); } } for (let i = 0; i < e.touches.length; i++) { const touch = e.touches[i]; if (touch.clientX >= rect.left && touch.clientX <= rect.right && touch.clientY >= rect.top && touch.clientY <= rect.bottom) { if (!usedTouchIds.has(touch.identifier)) { return touch.identifier; } } } } return null; } function startDrag(e) { if (currentMode !== 'joystick' || area.classList.contains('disabled')) return; e.preventDefault(); updateCenter(); let currentTouchId = null; if (e.touches && e.touches.length > 0) { currentTouchId = findTouchInArea(e, area); if (currentTouchId === null) return; } const joyObj = { area: area, handle: handle, updateCenter: updateCenter, updateJoystick: updateJoystick, motorId: motorId, touchId: currentTouchId }; joyObj.getTouchPoint = function(e) { return getTouchPoint(e, joyObj.touchId, joyObj.area); }; activeJoysticks[motorId] = joyObj; handle.classList.add('active'); const point = getTouchPoint(e, currentTouchId, area); if (point) updateJoystick(point.x, point.y); } area.addEventListener('mousedown', startDrag); area.addEventListener('touchstart', startDrag, { passive: false }); }");
-  server_.sendContent("function handleGlobalDrag(e) { let shouldPreventDefault = false; const isMouseEvent = e.type === 'mousemove'; let mouseHandled = false; for (let motorId in activeJoysticks) { const joy = activeJoysticks[motorId]; if (joy && joy.area && !joy.area.classList.contains('disabled')) { if (isMouseEvent && joy.touchId !== null) continue; if (isMouseEvent && mouseHandled) continue; joy.updateCenter(); const point = joy.getTouchPoint(e); if (point) { shouldPreventDefault = true; if (isMouseEvent) mouseHandled = true; joy.updateJoystick(point.x, point.y); } } } if (shouldPreventDefault && e.touches && e.touches.length > 0) { e.preventDefault(); } } function handleGlobalEndDrag(e) { const endedTouchIds = new Set(); if (e.changedTouches) { for (let i = 0; i < e.changedTouches.length; i++) { endedTouchIds.add(e.changedTouches[i].identifier); } } let shouldPreventDefault = false; const isMouseEvent = e.type === 'mouseup'; for (let motorId in activeJoysticks) { const joy = activeJoysticks[motorId]; if (joy && joy.area) { let shouldEnd = false; if (isMouseEvent) { if (joy.touchId === null) { shouldEnd = true; } } else if (e.type === 'touchend' || e.type === 'touchcancel') { if (joy.touchId !== null && endedTouchIds.has(joy.touchId)) { shouldEnd = true; shouldPreventDefault = true; } } if (shouldEnd) { const handle = joy.handle; delete activeJoysticks[motorId]; handle.classList.remove('active'); handle.style.transform = 'translate(-50%, -50%)'; document.getElementById('joy-speed-' + joy.motorId).textContent = '0%'; document.getElementById('joy-direction-' + joy.motorId).textContent = 'STOPPED'; if (joystickActive[joy.motorId]) { fetch('/motor?action=stop&id=' + joy.motorId, { method: 'POST' }).catch(err => console.error('Stop error:', err)); delete joystickActive[joy.motorId]; } } } } if (shouldPreventDefault && e.changedTouches && e.changedTouches.length > 0) { e.preventDefault(); } } document.addEventListener('mousemove', handleGlobalDrag); document.addEventListener('touchmove', handleGlobalDrag, { passive: false }); document.addEventListener('mouseup', handleGlobalEndDrag); document.addEventListener('touchend', handleGlobalEndDrag, { passive: false }); document.addEventListener('touchcancel', handleGlobalEndDrag, { passive: false });");
-  server_.sendContent("window.addEventListener(\"load\", function() { validateDefaultSpeed(); for (let i = 1; i <= 5; i++) { initJoystick(i); } });");
-  server_.sendContent("window.addEventListener(\"beforeunload\", function() { stopAllMotors(); for (let motorId in joystickActive) { fetch('/motor?action=stop&id=' + motorId, { method: 'POST' }).catch(() => {}); } for (let motorId in activeJoysticks) { fetch('/motor?action=stop&id=' + motorId, { method: 'POST' }).catch(() => {}); } });");
+  // motorForward/motorReverse 제거됨 — motorStart/motorStop으로 대체 (CSRF 헤더 포함)
+  server_.sendContent("function updateMotorStatus(data) { if (data.motors) { for (let i = 1; i <= MOTOR_COUNT; i++) { const motor = data.motors[\"M\" + i]; if (motor) { const statusEl = document.getElementById(\"motor-status-\" + i); const joySpeedEl = document.getElementById(\"joy-speed-\" + i); const joyDirectionEl = document.getElementById(\"joy-direction-\" + i); if (motor.enabled) { const statusText = motor.direction.toUpperCase() + \" (\" + motor.speed + \")\"; if (statusEl) { statusEl.textContent = statusText; statusEl.className = \"motor-status active\"; } if (joySpeedEl) joySpeedEl.textContent = Math.abs(motor.speed) + '%'; if (joyDirectionEl) joyDirectionEl.textContent = motor.direction.toUpperCase(); } else { if (statusEl) { statusEl.textContent = \"STOPPED\"; statusEl.className = \"motor-status\"; } if (joySpeedEl) joySpeedEl.textContent = '0%'; if (joyDirectionEl) joyDirectionEl.textContent = 'STOPPED'; } } } } }");
+  server_.sendContent("function initJoystick(motorId) { const area = document.getElementById('joystick-' + motorId); const handle = document.getElementById('handle-' + motorId); if (!area || !handle) return; const isVertical = motorId >= 1 && motorId <= 4; const isHorizontal = motorId === 5; let centerX = 0; let centerY = 0; let radius = 0; function updateCenter() { const rect = area.getBoundingClientRect(); centerX = rect.left + rect.width / 2; centerY = rect.top + rect.height / 2; radius = rect.width / 2 - 10; } function updateJoystick(clientX, clientY) { if (area.classList.contains('disabled')) return; const dx = clientX - centerX; const dy = clientY - centerY; let x = 0; let y = 0; let speedPercent = 0; let isForward = false; if (isVertical) { const distance = Math.abs(dy); const limitedDistance = Math.min(distance, radius); y = dy < 0 ? -limitedDistance : limitedDistance; speedPercent = Math.round((limitedDistance / radius) * 100); isForward = dy < 0; } else if (isHorizontal) { const distance = Math.abs(dx); const limitedDistance = Math.min(distance, radius); x = dx < 0 ? -limitedDistance : limitedDistance; speedPercent = Math.round((limitedDistance / radius) * 100); isForward = dx < 0; } handle.style.transform = 'translate(calc(-50% + ' + x + 'px), calc(-50% + ' + y + 'px))'; const direction = isForward ? 'FORWARD' : (speedPercent < 5 ? 'STOPPED' : 'REVERSE'); document.getElementById('joy-speed-' + motorId).textContent = speedPercent + '%'; document.getElementById('joy-direction-' + motorId).textContent = direction; if (speedPercent > 5) { const action = isForward ? 'forward' : 'reverse'; const now = Date.now(); if (!joystickLastUpdate[motorId] || now - joystickLastUpdate[motorId] >= JOYSTICK_UPDATE_INTERVAL) { joystickLastUpdate[motorId] = now; fetch('/motor?action=' + action + '&id=' + motorId + '&percent=' + speedPercent, { method: 'POST', headers: {'X-MotionBrain': '1'} }).then(r => r.json()).then(data => { if (!data.success) { console.error('Joystick control failed:', data); } }).catch(err => { console.error('Joystick error:', err); }); } joystickActive[motorId] = { action: action, percent: speedPercent }; } else { if (joystickActive[motorId]) { fetch('/motor?action=stop&id=' + motorId, { method: 'POST', headers: {'X-MotionBrain': '1'} }).catch(err => console.error('Stop error:', err)); delete joystickActive[motorId]; } } } function getTouchPoint(e, storedTouchId, joystickArea) { if (e.touches && storedTouchId !== null) { for (let i = 0; i < e.touches.length; i++) { if (e.touches[i].identifier === storedTouchId) { return { x: e.touches[i].clientX, y: e.touches[i].clientY }; } } return null; } if (e.clientX !== undefined && e.clientY !== undefined) { const rect = joystickArea.getBoundingClientRect(); if (e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom) { return { x: e.clientX, y: e.clientY }; } } return null; } function findTouchInArea(e, joystickArea) { if (e.touches && e.touches.length > 0) { const rect = joystickArea.getBoundingClientRect(); const usedTouchIds = new Set(); for (let id in activeJoysticks) { if (activeJoysticks[id] && activeJoysticks[id].touchId !== null) { usedTouchIds.add(activeJoysticks[id].touchId); } } for (let i = 0; i < e.touches.length; i++) { const touch = e.touches[i]; if (touch.clientX >= rect.left && touch.clientX <= rect.right && touch.clientY >= rect.top && touch.clientY <= rect.bottom) { if (!usedTouchIds.has(touch.identifier)) { return touch.identifier; } } } } return null; } function startDrag(e) { if (currentMode !== 'joystick' || area.classList.contains('disabled')) return; e.preventDefault(); updateCenter(); let currentTouchId = null; if (e.touches && e.touches.length > 0) { currentTouchId = findTouchInArea(e, area); if (currentTouchId === null) return; } const joyObj = { area: area, handle: handle, updateCenter: updateCenter, updateJoystick: updateJoystick, motorId: motorId, touchId: currentTouchId }; joyObj.getTouchPoint = function(e) { return getTouchPoint(e, joyObj.touchId, joyObj.area); }; activeJoysticks[motorId] = joyObj; handle.classList.add('active'); const point = getTouchPoint(e, currentTouchId, area); if (point) updateJoystick(point.x, point.y); } area.addEventListener('mousedown', startDrag); area.addEventListener('touchstart', startDrag, { passive: false }); }");
+  server_.sendContent("function handleGlobalDrag(e) { let shouldPreventDefault = false; const isMouseEvent = e.type === 'mousemove'; let mouseHandled = false; for (let motorId in activeJoysticks) { const joy = activeJoysticks[motorId]; if (joy && joy.area && !joy.area.classList.contains('disabled')) { if (isMouseEvent && joy.touchId !== null) continue; if (isMouseEvent && mouseHandled) continue; joy.updateCenter(); const point = joy.getTouchPoint(e); if (point) { shouldPreventDefault = true; if (isMouseEvent) mouseHandled = true; joy.updateJoystick(point.x, point.y); } } } if (shouldPreventDefault && e.touches && e.touches.length > 0) { e.preventDefault(); } } function handleGlobalEndDrag(e) { const endedTouchIds = new Set(); if (e.changedTouches) { for (let i = 0; i < e.changedTouches.length; i++) { endedTouchIds.add(e.changedTouches[i].identifier); } } let shouldPreventDefault = false; const isMouseEvent = e.type === 'mouseup'; for (let motorId in activeJoysticks) { const joy = activeJoysticks[motorId]; if (joy && joy.area) { let shouldEnd = false; if (isMouseEvent) { if (joy.touchId === null) { shouldEnd = true; } } else if (e.type === 'touchend' || e.type === 'touchcancel') { if (joy.touchId !== null && endedTouchIds.has(joy.touchId)) { shouldEnd = true; shouldPreventDefault = true; } } if (shouldEnd) { const handle = joy.handle; delete activeJoysticks[motorId]; handle.classList.remove('active'); handle.style.transform = 'translate(-50%, -50%)'; document.getElementById('joy-speed-' + joy.motorId).textContent = '0%'; document.getElementById('joy-direction-' + joy.motorId).textContent = 'STOPPED'; if (joystickActive[joy.motorId]) { fetch('/motor?action=stop&id=' + joy.motorId, { method: 'POST', headers: {'X-MotionBrain': '1'} }).catch(err => console.error('Stop error:', err)); delete joystickActive[joy.motorId]; } } } } if (shouldPreventDefault && e.changedTouches && e.changedTouches.length > 0) { e.preventDefault(); } } document.addEventListener('mousemove', handleGlobalDrag); document.addEventListener('touchmove', handleGlobalDrag, { passive: false }); document.addEventListener('mouseup', handleGlobalEndDrag); document.addEventListener('touchend', handleGlobalEndDrag, { passive: false }); document.addEventListener('touchcancel', handleGlobalEndDrag, { passive: false });");
+  server_.sendContent("window.addEventListener(\"load\", function() { validateDefaultSpeed(); for (let i = 1; i <= MOTOR_COUNT; i++) { initJoystick(i); } });");
+  server_.sendContent("window.addEventListener(\"beforeunload\", function() { stopAllMotors(); for (let motorId in joystickActive) { fetch('/motor?action=stop&id=' + motorId, { method: 'POST', headers: {'X-MotionBrain': '1'} }).catch(() => {}); } for (let motorId in activeJoysticks) { fetch('/motor?action=stop&id=' + motorId, { method: 'POST', headers: {'X-MotionBrain': '1'} }).catch(() => {}); } });");
   server_.sendContent("document.addEventListener(\"keydown\", function(e) { if (currentMode !== 'button') return; const keyMap = { 'KeyQ': { motor: 1, dir: 'forward' }, 'KeyA': { motor: 1, dir: 'reverse' }, 'KeyW': { motor: 2, dir: 'forward' }, 'KeyS': { motor: 2, dir: 'reverse' }, 'KeyE': { motor: 3, dir: 'forward' }, 'KeyD': { motor: 3, dir: 'reverse' }, 'KeyR': { motor: 4, dir: 'forward' }, 'KeyF': { motor: 4, dir: 'reverse' }, 'KeyT': { motor: 5, dir: 'forward' }, 'KeyG': { motor: 5, dir: 'reverse' } }; const mapping = keyMap[e.code]; if (mapping && !activeMotors[mapping.motor]) { e.preventDefault(); motorStart(mapping.motor, mapping.dir); } });");
   server_.sendContent("document.addEventListener(\"keyup\", function(e) { if (currentMode !== 'button') return; const keyMap = { 'KeyQ': 1, 'KeyA': 1, 'KeyW': 2, 'KeyS': 2, 'KeyE': 3, 'KeyD': 3, 'KeyR': 4, 'KeyF': 4, 'KeyT': 5, 'KeyG': 5 }; const motorId = keyMap[e.code]; if (motorId && activeMotors[motorId]) { e.preventDefault(); motorStop(motorId); } });");
+  server_.sendContent("let activeJointButtons = {};");
+  server_.sendContent("function updateJointSpeed() { const v = document.getElementById('joint-speed').value; document.getElementById('joint-speed-value').textContent = v + '%'; }");
+  server_.sendContent("function jointStart(joint, action, e) { if (e && e.preventDefault) e.preventDefault(); const speed = document.getElementById('joint-speed').value; const btn = e ? e.currentTarget : null; if (btn) btn.classList.add('btn-pressed'); activeJointButtons[joint] = {action: action, btn: btn}; fetch('/joint?joint=' + joint + '&action=' + action + '&percent=' + speed, {method: 'POST', headers: {'X-MotionBrain': '1'}}).then(r => r.json()).then(data => { if (!data.success) { showMessage(data.message || 'Joint control failed', true); jointStopNow(joint); } }).catch(err => { showMessage('Error: ' + err, true); jointStopNow(joint); }); }");
+  server_.sendContent("function jointStop(joint, e) { if (e && e.preventDefault) e.preventDefault(); if (activeJointButtons[joint]) { const entry = activeJointButtons[joint]; if (entry.btn) entry.btn.classList.remove('btn-pressed'); delete activeJointButtons[joint]; fetch('/joint?joint=' + joint + '&action=stop', {method: 'POST', headers: {'X-MotionBrain': '1'}}).catch(() => {}); } }");
+  server_.sendContent("function jointStopNow(joint) { const entry = activeJointButtons[joint]; if (entry && entry.btn) entry.btn.classList.remove('btn-pressed'); delete activeJointButtons[joint]; fetch('/joint?joint=' + joint + '&action=stop', {method: 'POST', headers: {'X-MotionBrain': '1'}}).catch(() => {}); }");
   server_.sendContent("setInterval(updateStatus, 1000); updateStatus();");
   server_.sendContent("</script></body></html>");
   
@@ -275,6 +315,7 @@ void MotionBrainWebServer::handleRoot() {
 /**
  * GET /status 처리
  * JSON 형식으로 현재 상태 반환
+ * 주의: CSRF 헤더 불필요 — GET은 읽기 전용이므로 상태 변경 없음
  */
 void MotionBrainWebServer::handleStatus() {
   DebugLog::debug("Web Server: GET /status requested");
@@ -293,7 +334,9 @@ void MotionBrainWebServer::handleStatus() {
   }
   
   // JSON 응답 생성
-  String json = "{";
+  String json;
+  json.reserve(400);  // pre-allocate to avoid realloc
+  json = "{";
   json += "\"state\":\"";
   json += stateString;
   json += "\",";
@@ -304,7 +347,7 @@ void MotionBrainWebServer::handleStatus() {
   if (motorControl_ != nullptr) {
     json += ",\"motors\":{";
     const char* motorNames[] = {"Gripper", "Wrist", "Elbow", "Shoulder", "Base"};
-    for (uint8_t i = 1; i <= 5; i++) {
+    for (uint8_t i = 1; i <= MotorControl::NUM_MOTORS; i++) {
       if (i > 1) json += ",";
       json += "\"M";
       json += String(i);
@@ -356,7 +399,12 @@ void MotionBrainWebServer::handleCommand() {
     server_.send(500, "application/json", "{\"error\":\"System not initialized\"}");
     return;
   }
-  
+
+  if (server_.header("X-MotionBrain") != "1") {
+    server_.send(403, "application/json", "{\"error\":\"Forbidden: missing X-MotionBrain header\"}");
+    return;
+  }
+
   // POST 요청에서 'cmd' 파라미터 읽기
   String cmd = server_.arg("cmd");
   
@@ -377,22 +425,24 @@ void MotionBrainWebServer::handleCommand() {
     success = systemState_->arm();
     if (success) {
       message = "System armed successfully";
-      newState = systemState_->getStateString();
     } else {
       message = "Failed to arm - check current state";
     }
+    newState = systemState_->getStateString();
   }
   else if (cmd == "disarm") {
     success = systemState_->disarm();
     if (success) {
       message = "System disarmed successfully";
-      newState = systemState_->getStateString();
     } else {
       message = "Failed to disarm - check current state";
     }
+    newState = systemState_->getStateString();
   }
   else if (cmd == "stop") {
-    systemState_->enterSafe();
+    if (!systemState_->enterSafe()) {
+      DebugLog::warn("Web: enterSafe() failed - proceeding with emergencyStop anyway");
+    }
     motorControl_->emergencyStop();
     success = true;
     message = "Emergency stop activated";
@@ -430,7 +480,12 @@ void MotionBrainWebServer::handleMotor() {
     server_.send(500, "application/json", "{\"error\":\"MotorControl not initialized\"}");
     return;
   }
-  
+
+  if (server_.header("X-MotionBrain") != "1") {
+    server_.send(403, "application/json", "{\"error\":\"Forbidden: missing X-MotionBrain header\"}");
+    return;
+  }
+
   // 쿼리 파라미터에서 action 추출
   String action = server_.arg("action");
   String motorIdStr = server_.arg("id");
@@ -445,17 +500,28 @@ void MotionBrainWebServer::handleMotor() {
       server_.send(400, "application/json", "{\"error\":\"Motor ID required\"}");
       return;
     }
-    
-    uint8_t motorId = motorIdStr.toInt();
-    uint8_t percent = percentStr.length() > 0 ? percentStr.toInt() : 100;
-    
-    if (motorId < 1 || motorId > 5) {
+
+    int motorIdInt = motorIdStr.toInt();
+    if (motorIdInt < 1 || motorIdInt > MotorControl::NUM_MOTORS) {
       server_.send(400, "application/json", "{\"error\":\"Invalid motor ID (1-5)\"}");
       return;
     }
-    
-    if (percent > 100) percent = 100;
-    
+    uint8_t motorId = (uint8_t)motorIdInt;
+
+    uint8_t percent = 100;
+    if (percentStr.length() > 0) {
+      int pv = percentStr.toInt();
+      if (pv < 0 || pv > 100 || (pv == 0 && percentStr != "0")) {
+        server_.send(400, "application/json", "{\"error\":\"Invalid percent value (0-100)\"}");
+        return;
+      }
+      if (pv == 0) {
+        server_.send(400, "application/json", "{\"error\":\"Use 'stop' action for 0% speed\"}");
+        return;
+      }
+      percent = (uint8_t)pv;
+    }
+
     success = motorControl_->forward(motorId, percent);
     if (success) {
       message = "Motor M" + String(motorId) + " forward at " + String(percent) + "%";
@@ -468,17 +534,28 @@ void MotionBrainWebServer::handleMotor() {
       server_.send(400, "application/json", "{\"error\":\"Motor ID required\"}");
       return;
     }
-    
-    uint8_t motorId = motorIdStr.toInt();
-    uint8_t percent = percentStr.length() > 0 ? percentStr.toInt() : 100;
-    
-    if (motorId < 1 || motorId > 5) {
+
+    int motorIdInt = motorIdStr.toInt();
+    if (motorIdInt < 1 || motorIdInt > MotorControl::NUM_MOTORS) {
       server_.send(400, "application/json", "{\"error\":\"Invalid motor ID (1-5)\"}");
       return;
     }
-    
-    if (percent > 100) percent = 100;
-    
+    uint8_t motorId = (uint8_t)motorIdInt;
+
+    uint8_t percent = 100;
+    if (percentStr.length() > 0) {
+      int pv = percentStr.toInt();
+      if (pv < 0 || pv > 100 || (pv == 0 && percentStr != "0")) {
+        server_.send(400, "application/json", "{\"error\":\"Invalid percent value (0-100)\"}");
+        return;
+      }
+      if (pv == 0) {
+        server_.send(400, "application/json", "{\"error\":\"Use 'stop' action for 0% speed\"}");
+        return;
+      }
+      percent = (uint8_t)pv;
+    }
+
     success = motorControl_->reverse(motorId, percent);
     if (success) {
       message = "Motor M" + String(motorId) + " reverse at " + String(percent) + "%";
@@ -491,14 +568,14 @@ void MotionBrainWebServer::handleMotor() {
       server_.send(400, "application/json", "{\"error\":\"Motor ID required\"}");
       return;
     }
-    
-    uint8_t motorId = motorIdStr.toInt();
-    
-    if (motorId < 1 || motorId > 5) {
+
+    int motorIdInt = motorIdStr.toInt();
+    if (motorIdInt < 1 || motorIdInt > MotorControl::NUM_MOTORS) {
       server_.send(400, "application/json", "{\"error\":\"Invalid motor ID (1-5)\"}");
       return;
     }
-    
+    uint8_t motorId = (uint8_t)motorIdInt;
+
     success = motorControl_->stop(motorId);
     if (success) {
       message = "Motor M" + String(motorId) + " stopped";
@@ -548,6 +625,103 @@ void MotionBrainWebServer::handleMotor() {
   
   DebugLog::command(("motor " + action).c_str(), success, message.c_str());
   
+  server_.send(200, "application/json", json);
+}
+
+/**
+ * POST /joint 처리
+ * 관절 제어 (gripper/wrist/elbow/shoulder/base)
+ */
+void MotionBrainWebServer::handleJoint() {
+  DebugLog::debug("Web Server: POST /joint requested");
+
+  if (robotArm_ == nullptr) {
+    server_.send(500, "application/json", "{\"error\":\"RobotArm not initialized\"}");
+    return;
+  }
+
+  if (server_.header("X-MotionBrain") != "1") {
+    server_.send(403, "application/json", "{\"error\":\"Forbidden: missing X-MotionBrain header\"}");
+    return;
+  }
+
+  String joint = server_.arg("joint");
+  String action = server_.arg("action");
+
+  if (joint.length() == 0) {
+    server_.send(400, "application/json", "{\"error\":\"Missing 'joint' parameter\"}");
+    return;
+  }
+  if (action.length() == 0) {
+    server_.send(400, "application/json", "{\"error\":\"Missing 'action' parameter\"}");
+    return;
+  }
+
+  String percentStr = server_.arg("percent");
+  uint8_t percent = 50;
+  if (percentStr.length() > 0) {
+    int pVal = percentStr.toInt();
+    if (pVal < 0 || pVal > 100 || (pVal == 0 && percentStr != "0")) {
+      server_.send(400, "application/json", "{\"error\":\"Invalid 'percent' value (0-100)\"}");
+      return;
+    }
+    if (pVal == 0 && action != "stop") {
+      server_.send(400, "application/json", "{\"error\":\"Use 'stop' action for 0% speed\"}");
+      return;
+    }
+    percent = (uint8_t)pVal;
+  }
+
+  bool success = false;
+  String message = "";
+
+  if (joint == "gripper") {
+    if      (action == "open")  { success = robotArm_->gripperOpen(percent);  message = "Gripper open at "  + String(percent) + "%"; }
+    else if (action == "close") { success = robotArm_->gripperClose(percent); message = "Gripper close at " + String(percent) + "%"; }
+    else if (action == "stop")  { success = robotArm_->gripperStop();         message = "Gripper stop"; }
+    else { server_.send(400, "application/json", "{\"error\":\"Unknown action\"}"); return; }
+  }
+  else if (joint == "wrist") {
+    if      (action == "up")   { success = robotArm_->wristUp(percent);   message = "Wrist up at "   + String(percent) + "%"; }
+    else if (action == "down") { success = robotArm_->wristDown(percent); message = "Wrist down at " + String(percent) + "%"; }
+    else if (action == "stop") { success = robotArm_->wristStop();        message = "Wrist stop"; }
+    else { server_.send(400, "application/json", "{\"error\":\"Unknown action\"}"); return; }
+  }
+  else if (joint == "elbow") {
+    if      (action == "up")   { success = robotArm_->elbowUp(percent);   message = "Elbow up at "   + String(percent) + "%"; }
+    else if (action == "down") { success = robotArm_->elbowDown(percent); message = "Elbow down at " + String(percent) + "%"; }
+    else if (action == "stop") { success = robotArm_->elbowStop();        message = "Elbow stop"; }
+    else { server_.send(400, "application/json", "{\"error\":\"Unknown action\"}"); return; }
+  }
+  else if (joint == "shoulder") {
+    if      (action == "up")   { success = robotArm_->shoulderUp(percent);   message = "Shoulder up at "   + String(percent) + "%"; }
+    else if (action == "down") { success = robotArm_->shoulderDown(percent); message = "Shoulder down at " + String(percent) + "%"; }
+    else if (action == "stop") { success = robotArm_->shoulderStop();        message = "Shoulder stop"; }
+    else { server_.send(400, "application/json", "{\"error\":\"Unknown action\"}"); return; }
+  }
+  else if (joint == "base") {
+    if      (action == "left")  { success = robotArm_->baseLeft(percent);  message = "Base left at "  + String(percent) + "%"; }
+    else if (action == "right") { success = robotArm_->baseRight(percent); message = "Base right at " + String(percent) + "%"; }
+    else if (action == "stop")  { success = robotArm_->baseStop();         message = "Base stop"; }
+    else { server_.send(400, "application/json", "{\"error\":\"Unknown action\"}"); return; }
+  }
+  else if (joint == "all" && action == "stop") {
+    success = robotArm_->stopAll();
+    message = "All joints stopped";
+  }
+  else {
+    DebugLog::warn("Web Server: Unknown joint: %s", joint.c_str());
+    server_.send(400, "application/json", "{\"error\":\"Unknown joint\"}");
+    return;
+  }
+
+  String json = "{\"success\":";
+  json += success ? "true" : "false";
+  json += ",\"message\":\"";
+  json += message;
+  json += "\"}";
+
+  DebugLog::command(("joint " + joint + " " + action).c_str(), success, message.c_str());
   server_.send(200, "application/json", json);
 }
 
