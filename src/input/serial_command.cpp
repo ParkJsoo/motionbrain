@@ -3,6 +3,7 @@
 #include "system/system_init.h"
 #include "motor/motor_driver.h"
 #include "motion/robot_arm.h"
+#include "motion/motion_sequence.h"
 
 /**
  * SerialCommand 생성자
@@ -14,6 +15,7 @@ SerialCommand::SerialCommand()
   , systemState_(nullptr)
   , motorControl_(nullptr)
   , robotArm_(nullptr)
+  , motionSequence_(nullptr)
 {
   // 버퍼 초기화
   commandBuffer_[0] = '\0';
@@ -23,11 +25,12 @@ SerialCommand::SerialCommand()
  * 초기화
  * 시리얼 통신 준비
  */
-void SerialCommand::init(SystemStateManager* systemState, MotorControl* motorControl, RobotArm* robotArm) {
+void SerialCommand::init(SystemStateManager* systemState, MotorControl* motorControl, RobotArm* robotArm, MotionSequence* motionSequence) {
   // 외부 객체 참조 저장
-  systemState_ = systemState;
-  motorControl_ = motorControl;
-  robotArm_ = robotArm;
+  systemState_    = systemState;
+  motorControl_   = motorControl;
+  robotArm_       = robotArm;
+  motionSequence_ = motionSequence;
   
   // 시리얼 통신은 이미 DebugLog::init()에서 초기화됨
   // 여기서는 로그만 출력
@@ -238,6 +241,9 @@ void SerialCommand::processCommand(const char* cmdName, const char* args) {
   else if (strcasecmp(cmdName, "joint") == 0) {
     handleJoint(args);
   }
+  else if (strcasecmp(cmdName, "sequence") == 0) {
+    handleSequence(args);
+  }
   else {
     // 알 수 없는 명령어
     DebugLog::warn("Unknown command: %s", cmdName);
@@ -288,6 +294,18 @@ void SerialCommand::handleHelp() {
   DebugLog::info("  joint base right [%%]    - Base rotate right (M5)");
   DebugLog::info("  joint base stop         - Stop base");
   DebugLog::info("  joint stop              - Stop all joints (stay ARMED)");
+  DebugLog::info("");
+  DebugLog::info("=== Sequence Commands (Phase 2-B) ===");
+  DebugLog::info("  sequence add <joint> <dir> <speed%%> <ms>  - Add command to queue");
+  DebugLog::info("  sequence run             - Start executing sequence");
+  DebugLog::info("  sequence stop            - Stop running sequence");
+  DebugLog::info("  sequence clear           - Clear all commands");
+  DebugLog::info("  sequence status          - Show sequence state");
+  DebugLog::info("");
+  DebugLog::info("Examples:");
+  DebugLog::info("  sequence add shoulder up 50 2000  - Shoulder up 50%% for 2 sec");
+  DebugLog::info("  sequence add gripper open 80 1000 - Gripper open 80%% for 1 sec");
+  DebugLog::info("  sequence run");
 }
 
 /**
@@ -694,4 +712,112 @@ void SerialCommand::handleJoint(const char* args) {
   if (!result) {
     DebugLog::warn("joint %s %s: failed (system ARMED?)", jointName, action);
   }
+}
+
+/**
+ * sequence 명령어 처리 (Phase 2-B)
+ * 형식: sequence <action> [joint direction speed durationMs]
+ *   add <joint> <direction> <speed> <durationMs>
+ *   run | stop | clear | status
+ */
+void SerialCommand::handleSequence(const char* args) {
+  if (motionSequence_ == nullptr) {
+    DebugLog::error("MotionSequence not initialized");
+    return;
+  }
+
+  if (args == nullptr || strlen(args) == 0) {
+    DebugLog::warn("Usage: sequence <add|run|stop|clear|status>");
+    return;
+  }
+
+  // action 추출
+  char action[CMD_NAME_SIZE];
+  size_t i = 0;
+  while (args[i] != '\0' && args[i] != ' ' && args[i] != '\t' && i < CMD_NAME_SIZE - 1) {
+    action[i] = args[i];
+    i++;
+  }
+  action[i] = '\0';
+
+  // 나머지 인자
+  while (args[i] == ' ' || args[i] == '\t') i++;
+  const char* rest = &args[i];
+
+  if (strcasecmp(action, "status") == 0) {
+    DebugLog::info("=== Sequence Status ===");
+    DebugLog::info("  State   : %s", MotionSequence::stateToString(motionSequence_->getState()));
+    DebugLog::info("  Step    : %d / %d", motionSequence_->getCurrentIndex() + 1,
+                   motionSequence_->getTotalCount());
+    DebugLog::info("  Remaining: %lums", motionSequence_->getRemainingMs());
+    return;
+  }
+
+  if (strcasecmp(action, "run") == 0) {
+    if (motionSequence_->run()) {
+      DebugLog::info("Sequence started (%d commands)", motionSequence_->getTotalCount());
+    } else {
+      DebugLog::warn("Sequence run failed — check state and ARMED status");
+    }
+    return;
+  }
+
+  if (strcasecmp(action, "stop") == 0) {
+    motionSequence_->stop();
+    DebugLog::info("Sequence stopped");
+    return;
+  }
+
+  if (strcasecmp(action, "clear") == 0) {
+    motionSequence_->clear();
+    DebugLog::info("Sequence cleared");
+    return;
+  }
+
+  if (strcasecmp(action, "add") == 0) {
+    // "add <joint> <direction> <speed> <durationMs>"
+    // rest 예: "shoulder up 50 2000"
+    char jointStr[CMD_NAME_SIZE];
+    char dirStr[CMD_NAME_SIZE];
+    int  speed    = 0;
+    long duration = 0;
+
+    int parsed = sscanf(rest, "%31s %31s %d %ld", jointStr, dirStr, &speed, &duration);
+    if (parsed < 4) {
+      DebugLog::warn("sequence add: needs <joint> <direction> <speed%%> <durationMs>");
+      DebugLog::info("  Example: sequence add shoulder up 50 2000");
+      return;
+    }
+
+    MotionJoint     joint;
+    MotionDirection direction;
+
+    if (!MotionSequence::parseJoint(jointStr, joint)) {
+      DebugLog::warn("sequence add: unknown joint '%s'", jointStr);
+      return;
+    }
+    if (!MotionSequence::parseDirection(joint, dirStr, direction)) {
+      DebugLog::warn("sequence add: invalid direction '%s' for joint '%s'", dirStr, jointStr);
+      return;
+    }
+    if (speed < 1 || speed > 100) {
+      DebugLog::warn("sequence add: speed must be 1-100 (got %d)", speed);
+      return;
+    }
+    if (duration <= 0) {
+      DebugLog::warn("sequence add: durationMs must be > 0 (got %ld)", duration);
+      return;
+    }
+
+    if (motionSequence_->addCommand(joint, direction, (uint8_t)speed, (uint32_t)duration)) {
+      DebugLog::info("sequence add: [%d/%d] %s %s %d%% %ldms",
+                     motionSequence_->getTotalCount(), MotionSequence::MAX_COMMANDS,
+                     jointStr, dirStr, speed, duration);
+    } else {
+      DebugLog::warn("sequence add: failed (queue full or invalid params)");
+    }
+    return;
+  }
+
+  DebugLog::warn("sequence: unknown action '%s' (add/run/stop/clear/status)", action);
 }

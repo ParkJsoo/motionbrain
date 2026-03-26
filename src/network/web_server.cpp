@@ -1,7 +1,8 @@
 #include "web_server.h"
-#include "system/system_init.h"  // SystemStateManager 사용
-#include "motor/motor_driver.h"   // MotorControl 사용
-#include "motion/robot_arm.h"     // RobotArm 사용
+#include "system/system_init.h"       // SystemStateManager 사용
+#include "motor/motor_driver.h"        // MotorControl 사용
+#include "motion/robot_arm.h"          // RobotArm 사용
+#include "motion/motion_sequence.h"    // MotionSequence 사용 (Phase 2-B)
 #include "debug/debug_log.h"
 
 /**
@@ -13,6 +14,7 @@ MotionBrainWebServer::MotionBrainWebServer()
   , systemState_(nullptr)
   , motorControl_(nullptr)
   , robotArm_(nullptr)
+  , motionSequence_(nullptr)
 {
   // 생성자에서는 초기화만 수행
   // 실제 서버 시작은 init()에서 수행
@@ -21,11 +23,12 @@ MotionBrainWebServer::MotionBrainWebServer()
 /**
  * 웹 서버 초기화
  */
-bool MotionBrainWebServer::init(SystemStateManager* systemState, MotorControl* motorControl, RobotArm* robotArm, uint16_t port) {
-  systemState_ = systemState;
-  motorControl_ = motorControl;
-  robotArm_ = robotArm;
-  port_ = port;
+bool MotionBrainWebServer::init(SystemStateManager* systemState, MotorControl* motorControl, RobotArm* robotArm, MotionSequence* motionSequence, uint16_t port) {
+  systemState_    = systemState;
+  motorControl_   = motorControl;
+  robotArm_       = robotArm;
+  motionSequence_ = motionSequence;
+  port_           = port;
 
   DebugLog::info("=== Web Server Initialization ===");
   DebugLog::info("Port: %d", port_);
@@ -37,6 +40,8 @@ bool MotionBrainWebServer::init(SystemStateManager* systemState, MotorControl* m
   server_.on("/command", HTTP_POST, [this]() { this->handleCommand(); });
   server_.on("/motor", HTTP_POST, [this]() { this->handleMotor(); });
   server_.on("/joint", HTTP_POST, [this]() { this->handleJoint(); });
+  server_.on("/sequence", HTTP_POST, [this]() { this->handleSequence(); });
+  server_.on("/sequence", HTTP_GET,  [this]() { this->handleSequenceStatus(); });
   server_.onNotFound([this]() { this->handleNotFound(); });
 
   // CSRF 방지: X-MotionBrain 헤더 수집
@@ -51,7 +56,9 @@ bool MotionBrainWebServer::init(SystemStateManager* systemState, MotorControl* m
   DebugLog::debug("  GET  /status   -> JSON status");
   DebugLog::debug("  POST /command  -> Execute command");
   DebugLog::debug("  POST /motor    -> Motor control");
-  DebugLog::debug("  POST /joint    -> Joint control");
+  DebugLog::debug("  POST /joint     -> Joint control");
+  DebugLog::debug("  POST /sequence  -> Sequence control");
+  DebugLog::debug("  GET  /sequence  -> Sequence status");
 
   active_ = true;
 
@@ -722,6 +729,133 @@ void MotionBrainWebServer::handleJoint() {
   json += "\"}";
 
   DebugLog::command(("joint " + joint + " " + action).c_str(), success, message.c_str());
+  server_.send(200, "application/json", json);
+}
+
+/**
+ * POST /sequence 처리 (Phase 2-B)
+ * 시퀀스 제어: action=add|run|stop|clear
+ * add 추가 파라미터: joint, direction, speed, duration
+ */
+void MotionBrainWebServer::handleSequence() {
+  DebugLog::debug("Web Server: POST /sequence requested");
+
+  if (motionSequence_ == nullptr) {
+    server_.send(500, "application/json", "{\"error\":\"MotionSequence not initialized\"}");
+    return;
+  }
+
+  if (server_.header("X-MotionBrain") != "1") {
+    server_.send(403, "application/json", "{\"error\":\"Forbidden: missing X-MotionBrain header\"}");
+    return;
+  }
+
+  String action = server_.arg("action");
+  if (action.length() == 0) {
+    server_.send(400, "application/json", "{\"error\":\"Missing 'action' parameter\"}");
+    return;
+  }
+
+  bool   success = false;
+  String message = "";
+
+  if (action == "run") {
+    success = motionSequence_->run();
+    message = success ? "Sequence started" : "Sequence run failed (ARMED? commands queued?)";
+  }
+  else if (action == "stop") {
+    motionSequence_->stop();
+    success = true;
+    message = "Sequence stopped";
+  }
+  else if (action == "clear") {
+    motionSequence_->clear();
+    success = true;
+    message = "Sequence cleared";
+  }
+  else if (action == "add") {
+    String jointStr = server_.arg("joint");
+    String dirStr   = server_.arg("direction");
+    int    speed    = server_.arg("speed").toInt();
+    long   duration = server_.arg("duration").toInt();
+
+    if (jointStr.length() == 0 || dirStr.length() == 0) {
+      server_.send(400, "application/json", "{\"error\":\"Missing joint or direction\"}");
+      return;
+    }
+
+    MotionJoint     joint;
+    MotionDirection direction;
+
+    if (!MotionSequence::parseJoint(jointStr.c_str(), joint)) {
+      server_.send(400, "application/json", "{\"error\":\"Unknown joint\"}");
+      return;
+    }
+    if (!MotionSequence::parseDirection(joint, dirStr.c_str(), direction)) {
+      server_.send(400, "application/json", "{\"error\":\"Invalid direction for joint\"}");
+      return;
+    }
+    if (speed < 1 || speed > 100) {
+      server_.send(400, "application/json", "{\"error\":\"Speed must be 1-100\"}");
+      return;
+    }
+    if (duration <= 0) {
+      server_.send(400, "application/json", "{\"error\":\"Duration must be > 0\"}");
+      return;
+    }
+
+    success = motionSequence_->addCommand(joint, direction, (uint8_t)speed, (uint32_t)duration);
+    if (success) {
+      message = "Command added [" + String(motionSequence_->getTotalCount()) + "/" +
+                String(MotionSequence::MAX_COMMANDS) + "]";
+    } else {
+      message = "Add failed (queue full?)";
+    }
+  }
+  else {
+    server_.send(400, "application/json", "{\"error\":\"Unknown action\"}");
+    return;
+  }
+
+  String json = "{\"success\":";
+  json += success ? "true" : "false";
+  json += ",\"message\":\"";
+  json += message;
+  json += "\",\"state\":\"";
+  json += MotionSequence::stateToString(motionSequence_->getState());
+  json += "\",\"count\":";
+  json += motionSequence_->getTotalCount();
+  json += "}";
+
+  DebugLog::command(("sequence " + action).c_str(), success, message.c_str());
+  server_.send(200, "application/json", json);
+}
+
+/**
+ * GET /sequence 처리 (Phase 2-B)
+ * 시퀀스 상태 JSON 반환
+ */
+void MotionBrainWebServer::handleSequenceStatus() {
+  DebugLog::debug("Web Server: GET /sequence requested");
+
+  if (motionSequence_ == nullptr) {
+    server_.send(500, "application/json", "{\"error\":\"MotionSequence not initialized\"}");
+    return;
+  }
+
+  String json = "{";
+  json += "\"state\":\"";
+  json += MotionSequence::stateToString(motionSequence_->getState());
+  json += "\",\"currentStep\":";
+  json += motionSequence_->getCurrentIndex() + 1;
+  json += ",\"totalCount\":";
+  json += motionSequence_->getTotalCount();
+  json += ",\"remainingMs\":";
+  json += motionSequence_->getRemainingMs();
+  json += ",\"full\":";
+  json += motionSequence_->isFull() ? "true" : "false";
+  json += "}";
+
   server_.send(200, "application/json", json);
 }
 

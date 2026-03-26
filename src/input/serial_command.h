@@ -7,6 +7,7 @@
 class SystemStateManager;
 class MotorControl;
 class RobotArm;
+class MotionSequence;
 
 /**
  * MotionBrain Serial Command Module
@@ -41,7 +42,7 @@ public:
    * @param systemState SystemStateManager 참조 (명령어 처리용)
    * @param motorControl MotorControl 참조 (명령어 처리용)
    */
-  void init(SystemStateManager* systemState, MotorControl* motorControl, RobotArm* robotArm = nullptr);
+  void init(SystemStateManager* systemState, MotorControl* motorControl, RobotArm* robotArm = nullptr, MotionSequence* motionSequence = nullptr);
 
   /**
    * 업데이트 (주기적으로 호출)
@@ -80,9 +81,10 @@ public:
 
 private:
   // 시리얼 입력 버퍼
-  static const size_t BUFFER_SIZE = 64;  // 최대 명령어 길이
+  // ARGS_SIZE=48: "sequence add shoulder up 100 10000" 같은 긴 인자 수용
+  static const size_t BUFFER_SIZE = 96;   // 최대 명령어 길이
   static const size_t CMD_NAME_SIZE = 32; // 최대 명령어 이름 길이
-  static const size_t ARGS_SIZE = 32;     // 최대 인자 길이
+  static const size_t ARGS_SIZE = 48;     // 최대 인자 길이
   char commandBuffer_[BUFFER_SIZE];      // 명령어 버퍼
   bool commandReady_;                    // 명령어 수신 완료 플래그
   size_t bufferIndex_;                   // 현재 버퍼 인덱스
@@ -148,10 +150,18 @@ private:
    */
   void handleJoint(const char* args);
 
+  /**
+   * sequence 명령어 처리 (Phase 2-B)
+   * 모션 시퀀스 큐 제어
+   * @param args 명령어 인자 (예: "add shoulder up 50 2000", "run", "stop", "clear", "status")
+   */
+  void handleSequence(const char* args);
+
   // 외부 객체 참조 (명령어 처리용)
   SystemStateManager* systemState_;
   MotorControl* motorControl_;
   RobotArm* robotArm_;
+  MotionSequence* motionSequence_;
 };
 
 #endif // SERIAL_COMMAND_H

@@ -9,6 +9,7 @@
 class SystemStateManager;
 class MotorControl;
 class RobotArm;
+class MotionSequence;
 
 /**
  * MotionBrain Web Server Module
@@ -50,7 +51,7 @@ public:
    * @param port HTTP 서버 포트 (기본값: 80)
    * @return 초기화 성공 여부
    */
-  bool init(SystemStateManager* systemState, MotorControl* motorControl, RobotArm* robotArm = nullptr, uint16_t port = 80);
+  bool init(SystemStateManager* systemState, MotorControl* motorControl, RobotArm* robotArm = nullptr, MotionSequence* motionSequence = nullptr, uint16_t port = 80);
 
   /**
    * 업데이트 (주기적으로 호출)
@@ -76,6 +77,7 @@ private:
   SystemStateManager* systemState_;
   MotorControl* motorControl_;
   RobotArm* robotArm_;
+  MotionSequence* motionSequence_;
 
   // ===== HTTP 라우트 핸들러 (private) =====
   // Step 2에서 구현 예정
@@ -109,6 +111,18 @@ private:
    * 관절 제어 (gripper/wrist/elbow/shoulder/base)
    */
   void handleJoint();
+
+  /**
+   * POST /sequence 처리
+   * 시퀀스 제어 (add, run, stop, clear)
+   */
+  void handleSequence();
+
+  /**
+   * GET /sequence 처리
+   * 시퀀스 상태 JSON 반환
+   */
+  void handleSequenceStatus();
 
   /**
    * 404 Not Found 처리

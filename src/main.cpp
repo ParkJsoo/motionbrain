@@ -1,7 +1,8 @@
 #include <Arduino.h>
 #include "system/system_init.h"
 #include "motor/motor_driver.h"  // MotorControl 사용
-#include "motion/robot_arm.h"    // RobotArm 사용 (Phase 2-A)
+#include "motion/robot_arm.h"          // RobotArm 사용 (Phase 2-A)
+#include "motion/motion_sequence.h"    // MotionSequence 사용 (Phase 2-B)
 #include "input/serial_command.h"  // SerialCommand 사용
 #include "network/wifi_ap.h"  // WiFiAP 사용
 #include "network/web_server.h"  // MotionBrainWebServer 사용
@@ -9,11 +10,12 @@
 
 // 전역 객체 생성
 SystemStateManager systemState;
-MotorControl motorControl;       // MotorControl 객체 생성
+MotorControl motorControl;        // MotorControl 객체 생성
 RobotArm robotArm(&motorControl); // RobotArm 객체 생성 (Phase 2-A)
-SerialCommand serialCommand;     // SerialCommand 객체 생성
-WiFiAP wifiAP;                   // WiFiAP 객체 생성
-MotionBrainWebServer webServer;  // MotionBrainWebServer 객체 생성
+MotionSequence motionSequence;    // MotionSequence 객체 생성 (Phase 2-B)
+SerialCommand serialCommand;      // SerialCommand 객체 생성
+WiFiAP wifiAP;                    // WiFiAP 객체 생성
+MotionBrainWebServer webServer;   // MotionBrainWebServer 객체 생성
 
 /**
  * setup() - ESP32 부팅 시 한 번만 실행
@@ -53,10 +55,13 @@ void setup() {
     systemState.transitionTo(SystemState::IDLE);
   }
   
-  // 7. 시리얼 명령 모듈 초기화
-  serialCommand.init(&systemState, &motorControl, &robotArm);
+  // 7. 모션 시퀀스 초기화 (Phase 2-B)
+  motionSequence.init(&robotArm, &systemState);
+
+  // 8. 시리얼 명령 모듈 초기화
+  serialCommand.init(&systemState, &motorControl, &robotArm, &motionSequence);
   
-  // 8. Wi-Fi AP 초기화
+  // 9. Wi-Fi AP 초기화
   const char* apSSID = "MotionBrain-AP";
   const char* apPassword = "motionbrain";  // WPA2 보호 — 배포 전 반드시 변경
   
@@ -69,8 +74,8 @@ void setup() {
     DebugLog::info("AP IP: %s", wifiAP.getIP().toString().c_str());
   }
   
-  // 9. 웹 서버 초기화 (Wi-Fi AP 이후에 초기화)
-  if (!webServer.init(&systemState, &motorControl, &robotArm)) {
+  // 10. 웹 서버 초기화 (Wi-Fi AP 이후에 초기화)
+  if (!webServer.init(&systemState, &motorControl, &robotArm, &motionSequence)) {
     DebugLog::error("Web server initialization failed");
     // 웹 서버 실패는 치명적 오류는 아니므로 계속 진행
   } else {
@@ -97,6 +102,9 @@ void loop() {
   
   // 모터 제어 업데이트 (점진적 속도 변경 처리)
   motorControl.update();
+
+  // 모션 시퀀스 업데이트 (Phase 2-B)
+  motionSequence.update();
   
   // 시리얼 명령 처리
   serialCommand.update();
