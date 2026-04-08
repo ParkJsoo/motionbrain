@@ -32,9 +32,9 @@ public:
   // 실물 테스트 후 방향이 반대면 true <-> false 로 변경
   static const bool GRIPPER_OPEN_IS_FORWARD   = true;   // M1: open 방향
   static const bool WRIST_UP_IS_FORWARD       = true;   // M2: up 방향
-  static const bool ELBOW_UP_IS_FORWARD       = true;   // M3: up 방향   (Step 6 후 확인)
-  static const bool SHOULDER_UP_IS_FORWARD    = true;   // M4: up 방향   (Step 6 후 확인)
-  static const bool BASE_LEFT_IS_FORWARD      = true;   // M5: left 방향 (Step 6 후 확인)
+  static const bool ELBOW_UP_IS_FORWARD       = true;   // M3: up 방향
+  static const bool SHOULDER_UP_IS_FORWARD    = true;   // M4: up 방향
+  static const bool BASE_LEFT_IS_FORWARD      = true;   // M5: left 방향
 
   /**
    * 생성자
