@@ -8,6 +8,7 @@ class SystemStateManager;
 class MotorControl;
 class RobotArm;
 class MotionSequence;
+class SearchLight;
 
 /**
  * MotionBrain Serial Command Module
@@ -42,7 +43,7 @@ public:
    * @param systemState SystemStateManager 참조 (명령어 처리용)
    * @param motorControl MotorControl 참조 (명령어 처리용)
    */
-  void init(SystemStateManager* systemState, MotorControl* motorControl, RobotArm* robotArm = nullptr, MotionSequence* motionSequence = nullptr);
+  void init(SystemStateManager* systemState, MotorControl* motorControl, RobotArm* robotArm = nullptr, MotionSequence* motionSequence = nullptr, SearchLight* searchLight = nullptr);
 
   /**
    * 업데이트 (주기적으로 호출)
@@ -157,11 +158,18 @@ private:
    */
   void handleSequence(const char* args);
 
+  /**
+   * light 명령어 처리
+   * 서치라이트 on/off/toggle/status
+   */
+  void handleLight(const char* args);
+
   // 외부 객체 참조 (명령어 처리용)
   SystemStateManager* systemState_;
   MotorControl* motorControl_;
   RobotArm* robotArm_;
   MotionSequence* motionSequence_;
+  SearchLight* searchLight_;
 };
 
 #endif // SERIAL_COMMAND_H

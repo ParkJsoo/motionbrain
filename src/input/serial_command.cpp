@@ -4,6 +4,7 @@
 #include "motor/motor_driver.h"
 #include "motion/robot_arm.h"
 #include "motion/motion_sequence.h"
+#include "peripheral/search_light.h"
 
 /**
  * SerialCommand 생성자
@@ -16,6 +17,7 @@ SerialCommand::SerialCommand()
   , motorControl_(nullptr)
   , robotArm_(nullptr)
   , motionSequence_(nullptr)
+  , searchLight_(nullptr)
 {
   // 버퍼 초기화
   commandBuffer_[0] = '\0';
@@ -25,12 +27,13 @@ SerialCommand::SerialCommand()
  * 초기화
  * 시리얼 통신 준비
  */
-void SerialCommand::init(SystemStateManager* systemState, MotorControl* motorControl, RobotArm* robotArm, MotionSequence* motionSequence) {
+void SerialCommand::init(SystemStateManager* systemState, MotorControl* motorControl, RobotArm* robotArm, MotionSequence* motionSequence, SearchLight* searchLight) {
   // 외부 객체 참조 저장
   systemState_    = systemState;
   motorControl_   = motorControl;
   robotArm_       = robotArm;
   motionSequence_ = motionSequence;
+  searchLight_    = searchLight;
   
   // 시리얼 통신은 이미 DebugLog::init()에서 초기화됨
   // 여기서는 로그만 출력
@@ -244,6 +247,9 @@ void SerialCommand::processCommand(const char* cmdName, const char* args) {
   else if (strcasecmp(cmdName, "sequence") == 0) {
     handleSequence(args);
   }
+  else if (strcasecmp(cmdName, "light") == 0) {
+    handleLight(args);
+  }
   else {
     // 알 수 없는 명령어
     DebugLog::warn("Unknown command: %s", cmdName);
@@ -306,6 +312,12 @@ void SerialCommand::handleHelp() {
   DebugLog::info("  sequence add shoulder up 50 2000  - Shoulder up 50%% for 2 sec");
   DebugLog::info("  sequence add gripper open 80 1000 - Gripper open 80%% for 1 sec");
   DebugLog::info("  sequence run");
+  DebugLog::info("");
+  DebugLog::info("=== Search Light Commands ===");
+  DebugLog::info("  light on      - Turn on search light");
+  DebugLog::info("  light off     - Turn off search light");
+  DebugLog::info("  light toggle  - Toggle search light");
+  DebugLog::info("  light status  - Show light state");
 }
 
 /**
@@ -820,4 +832,31 @@ void SerialCommand::handleSequence(const char* args) {
   }
 
   DebugLog::warn("sequence: unknown action '%s' (add/run/stop/clear/status)", action);
+}
+
+/**
+ * light 명령어 처리
+ * 형식: light <on|off|toggle|status>
+ */
+void SerialCommand::handleLight(const char* args) {
+  if (searchLight_ == nullptr) {
+    DebugLog::error("SearchLight not initialized");
+    return;
+  }
+
+  if (args == nullptr || strlen(args) == 0 || strcasecmp(args, "status") == 0) {
+    DebugLog::info("SearchLight: %s", searchLight_->isOn() ? "ON" : "OFF");
+    return;
+  }
+
+  if (strcasecmp(args, "on") == 0) {
+    searchLight_->on();
+  } else if (strcasecmp(args, "off") == 0) {
+    searchLight_->off();
+  } else if (strcasecmp(args, "toggle") == 0) {
+    searchLight_->toggle();
+    DebugLog::info("SearchLight: %s", searchLight_->isOn() ? "ON" : "OFF");
+  } else {
+    DebugLog::warn("light: unknown action '%s' (on/off/toggle/status)", args);
+  }
 }

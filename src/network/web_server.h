@@ -10,6 +10,7 @@ class SystemStateManager;
 class MotorControl;
 class RobotArm;
 class MotionSequence;
+class SearchLight;
 
 /**
  * MotionBrain Web Server Module
@@ -51,7 +52,7 @@ public:
    * @param port HTTP 서버 포트 (기본값: 80)
    * @return 초기화 성공 여부
    */
-  bool init(SystemStateManager* systemState, MotorControl* motorControl, RobotArm* robotArm = nullptr, MotionSequence* motionSequence = nullptr, uint16_t port = 80);
+  bool init(SystemStateManager* systemState, MotorControl* motorControl, RobotArm* robotArm = nullptr, MotionSequence* motionSequence = nullptr, SearchLight* searchLight = nullptr, uint16_t port = 80);
 
   /**
    * 업데이트 (주기적으로 호출)
@@ -78,6 +79,7 @@ private:
   MotorControl* motorControl_;
   RobotArm* robotArm_;
   MotionSequence* motionSequence_;
+  SearchLight* searchLight_;
 
   // ===== HTTP 라우트 핸들러 (private) =====
   // Step 2에서 구현 예정
@@ -123,6 +125,12 @@ private:
    * 시퀀스 상태 JSON 반환
    */
   void handleSequenceStatus();
+
+  /**
+   * POST /light 처리
+   * 서치라이트 on/off/toggle
+   */
+  void handleLight();
 
   /**
    * 404 Not Found 처리

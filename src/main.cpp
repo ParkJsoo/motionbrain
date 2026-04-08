@@ -1,11 +1,12 @@
 #include <Arduino.h>
 #include "system/system_init.h"
-#include "motor/motor_driver.h"  // MotorControl 사용
+#include "motor/motor_driver.h"        // MotorControl 사용
 #include "motion/robot_arm.h"          // RobotArm 사용 (Phase 2-A)
 #include "motion/motion_sequence.h"    // MotionSequence 사용 (Phase 2-B)
-#include "input/serial_command.h"  // SerialCommand 사용
-#include "network/wifi_ap.h"  // WiFiAP 사용
-#include "network/web_server.h"  // MotionBrainWebServer 사용
+#include "input/serial_command.h"      // SerialCommand 사용
+#include "network/wifi_ap.h"           // WiFiAP 사용
+#include "network/web_server.h"        // MotionBrainWebServer 사용
+#include "peripheral/search_light.h"   // SearchLight 사용
 #include "debug/debug_log.h"
 
 // 전역 객체 생성
@@ -16,6 +17,7 @@ MotionSequence motionSequence;    // MotionSequence 객체 생성 (Phase 2-B)
 SerialCommand serialCommand;      // SerialCommand 객체 생성
 WiFiAP wifiAP;                    // WiFiAP 객체 생성
 MotionBrainWebServer webServer;   // MotionBrainWebServer 객체 생성
+SearchLight searchLight;          // SearchLight 객체 생성
 
 /**
  * setup() - ESP32 부팅 시 한 번만 실행
@@ -58,13 +60,16 @@ void setup() {
   // 7. 모션 시퀀스 초기화 (Phase 2-B)
   motionSequence.init(&robotArm, &systemState);
 
-  // 8. 시리얼 명령 모듈 초기화
-  serialCommand.init(&systemState, &motorControl, &robotArm, &motionSequence);
+  // 8. 서치라이트 초기화
+  searchLight.init();
+
+  // 9. 시리얼 명령 모듈 초기화
+  serialCommand.init(&systemState, &motorControl, &robotArm, &motionSequence, &searchLight);
   
-  // 9. Wi-Fi AP 초기화
+  // 10. Wi-Fi AP 초기화
   const char* apSSID = "MotionBrain-AP";
   const char* apPassword = "motionbrain";  // WPA2 보호 — 배포 전 반드시 변경
-  
+
   if (!wifiAP.init(apSSID, apPassword)) {
     DebugLog::error("Wi-Fi AP initialization failed");
     // Wi-Fi AP 실패는 치명적 오류는 아니므로 계속 진행
@@ -73,9 +78,9 @@ void setup() {
     DebugLog::info("Connect to SSID: %s", apSSID);
     DebugLog::info("AP IP: %s", wifiAP.getIP().toString().c_str());
   }
-  
-  // 10. 웹 서버 초기화 (Wi-Fi AP 이후에 초기화)
-  if (!webServer.init(&systemState, &motorControl, &robotArm, &motionSequence)) {
+
+  // 11. 웹 서버 초기화 (Wi-Fi AP 이후에 초기화)
+  if (!webServer.init(&systemState, &motorControl, &robotArm, &motionSequence, &searchLight)) {
     DebugLog::error("Web server initialization failed");
     // 웹 서버 실패는 치명적 오류는 아니므로 계속 진행
   } else {

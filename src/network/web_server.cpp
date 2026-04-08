@@ -3,6 +3,7 @@
 #include "motor/motor_driver.h"        // MotorControl 사용
 #include "motion/robot_arm.h"          // RobotArm 사용
 #include "motion/motion_sequence.h"    // MotionSequence 사용 (Phase 2-B)
+#include "peripheral/search_light.h"   // SearchLight 사용
 #include "debug/debug_log.h"
 
 /**
@@ -15,6 +16,7 @@ MotionBrainWebServer::MotionBrainWebServer()
   , motorControl_(nullptr)
   , robotArm_(nullptr)
   , motionSequence_(nullptr)
+  , searchLight_(nullptr)
 {
   // 생성자에서는 초기화만 수행
   // 실제 서버 시작은 init()에서 수행
@@ -23,11 +25,12 @@ MotionBrainWebServer::MotionBrainWebServer()
 /**
  * 웹 서버 초기화
  */
-bool MotionBrainWebServer::init(SystemStateManager* systemState, MotorControl* motorControl, RobotArm* robotArm, MotionSequence* motionSequence, uint16_t port) {
+bool MotionBrainWebServer::init(SystemStateManager* systemState, MotorControl* motorControl, RobotArm* robotArm, MotionSequence* motionSequence, SearchLight* searchLight, uint16_t port) {
   systemState_    = systemState;
   motorControl_   = motorControl;
   robotArm_       = robotArm;
   motionSequence_ = motionSequence;
+  searchLight_    = searchLight;
   port_           = port;
 
   DebugLog::info("=== Web Server Initialization ===");
@@ -42,6 +45,7 @@ bool MotionBrainWebServer::init(SystemStateManager* systemState, MotorControl* m
   server_.on("/joint", HTTP_POST, [this]() { this->handleJoint(); });
   server_.on("/sequence", HTTP_POST, [this]() { this->handleSequence(); });
   server_.on("/sequence", HTTP_GET,  [this]() { this->handleSequenceStatus(); });
+  server_.on("/light",    HTTP_POST, [this]() { this->handleLight(); });
   server_.onNotFound([this]() { this->handleNotFound(); });
 
   // CSRF 방지: X-MotionBrain 헤더 수집
@@ -59,6 +63,7 @@ bool MotionBrainWebServer::init(SystemStateManager* systemState, MotorControl* m
   DebugLog::debug("  POST /joint     -> Joint control");
   DebugLog::debug("  POST /sequence  -> Sequence control");
   DebugLog::debug("  GET  /sequence  -> Sequence status");
+  DebugLog::debug("  POST /light     -> Search light control");
 
   active_ = true;
 
@@ -135,6 +140,8 @@ void MotionBrainWebServer::handleRoot() {
   server_.sendContent("button:active { transform: translateY(0); }");
   server_.sendContent("button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }");
   server_.sendContent(".btn-arm { background: #4caf50; color: white; }");
+  server_.sendContent(".btn-light-on { background: #ffc107; color: #333; }");
+  server_.sendContent(".btn-light-off { background: #607d8b; color: white; }");
   server_.sendContent(".btn-disarm { background: #f44336; color: white; }");
   server_.sendContent(".btn-stop { background: #ff9800; color: white; }");
   server_.sendContent(".btn-forward { background: #2196f3; color: white; }");
@@ -221,6 +228,13 @@ void MotionBrainWebServer::handleRoot() {
   server_.sendContent("</div>");
   server_.sendContent("<div class=\"message\" id=\"message\"></div></div>");
   server_.sendContent("<div class=\"card\">");
+  server_.sendContent("<div class=\"card-title\">Search Light</div>");
+  server_.sendContent("<div class=\"button-group\">");
+  server_.sendContent("<button class=\"btn-light-on\" id=\"btn-light-on\" onclick=\"sendLight('on')\">ON</button>");
+  server_.sendContent("<button class=\"btn-light-off\" id=\"btn-light-off\" onclick=\"sendLight('off')\">OFF</button>");
+  server_.sendContent("<button class=\"btn-stop\" onclick=\"sendLight('toggle')\">TOGGLE</button>");
+  server_.sendContent("</div></div>");
+  server_.sendContent("<div class=\"card\">");
   server_.sendContent("<div class=\"card-title\">Motor Control</div>");
   server_.sendContent("<div class=\"mode-selector\">");
   server_.sendContent("<button class=\"mode-button active\" id=\"mode-button\" onclick=\"switchMode('button')\">Button Mode</button>");
@@ -284,6 +298,7 @@ void MotionBrainWebServer::handleRoot() {
   server_.sendContent("const stateColors = { \"BOOT\": \"state-BOOT\", \"IDLE\": \"state-IDLE\", \"ARMED\": \"state-ARMED\", \"FAULT\": \"state-FAULT\" };");
   server_.sendContent("function showMessage(text, isError) { const msg = document.getElementById(\"message\"); msg.textContent = text; msg.className = \"message \" + (isError ? \"error\" : \"success\"); msg.style.display = \"block\"; setTimeout(() => { msg.style.display = \"none\"; }, 3000); }");
   server_.sendContent("function sendCommand(cmd) { const btn = document.getElementById(\"btn-\" + cmd); btn.disabled = true; fetch(\"/command?cmd=\" + cmd, { method: \"POST\", headers: {\"X-MotionBrain\": \"1\"} }).then(r => r.json()).then(data => { btn.disabled = false; showMessage(data.message || \"Command sent\", !data.success); updateStatus(); }).catch(err => { btn.disabled = false; showMessage(\"Error: \" + err.message, true); }); }");
+  server_.sendContent("function sendLight(action) { fetch(\"/light?action=\" + action, { method: \"POST\", headers: {\"X-MotionBrain\": \"1\"} }).then(r => r.json()).then(data => { updateStatus(); }).catch(() => {}); }");
   server_.sendContent("function updateStatus() { fetch(\"/status\").then(r => { if (!r.ok) { throw new Error(\"HTTP \" + r.status + \": \" + r.statusText); } return r.text(); }).then(text => { try { const data = JSON.parse(text); const state = data.state || \"UNKNOWN\"; const badge = document.getElementById(\"state-badge\"); if (badge) { badge.textContent = state; badge.className = \"status-badge \" + (stateColors[state] || \"state-LOADING\"); } const motorEl = document.getElementById(\"motor\"); if (motorEl) motorEl.textContent = data.motorEnabled ? \"YES\" : \"NO\"; const lastUpdate = document.getElementById(\"last-update\"); if (lastUpdate) lastUpdate.textContent = new Date().toLocaleTimeString(); updateButtons(state); if (data.motors) updateMotorStatus(data); } catch (e) { console.error(\"JSON parse error:\", e, \"Response:\", text); } }).catch(err => { console.error(\"Status update error:\", err); }); }");
   server_.sendContent("function updateButtons(state) { const btnArm = document.getElementById(\"btn-arm\"); const btnDisarm = document.getElementById(\"btn-disarm\"); const btnStop = document.getElementById(\"btn-stop\"); btnArm.disabled = (state === \"ARMED\" || state === \"FAULT\" || state === \"BOOT\"); btnDisarm.disabled = (state !== \"ARMED\"); btnStop.disabled = (state === \"IDLE\" || state === \"FAULT\"); const isArmed = (state === \"ARMED\"); for (let i = 1; i <= MOTOR_COUNT; i++) { const joystickArea = document.getElementById(\"joystick-\" + i); if (joystickArea) { if (isArmed) { joystickArea.classList.remove(\"disabled\"); } else { joystickArea.classList.add(\"disabled\"); } } } }");
   server_.sendContent("function updateSpeedValue(motorId) { const slider = document.getElementById(\"speed-\" + motorId); const value = document.getElementById(\"speed-value-\" + motorId); value.textContent = slider.value + \"%\"; }");
@@ -384,11 +399,16 @@ void MotionBrainWebServer::handleStatus() {
     json += "}";
   }
   
+  if (searchLight_ != nullptr) {
+    json += ",\"light\":";
+    json += searchLight_->isOn() ? "true" : "false";
+  }
+
   json += "}";
-  
-  DebugLog::debug("Web Server: Status response - state: %s, motor: %s", 
+
+  DebugLog::debug("Web Server: Status response - state: %s, motor: %s",
                   stateString, motorEnabled ? "enabled" : "disabled");
-  
+
   server_.send(200, "application/json", json);
 }
 
@@ -900,4 +920,38 @@ void MotionBrainWebServer::handleNotFound() {
   // 그 외의 404는 로그 남기기
   DebugLog::debug("Web Server: 404 Not Found - %s", uri.c_str());
   server_.send(404, "text/plain", "404: Not Found");
+}
+
+/**
+ * POST /light 처리
+ * 서치라이트 on/off/toggle
+ */
+void MotionBrainWebServer::handleLight() {
+  if (server_.header("X-MotionBrain") != "1") {
+    server_.send(403, "application/json", "{\"error\":\"Forbidden: missing X-MotionBrain header\"}");
+    return;
+  }
+
+  if (searchLight_ == nullptr) {
+    server_.send(500, "application/json", "{\"error\":\"SearchLight not initialized\"}");
+    return;
+  }
+
+  String action = server_.arg("action");
+
+  if (action == "on") {
+    searchLight_->on();
+  } else if (action == "off") {
+    searchLight_->off();
+  } else if (action == "toggle") {
+    searchLight_->toggle();
+  } else {
+    server_.send(400, "application/json", "{\"error\":\"Unknown action (on/off/toggle)\"}");
+    return;
+  }
+
+  String json = "{\"success\":true,\"light\":";
+  json += searchLight_->isOn() ? "true" : "false";
+  json += "}";
+  server_.send(200, "application/json", json);
 }
