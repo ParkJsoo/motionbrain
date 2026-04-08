@@ -75,6 +75,10 @@ void MotionSequence::update() {
  */
 bool MotionSequence::addCommand(MotionJoint joint, MotionDirection direction,
                                 uint8_t speed, uint32_t durationMs) {
+  // COMPLETED 또는 STOPPED 후 첫 add 시 자동 clear — 새 시퀀스 시작 의도
+  if (state_ == SequenceState::COMPLETED || state_ == SequenceState::STOPPED) {
+    clear();
+  }
   if (isFull()) {
     DebugLog::warn("MotionSequence: queue full (%d/%d)", count_, MAX_COMMANDS);
     return false;

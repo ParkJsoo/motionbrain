@@ -821,6 +821,9 @@ void SerialCommand::handleSequence(const char* args) {
       return;
     }
 
+    if (systemState_ != nullptr) {
+      systemState_->resetTimeout();
+    }
     if (motionSequence_->addCommand(joint, direction, (uint8_t)speed, (uint32_t)duration)) {
       DebugLog::info("sequence add: [%d/%d] %s %s %d%% %ldms",
                      motionSequence_->getTotalCount(), MotionSequence::MAX_COMMANDS,
