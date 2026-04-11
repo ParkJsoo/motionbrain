@@ -5,6 +5,30 @@
 
 ---
 
+## 시스템 아키텍처 (확정)
+
+```
+[STM32F446 Nucleo — 센서 허브]        [ESP32 MotionBrain — 모션 제어]
+  MPU-6050  I2C (PB8/PB9)               TB6612FNG × 3 → 5축 모터
+  HC-SR04   TRIG:PA8 / ECHO:PC7  UART   Safety 상태머신 (IDLE/ARMED/FAULT)
+  LCD 1602  I2C (PB8/PB9 공유)  ←────→  웹 UI / 시리얼 명령
+  USART1    TX:PA9 / RX:PA10            UART2: TX=GPIO2 / RX=GPIO15
+```
+
+**ESP32 신규 핀 배정:**
+| GPIO | 용도 | 변경 전 |
+|------|------|---------|
+| GPIO 2 | UART2 TX → STM32 | 미사용 |
+| GPIO 15 | UART2 RX ← STM32 | TB6612 BIN1_3 (미사용, 와이어 제거) |
+
+**Phase 4 확장 경로:**
+```
+STM32 역할 → Raspberry Pi로 이관 (아키텍처 동일, 보드만 교체)
+RPi에서 ROS2 노드 실행 → ESP32는 Safety Gate + 모터 제어 유지
+```
+
+---
+
 ## 진행 순서
 
 ```
@@ -13,57 +37,87 @@ Phase 3-A → Phase 3-B → Phase 3-C + Phase 3-D (병행)
 
 ---
 
-## Phase 3-A: Sensor Feedback Layer
+## Phase 3-A: Sensor Feedback Layer (STM32 기반)
 
-> "보고 듣는 ESP32" — 센서 입력을 시스템 상태에 통합
+> STM32가 센서를 담당하고 UART로 ESP32에 데이터 전달
 
 ### 목표
 
-- MPU-6050 (IMU), HC-SR04 (초음파), LCD 1602 통합
-- 센서 이상 → 자동 FAULT 트리거
-- 모터 없는 환경에서도 가시적 피드백 확보
+- STM32에서 MPU-6050 / HC-SR04 / LCD 1602 구동
+- UART JSON 메시지로 ESP32에 센서 데이터 전달
+- ESP32는 센서 데이터 수신 → Safety 판단에 활용
 
-### 구현 항목
+### STM32 측 구현 (STM32CubeIDE / HAL)
 
-#### Step 1: MPU-6050 (GY-521) IMU 드라이버
+#### Step 1: 프로젝트 생성 및 핀 설정 (CubeMX)
 
-- `src/peripheral/imu_sensor.h / .cpp`
-- I2C 통신 (SDA/SCL 핀 — 기존 핀맵 확인 후 결정)
-- 100Hz 샘플링, Complementary Filter로 roll / pitch 추정
-- 진동 임계값 초과 시 `onFaultTrigger()` 콜백
+- Board: NUCLEO-F446RE
+- I2C1: PB8(SCL) / PB9(SDA) — MPU-6050 + LCD 1602 공유
+- USART1: PA9(TX) / PA10(RX) — ESP32 통신용, 115200 bps
+- USART2: PA2(TX) / PA3(RX) — ST-Link 디버그 출력용 (기본 활성화)
+- GPIO OUT: PA8 — HC-SR04 TRIG
+- GPIO IN: PC7 — HC-SR04 ECHO (5V tolerant)
+- TIM2 또는 TIM3: HC-SR04 echo 시간 측정용 (μs 타이머)
 
-#### Step 2: HC-SR04 초음파 거리 센서
+#### Step 2: MPU-6050 드라이버 (HAL I2C)
 
-- `src/peripheral/distance_sensor.h / .cpp`
-- 비차단 방식 (echo timeout 기반, `update()` 패턴)
-- TRIG / ECHO 핀 설정
-- 전방 장애물 감지 → `motionSequence.pause()` 또는 FAULT 트리거
+- HAL_I2C_Mem_Read 기반 레지스터 직접 접근
+- 100Hz 샘플링, Complementary Filter → roll / pitch 추정
+- 진동 임계값 (가속도 벡터 크기) 계산
 
-#### Step 3: 16x2 LCD I2C 상태 표시
+#### Step 3: HC-SR04 비차단 드라이버 (타이머 + 인터럽트)
 
-- `src/peripheral/lcd_display.h / .cpp`
-- LiquidCrystal_I2C 라이브러리 활용
-- Line 1: 시스템 상태 (IDLE / ARMED / FAULT)
-- Line 2: 현재 시퀀스 진행률 또는 센서 값
+- TIM 입력 캡처 (Input Capture) 방식
+- TRIG: 10μs HIGH 펄스 출력
+- ECHO: 상승 / 하강 엣지 타임스탬프 → 거리 계산
+- 50ms 주기 측정
 
-#### Step 4: 센서 → SystemStateManager 통합
+#### Step 4: LCD 1602 I2C 드라이버
 
-- `src/system/system_init.cpp` — 센서 FAULT 조건 등록
-- IMU 과진동 → `transitionTo(SystemState::FAULT)`
-- HC-SR04 < 5cm → MotionSequence 강제 정지
+- I2C 백팩 (PCF8574, 0x27) 통해 제어
+- Line 1: 시스템 상태 수신 표시 (ESP32로부터 수신)
+- Line 2: IMU roll/pitch 또는 거리 값
 
-#### Step 5: 시리얼 / 웹 status에 센서 데이터 노출
+#### Step 5: UART JSON 송신 (STM32 → ESP32)
 
-- `status` 시리얼 명령 — IMU roll/pitch, 전방 거리 추가
-- `GET /status` JSON — `"imu": {...}, "distance_cm": n` 추가
+- 50ms 주기 상태 패킷 전송:
+```json
+{"type":"sensor","ts":12345,"roll":1.2,"pitch":-0.3,"yaw":45.0,"dist_cm":18}
+```
+- 이벤트 패킷 (임계값 초과 시 즉시):
+```json
+{"type":"event","code":"VIBRATION","val":3.2}
+{"type":"event","code":"OBSTACLE","val":4}
+```
+
+### ESP32 측 구현
+
+#### Step 6: UART2 수신 (GPIO2=TX, GPIO15=RX)
+
+- `Serial2.begin(115200, SERIAL_8N1, 15, 2)`
+- `src/input/stm32_bridge.h / .cpp` — JSON 파싱 → 센서 데이터 구조체
+- `loop()`에서 `stm32Bridge.update()` 호출
+
+#### Step 7: 센서 데이터 → Safety 통합
+
+- IMU 진동 초과 → `systemState.transitionTo(FAULT)`
+- 거리 < 5cm → `motionSequence.stop()`
+- `GET /status` JSON에 `"imu"`, `"distance_cm"` 추가
+
+#### Step 8: TB6612FNG BIN1_3 와이어 제거
+
+- GPIO 15 → TB6612FNG #3 BIN1 점퍼 와이어 제거
+- `PIN_BIN1_3` 상수 → `PIN_UNUSED` 로 변경
+- GPIO 15 UART2 RX로 전환
 
 ### 완료 기준
 
-- [ ] MPU-6050 I2C 통신 확인, roll/pitch 로그 출력
-- [ ] HC-SR04 거리 측정 오차 ±2cm 이내
-- [ ] LCD에 IDLE/ARMED/FAULT 상태 실시간 표시
-- [ ] 팔 흔들어서 진동 → FAULT 자동 전환 확인
-- [ ] 그리퍼 앞 장애물 → 시퀀스 자동 정지 확인
+- [ ] STM32 USART2(ST-Link)로 MPU-6050 roll/pitch 출력 확인
+- [ ] HC-SR04 거리 측정 ±2cm 오차 확인
+- [ ] LCD에 센서 값 표시 확인
+- [ ] STM32 → ESP32 UART JSON 수신 확인 (시리얼 로그)
+- [ ] 팔 흔들어서 진동 → ESP32 FAULT 자동 전환 확인
+- [ ] 그리퍼 앞 장애물 → ESP32 시퀀스 자동 정지 확인
 
 ---
 
@@ -256,26 +310,46 @@ struct Command {
 
 ## Phase 4 연계 계획 (참고)
 
+### Phase 3 완료 시 구조
+
 ```
-[Raspberry Pi 4]
-  └─ ROS2 노드
-      ├─ serial_bridge_node   ← MessageBridge 프로토콜 그대로 수신
-      ├─ motion_planner_node  ← Decision Layer를 RPi로 위탁 가능
-      ├─ camera_node          ← ESP32-CAM 스트림
-      └─ ai_node              ← 자연어 → 시퀀스 변환 (Phase 4 목표)
-           │ USB Serial
-[ESP32 MotionBrain]
-  ├─ Safety Gate (항상 ESP32에 잔존)
-  ├─ Motor Control (실시간)
-  └─ Sensor Feedback (실시간)
+[STM32F446 Nucleo]                    [ESP32 MotionBrain]
+  MPU-6050 (I2C)                        TB6612FNG × 3
+  HC-SR04  (GPIO)        UART           Safety Gate
+  LCD 1602 (I2C)        ←────→         웹 UI / 시리얼
+  센서 데이터 처리                        Decision Layer
 ```
 
-**핵심 설계 원칙**: RPi가 판단을 위탁받더라도,  
-**Safety Gate는 항상 ESP32에 잔존**하여 하드웨어 레벨 안전 보장.
+### Phase 4: STM32 → Raspberry Pi 이관
+
+```
+[Raspberry Pi 4]                      [ESP32 MotionBrain]
+  ROS2 노드                              TB6612FNG × 3
+    ├─ sensor_node  (STM32 역할 대체)     Safety Gate (ESP32에 잔존)
+    ├─ motion_planner_node               모터 실시간 제어
+    ├─ camera_node  (ESP32-CAM)  UART
+    └─ ai_node      (LLM 연계)  ←────→  MessageBridge (동일 프로토콜)
+  micro-ROS → STM32 직결도 가능
+```
+
+**이관 원칙**:
+- UART JSON 프로토콜은 Phase 3에서 동결 → RPi도 동일 포맷 그대로 사용
+- Safety Gate는 항상 ESP32에 잔존 (RPi 다운돼도 모터 안전 보장)
+- STM32는 micro-ROS 노드로 전환 가능 (Phase 4 선택지)
 
 ---
 
-## 포트폴리오 어필 한 줄
+## 포트폴리오 어필 포인트
 
-> "오픈루프 PWM 제어기를 센서 피드백 기반 폐루프 + ROS2 호환 메시지 노드로 진화시켰고,
-> 안전 계층을 ESP32에 잔존시키는 분산 아키텍처를 직접 설계했습니다."
+| 항목 | 증명 위치 | 면접 소재 |
+|------|---------|---------|
+| 멀티 MCU 아키텍처 설계 | Phase 3-A STM32+ESP32 | "역할 분리 기준과 UART 프로토콜 설계" |
+| STM32 HAL/CubeMX | Phase 3-A STM32 코드 | "타이머 입력 캡처로 HC-SR04 비차단 구현" |
+| 실시간 임베디드 안전 | Safety Gate, Watchdog | "UART 단절 시 자동 DISARM 흐름" |
+| 폐루프 제어 | Phase 3-C IMU P제어기 | "엔코더 없는 환경의 추정 기법과 한계" |
+| ROS2 연계 준비 | Phase 3-D 프로토콜 | "Phase 4에서 보드만 교체하면 되는 이유" |
+| 계층 분리 아키텍처 | Phase 3-B Decision Layer | "입력이 직접 모터를 제어하지 않는 이유" |
+
+**한 줄 요약**:
+> "STM32를 센서 허브로, ESP32를 실시간 모션 제어 노드로 분리하는 멀티 MCU 아키텍처를 설계했고,
+> Phase 4에서 STM32 자리에 Raspberry Pi + ROS2를 이관할 수 있도록 UART 프로토콜을 미리 설계했습니다."
