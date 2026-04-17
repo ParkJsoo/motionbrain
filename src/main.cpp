@@ -89,7 +89,7 @@ void setup() {
   }
   
   DebugLog::info("Boot complete - system is in %s state", systemState.getStateString());
-  DebugLog::info("=== Phase 1.5-2 Web UI System Ready ===");
+  DebugLog::info("=== MotionBrain Core Ready: 5-axis control + web UI ===");
 }
 
 /**

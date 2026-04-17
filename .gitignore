@@ -2,3 +2,5 @@
 firmware/
 .claude/
 .omc/
+.codex/
+.DS_Store
