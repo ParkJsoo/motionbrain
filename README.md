@@ -100,6 +100,11 @@ TB6612FNG x3
 - 실제 I2C 매핑:
   - `D15 = PB10 = I2C2_SCL`
   - `D14 = PC12 = I2C2_SDA`
+- UART 센서 송신 기준:
+  - `D1 = PD5 = USART2_TX`
+- `HC-SR04` 기준 핀:
+  - `D2 = PD4 = TRIG`
+  - `D3 = PC8 = ECHO`
 - 자이로 바이어스 캘리브레이션 및 200Hz 샘플링 동작 확인
 
 STM32 센서 프로젝트 경로:
@@ -189,7 +194,6 @@ pio device monitor
 
 - `/arduino/doc/*`: 초기 조사 자료
 - `.omc/*`: 이전 OMC/Claude 작업 흔적
-- `PHASE1-5_STEPS.md`: 하드웨어 bring-up 기록용 archive 성격 문서
 
 ## 다음 우선순위
 

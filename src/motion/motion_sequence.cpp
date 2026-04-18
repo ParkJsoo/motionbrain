@@ -1,7 +1,10 @@
 #include "motion_sequence.h"
+#include "safety/safety_monitor.h"
 #include "motion/robot_arm.h"
 #include "system/system_init.h"
 #include "debug/debug_log.h"
+
+extern SafetyMonitor safetyMonitor;
 
 /**
  * 생성자
@@ -117,6 +120,10 @@ bool MotionSequence::run() {
   }
   if (systemState_ == nullptr || systemState_->getState() != SystemState::ARMED) {
     DebugLog::warn("MotionSequence: system must be ARMED to run");
+    return false;
+  }
+  if (safetyMonitor.isMotionBlocked()) {
+    DebugLog::warn("MotionSequence: blocked by safety (%s)", safetyMonitor.getBlockReasonString());
     return false;
   }
 

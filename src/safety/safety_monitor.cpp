@@ -1,0 +1,125 @@
+#include "safety/safety_monitor.h"
+#include "debug/debug_log.h"
+#include "motor/motor_driver.h"
+#include "motion/motion_sequence.h"
+#include "system/system_init.h"
+
+SafetyMonitor::SafetyMonitor()
+  : systemState_(nullptr)
+  , motorControl_(nullptr)
+  , motionSequence_(nullptr)
+  , blocked_(false)
+  , blockReason_(SafetyBlockReason::NONE)
+  , lastSafetyEventMs_(0) {}
+
+void SafetyMonitor::init(SystemStateManager* systemState, MotorControl* motorControl, MotionSequence* motionSequence) {
+  systemState_ = systemState;
+  motorControl_ = motorControl;
+  motionSequence_ = motionSequence;
+  DebugLog::info("Safety monitor initialized (stale=%lums, obstacle=%.1fcm, vibration=%.2f)",
+                 SENSOR_STALE_MS, OBSTACLE_STOP_CM, VIBRATION_FAULT_THRESHOLD);
+}
+
+void SafetyMonitor::update(const SensorSnapshot& snapshot) {
+  uint32_t now = millis();
+  SafetyBlockReason nextReason = SafetyBlockReason::NONE;
+
+  if (!snapshot.connected || snapshot.lastUpdateMs == 0 || (now - snapshot.lastUpdateMs) > SENSOR_STALE_MS) {
+    nextReason = SafetyBlockReason::SENSOR_STALE;
+  } else if (!snapshot.imuOk) {
+    nextReason = SafetyBlockReason::IMU_FAULT;
+  } else if (!snapshot.rangeOk) {
+    nextReason = SafetyBlockReason::RANGE_FAULT;
+  } else if (snapshot.vibe >= VIBRATION_FAULT_THRESHOLD) {
+    nextReason = SafetyBlockReason::VIBRATION;
+  } else if (snapshot.distanceCm > 0.0f && snapshot.distanceCm < OBSTACLE_STOP_CM) {
+    nextReason = SafetyBlockReason::OBSTACLE;
+  }
+
+  if (nextReason == SafetyBlockReason::VIBRATION) {
+    if (blockReason_ != nextReason) {
+      String details = "vibe=" + String(snapshot.vibe, 2);
+      triggerFault("VIBRATION_FAULT", details.c_str());
+    }
+    blocked_ = true;
+    blockReason_ = nextReason;
+    lastSafetyEventMs_ = now;
+    return;
+  }
+
+  if (nextReason == SafetyBlockReason::NONE) {
+    if (blocked_) {
+      DebugLog::safety("BLOCK_CLEARED", reasonToString(blockReason_));
+    }
+    blocked_ = false;
+    blockReason_ = SafetyBlockReason::NONE;
+    return;
+  }
+
+  if (blockReason_ != nextReason) {
+    String details;
+    if (nextReason == SafetyBlockReason::OBSTACLE) {
+      details = "dist_cm=" + String(snapshot.distanceCm, 1);
+    } else if (nextReason == SafetyBlockReason::SENSOR_STALE) {
+      details = "age_ms=" + String(snapshot.lastUpdateMs == 0 ? 0 : now - snapshot.lastUpdateMs);
+    } else {
+      details = reasonToString(nextReason);
+    }
+    triggerStop(reasonToString(nextReason), details.c_str());
+    lastSafetyEventMs_ = now;
+  }
+
+  blocked_ = true;
+  blockReason_ = nextReason;
+}
+
+bool SafetyMonitor::isMotionBlocked() const {
+  return blocked_;
+}
+
+SafetyBlockReason SafetyMonitor::getBlockReason() const {
+  return blockReason_;
+}
+
+const char* SafetyMonitor::getBlockReasonString() const {
+  return reasonToString(blockReason_);
+}
+
+uint32_t SafetyMonitor::getLastSafetyEventMs() const {
+  return lastSafetyEventMs_;
+}
+
+const char* SafetyMonitor::reasonToString(SafetyBlockReason reason) {
+  switch (reason) {
+    case SafetyBlockReason::NONE:         return "NONE";
+    case SafetyBlockReason::SENSOR_STALE: return "SENSOR_STALE";
+    case SafetyBlockReason::IMU_FAULT:    return "IMU_FAULT";
+    case SafetyBlockReason::RANGE_FAULT:  return "RANGE_FAULT";
+    case SafetyBlockReason::OBSTACLE:     return "OBSTACLE";
+    case SafetyBlockReason::VIBRATION:    return "VIBRATION";
+    default:                              return "UNKNOWN";
+  }
+}
+
+void SafetyMonitor::triggerStop(const char* eventName, const char* details) {
+  if (motionSequence_ != nullptr) {
+    motionSequence_->stop();
+  }
+  if (motorControl_ != nullptr) {
+    motorControl_->stopAll();
+  }
+  DebugLog::safety(eventName, details);
+}
+
+void SafetyMonitor::triggerFault(const char* eventName, const char* details) {
+  if (motionSequence_ != nullptr) {
+    motionSequence_->stop();
+  }
+  if (motorControl_ != nullptr) {
+    motorControl_->emergencyStop();
+  }
+  if (systemState_ != nullptr) {
+    systemState_->transitionTo(SystemState::FAULT);
+  }
+  DebugLog::safety(eventName, details);
+}

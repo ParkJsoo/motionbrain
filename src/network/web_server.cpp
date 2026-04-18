@@ -1,10 +1,15 @@
 #include "web_server.h"
+#include "bridge/stm32_bridge.h"
+#include "safety/safety_monitor.h"
 #include "system/system_init.h"       // SystemStateManager 사용
 #include "motor/motor_driver.h"        // MotorControl 사용
 #include "motion/robot_arm.h"          // RobotArm 사용
 #include "motion/motion_sequence.h"    // MotionSequence 사용 (Phase 2-B)
 #include "peripheral/search_light.h"   // SearchLight 사용
 #include "debug/debug_log.h"
+
+extern Stm32Bridge stm32Bridge;
+extern SafetyMonitor safetyMonitor;
 
 /**
  * MotionBrainWebServer 생성자
@@ -357,7 +362,7 @@ void MotionBrainWebServer::handleStatus() {
   
   // JSON 응답 생성
   String json;
-  json.reserve(400);  // pre-allocate to avoid realloc
+  json.reserve(800);  // pre-allocate to avoid realloc
   json = "{";
   json += "\"state\":\"";
   json += stateString;
@@ -403,6 +408,30 @@ void MotionBrainWebServer::handleStatus() {
     json += ",\"light\":";
     json += searchLight_->isOn() ? "true" : "false";
   }
+
+  const SensorSnapshot& snapshot = stm32Bridge.getSnapshot();
+  json += ",\"sensor\":{";
+  json += "\"connected\":";
+  json += stm32Bridge.isConnected() ? "true" : "false";
+  json += ",\"lastUpdateMs\":";
+  json += String(stm32Bridge.getLastPacketAgeMs());
+  json += ",\"packetsReceived\":";
+  json += String(stm32Bridge.getPacketsReceived());
+  json += ",\"parseErrors\":";
+  json += String(stm32Bridge.getParseErrors());
+  json += ",\"imuOk\":";
+  json += snapshot.imuOk ? "true" : "false";
+  json += ",\"rangeOk\":";
+  json += snapshot.rangeOk ? "true" : "false";
+  json += ",\"distCm\":";
+  json += String(snapshot.distanceCm, 1);
+  json += ",\"vibe\":";
+  json += String(snapshot.vibe, 2);
+  json += ",\"blocked\":";
+  json += safetyMonitor.isMotionBlocked() ? "true" : "false";
+  json += ",\"blockReason\":\"";
+  json += safetyMonitor.getBlockReasonString();
+  json += "\"}";
 
   json += "}";
 
@@ -553,7 +582,9 @@ void MotionBrainWebServer::handleMotor() {
     if (success) {
       message = "Motor M" + String(motorId) + " forward at " + String(percent) + "%";
     } else {
-      message = "Failed to set motor M" + String(motorId) + " forward";
+      message = safetyMonitor.isMotionBlocked()
+        ? "Blocked by safety: " + String(safetyMonitor.getBlockReasonString())
+        : "Failed to set motor M" + String(motorId) + " forward";
     }
   }
   else if (action == "reverse") {
@@ -587,7 +618,9 @@ void MotionBrainWebServer::handleMotor() {
     if (success) {
       message = "Motor M" + String(motorId) + " reverse at " + String(percent) + "%";
     } else {
-      message = "Failed to set motor M" + String(motorId) + " reverse";
+      message = safetyMonitor.isMotionBlocked()
+        ? "Blocked by safety: " + String(safetyMonitor.getBlockReasonString())
+        : "Failed to set motor M" + String(motorId) + " reverse";
     }
   }
   else if (action == "stop") {
@@ -742,6 +775,10 @@ void MotionBrainWebServer::handleJoint() {
     return;
   }
 
+  if (!success && action != "stop" && safetyMonitor.isMotionBlocked()) {
+    message = "Blocked by safety: " + String(safetyMonitor.getBlockReasonString());
+  }
+
   String json = "{\"success\":";
   json += success ? "true" : "false";
   json += ",\"message\":\"";
@@ -781,7 +818,11 @@ void MotionBrainWebServer::handleSequence() {
 
   if (action == "run") {
     success = motionSequence_->run();
-    message = success ? "Sequence started" : "Sequence run failed (ARMED? commands queued?)";
+    message = success
+      ? "Sequence started"
+      : (safetyMonitor.isMotionBlocked()
+          ? "Blocked by safety: " + String(safetyMonitor.getBlockReasonString())
+          : "Sequence run failed (ARMED? commands queued?)");
   }
   else if (action == "stop") {
     motionSequence_->stop();

@@ -7,6 +7,8 @@
 #include "network/wifi_ap.h"           // WiFiAP 사용
 #include "network/web_server.h"        // MotionBrainWebServer 사용
 #include "peripheral/search_light.h"   // SearchLight 사용
+#include "bridge/stm32_bridge.h"
+#include "safety/safety_monitor.h"
 #include "debug/debug_log.h"
 
 // 전역 객체 생성
@@ -18,6 +20,8 @@ SerialCommand serialCommand;      // SerialCommand 객체 생성
 WiFiAP wifiAP;                    // WiFiAP 객체 생성
 MotionBrainWebServer webServer;   // MotionBrainWebServer 객체 생성
 SearchLight searchLight;          // SearchLight 객체 생성
+Stm32Bridge stm32Bridge;          // STM32 센서 브리지
+SafetyMonitor safetyMonitor;      // 센서 기반 safety 모니터
 
 /**
  * setup() - ESP32 부팅 시 한 번만 실행
@@ -63,10 +67,14 @@ void setup() {
   // 8. 서치라이트 초기화
   searchLight.init();
 
-  // 9. 시리얼 명령 모듈 초기화
+  // 9. STM32 센서 브리지 및 safety 모니터 초기화
+  stm32Bridge.init();
+  safetyMonitor.init(&systemState, &motorControl, &motionSequence);
+
+  // 10. 시리얼 명령 모듈 초기화
   serialCommand.init(&systemState, &motorControl, &robotArm, &motionSequence, &searchLight);
   
-  // 10. Wi-Fi AP 초기화
+  // 11. Wi-Fi AP 초기화
   const char* apSSID = "MotionBrain-AP";
   const char* apPassword = "motionbrain";  // WPA2 보호 — 배포 전 반드시 변경
 
@@ -79,7 +87,7 @@ void setup() {
     DebugLog::info("AP IP: %s", wifiAP.getIP().toString().c_str());
   }
 
-  // 11. 웹 서버 초기화 (Wi-Fi AP 이후에 초기화)
+  // 12. 웹 서버 초기화 (Wi-Fi AP 이후에 초기화)
   if (!webServer.init(&systemState, &motorControl, &robotArm, &motionSequence, &searchLight)) {
     DebugLog::error("Web server initialization failed");
     // 웹 서버 실패는 치명적 오류는 아니므로 계속 진행
@@ -104,6 +112,12 @@ void setup() {
 void loop() {
   // 상태 머신 업데이트 (타임아웃 체크)
   systemState.update();
+
+  // STM32 센서 브리지 업데이트
+  stm32Bridge.update();
+
+  // 센서 기반 safety 평가
+  safetyMonitor.update(stm32Bridge.getSnapshot());
   
   // 모터 제어 업데이트 (점진적 속도 변경 처리)
   motorControl.update();

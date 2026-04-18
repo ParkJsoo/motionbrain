@@ -1,10 +1,15 @@
 #include "serial_command.h"
 #include "debug/debug_log.h"
+#include "bridge/stm32_bridge.h"
+#include "safety/safety_monitor.h"
 #include "system/system_init.h"
 #include "motor/motor_driver.h"
 #include "motion/robot_arm.h"
 #include "motion/motion_sequence.h"
 #include "peripheral/search_light.h"
+
+extern Stm32Bridge stm32Bridge;
+extern SafetyMonitor safetyMonitor;
 
 /**
  * SerialCommand 생성자
@@ -348,6 +353,18 @@ void SerialCommand::handleStatus() {
                      i, motorNames[i-1], speed, enabled ? "YES" : "NO");
     }
   }
+
+  const SensorSnapshot& snapshot = stm32Bridge.getSnapshot();
+  DebugLog::info("=== Sensor Status ===");
+  DebugLog::info("Connected: %s", stm32Bridge.isConnected() ? "YES" : "NO");
+  DebugLog::info("Packets : %lu", stm32Bridge.getPacketsReceived());
+  DebugLog::info("Parse errors: %lu", stm32Bridge.getParseErrors());
+  DebugLog::info("Last update age: %lums", stm32Bridge.getLastPacketAgeMs());
+  DebugLog::info("IMU OK / Range OK: %s / %s", snapshot.imuOk ? "YES" : "NO", snapshot.rangeOk ? "YES" : "NO");
+  DebugLog::info("Distance: %.1f cm", snapshot.distanceCm);
+  DebugLog::info("Vibration: %.2f", snapshot.vibe);
+  DebugLog::info("Motion blocked: %s", safetyMonitor.isMotionBlocked() ? "YES" : "NO");
+  DebugLog::info("Block reason: %s", safetyMonitor.getBlockReasonString());
 }
 
 /**
@@ -494,7 +511,10 @@ void SerialCommand::handleMotor(const char* args) {
     if (result) {
       DebugLog::info("Motor M%d: forward at %d%% speed", motorId, percent);
     } else {
-      DebugLog::warn("Failed to set motor M%d forward", motorId);
+      DebugLog::warn("Failed to set motor M%d forward%s%s",
+                     motorId,
+                     safetyMonitor.isMotionBlocked() ? " - " : "",
+                     safetyMonitor.isMotionBlocked() ? safetyMonitor.getBlockReasonString() : "");
     }
   }
   else if (strcasecmp(action, "reverse") == 0) {
@@ -535,7 +555,10 @@ void SerialCommand::handleMotor(const char* args) {
     if (result) {
       DebugLog::info("Motor M%d: reverse at %d%% speed", motorId, percent);
     } else {
-      DebugLog::warn("Failed to set motor M%d reverse", motorId);
+      DebugLog::warn("Failed to set motor M%d reverse%s%s",
+                     motorId,
+                     safetyMonitor.isMotionBlocked() ? " - " : "",
+                     safetyMonitor.isMotionBlocked() ? safetyMonitor.getBlockReasonString() : "");
     }
   }
   else if (strcasecmp(action, "stop") == 0) {
@@ -722,7 +745,11 @@ void SerialCommand::handleJoint(const char* args) {
   }
 
   if (!result) {
-    DebugLog::warn("joint %s %s: failed (system ARMED?)", jointName, action);
+    DebugLog::warn("joint %s %s: failed%s%s",
+                   jointName,
+                   action,
+                   safetyMonitor.isMotionBlocked() ? " - " : " (system ARMED?)",
+                   safetyMonitor.isMotionBlocked() ? safetyMonitor.getBlockReasonString() : "");
   }
 }
 
@@ -769,7 +796,8 @@ void SerialCommand::handleSequence(const char* args) {
     if (motionSequence_->run()) {
       DebugLog::info("Sequence started (%d commands)", motionSequence_->getTotalCount());
     } else {
-      DebugLog::warn("Sequence run failed — check state and ARMED status");
+      DebugLog::warn("Sequence run failed — %s",
+                     safetyMonitor.isMotionBlocked() ? safetyMonitor.getBlockReasonString() : "check state and ARMED status");
     }
     return;
   }

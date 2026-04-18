@@ -1,9 +1,11 @@
 #include "motor_driver.h"
 #include "debug/debug_log.h"
+#include "safety/safety_monitor.h"
 #include "system/system_init.h"  // SystemState enum 사용
 
 // 전역 객체 참조 (main.cpp에 선언됨)
 extern SystemStateManager systemState;
+extern SafetyMonitor safetyMonitor;
 
 // PWM 채널 배열 정의 (헤더 선언에 대응) — 산술 대신 명시적 배열로 채널 매핑
 const uint8_t MotorControl::PWM_CHANNELS[MotorControl::NUM_MOTORS] = {
@@ -486,6 +488,14 @@ bool MotorControl::checkSafety(const char* action) {
   // 현재 시스템 상태 확인
   SystemState currentState = systemState.getState();
   
+  if (safetyMonitor.isMotionBlocked()) {
+    const char* reason = safetyMonitor.getBlockReasonString();
+    DebugLog::safety("MOTOR_BLOCKED", reason);
+    DebugLog::warn("Motor action '%s' blocked - safety reason: %s", action, reason);
+    DebugLog::motor(action, "BLOCKED - safety reason: %s", reason);
+    return false;
+  }
+
   // ARMED 상태에서만 모터 제어 허용
   if (currentState == SystemState::ARMED) {
     return true;  // 안전 - 제어 허용
