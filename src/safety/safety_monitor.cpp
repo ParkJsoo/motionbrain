@@ -10,19 +10,59 @@ SafetyMonitor::SafetyMonitor()
   , motionSequence_(nullptr)
   , blocked_(false)
   , blockReason_(SafetyBlockReason::NONE)
+  , latchedFault_(false)
+  , latchedFaultReason_(SafetyBlockReason::NONE)
+  , vibrationActive_(false)
+  , vibrationHighSamples_(0)
+  , vibrationLowSamples_(0)
   , lastSafetyEventMs_(0) {}
 
 void SafetyMonitor::init(SystemStateManager* systemState, MotorControl* motorControl, MotionSequence* motionSequence) {
   systemState_ = systemState;
   motorControl_ = motorControl;
   motionSequence_ = motionSequence;
-  DebugLog::info("Safety monitor initialized (stale=%lums, obstacle=%.1fcm, vibration=%.2f)",
-                 SENSOR_STALE_MS, OBSTACLE_STOP_CM, VIBRATION_FAULT_THRESHOLD);
+  DebugLog::info("Safety monitor initialized (stale=%lums, obstacle=%.1fcm, vibe_enter=%.2f x%u, vibe_clear=%.2f x%u)",
+                 SENSOR_STALE_MS, OBSTACLE_STOP_CM,
+                 VIBRATION_FAULT_ENTER_THRESHOLD, VIBRATION_ENTER_SAMPLES,
+                 VIBRATION_FAULT_CLEAR_THRESHOLD, VIBRATION_CLEAR_SAMPLES);
 }
 
 void SafetyMonitor::update(const SensorSnapshot& snapshot) {
   uint32_t now = millis();
   SafetyBlockReason nextReason = SafetyBlockReason::NONE;
+  const bool faultLatchedNow = latchedFault_ &&
+                               latchedFaultReason_ == SafetyBlockReason::VIBRATION &&
+                               systemState_ != nullptr &&
+                               systemState_->getState() == SystemState::FAULT;
+
+  if (latchedFault_ && systemState_ != nullptr && systemState_->getState() != SystemState::FAULT) {
+    DebugLog::safety("FAULT_CLEARED", reasonToString(latchedFaultReason_));
+    latchedFault_ = false;
+    latchedFaultReason_ = SafetyBlockReason::NONE;
+  }
+
+  if (snapshot.vibe >= VIBRATION_FAULT_ENTER_THRESHOLD) {
+    if (vibrationHighSamples_ < 255) {
+      vibrationHighSamples_++;
+    }
+    vibrationLowSamples_ = 0;
+  } else if (snapshot.vibe <= VIBRATION_FAULT_CLEAR_THRESHOLD) {
+    if (vibrationLowSamples_ < 255) {
+      vibrationLowSamples_++;
+    }
+    vibrationHighSamples_ = 0;
+  } else {
+    vibrationHighSamples_ = 0;
+    vibrationLowSamples_ = 0;
+  }
+
+  if (!vibrationActive_ && vibrationHighSamples_ >= VIBRATION_ENTER_SAMPLES) {
+    vibrationActive_ = true;
+    vibrationLowSamples_ = 0;
+  } else if (vibrationActive_ && vibrationLowSamples_ >= VIBRATION_CLEAR_SAMPLES) {
+    vibrationActive_ = false;
+    vibrationHighSamples_ = 0;
+  }
 
   if (!snapshot.connected || snapshot.lastUpdateMs == 0 || (now - snapshot.lastUpdateMs) > SENSOR_STALE_MS) {
     nextReason = SafetyBlockReason::SENSOR_STALE;
@@ -30,14 +70,14 @@ void SafetyMonitor::update(const SensorSnapshot& snapshot) {
     nextReason = SafetyBlockReason::IMU_FAULT;
   } else if (!snapshot.rangeOk) {
     nextReason = SafetyBlockReason::RANGE_FAULT;
-  } else if (snapshot.vibe >= VIBRATION_FAULT_THRESHOLD) {
+  } else if (vibrationActive_) {
     nextReason = SafetyBlockReason::VIBRATION;
   } else if (snapshot.distanceCm > 0.0f && snapshot.distanceCm < OBSTACLE_STOP_CM) {
     nextReason = SafetyBlockReason::OBSTACLE;
   }
 
   if (nextReason == SafetyBlockReason::VIBRATION) {
-    if (blockReason_ != nextReason) {
+    if (!faultLatchedNow && blockReason_ != nextReason) {
       String details = "vibe=" + String(snapshot.vibe, 2);
       triggerFault("VIBRATION_FAULT", details.c_str());
     }
@@ -48,7 +88,11 @@ void SafetyMonitor::update(const SensorSnapshot& snapshot) {
   }
 
   if (nextReason == SafetyBlockReason::NONE) {
-    if (blocked_) {
+    const bool suppressVibrationClearLog = blocked_ &&
+                                           blockReason_ == SafetyBlockReason::VIBRATION &&
+                                           latchedFault_ &&
+                                           latchedFaultReason_ == SafetyBlockReason::VIBRATION;
+    if (blocked_ && !suppressVibrationClearLog) {
       DebugLog::safety("BLOCK_CLEARED", reasonToString(blockReason_));
     }
     blocked_ = false;
@@ -83,6 +127,18 @@ SafetyBlockReason SafetyMonitor::getBlockReason() const {
 
 const char* SafetyMonitor::getBlockReasonString() const {
   return reasonToString(blockReason_);
+}
+
+bool SafetyMonitor::hasLatchedFault() const {
+  return latchedFault_;
+}
+
+SafetyBlockReason SafetyMonitor::getLatchedFaultReason() const {
+  return latchedFaultReason_;
+}
+
+const char* SafetyMonitor::getLatchedFaultReasonString() const {
+  return reasonToString(latchedFaultReason_);
 }
 
 uint32_t SafetyMonitor::getLastSafetyEventMs() const {
@@ -121,5 +177,7 @@ void SafetyMonitor::triggerFault(const char* eventName, const char* details) {
   if (systemState_ != nullptr) {
     systemState_->transitionTo(SystemState::FAULT);
   }
+  latchedFault_ = true;
+  latchedFaultReason_ = SafetyBlockReason::VIBRATION;
   DebugLog::safety(eventName, details);
 }

@@ -22,7 +22,10 @@ class SafetyMonitor {
 public:
   static constexpr uint32_t SENSOR_STALE_MS = 1000;
   static constexpr float OBSTACLE_STOP_CM = 15.0f;
-  static constexpr float VIBRATION_FAULT_THRESHOLD = 4.0f;
+  static constexpr float VIBRATION_FAULT_ENTER_THRESHOLD = 8.0f;
+  static constexpr float VIBRATION_FAULT_CLEAR_THRESHOLD = 2.5f;
+  static constexpr uint8_t VIBRATION_ENTER_SAMPLES = 2;
+  static constexpr uint8_t VIBRATION_CLEAR_SAMPLES = 3;
 
   SafetyMonitor();
 
@@ -32,6 +35,9 @@ public:
   bool isMotionBlocked() const;
   SafetyBlockReason getBlockReason() const;
   const char* getBlockReasonString() const;
+  bool hasLatchedFault() const;
+  SafetyBlockReason getLatchedFaultReason() const;
+  const char* getLatchedFaultReasonString() const;
   uint32_t getLastSafetyEventMs() const;
 
   static const char* reasonToString(SafetyBlockReason reason);
@@ -42,6 +48,11 @@ private:
   MotionSequence* motionSequence_;
   bool blocked_;
   SafetyBlockReason blockReason_;
+  bool latchedFault_;
+  SafetyBlockReason latchedFaultReason_;
+  bool vibrationActive_;
+  uint8_t vibrationHighSamples_;
+  uint8_t vibrationLowSamples_;
   uint32_t lastSafetyEventMs_;
 
   void triggerStop(const char* eventName, const char* details);

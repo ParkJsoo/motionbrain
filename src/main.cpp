@@ -8,6 +8,8 @@
 #include "network/web_server.h"        // MotionBrainWebServer 사용
 #include "peripheral/search_light.h"   // SearchLight 사용
 #include "bridge/stm32_bridge.h"
+#include "control/command_bus.h"
+#include "control/dispatcher.h"
 #include "safety/safety_monitor.h"
 #include "debug/debug_log.h"
 
@@ -22,6 +24,8 @@ MotionBrainWebServer webServer;   // MotionBrainWebServer 객체 생성
 SearchLight searchLight;          // SearchLight 객체 생성
 Stm32Bridge stm32Bridge;          // STM32 센서 브리지
 SafetyMonitor safetyMonitor;      // 센서 기반 safety 모니터
+CommandBus commandBus;            // 공통 명령 버스
+Dispatcher dispatcher;            // 공통 명령 디스패처
 
 /**
  * setup() - ESP32 부팅 시 한 번만 실행
@@ -70,9 +74,11 @@ void setup() {
   // 9. STM32 센서 브리지 및 safety 모니터 초기화
   stm32Bridge.init();
   safetyMonitor.init(&systemState, &motorControl, &motionSequence);
+  dispatcher.init(&systemState, &motorControl, &robotArm, &motionSequence, &searchLight);
 
   // 10. 시리얼 명령 모듈 초기화
-  serialCommand.init(&systemState, &motorControl, &robotArm, &motionSequence, &searchLight);
+  serialCommand.init(&systemState, &motorControl, &robotArm, &motionSequence, &searchLight,
+                     &commandBus, &dispatcher);
   
   // 11. Wi-Fi AP 초기화
   const char* apSSID = "MotionBrain-AP";
@@ -88,7 +94,8 @@ void setup() {
   }
 
   // 12. 웹 서버 초기화 (Wi-Fi AP 이후에 초기화)
-  if (!webServer.init(&systemState, &motorControl, &robotArm, &motionSequence, &searchLight)) {
+  if (!webServer.init(&systemState, &motorControl, &robotArm, &motionSequence, &searchLight,
+                      &commandBus, &dispatcher)) {
     DebugLog::error("Web server initialization failed");
     // 웹 서버 실패는 치명적 오류는 아니므로 계속 진행
   } else {
@@ -118,6 +125,9 @@ void loop() {
 
   // 센서 기반 safety 평가
   safetyMonitor.update(stm32Bridge.getSnapshot());
+
+  // 공통 명령 처리
+  dispatcher.dispatchPending(commandBus);
   
   // 모터 제어 업데이트 (점진적 속도 변경 처리)
   motorControl.update();

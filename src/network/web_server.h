@@ -11,6 +11,10 @@ class MotorControl;
 class RobotArm;
 class MotionSequence;
 class SearchLight;
+class CommandBus;
+class Dispatcher;
+struct Command;
+struct CommandResult;
 
 /**
  * MotionBrain Web Server Module
@@ -52,7 +56,13 @@ public:
    * @param port HTTP 서버 포트 (기본값: 80)
    * @return 초기화 성공 여부
    */
-  bool init(SystemStateManager* systemState, MotorControl* motorControl, RobotArm* robotArm = nullptr, MotionSequence* motionSequence = nullptr, SearchLight* searchLight = nullptr, uint16_t port = 80);
+  bool init(SystemStateManager* systemState, MotorControl* motorControl,
+            RobotArm* robotArm = nullptr,
+            MotionSequence* motionSequence = nullptr,
+            SearchLight* searchLight = nullptr,
+            CommandBus* commandBus = nullptr,
+            Dispatcher* dispatcher = nullptr,
+            uint16_t port = 80);
 
   /**
    * 업데이트 (주기적으로 호출)
@@ -80,6 +90,11 @@ private:
   RobotArm* robotArm_;
   MotionSequence* motionSequence_;
   SearchLight* searchLight_;
+  CommandBus* commandBus_;
+  Dispatcher* dispatcher_;
+
+  bool submitCommand(const Command& command, CommandResult& result);
+  void sendCommandResult(const CommandResult& result, const String& extraJson = "");
 
   // ===== HTTP 라우트 핸들러 (private) =====
   // Step 2에서 구현 예정
@@ -127,6 +142,16 @@ private:
   void handleSequenceStatus();
 
   /**
+   * 공통 favicon 응답
+   */
+  void handleFavicon();
+
+  /**
+   * 공통 Apple touch icon 응답
+   */
+  void handleAppleTouchIcon();
+
+  /**
    * POST /light 처리
    * 서치라이트 on/off/toggle
    */
@@ -140,4 +165,3 @@ private:
 };
 
 #endif // WEB_SERVER_H
-

@@ -1,6 +1,9 @@
 #include "serial_command.h"
 #include "debug/debug_log.h"
 #include "bridge/stm32_bridge.h"
+#include "control/command.h"
+#include "control/command_bus.h"
+#include "control/dispatcher.h"
 #include "safety/safety_monitor.h"
 #include "system/system_init.h"
 #include "motor/motor_driver.h"
@@ -23,6 +26,8 @@ SerialCommand::SerialCommand()
   , robotArm_(nullptr)
   , motionSequence_(nullptr)
   , searchLight_(nullptr)
+  , commandBus_(nullptr)
+  , dispatcher_(nullptr)
 {
   // 버퍼 초기화
   commandBuffer_[0] = '\0';
@@ -32,18 +37,65 @@ SerialCommand::SerialCommand()
  * 초기화
  * 시리얼 통신 준비
  */
-void SerialCommand::init(SystemStateManager* systemState, MotorControl* motorControl, RobotArm* robotArm, MotionSequence* motionSequence, SearchLight* searchLight) {
+void SerialCommand::init(SystemStateManager* systemState, MotorControl* motorControl,
+                         RobotArm* robotArm, MotionSequence* motionSequence,
+                         SearchLight* searchLight, CommandBus* commandBus,
+                         Dispatcher* dispatcher) {
   // 외부 객체 참조 저장
   systemState_    = systemState;
   motorControl_   = motorControl;
   robotArm_       = robotArm;
   motionSequence_ = motionSequence;
   searchLight_    = searchLight;
+  commandBus_     = commandBus;
+  dispatcher_     = dispatcher;
   
   // 시리얼 통신은 이미 DebugLog::init()에서 초기화됨
   // 여기서는 로그만 출력
   DebugLog::info("Serial command module initialized");
   DebugLog::info("Type 'help' for available commands");
+}
+
+bool SerialCommand::submitCommand(const Command& command, CommandResult& result) {
+  if (commandBus_ == nullptr || dispatcher_ == nullptr) {
+    result.success = false;
+    strlcpy(result.message, "Command path not initialized", sizeof(result.message));
+    DebugLog::error("%s", result.message);
+    return false;
+  }
+
+  Command queued = command;
+  queued.id = commandBus_->allocateId();
+  queued.createdAtMs = millis();
+
+  if (!commandBus_->enqueue(queued)) {
+    result.commandId = queued.id;
+    result.success = false;
+    strlcpy(result.message, "Command queue full", sizeof(result.message));
+    return false;
+  }
+
+  uint32_t processedId = 0;
+  CommandResult processedResult;
+  while (dispatcher_->dispatchNext(*commandBus_, &processedId, &processedResult)) {
+    if (processedId == queued.id) {
+      result = processedResult;
+      return processedResult.success;
+    }
+  }
+
+  result.commandId = queued.id;
+  result.success = false;
+  strlcpy(result.message, "Command was not processed", sizeof(result.message));
+  return false;
+}
+
+void SerialCommand::logCommandResult(const CommandResult& result) {
+  if (result.success) {
+    DebugLog::info("%s", result.message);
+  } else {
+    DebugLog::warn("%s", result.message);
+  }
 }
 
 /**
@@ -365,6 +417,8 @@ void SerialCommand::handleStatus() {
   DebugLog::info("Vibration: %.2f", snapshot.vibe);
   DebugLog::info("Motion blocked: %s", safetyMonitor.isMotionBlocked() ? "YES" : "NO");
   DebugLog::info("Block reason: %s", safetyMonitor.getBlockReasonString());
+  DebugLog::info("Fault latched: %s", safetyMonitor.hasLatchedFault() ? "YES" : "NO");
+  DebugLog::info("Fault reason: %s", safetyMonitor.getLatchedFaultReasonString());
 }
 
 /**
@@ -375,13 +429,14 @@ void SerialCommand::handleArm() {
     DebugLog::error("SystemStateManager not initialized");
     return;
   }
-  
-  bool result = systemState_->arm();
-  if (result) {
-    DebugLog::info("System armed successfully");
-  } else {
-    DebugLog::warn("Failed to arm system - check current state");
-  }
+
+  Command command;
+  command.source = CommandSource::SERIAL_INPUT;
+  command.type = CommandType::ARM;
+
+  CommandResult result;
+  submitCommand(command, result);
+  logCommandResult(result);
 }
 
 /**
@@ -392,13 +447,14 @@ void SerialCommand::handleDisarm() {
     DebugLog::error("SystemStateManager not initialized");
     return;
   }
-  
-  bool result = systemState_->disarm();
-  if (result) {
-    DebugLog::info("System disarmed successfully");
-  } else {
-    DebugLog::warn("Failed to disarm system - check current state");
-  }
+
+  Command command;
+  command.source = CommandSource::SERIAL_INPUT;
+  command.type = CommandType::DISARM;
+
+  CommandResult result;
+  submitCommand(command, result);
+  logCommandResult(result);
 }
 
 /**
@@ -409,18 +465,14 @@ void SerialCommand::handleStop() {
     DebugLog::error("SystemStateManager not initialized");
     return;
   }
-  
-  // 비상 정지
-  if (!systemState_->enterSafe()) {
-    DebugLog::warn("STOP: enterSafe() failed - state may already be safe");
-  }
-  
-  // 모터도 비상 정지
-  if (motorControl_ != nullptr) {
-    motorControl_->emergencyStop();
-  }
-  
-  DebugLog::info("Emergency stop activated");
+
+  Command command;
+  command.source = CommandSource::SERIAL_INPUT;
+  command.type = CommandType::STOP;
+
+  CommandResult result;
+  submitCommand(command, result);
+  logCommandResult(result);
 }
 
 /**
@@ -507,15 +559,16 @@ void SerialCommand::handleMotor(const char* args) {
       return;
     }
 
-    bool result = motorControl_->forward(motorId, percent);
-    if (result) {
-      DebugLog::info("Motor M%d: forward at %d%% speed", motorId, percent);
-    } else {
-      DebugLog::warn("Failed to set motor M%d forward%s%s",
-                     motorId,
-                     safetyMonitor.isMotionBlocked() ? " - " : "",
-                     safetyMonitor.isMotionBlocked() ? safetyMonitor.getBlockReasonString() : "");
-    }
+    Command command;
+    command.source = CommandSource::SERIAL_INPUT;
+    command.type = CommandType::MOTOR_RUN;
+    command.motorId = (uint8_t)motorId;
+    command.forward = true;
+    command.percent = (uint8_t)percent;
+
+    CommandResult result;
+    submitCommand(command, result);
+    logCommandResult(result);
   }
   else if (strcasecmp(action, "reverse") == 0) {
     // motor reverse <id> [percent]
@@ -551,21 +604,27 @@ void SerialCommand::handleMotor(const char* args) {
       return;
     }
 
-    bool result = motorControl_->reverse(motorId, percent);
-    if (result) {
-      DebugLog::info("Motor M%d: reverse at %d%% speed", motorId, percent);
-    } else {
-      DebugLog::warn("Failed to set motor M%d reverse%s%s",
-                     motorId,
-                     safetyMonitor.isMotionBlocked() ? " - " : "",
-                     safetyMonitor.isMotionBlocked() ? safetyMonitor.getBlockReasonString() : "");
-    }
+    Command command;
+    command.source = CommandSource::SERIAL_INPUT;
+    command.type = CommandType::MOTOR_RUN;
+    command.motorId = (uint8_t)motorId;
+    command.forward = false;
+    command.percent = (uint8_t)percent;
+
+    CommandResult result;
+    submitCommand(command, result);
+    logCommandResult(result);
   }
   else if (strcasecmp(action, "stop") == 0) {
     // motor stop all  — 모든 모터 정지 (ARMED 상태 유지)
     if (strcasecmp(rest, "all") == 0) {
-      motorControl_->stopAll();
-      DebugLog::info("All motors stopped (system remains ARMED)");
+      Command command;
+      command.source = CommandSource::SERIAL_INPUT;
+      command.type = CommandType::MOTOR_STOP_ALL;
+
+      CommandResult result;
+      submitCommand(command, result);
+      logCommandResult(result);
       return;
     }
 
@@ -582,12 +641,14 @@ void SerialCommand::handleMotor(const char* args) {
       return;
     }
 
-    bool result = motorControl_->stop(motorId);
-    if (result) {
-      DebugLog::info("Motor M%d: stopped", motorId);
-    } else {
-      DebugLog::warn("Failed to stop motor M%d", motorId);
-    }
+    Command command;
+    command.source = CommandSource::SERIAL_INPUT;
+    command.type = CommandType::MOTOR_STOP;
+    command.motorId = (uint8_t)motorId;
+
+    CommandResult result;
+    submitCommand(command, result);
+    logCommandResult(result);
   }
   else if (strcasecmp(action, "status") == 0) {
     // motor status
@@ -616,12 +677,14 @@ void SerialCommand::handleMotor(const char* args) {
       return;
     }
     
-    bool result = motorControl_->setDefaultSpeed(speed);
-    if (result) {
-      DebugLog::info("Default speed set to: %d", speed);
-    } else {
-      DebugLog::warn("Failed to set default speed");
-    }
+    Command command;
+    command.source = CommandSource::SERIAL_INPUT;
+    command.type = CommandType::MOTOR_SET_DEFAULT_SPEED;
+    command.speed = (uint8_t)speed;
+
+    CommandResult result;
+    submitCommand(command, result);
+    logCommandResult(result);
   }
   else {
     DebugLog::warn("Unknown motor action: %s", action);
@@ -651,8 +714,13 @@ void SerialCommand::handleJoint(const char* args) {
 
   // "stop" 단독 처리
   if (strcasecmp(args, "stop") == 0) {
-    robotArm_->stopAll();
-    DebugLog::info("All joints stopped (system remains ARMED)");
+    Command command;
+    command.source = CommandSource::SERIAL_INPUT;
+    command.type = CommandType::JOINT_STOP_ALL;
+
+    CommandResult result;
+    submitCommand(command, result);
+    logCommandResult(result);
     return;
   }
 
@@ -706,37 +774,41 @@ void SerialCommand::handleJoint(const char* args) {
     return;
   }
 
-  // 관절별 처리
-  bool result = false;
-
+  Command command;
+  command.source = CommandSource::SERIAL_INPUT;
   if (strcasecmp(jointName, "gripper") == 0) {
-    if      (strcasecmp(action, "open")  == 0) result = robotArm_->gripperOpen(percent);
-    else if (strcasecmp(action, "close") == 0) result = robotArm_->gripperClose(percent);
-    else if (strcasecmp(action, "stop")  == 0) result = robotArm_->gripperStop();
+    command.joint = MotionJoint::GRIPPER;
+    if      (strcasecmp(action, "open")  == 0) { command.type = CommandType::JOINT_RUN;  command.direction = MotionDirection::OPEN; }
+    else if (strcasecmp(action, "close") == 0) { command.type = CommandType::JOINT_RUN;  command.direction = MotionDirection::CLOSE; }
+    else if (strcasecmp(action, "stop")  == 0) { command.type = CommandType::JOINT_STOP; }
     else { DebugLog::warn("gripper: unknown action '%s' (open/close/stop)", action); return; }
   }
   else if (strcasecmp(jointName, "wrist") == 0) {
-    if      (strcasecmp(action, "up")   == 0) result = robotArm_->wristUp(percent);
-    else if (strcasecmp(action, "down") == 0) result = robotArm_->wristDown(percent);
-    else if (strcasecmp(action, "stop") == 0) result = robotArm_->wristStop();
+    command.joint = MotionJoint::WRIST;
+    if      (strcasecmp(action, "up")   == 0) { command.type = CommandType::JOINT_RUN;  command.direction = MotionDirection::UP; }
+    else if (strcasecmp(action, "down") == 0) { command.type = CommandType::JOINT_RUN;  command.direction = MotionDirection::DOWN; }
+    else if (strcasecmp(action, "stop") == 0) { command.type = CommandType::JOINT_STOP; }
     else { DebugLog::warn("wrist: unknown action '%s' (up/down/stop)", action); return; }
   }
   else if (strcasecmp(jointName, "elbow") == 0) {
-    if      (strcasecmp(action, "up")   == 0) result = robotArm_->elbowUp(percent);
-    else if (strcasecmp(action, "down") == 0) result = robotArm_->elbowDown(percent);
-    else if (strcasecmp(action, "stop") == 0) result = robotArm_->elbowStop();
+    command.joint = MotionJoint::ELBOW;
+    if      (strcasecmp(action, "up")   == 0) { command.type = CommandType::JOINT_RUN;  command.direction = MotionDirection::UP; }
+    else if (strcasecmp(action, "down") == 0) { command.type = CommandType::JOINT_RUN;  command.direction = MotionDirection::DOWN; }
+    else if (strcasecmp(action, "stop") == 0) { command.type = CommandType::JOINT_STOP; }
     else { DebugLog::warn("elbow: unknown action '%s' (up/down/stop)", action); return; }
   }
   else if (strcasecmp(jointName, "shoulder") == 0) {
-    if      (strcasecmp(action, "up")   == 0) result = robotArm_->shoulderUp(percent);
-    else if (strcasecmp(action, "down") == 0) result = robotArm_->shoulderDown(percent);
-    else if (strcasecmp(action, "stop") == 0) result = robotArm_->shoulderStop();
+    command.joint = MotionJoint::SHOULDER;
+    if      (strcasecmp(action, "up")   == 0) { command.type = CommandType::JOINT_RUN;  command.direction = MotionDirection::UP; }
+    else if (strcasecmp(action, "down") == 0) { command.type = CommandType::JOINT_RUN;  command.direction = MotionDirection::DOWN; }
+    else if (strcasecmp(action, "stop") == 0) { command.type = CommandType::JOINT_STOP; }
     else { DebugLog::warn("shoulder: unknown action '%s' (up/down/stop)", action); return; }
   }
   else if (strcasecmp(jointName, "base") == 0) {
-    if      (strcasecmp(action, "left")  == 0) result = robotArm_->baseLeft(percent);
-    else if (strcasecmp(action, "right") == 0) result = robotArm_->baseRight(percent);
-    else if (strcasecmp(action, "stop")  == 0) result = robotArm_->baseStop();
+    command.joint = MotionJoint::BASE;
+    if      (strcasecmp(action, "left")  == 0) { command.type = CommandType::JOINT_RUN;  command.direction = MotionDirection::LEFT; }
+    else if (strcasecmp(action, "right") == 0) { command.type = CommandType::JOINT_RUN;  command.direction = MotionDirection::RIGHT; }
+    else if (strcasecmp(action, "stop")  == 0) { command.type = CommandType::JOINT_STOP; }
     else { DebugLog::warn("base: unknown action '%s' (left/right/stop)", action); return; }
   }
   else {
@@ -744,13 +816,11 @@ void SerialCommand::handleJoint(const char* args) {
     return;
   }
 
-  if (!result) {
-    DebugLog::warn("joint %s %s: failed%s%s",
-                   jointName,
-                   action,
-                   safetyMonitor.isMotionBlocked() ? " - " : " (system ARMED?)",
-                   safetyMonitor.isMotionBlocked() ? safetyMonitor.getBlockReasonString() : "");
-  }
+  command.percent = percent;
+
+  CommandResult result;
+  submitCommand(command, result);
+  logCommandResult(result);
 }
 
 /**
@@ -793,24 +863,35 @@ void SerialCommand::handleSequence(const char* args) {
   }
 
   if (strcasecmp(action, "run") == 0) {
-    if (motionSequence_->run()) {
-      DebugLog::info("Sequence started (%d commands)", motionSequence_->getTotalCount());
-    } else {
-      DebugLog::warn("Sequence run failed — %s",
-                     safetyMonitor.isMotionBlocked() ? safetyMonitor.getBlockReasonString() : "check state and ARMED status");
-    }
+    Command command;
+    command.source = CommandSource::SERIAL_INPUT;
+    command.type = CommandType::SEQUENCE_RUN;
+
+    CommandResult result;
+    submitCommand(command, result);
+    logCommandResult(result);
     return;
   }
 
   if (strcasecmp(action, "stop") == 0) {
-    motionSequence_->stop();
-    DebugLog::info("Sequence stopped");
+    Command command;
+    command.source = CommandSource::SERIAL_INPUT;
+    command.type = CommandType::SEQUENCE_STOP;
+
+    CommandResult result;
+    submitCommand(command, result);
+    logCommandResult(result);
     return;
   }
 
   if (strcasecmp(action, "clear") == 0) {
-    motionSequence_->clear();
-    DebugLog::info("Sequence cleared");
+    Command command;
+    command.source = CommandSource::SERIAL_INPUT;
+    command.type = CommandType::SEQUENCE_CLEAR;
+
+    CommandResult result;
+    submitCommand(command, result);
+    logCommandResult(result);
     return;
   }
 
@@ -849,16 +930,17 @@ void SerialCommand::handleSequence(const char* args) {
       return;
     }
 
-    if (systemState_ != nullptr) {
-      systemState_->resetTimeout();
-    }
-    if (motionSequence_->addCommand(joint, direction, (uint8_t)speed, (uint32_t)duration)) {
-      DebugLog::info("sequence add: [%d/%d] %s %s %d%% %ldms",
-                     motionSequence_->getTotalCount(), MotionSequence::MAX_COMMANDS,
-                     jointStr, dirStr, speed, duration);
-    } else {
-      DebugLog::warn("sequence add: failed (queue full or invalid params)");
-    }
+    Command command;
+    command.source = CommandSource::SERIAL_INPUT;
+    command.type = CommandType::SEQUENCE_ADD;
+    command.joint = joint;
+    command.direction = direction;
+    command.percent = (uint8_t)speed;
+    command.durationMs = (uint32_t)duration;
+
+    CommandResult result;
+    submitCommand(command, result);
+    logCommandResult(result);
     return;
   }
 
@@ -880,14 +962,21 @@ void SerialCommand::handleLight(const char* args) {
     return;
   }
 
+  Command command;
+  command.source = CommandSource::SERIAL_INPUT;
+
   if (strcasecmp(args, "on") == 0) {
-    searchLight_->on();
+    command.type = CommandType::LIGHT_ON;
   } else if (strcasecmp(args, "off") == 0) {
-    searchLight_->off();
+    command.type = CommandType::LIGHT_OFF;
   } else if (strcasecmp(args, "toggle") == 0) {
-    searchLight_->toggle();
-    DebugLog::info("SearchLight: %s", searchLight_->isOn() ? "ON" : "OFF");
+    command.type = CommandType::LIGHT_TOGGLE;
   } else {
     DebugLog::warn("light: unknown action '%s' (on/off/toggle/status)", args);
+    return;
   }
+
+  CommandResult result;
+  submitCommand(command, result);
+  logCommandResult(result);
 }

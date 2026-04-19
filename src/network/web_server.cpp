@@ -1,5 +1,8 @@
 #include "web_server.h"
 #include "bridge/stm32_bridge.h"
+#include "control/command.h"
+#include "control/command_bus.h"
+#include "control/dispatcher.h"
 #include "safety/safety_monitor.h"
 #include "system/system_init.h"       // SystemStateManager 사용
 #include "motor/motor_driver.h"        // MotorControl 사용
@@ -22,6 +25,8 @@ MotionBrainWebServer::MotionBrainWebServer()
   , robotArm_(nullptr)
   , motionSequence_(nullptr)
   , searchLight_(nullptr)
+  , commandBus_(nullptr)
+  , dispatcher_(nullptr)
 {
   // 생성자에서는 초기화만 수행
   // 실제 서버 시작은 init()에서 수행
@@ -30,12 +35,17 @@ MotionBrainWebServer::MotionBrainWebServer()
 /**
  * 웹 서버 초기화
  */
-bool MotionBrainWebServer::init(SystemStateManager* systemState, MotorControl* motorControl, RobotArm* robotArm, MotionSequence* motionSequence, SearchLight* searchLight, uint16_t port) {
+bool MotionBrainWebServer::init(SystemStateManager* systemState, MotorControl* motorControl,
+                                RobotArm* robotArm, MotionSequence* motionSequence,
+                                SearchLight* searchLight, CommandBus* commandBus,
+                                Dispatcher* dispatcher, uint16_t port) {
   systemState_    = systemState;
   motorControl_   = motorControl;
   robotArm_       = robotArm;
   motionSequence_ = motionSequence;
   searchLight_    = searchLight;
+  commandBus_     = commandBus;
+  dispatcher_     = dispatcher;
   port_           = port;
 
   DebugLog::info("=== Web Server Initialization ===");
@@ -51,6 +61,11 @@ bool MotionBrainWebServer::init(SystemStateManager* systemState, MotorControl* m
   server_.on("/sequence", HTTP_POST, [this]() { this->handleSequence(); });
   server_.on("/sequence", HTTP_GET,  [this]() { this->handleSequenceStatus(); });
   server_.on("/light",    HTTP_POST, [this]() { this->handleLight(); });
+  server_.on("/favicon.ico", HTTP_GET, [this]() { this->handleFavicon(); });
+  server_.on("/apple-touch-icon.png", HTTP_GET, [this]() { this->handleAppleTouchIcon(); });
+  server_.on("/apple-touch-icon-precomposed.png", HTTP_GET, [this]() { this->handleAppleTouchIcon(); });
+  server_.on("/apple-touch-icon-120x120.png", HTTP_GET, [this]() { this->handleAppleTouchIcon(); });
+  server_.on("/apple-touch-icon-120x120-precomposed.png", HTTP_GET, [this]() { this->handleAppleTouchIcon(); });
   server_.onNotFound([this]() { this->handleNotFound(); });
 
   // CSRF 방지: X-MotionBrain 헤더 수집
@@ -76,6 +91,53 @@ bool MotionBrainWebServer::init(SystemStateManager* systemState, MotorControl* m
   DebugLog::info("Access dashboard at: http://192.168.4.1");
 
   return true;
+}
+
+bool MotionBrainWebServer::submitCommand(const Command& command, CommandResult& result) {
+  if (commandBus_ == nullptr || dispatcher_ == nullptr) {
+    result.success = false;
+    strlcpy(result.message, "Command path not initialized", sizeof(result.message));
+    return false;
+  }
+
+  Command queued = command;
+  queued.id = commandBus_->allocateId();
+  queued.createdAtMs = millis();
+
+  if (!commandBus_->enqueue(queued)) {
+    result.commandId = queued.id;
+    result.success = false;
+    strlcpy(result.message, "Command queue full", sizeof(result.message));
+    return false;
+  }
+
+  uint32_t processedId = 0;
+  CommandResult processedResult;
+  while (dispatcher_->dispatchNext(*commandBus_, &processedId, &processedResult)) {
+    if (processedId == queued.id) {
+      result = processedResult;
+      return processedResult.success;
+    }
+  }
+
+  result.commandId = queued.id;
+  result.success = false;
+  strlcpy(result.message, "Command was not processed", sizeof(result.message));
+  return false;
+}
+
+void MotionBrainWebServer::sendCommandResult(const CommandResult& result, const String& extraJson) {
+  String json = "{\"success\":";
+  json += result.success ? "true" : "false";
+  json += ",\"message\":\"";
+  json += result.message;
+  json += "\"";
+  if (extraJson.length() > 0) {
+    json += ",";
+    json += extraJson;
+  }
+  json += "}";
+  server_.send(200, "application/json", json);
 }
 
 /**
@@ -305,7 +367,7 @@ void MotionBrainWebServer::handleRoot() {
   server_.sendContent("function sendCommand(cmd) { const btn = document.getElementById(\"btn-\" + cmd); btn.disabled = true; fetch(\"/command?cmd=\" + cmd, { method: \"POST\", headers: {\"X-MotionBrain\": \"1\"} }).then(r => r.json()).then(data => { btn.disabled = false; showMessage(data.message || \"Command sent\", !data.success); updateStatus(); }).catch(err => { btn.disabled = false; showMessage(\"Error: \" + err.message, true); }); }");
   server_.sendContent("function sendLight(action) { fetch(\"/light?action=\" + action, { method: \"POST\", headers: {\"X-MotionBrain\": \"1\"} }).then(r => r.json()).then(data => { updateStatus(); }).catch(() => {}); }");
   server_.sendContent("function updateStatus() { fetch(\"/status\").then(r => { if (!r.ok) { throw new Error(\"HTTP \" + r.status + \": \" + r.statusText); } return r.text(); }).then(text => { try { const data = JSON.parse(text); const state = data.state || \"UNKNOWN\"; const badge = document.getElementById(\"state-badge\"); if (badge) { badge.textContent = state; badge.className = \"status-badge \" + (stateColors[state] || \"state-LOADING\"); } const motorEl = document.getElementById(\"motor\"); if (motorEl) motorEl.textContent = data.motorEnabled ? \"YES\" : \"NO\"; const lastUpdate = document.getElementById(\"last-update\"); if (lastUpdate) lastUpdate.textContent = new Date().toLocaleTimeString(); updateButtons(state); if (data.motors) updateMotorStatus(data); } catch (e) { console.error(\"JSON parse error:\", e, \"Response:\", text); } }).catch(err => { console.error(\"Status update error:\", err); }); }");
-  server_.sendContent("function updateButtons(state) { const btnArm = document.getElementById(\"btn-arm\"); const btnDisarm = document.getElementById(\"btn-disarm\"); const btnStop = document.getElementById(\"btn-stop\"); btnArm.disabled = (state === \"ARMED\" || state === \"FAULT\" || state === \"BOOT\"); btnDisarm.disabled = (state !== \"ARMED\"); btnStop.disabled = (state === \"IDLE\" || state === \"FAULT\"); const isArmed = (state === \"ARMED\"); for (let i = 1; i <= MOTOR_COUNT; i++) { const joystickArea = document.getElementById(\"joystick-\" + i); if (joystickArea) { if (isArmed) { joystickArea.classList.remove(\"disabled\"); } else { joystickArea.classList.add(\"disabled\"); } } } }");
+  server_.sendContent("function updateButtons(state) { const btnArm = document.getElementById(\"btn-arm\"); const btnDisarm = document.getElementById(\"btn-disarm\"); const btnStop = document.getElementById(\"btn-stop\"); btnArm.disabled = (state === \"ARMED\" || state === \"FAULT\" || state === \"BOOT\"); btnDisarm.disabled = (state !== \"ARMED\"); btnStop.disabled = (state === \"IDLE\"); const isArmed = (state === \"ARMED\"); if (btnStop) { btnStop.textContent = (state === \"FAULT\") ? \"RECOVER\" : \"STOP\"; } for (let i = 1; i <= MOTOR_COUNT; i++) { const joystickArea = document.getElementById(\"joystick-\" + i); if (joystickArea) { if (isArmed) { joystickArea.classList.remove(\"disabled\"); } else { joystickArea.classList.add(\"disabled\"); } } } }");
   server_.sendContent("function updateSpeedValue(motorId) { const slider = document.getElementById(\"speed-\" + motorId); const value = document.getElementById(\"speed-value-\" + motorId); value.textContent = slider.value + \"%\"; }");
   server_.sendContent("function validateDefaultSpeed() { const speedInput = document.getElementById(\"default-speed\"); const btnSet = document.getElementById(\"btn-set-speed\"); const validationMsg = document.getElementById(\"speed-validation\"); const value = speedInput.value.trim(); if (value === \"\") { btnSet.disabled = true; validationMsg.textContent = \"Please enter a speed value (1-255)\"; validationMsg.className = \"validation-message\"; speedInput.style.borderColor = \"#f44336\"; return false; } if (value.indexOf(\".\") !== -1 || value.indexOf(\",\") !== -1) { btnSet.disabled = true; validationMsg.textContent = \"Please enter an integer (no decimals)\"; validationMsg.className = \"validation-message\"; speedInput.style.borderColor = \"#f44336\"; return false; } const speed = parseInt(value); if (isNaN(speed)) { btnSet.disabled = true; validationMsg.textContent = \"Please enter a valid number\"; validationMsg.className = \"validation-message\"; speedInput.style.borderColor = \"#f44336\"; return false; } if (speed < 1 || speed > 255) { btnSet.disabled = true; validationMsg.textContent = \"Speed must be between 1 and 255\"; validationMsg.className = \"validation-message\"; speedInput.style.borderColor = \"#f44336\"; return false; } btnSet.disabled = false; validationMsg.textContent = \"Valid speed value\"; validationMsg.className = \"validation-message valid\"; speedInput.style.borderColor = \"#4caf50\"; return true; }");
   server_.sendContent("function setDefaultSpeed() { if (!validateDefaultSpeed()) { return; } const speedInput = document.getElementById(\"default-speed\"); const btnSet = document.getElementById(\"btn-set-speed\"); const speed = parseInt(speedInput.value); btnSet.disabled = true; fetch(\"/motor?action=default&speed=\" + speed, { method: \"POST\", headers: {\"X-MotionBrain\": \"1\"} }).then(r => r.json()).then(data => { btnSet.disabled = false; showMessage(data.message || \"Default speed set\", !data.success); if (data.success) { const validationMsg = document.getElementById(\"speed-validation\"); validationMsg.textContent = \"Speed set successfully\"; validationMsg.className = \"validation-message valid\"; } }).catch(err => { btnSet.disabled = false; showMessage(\"Error: \" + err, true); }); }");
@@ -431,6 +493,11 @@ void MotionBrainWebServer::handleStatus() {
   json += safetyMonitor.isMotionBlocked() ? "true" : "false";
   json += ",\"blockReason\":\"";
   json += safetyMonitor.getBlockReasonString();
+  json += "\"";
+  json += ",\"faultLatched\":";
+  json += safetyMonitor.hasLatchedFault() ? "true" : "false";
+  json += ",\"faultReason\":\"";
+  json += safetyMonitor.getLatchedFaultReasonString();
   json += "\"}";
 
   json += "}";
@@ -471,58 +538,27 @@ void MotionBrainWebServer::handleCommand() {
   }
   
   DebugLog::info("Web Server: Command received: %s", cmd.c_str());
-  
-  bool success = false;
-  String message = "";
-  const char* newState = "";
-  
-  // 명령어 처리
+
+  Command command;
+  command.source = CommandSource::WEB_INPUT;
   if (cmd == "arm") {
-    success = systemState_->arm();
-    if (success) {
-      message = "System armed successfully";
-    } else {
-      message = "Failed to arm - check current state";
-    }
-    newState = systemState_->getStateString();
+    command.type = CommandType::ARM;
   }
   else if (cmd == "disarm") {
-    success = systemState_->disarm();
-    if (success) {
-      message = "System disarmed successfully";
-    } else {
-      message = "Failed to disarm - check current state";
-    }
-    newState = systemState_->getStateString();
+    command.type = CommandType::DISARM;
   }
   else if (cmd == "stop") {
-    if (!systemState_->enterSafe()) {
-      DebugLog::warn("Web: enterSafe() failed - proceeding with emergencyStop anyway");
-    }
-    motorControl_->emergencyStop();
-    success = true;
-    message = "Emergency stop activated";
-    newState = systemState_->getStateString();
+    command.type = CommandType::STOP;
   }
   else {
     DebugLog::warn("Web Server: Unknown command: %s", cmd.c_str());
     server_.send(400, "application/json", "{\"error\":\"Unknown command\"}");
     return;
   }
-  
-  // JSON 응답 생성
-  String json = "{";
-  json += "\"success\":";
-  json += success ? "true" : "false";
-  json += ",\"message\":\"";
-  json += message;
-  json += "\",\"state\":\"";
-  json += newState;
-  json += "\"}";
-  
-  DebugLog::command(cmd.c_str(), success, message.c_str());
-  
-  server_.send(200, "application/json", json);
+
+  CommandResult result;
+  submitCommand(command, result);
+  sendCommandResult(result, String("\"state\":\"") + systemState_->getStateString() + "\"");
 }
 
 /**
@@ -548,8 +584,8 @@ void MotionBrainWebServer::handleMotor() {
   String percentStr = server_.arg("percent");
   String speedStr = server_.arg("speed");
   
-  bool success = false;
-  String message = "";
+  Command command;
+  command.source = CommandSource::WEB_INPUT;
   
   if (action == "forward") {
     if (motorIdStr.length() == 0) {
@@ -578,14 +614,10 @@ void MotionBrainWebServer::handleMotor() {
       percent = (uint8_t)pv;
     }
 
-    success = motorControl_->forward(motorId, percent);
-    if (success) {
-      message = "Motor M" + String(motorId) + " forward at " + String(percent) + "%";
-    } else {
-      message = safetyMonitor.isMotionBlocked()
-        ? "Blocked by safety: " + String(safetyMonitor.getBlockReasonString())
-        : "Failed to set motor M" + String(motorId) + " forward";
-    }
+    command.type = CommandType::MOTOR_RUN;
+    command.motorId = motorId;
+    command.forward = true;
+    command.percent = percent;
   }
   else if (action == "reverse") {
     if (motorIdStr.length() == 0) {
@@ -614,14 +646,10 @@ void MotionBrainWebServer::handleMotor() {
       percent = (uint8_t)pv;
     }
 
-    success = motorControl_->reverse(motorId, percent);
-    if (success) {
-      message = "Motor M" + String(motorId) + " reverse at " + String(percent) + "%";
-    } else {
-      message = safetyMonitor.isMotionBlocked()
-        ? "Blocked by safety: " + String(safetyMonitor.getBlockReasonString())
-        : "Failed to set motor M" + String(motorId) + " reverse";
-    }
+    command.type = CommandType::MOTOR_RUN;
+    command.motorId = motorId;
+    command.forward = false;
+    command.percent = percent;
   }
   else if (action == "stop") {
     if (motorIdStr.length() == 0) {
@@ -636,12 +664,8 @@ void MotionBrainWebServer::handleMotor() {
     }
     uint8_t motorId = (uint8_t)motorIdInt;
 
-    success = motorControl_->stop(motorId);
-    if (success) {
-      message = "Motor M" + String(motorId) + " stopped";
-    } else {
-      message = "Failed to stop motor M" + String(motorId);
-    }
+    command.type = CommandType::MOTOR_STOP;
+    command.motorId = motorId;
   }
   else if (action == "default") {
     if (speedStr.length() == 0) {
@@ -662,30 +686,18 @@ void MotionBrainWebServer::handleMotor() {
     
     uint8_t speed = (uint8_t)speedInt;
     
-    success = motorControl_->setDefaultSpeed(speed);
-    if (success) {
-      message = "Default speed set to " + String(speed);
-    } else {
-      message = "Failed to set default speed";
-    }
+    command.type = CommandType::MOTOR_SET_DEFAULT_SPEED;
+    command.speed = speed;
   }
   else {
     DebugLog::warn("Web Server: Unknown motor action: %s", action.c_str());
     server_.send(400, "application/json", "{\"error\":\"Unknown action\"}");
     return;
   }
-  
-  // JSON 응답 생성
-  String json = "{";
-  json += "\"success\":";
-  json += success ? "true" : "false";
-  json += ",\"message\":\"";
-  json += message;
-  json += "\"}";
-  
-  DebugLog::command(("motor " + action).c_str(), success, message.c_str());
-  
-  server_.send(200, "application/json", json);
+
+  CommandResult result;
+  submitCommand(command, result);
+  sendCommandResult(result);
 }
 
 /**
@@ -732,42 +744,46 @@ void MotionBrainWebServer::handleJoint() {
     percent = (uint8_t)pVal;
   }
 
-  bool success = false;
-  String message = "";
+  Command command;
+  command.source = CommandSource::WEB_INPUT;
 
   if (joint == "gripper") {
-    if      (action == "open")  { success = robotArm_->gripperOpen(percent);  message = "Gripper open at "  + String(percent) + "%"; }
-    else if (action == "close") { success = robotArm_->gripperClose(percent); message = "Gripper close at " + String(percent) + "%"; }
-    else if (action == "stop")  { success = robotArm_->gripperStop();         message = "Gripper stop"; }
+    command.joint = MotionJoint::GRIPPER;
+    if      (action == "open")  { command.type = CommandType::JOINT_RUN;  command.direction = MotionDirection::OPEN; }
+    else if (action == "close") { command.type = CommandType::JOINT_RUN;  command.direction = MotionDirection::CLOSE; }
+    else if (action == "stop")  { command.type = CommandType::JOINT_STOP; }
     else { server_.send(400, "application/json", "{\"error\":\"Unknown action\"}"); return; }
   }
   else if (joint == "wrist") {
-    if      (action == "up")   { success = robotArm_->wristUp(percent);   message = "Wrist up at "   + String(percent) + "%"; }
-    else if (action == "down") { success = robotArm_->wristDown(percent); message = "Wrist down at " + String(percent) + "%"; }
-    else if (action == "stop") { success = robotArm_->wristStop();        message = "Wrist stop"; }
+    command.joint = MotionJoint::WRIST;
+    if      (action == "up")   { command.type = CommandType::JOINT_RUN;  command.direction = MotionDirection::UP; }
+    else if (action == "down") { command.type = CommandType::JOINT_RUN;  command.direction = MotionDirection::DOWN; }
+    else if (action == "stop") { command.type = CommandType::JOINT_STOP; }
     else { server_.send(400, "application/json", "{\"error\":\"Unknown action\"}"); return; }
   }
   else if (joint == "elbow") {
-    if      (action == "up")   { success = robotArm_->elbowUp(percent);   message = "Elbow up at "   + String(percent) + "%"; }
-    else if (action == "down") { success = robotArm_->elbowDown(percent); message = "Elbow down at " + String(percent) + "%"; }
-    else if (action == "stop") { success = robotArm_->elbowStop();        message = "Elbow stop"; }
+    command.joint = MotionJoint::ELBOW;
+    if      (action == "up")   { command.type = CommandType::JOINT_RUN;  command.direction = MotionDirection::UP; }
+    else if (action == "down") { command.type = CommandType::JOINT_RUN;  command.direction = MotionDirection::DOWN; }
+    else if (action == "stop") { command.type = CommandType::JOINT_STOP; }
     else { server_.send(400, "application/json", "{\"error\":\"Unknown action\"}"); return; }
   }
   else if (joint == "shoulder") {
-    if      (action == "up")   { success = robotArm_->shoulderUp(percent);   message = "Shoulder up at "   + String(percent) + "%"; }
-    else if (action == "down") { success = robotArm_->shoulderDown(percent); message = "Shoulder down at " + String(percent) + "%"; }
-    else if (action == "stop") { success = robotArm_->shoulderStop();        message = "Shoulder stop"; }
+    command.joint = MotionJoint::SHOULDER;
+    if      (action == "up")   { command.type = CommandType::JOINT_RUN;  command.direction = MotionDirection::UP; }
+    else if (action == "down") { command.type = CommandType::JOINT_RUN;  command.direction = MotionDirection::DOWN; }
+    else if (action == "stop") { command.type = CommandType::JOINT_STOP; }
     else { server_.send(400, "application/json", "{\"error\":\"Unknown action\"}"); return; }
   }
   else if (joint == "base") {
-    if      (action == "left")  { success = robotArm_->baseLeft(percent);  message = "Base left at "  + String(percent) + "%"; }
-    else if (action == "right") { success = robotArm_->baseRight(percent); message = "Base right at " + String(percent) + "%"; }
-    else if (action == "stop")  { success = robotArm_->baseStop();         message = "Base stop"; }
+    command.joint = MotionJoint::BASE;
+    if      (action == "left")  { command.type = CommandType::JOINT_RUN;  command.direction = MotionDirection::LEFT; }
+    else if (action == "right") { command.type = CommandType::JOINT_RUN;  command.direction = MotionDirection::RIGHT; }
+    else if (action == "stop")  { command.type = CommandType::JOINT_STOP; }
     else { server_.send(400, "application/json", "{\"error\":\"Unknown action\"}"); return; }
   }
   else if (joint == "all" && action == "stop") {
-    success = robotArm_->stopAll();
-    message = "All joints stopped";
+    command.type = CommandType::JOINT_STOP_ALL;
   }
   else {
     DebugLog::warn("Web Server: Unknown joint: %s", joint.c_str());
@@ -775,18 +791,11 @@ void MotionBrainWebServer::handleJoint() {
     return;
   }
 
-  if (!success && action != "stop" && safetyMonitor.isMotionBlocked()) {
-    message = "Blocked by safety: " + String(safetyMonitor.getBlockReasonString());
-  }
+  command.percent = percent;
 
-  String json = "{\"success\":";
-  json += success ? "true" : "false";
-  json += ",\"message\":\"";
-  json += message;
-  json += "\"}";
-
-  DebugLog::command(("joint " + joint + " " + action).c_str(), success, message.c_str());
-  server_.send(200, "application/json", json);
+  CommandResult result;
+  submitCommand(command, result);
+  sendCommandResult(result);
 }
 
 /**
@@ -813,26 +822,17 @@ void MotionBrainWebServer::handleSequence() {
     return;
   }
 
-  bool   success = false;
-  String message = "";
+  Command command;
+  command.source = CommandSource::WEB_INPUT;
 
   if (action == "run") {
-    success = motionSequence_->run();
-    message = success
-      ? "Sequence started"
-      : (safetyMonitor.isMotionBlocked()
-          ? "Blocked by safety: " + String(safetyMonitor.getBlockReasonString())
-          : "Sequence run failed (ARMED? commands queued?)");
+    command.type = CommandType::SEQUENCE_RUN;
   }
   else if (action == "stop") {
-    motionSequence_->stop();
-    success = true;
-    message = "Sequence stopped";
+    command.type = CommandType::SEQUENCE_STOP;
   }
   else if (action == "clear") {
-    motionSequence_->clear();
-    success = true;
-    message = "Sequence cleared";
+    command.type = CommandType::SEQUENCE_CLEAR;
   }
   else if (action == "add") {
     String jointStr = server_.arg("joint");
@@ -865,31 +865,22 @@ void MotionBrainWebServer::handleSequence() {
       return;
     }
 
-    success = motionSequence_->addCommand(joint, direction, (uint8_t)speed, (uint32_t)duration);
-    if (success) {
-      message = "Command added [" + String(motionSequence_->getTotalCount()) + "/" +
-                String(MotionSequence::MAX_COMMANDS) + "]";
-    } else {
-      message = "Add failed (queue full?)";
-    }
+    command.type = CommandType::SEQUENCE_ADD;
+    command.joint = joint;
+    command.direction = direction;
+    command.percent = (uint8_t)speed;
+    command.durationMs = (uint32_t)duration;
   }
   else {
     server_.send(400, "application/json", "{\"error\":\"Unknown action\"}");
     return;
   }
 
-  String json = "{\"success\":";
-  json += success ? "true" : "false";
-  json += ",\"message\":\"";
-  json += message;
-  json += "\",\"state\":\"";
-  json += MotionSequence::stateToString(motionSequence_->getState());
-  json += "\",\"count\":";
-  json += motionSequence_->getTotalCount();
-  json += "}";
-
-  DebugLog::command(("sequence " + action).c_str(), success, message.c_str());
-  server_.send(200, "application/json", json);
+  CommandResult result;
+  submitCommand(command, result);
+  sendCommandResult(result,
+                    String("\"state\":\"") + MotionSequence::stateToString(motionSequence_->getState()) +
+                    "\",\"count\":" + String(motionSequence_->getTotalCount()));
 }
 
 /**
@@ -921,6 +912,32 @@ void MotionBrainWebServer::handleSequenceStatus() {
 }
 
 /**
+ * 공통 favicon 응답
+ */
+void MotionBrainWebServer::handleFavicon() {
+  String svg = "<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'>";
+  svg += "<rect width='16' height='16' fill='#667eea'/>";
+  svg += "<circle cx='5' cy='5' r='2' fill='white'/>";
+  svg += "<circle cx='11' cy='5' r='2' fill='white'/>";
+  svg += "<rect x='4' y='8' width='8' height='4' rx='1' fill='white'/>";
+  svg += "</svg>";
+  server_.send(200, "image/svg+xml", svg);
+}
+
+/**
+ * 공통 Apple touch icon 응답
+ */
+void MotionBrainWebServer::handleAppleTouchIcon() {
+  String svg = "<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180'>";
+  svg += "<rect width='180' height='180' rx='40' fill='#667eea'/>";
+  svg += "<circle cx='60' cy='60' r='20' fill='white'/>";
+  svg += "<circle cx='120' cy='60' r='20' fill='white'/>";
+  svg += "<rect x='50' y='100' width='80' height='50' rx='10' fill='white'/>";
+  svg += "</svg>";
+  server_.send(200, "image/svg+xml", svg);
+}
+
+/**
  * 404 Not Found 처리
  * 존재하지 않는 경로 접근 시
  * favicon.ico 같은 브라우저 자동 요청은 실제 파일 제공
@@ -930,13 +947,7 @@ void MotionBrainWebServer::handleNotFound() {
   
   // favicon.ico - 간단한 SVG 아이콘 제공
   if (uri == "/favicon.ico") {
-    String svg = "<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'>";
-    svg += "<rect width='16' height='16' fill='#667eea'/>";
-    svg += "<circle cx='5' cy='5' r='2' fill='white'/>";
-    svg += "<circle cx='11' cy='5' r='2' fill='white'/>";
-    svg += "<rect x='4' y='8' width='8' height='4' rx='1' fill='white'/>";
-    svg += "</svg>";
-    server_.send(200, "image/svg+xml", svg);
+    handleFavicon();
     return;
   }
   
@@ -947,14 +958,11 @@ void MotionBrainWebServer::handleNotFound() {
   }
   
   // apple-touch-icon.png - iOS 홈 화면 아이콘 (SVG로 제공)
-  if (uri == "/apple-touch-icon.png" || uri == "/apple-touch-icon-precomposed.png") {
-    String svg = "<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180'>";
-    svg += "<rect width='180' height='180' rx='40' fill='#667eea'/>";
-    svg += "<circle cx='60' cy='60' r='20' fill='white'/>";
-    svg += "<circle cx='120' cy='60' r='20' fill='white'/>";
-    svg += "<rect x='50' y='100' width='80' height='50' rx='10' fill='white'/>";
-    svg += "</svg>";
-    server_.send(200, "image/svg+xml", svg);
+  if (uri == "/apple-touch-icon.png" ||
+      uri == "/apple-touch-icon-precomposed.png" ||
+      uri == "/apple-touch-icon-120x120.png" ||
+      uri == "/apple-touch-icon-120x120-precomposed.png") {
+    handleAppleTouchIcon();
     return;
   }
   
@@ -979,20 +987,21 @@ void MotionBrainWebServer::handleLight() {
   }
 
   String action = server_.arg("action");
+  Command command;
+  command.source = CommandSource::WEB_INPUT;
 
   if (action == "on") {
-    searchLight_->on();
+    command.type = CommandType::LIGHT_ON;
   } else if (action == "off") {
-    searchLight_->off();
+    command.type = CommandType::LIGHT_OFF;
   } else if (action == "toggle") {
-    searchLight_->toggle();
+    command.type = CommandType::LIGHT_TOGGLE;
   } else {
     server_.send(400, "application/json", "{\"error\":\"Unknown action (on/off/toggle)\"}");
     return;
   }
 
-  String json = "{\"success\":true,\"light\":";
-  json += searchLight_->isOn() ? "true" : "false";
-  json += "}";
-  server_.send(200, "application/json", json);
+  CommandResult result;
+  submitCommand(command, result);
+  sendCommandResult(result, String("\"light\":") + (searchLight_->isOn() ? "true" : "false"));
 }
