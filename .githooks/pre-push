@@ -1,0 +1,15 @@
+#!/bin/sh
+
+set -eu
+
+tracked_local_only="$(git ls-files '.codex/*' '.omc/*' '.claude/*')"
+
+if [ -n "$tracked_local_only" ]; then
+  echo "ERROR: local-only paths are tracked in git and push is blocked:" >&2
+  printf '%s\n' "$tracked_local_only" >&2
+  echo >&2
+  echo "Remove them from git history/index before pushing." >&2
+  exit 1
+fi
+
+exit 0

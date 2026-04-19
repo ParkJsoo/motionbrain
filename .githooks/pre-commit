@@ -1,0 +1,23 @@
+#!/bin/sh
+
+set -eu
+
+staged_paths="$(git diff --cached --name-only --diff-filter=ACMR)"
+
+if [ -z "$staged_paths" ]; then
+  exit 0
+fi
+
+blocked_pattern='^(\.codex/|\.omc/|\.claude/)'
+blocked_paths="$(printf '%s\n' "$staged_paths" | grep -E "$blocked_pattern" || true)"
+
+if [ -n "$blocked_paths" ]; then
+  echo "ERROR: local-only paths are staged for commit:" >&2
+  printf '%s\n' "$blocked_paths" >&2
+  echo >&2
+  echo "These paths are intentionally ignored and must stay out of git." >&2
+  echo "Run 'git restore --staged <path>' or 'git rm --cached <path>' and try again." >&2
+  exit 1
+fi
+
+exit 0
