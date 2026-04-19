@@ -37,6 +37,9 @@ private:
   SearchLight*        searchLight_;
   SafetyGate*         safetyGate_;
 
+  bool hasCoreDependencies() const;
+  bool hasDependenciesFor(CommandType type, const char** missingDependency) const;
+  bool commandExtendsTimeout(CommandType type) const;
   void setResult(CommandResult& result, uint32_t commandId, bool success, const char* format, ...) const;
   bool executeJointRun(MotionJoint joint, MotionDirection direction, uint8_t percent);
   bool executeJointStop(MotionJoint joint);

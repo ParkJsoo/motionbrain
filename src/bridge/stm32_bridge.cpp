@@ -126,7 +126,10 @@ const SensorSnapshot& Stm32Bridge::getSnapshot() const {
 }
 
 bool Stm32Bridge::isConnected() const {
-  return snapshot_.connected;
+  if (!snapshot_.connected) {
+    return false;
+  }
+  return getLastPacketAgeMs() <= LINK_TIMEOUT_MS;
 }
 
 uint32_t Stm32Bridge::getLastPacketAgeMs() const {

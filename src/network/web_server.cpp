@@ -103,27 +103,7 @@ bool MotionBrainWebServer::submitCommand(const Command& command, CommandResult& 
   Command queued = command;
   queued.id = commandBus_->allocateId();
   queued.createdAtMs = millis();
-
-  if (!commandBus_->enqueue(queued)) {
-    result.commandId = queued.id;
-    result.success = false;
-    strlcpy(result.message, "Command queue full", sizeof(result.message));
-    return false;
-  }
-
-  uint32_t processedId = 0;
-  CommandResult processedResult;
-  while (dispatcher_->dispatchNext(*commandBus_, &processedId, &processedResult)) {
-    if (processedId == queued.id) {
-      result = processedResult;
-      return processedResult.success;
-    }
-  }
-
-  result.commandId = queued.id;
-  result.success = false;
-  strlcpy(result.message, "Command was not processed", sizeof(result.message));
-  return false;
+  return dispatcher_->execute(queued, result);
 }
 
 void MotionBrainWebServer::sendCommandResult(const CommandResult& result, const String& extraJson) {

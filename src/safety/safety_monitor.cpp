@@ -161,8 +161,13 @@ void SafetyMonitor::triggerStop(const char* eventName, const char* details) {
   if (motionSequence_ != nullptr) {
     motionSequence_->stop();
   }
+  if (systemState_ != nullptr &&
+      systemState_->getState() == SystemState::ARMED &&
+      !systemState_->enterSafe()) {
+    DebugLog::warn("SafetyMonitor: enterSafe() failed during %s", eventName);
+  }
   if (motorControl_ != nullptr) {
-    motorControl_->stopAll();
+    motorControl_->emergencyStop();
   }
   DebugLog::safety(eventName, details);
 }

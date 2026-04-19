@@ -8,6 +8,7 @@
 class Stm32Bridge {
 public:
   static const uint32_t BAUD_RATE = 115200;
+  static const uint32_t LINK_TIMEOUT_MS = 1000;
   static const int RX_PIN = 35;
   static const int TX_PIN = -1;
 

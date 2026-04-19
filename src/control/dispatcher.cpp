@@ -88,14 +88,83 @@ void Dispatcher::init(SystemStateManager* systemState,
 }
 
 bool Dispatcher::isReady() const {
-  return systemState_ != nullptr && motorControl_ != nullptr &&
-         robotArm_ != nullptr && motionSequence_ != nullptr &&
-         searchLight_ != nullptr && safetyGate_ != nullptr;
+  return hasCoreDependencies();
+}
+
+bool Dispatcher::hasCoreDependencies() const {
+  return systemState_ != nullptr && motorControl_ != nullptr && safetyGate_ != nullptr;
+}
+
+bool Dispatcher::hasDependenciesFor(CommandType type, const char** missingDependency) const {
+  if (!hasCoreDependencies()) {
+    if (missingDependency != nullptr) {
+      *missingDependency = "core services";
+    }
+    return false;
+  }
+
+  switch (type) {
+    case CommandType::JOINT_RUN:
+    case CommandType::JOINT_STOP:
+    case CommandType::JOINT_STOP_ALL:
+      if (robotArm_ == nullptr) {
+        if (missingDependency != nullptr) {
+          *missingDependency = "robot arm";
+        }
+        return false;
+      }
+      break;
+
+    case CommandType::SEQUENCE_ADD:
+    case CommandType::SEQUENCE_RUN:
+    case CommandType::SEQUENCE_STOP:
+    case CommandType::SEQUENCE_CLEAR:
+      if (motionSequence_ == nullptr) {
+        if (missingDependency != nullptr) {
+          *missingDependency = "motion sequence";
+        }
+        return false;
+      }
+      break;
+
+    case CommandType::LIGHT_ON:
+    case CommandType::LIGHT_OFF:
+    case CommandType::LIGHT_TOGGLE:
+      if (searchLight_ == nullptr) {
+        if (missingDependency != nullptr) {
+          *missingDependency = "search light";
+        }
+        return false;
+      }
+      break;
+
+    default:
+      break;
+  }
+
+  return true;
+}
+
+bool Dispatcher::commandExtendsTimeout(CommandType type) const {
+  switch (type) {
+    case CommandType::MOTOR_RUN:
+    case CommandType::MOTOR_STOP:
+    case CommandType::MOTOR_STOP_ALL:
+    case CommandType::JOINT_RUN:
+    case CommandType::JOINT_STOP:
+    case CommandType::JOINT_STOP_ALL:
+    case CommandType::SEQUENCE_RUN:
+    case CommandType::SEQUENCE_STOP:
+      return true;
+    default:
+      return false;
+  }
 }
 
 bool Dispatcher::execute(const Command& command, CommandResult& result) {
-  if (!isReady()) {
-    setResult(result, command.id, false, "Dispatcher not initialized");
+  const char* missingDependency = nullptr;
+  if (!hasDependenciesFor(command.type, &missingDependency)) {
+    setResult(result, command.id, false, "Dispatcher missing %s", missingDependency);
     return false;
   }
 
@@ -253,11 +322,7 @@ bool Dispatcher::execute(const Command& command, CommandResult& result) {
       break;
   }
 
-  if (success &&
-      command.type != CommandType::ARM &&
-      command.type != CommandType::DISARM &&
-      command.type != CommandType::STOP &&
-      systemState_ != nullptr) {
+  if (success && commandExtendsTimeout(command.type) && systemState_ != nullptr) {
     systemState_->resetTimeout();
   }
 
