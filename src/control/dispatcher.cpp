@@ -62,6 +62,22 @@ const char* directionToString(MotionDirection direction) {
   }
 }
 
+bool semanticPositiveIsForward(uint8_t motorId) {
+  switch (motorId) {
+    case MotorControl::MOTOR_1: return RobotArm::GRIPPER_OPEN_IS_FORWARD;
+    case MotorControl::MOTOR_2: return RobotArm::WRIST_UP_IS_FORWARD;
+    case MotorControl::MOTOR_3: return RobotArm::ELBOW_UP_IS_FORWARD;
+    case MotorControl::MOTOR_4: return RobotArm::SHOULDER_UP_IS_FORWARD;
+    case MotorControl::MOTOR_5: return RobotArm::BASE_LEFT_IS_FORWARD;
+    default:                    return true;
+  }
+}
+
+bool resolveMotorRunForward(uint8_t motorId, bool commandForward) {
+  return commandForward ? semanticPositiveIsForward(motorId)
+                        : !semanticPositiveIsForward(motorId);
+}
+
 } // namespace
 
 Dispatcher::Dispatcher()
@@ -206,7 +222,7 @@ bool Dispatcher::execute(const Command& command, CommandResult& result) {
     }
 
     case CommandType::MOTOR_RUN:
-      success = command.forward
+      success = resolveMotorRunForward(command.motorId, command.forward)
         ? motorControl_->forward(command.motorId, command.percent)
         : motorControl_->reverse(command.motorId, command.percent);
       if (success) {
