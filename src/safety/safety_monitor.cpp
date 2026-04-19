@@ -103,13 +103,17 @@ void SafetyMonitor::update(const SensorSnapshot& snapshot) {
   if (blockReason_ != nextReason) {
     String details;
     if (nextReason == SafetyBlockReason::OBSTACLE) {
-      details = "dist_cm=" + String(snapshot.distanceCm, 1);
+      details = "to=OBSTACLE dist_cm=" + String(snapshot.distanceCm, 1);
     } else if (nextReason == SafetyBlockReason::SENSOR_STALE) {
-      details = "age_ms=" + String(snapshot.lastUpdateMs == 0 ? 0 : now - snapshot.lastUpdateMs);
+      details = "to=SENSOR_STALE age_ms=" + String(snapshot.lastUpdateMs == 0 ? 0 : now - snapshot.lastUpdateMs);
     } else {
-      details = reasonToString(nextReason);
+      details = "to=" + String(reasonToString(nextReason));
     }
-    triggerStop(reasonToString(nextReason), details.c_str());
+    if (!blocked_) {
+      triggerStop(reasonToString(nextReason), details.c_str());
+    } else {
+      DebugLog::safety("BLOCK_CHANGED", details.c_str());
+    }
     lastSafetyEventMs_ = now;
   }
 
@@ -157,17 +161,31 @@ const char* SafetyMonitor::reasonToString(SafetyBlockReason reason) {
   }
 }
 
+bool SafetyMonitor::shouldForceImmediateStop() const {
+  if (systemState_ != nullptr && systemState_->getState() == SystemState::ARMED) {
+    return true;
+  }
+
+  if (motorControl_ != nullptr && motorControl_->isEnabled()) {
+    return true;
+  }
+
+  return false;
+}
+
 void SafetyMonitor::triggerStop(const char* eventName, const char* details) {
   if (motionSequence_ != nullptr) {
     motionSequence_->stop();
   }
-  if (systemState_ != nullptr &&
-      systemState_->getState() == SystemState::ARMED &&
-      !systemState_->enterSafe()) {
-    DebugLog::warn("SafetyMonitor: enterSafe() failed during %s", eventName);
-  }
-  if (motorControl_ != nullptr) {
-    motorControl_->emergencyStop();
+  if (shouldForceImmediateStop()) {
+    if (systemState_ != nullptr &&
+        systemState_->getState() == SystemState::ARMED &&
+        !systemState_->enterSafe()) {
+      DebugLog::warn("SafetyMonitor: enterSafe() failed during %s", eventName);
+    }
+    if (motorControl_ != nullptr) {
+      motorControl_->emergencyStop();
+    }
   }
   DebugLog::safety(eventName, details);
 }

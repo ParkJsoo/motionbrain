@@ -55,6 +55,7 @@ private:
   uint8_t vibrationLowSamples_;
   uint32_t lastSafetyEventMs_;
 
+  bool shouldForceImmediateStop() const;
   void triggerStop(const char* eventName, const char* details);
   void triggerFault(const char* eventName, const char* details);
 };
