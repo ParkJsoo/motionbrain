@@ -3,6 +3,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include "control/command_bus.h"
+#include "control/safety_gate.h"
 #include "debug/debug_log.h"
 #include "motion/robot_arm.h"
 #include "motion/motion_sequence.h"
@@ -69,29 +70,37 @@ Dispatcher::Dispatcher()
   , robotArm_(nullptr)
   , motionSequence_(nullptr)
   , searchLight_(nullptr) {
+  safetyGate_ = nullptr;
 }
 
 void Dispatcher::init(SystemStateManager* systemState,
                       MotorControl* motorControl,
                       RobotArm* robotArm,
                       MotionSequence* motionSequence,
-                      SearchLight* searchLight) {
+                      SearchLight* searchLight,
+                      SafetyGate* safetyGate) {
   systemState_ = systemState;
   motorControl_ = motorControl;
   robotArm_ = robotArm;
   motionSequence_ = motionSequence;
   searchLight_ = searchLight;
+  safetyGate_ = safetyGate;
 }
 
 bool Dispatcher::isReady() const {
   return systemState_ != nullptr && motorControl_ != nullptr &&
          robotArm_ != nullptr && motionSequence_ != nullptr &&
-         searchLight_ != nullptr;
+         searchLight_ != nullptr && safetyGate_ != nullptr;
 }
 
 bool Dispatcher::execute(const Command& command, CommandResult& result) {
   if (!isReady()) {
     setResult(result, command.id, false, "Dispatcher not initialized");
+    return false;
+  }
+
+  if (!safetyGate_->allows(command, result)) {
+    DebugLog::command(commandTypeToString(command.type), false, result.message);
     return false;
   }
 

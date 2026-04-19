@@ -10,6 +10,7 @@
 #include "bridge/stm32_bridge.h"
 #include "control/command_bus.h"
 #include "control/dispatcher.h"
+#include "control/safety_gate.h"
 #include "safety/safety_monitor.h"
 #include "debug/debug_log.h"
 
@@ -26,6 +27,7 @@ Stm32Bridge stm32Bridge;          // STM32 센서 브리지
 SafetyMonitor safetyMonitor;      // 센서 기반 safety 모니터
 CommandBus commandBus;            // 공통 명령 버스
 Dispatcher dispatcher;            // 공통 명령 디스패처
+SafetyGate safetyGate;            // 공통 safety 정책 게이트
 
 /**
  * setup() - ESP32 부팅 시 한 번만 실행
@@ -74,7 +76,8 @@ void setup() {
   // 9. STM32 센서 브리지 및 safety 모니터 초기화
   stm32Bridge.init();
   safetyMonitor.init(&systemState, &motorControl, &motionSequence);
-  dispatcher.init(&systemState, &motorControl, &robotArm, &motionSequence, &searchLight);
+  safetyGate.init(&systemState, &safetyMonitor);
+  dispatcher.init(&systemState, &motorControl, &robotArm, &motionSequence, &searchLight, &safetyGate);
 
   // 10. 시리얼 명령 모듈 초기화
   serialCommand.init(&systemState, &motorControl, &robotArm, &motionSequence, &searchLight,
