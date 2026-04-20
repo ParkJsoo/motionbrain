@@ -1,6 +1,7 @@
 #include "serial_command.h"
 #include "debug/debug_log.h"
 #include "bridge/stm32_bridge.h"
+#include "control/angle_controller.h"
 #include "control/command.h"
 #include "control/command_bus.h"
 #include "control/dispatcher.h"
@@ -13,6 +14,7 @@
 
 extern Stm32Bridge stm32Bridge;
 extern SafetyMonitor safetyMonitor;
+extern AngleController angleController;
 
 /**
  * SerialCommand 생성자
@@ -281,6 +283,9 @@ void SerialCommand::processCommand(const char* cmdName, const char* args) {
   else if (strcasecmp(cmdName, "joint") == 0) {
     handleJoint(args);
   }
+  else if (strcasecmp(cmdName, "base") == 0) {
+    handleBase(args);
+  }
   else if (strcasecmp(cmdName, "sequence") == 0) {
     handleSequence(args);
   }
@@ -337,6 +342,8 @@ void SerialCommand::handleHelp() {
   DebugLog::info("  joint base right [%%]    - Base rotate right (M5)");
   DebugLog::info("  joint base stop         - Stop base");
   DebugLog::info("  joint stop              - Stop all joints (stay ARMED)");
+  DebugLog::info("  base angle <dir> <deg> [%%] - Base relative angle (left/right, 3-180 deg)");
+  DebugLog::info("  base stop               - Stop base / cancel angle control");
   DebugLog::info("");
   DebugLog::info("=== Sequence Commands (Phase 2-B) ===");
   DebugLog::info("  sequence add <joint> <dir> <speed%%> <ms>  - Add command to queue");
@@ -392,13 +399,31 @@ void SerialCommand::handleStatus() {
   DebugLog::info("Packets : %lu", stm32Bridge.getPacketsReceived());
   DebugLog::info("Parse errors: %lu", stm32Bridge.getParseErrors());
   DebugLog::info("Last update age: %lums", stm32Bridge.getLastPacketAgeMs());
+  DebugLog::info("Source timestamp: %lums", snapshot.sourceTimestampMs);
   DebugLog::info("IMU OK / Range OK: %s / %s", snapshot.imuOk ? "YES" : "NO", snapshot.rangeOk ? "YES" : "NO");
+  DebugLog::info("Gyro xyz: %.2f / %.2f / %.2f dps", snapshot.gyroX, snapshot.gyroY, snapshot.gyroZ);
+  DebugLog::info("Roll / Pitch: %.2f / %.2f deg", snapshot.roll, snapshot.pitch);
   DebugLog::info("Distance: %.1f cm", snapshot.distanceCm);
   DebugLog::info("Vibration: %.2f", snapshot.vibe);
   DebugLog::info("Motion blocked: %s", safetyMonitor.isMotionBlocked() ? "YES" : "NO");
   DebugLog::info("Block reason: %s", safetyMonitor.getBlockReasonString());
   DebugLog::info("Fault latched: %s", safetyMonitor.hasLatchedFault() ? "YES" : "NO");
   DebugLog::info("Fault reason: %s", safetyMonitor.getLatchedFaultReasonString());
+  DebugLog::info("=== Base Angle Control ===");
+  DebugLog::info("Active: %s", angleController.isActive() ? "YES" : "NO");
+  DebugLog::info("Direction: %s", angleController.getDirectionString());
+  DebugLog::info("Target / Current / Remaining: %.1f / %.1f / %.1f deg",
+                 angleController.getTargetDegrees(),
+                 angleController.getAccumulatedDegrees(),
+                 angleController.getRemainingDegrees());
+  DebugLog::info("Speed: %u%%", angleController.getPercent());
+  DebugLog::info("Elapsed / Timeout: %lums / %lums",
+                 angleController.getElapsedMs(),
+                 angleController.getTimeoutMs());
+  DebugLog::info("Samples / Last rate: %lu / %.2f dps",
+                 angleController.getProcessedSamples(),
+                 angleController.getLastRateDegreesPerSecond());
+  DebugLog::info("Last stop reason: %s", angleController.getLastStopReasonString());
 }
 
 /**
@@ -797,6 +822,94 @@ void SerialCommand::handleJoint(const char* args) {
   }
 
   command.percent = percent;
+
+  CommandResult result;
+  submitCommand(command, result);
+  logCommandResult(result);
+}
+
+void SerialCommand::handleBase(const char* args) {
+  if (args == nullptr || strlen(args) == 0) {
+    DebugLog::warn("Usage: base <angle|stop> ...");
+    DebugLog::info("  base angle <left|right> <degrees> [percent]");
+    DebugLog::info("  base stop");
+    return;
+  }
+
+  char action[CMD_NAME_SIZE];
+  char rest[ARGS_SIZE];
+  size_t i = 0;
+  while (args[i] != '\0' && args[i] != ' ' && args[i] != '\t' && i < CMD_NAME_SIZE - 1) {
+    action[i] = args[i];
+    i++;
+  }
+  action[i] = '\0';
+
+  while (args[i] == ' ' || args[i] == '\t') i++;
+  size_t j = 0;
+  while (args[i] != '\0' && j < ARGS_SIZE - 1) {
+    rest[j++] = args[i++];
+  }
+  rest[j] = '\0';
+
+  if (strcasecmp(action, "stop") == 0) {
+    Command command;
+    command.source = CommandSource::SERIAL_INPUT;
+    command.type = CommandType::JOINT_STOP;
+    command.joint = MotionJoint::BASE;
+
+    CommandResult result;
+    submitCommand(command, result);
+    logCommandResult(result);
+    return;
+  }
+
+  if (strcasecmp(action, "angle") != 0) {
+    DebugLog::warn("base: unknown action '%s' (angle/stop)", action);
+    return;
+  }
+
+  char directionStr[CMD_NAME_SIZE];
+  float degrees = 0.0f;
+  int percent = AngleController::DEFAULT_SPEED;
+
+  int parsed = sscanf(rest, "%31s %f %d", directionStr, &degrees, &percent);
+  if (parsed < 2) {
+    DebugLog::warn("base angle: needs <left|right> <degrees> [percent]");
+    DebugLog::info("  Example: base angle left 45 40");
+    return;
+  }
+
+  MotionDirection direction;
+  if (strcasecmp(directionStr, "left") == 0) {
+    direction = MotionDirection::LEFT;
+  } else if (strcasecmp(directionStr, "right") == 0) {
+    direction = MotionDirection::RIGHT;
+  } else {
+    DebugLog::warn("base angle: direction must be left or right");
+    return;
+  }
+
+  if (degrees < AngleController::MIN_TARGET_DEGREES ||
+      degrees > AngleController::MAX_TARGET_DEGREES) {
+    DebugLog::warn("base angle: degrees must be %.0f-%.0f",
+                   AngleController::MIN_TARGET_DEGREES,
+                   AngleController::MAX_TARGET_DEGREES);
+    return;
+  }
+
+  if (percent < 1 || percent > 100) {
+    DebugLog::warn("base angle: percent must be 1-100");
+    return;
+  }
+
+  Command command;
+  command.source = CommandSource::SERIAL_INPUT;
+  command.type = CommandType::BASE_ANGLE_RUN;
+  command.joint = MotionJoint::BASE;
+  command.direction = direction;
+  command.percent = static_cast<uint8_t>(percent);
+  command.targetDegrees = degrees;
 
   CommandResult result;
   submitCommand(command, result);

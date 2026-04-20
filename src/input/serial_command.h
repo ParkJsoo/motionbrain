@@ -161,6 +161,13 @@ private:
   void handleJoint(const char* args);
 
   /**
+   * base 명령어 처리
+   * 형식: base angle <left|right> <degrees> [percent]
+   *       base stop
+   */
+  void handleBase(const char* args);
+
+  /**
    * sequence 명령어 처리 (Phase 2-B)
    * 모션 시퀀스 큐 제어
    * @param args 명령어 인자 (예: "add shoulder up 50 2000", "run", "stop", "clear", "status")

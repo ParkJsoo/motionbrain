@@ -129,6 +129,7 @@ STM32 센서 프로젝트 경로:
 - `/command`
 - `/motor`
 - `/joint`
+- `/base`
 - `/sequence`
 - `/light`
 
@@ -178,7 +179,8 @@ pio device monitor
 2. Wi-Fi AP `MotionBrain-AP` 접속 또는 USB 시리얼 연결
 3. `arm`
 4. `joint`, `motor`, `sequence`, `light` 명령 사용
-5. 필요 시 `stop` 또는 `disarm`
+5. 상대각 회전이 필요하면 `base angle left 45 40` 같은 명령 사용
+6. 필요 시 `stop` 또는 `disarm`
 
 ## 문서 구조
 
@@ -187,6 +189,7 @@ pio device monitor
 - [README.md](/Users/jeongsoopark/develop/arduino/motionbrain/README.md:1): 프로젝트 개요와 현재 상태
 - [로드맵.md](/Users/jeongsoopark/develop/arduino/motionbrain/로드맵.md:1): 포트폴리오 기준 전체 단계
 - [PHASE3_PLAN.md](/Users/jeongsoopark/develop/arduino/motionbrain/PHASE3_PLAN.md:1): 현재 핵심 작업인 센서/브리지 계획
+- [MESSAGE_INTERFACE.md](/Users/jeongsoopark/develop/arduino/motionbrain/MESSAGE_INTERFACE.md:1): 시리얼/HTTP/status 메시지 경계 정리
 - [PIN_MAP.md](/Users/jeongsoopark/develop/arduino/motionbrain/PIN_MAP.md:1): ESP32 모터 핀 연결
 - [.codex/START_HERE.md](/Users/jeongsoopark/develop/arduino/motionbrain/.codex/START_HERE.md:1): 다음 세션용 빠른 복구 메모
 

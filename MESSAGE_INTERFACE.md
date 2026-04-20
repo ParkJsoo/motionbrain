@@ -1,0 +1,327 @@
+# MotionBrain Message Interface
+
+Phase 3-C 기준으로 ESP32 내부 모션 제어와 상위 호스트 사이의 메시지 경계를 정리한 문서다.
+
+목적은 두 가지다.
+
+- 시리얼과 HTTP에서 같은 의미를 가진 명령을 일관된 이름으로 유지한다.
+- Phase 4에서 ROS2 브리지로 옮길 때 필드 재설계 비용을 줄인다.
+
+## 1. 입력 명령 경계
+
+### Serial
+
+직접 모터 구동용 명령과 폐루프 base 명령을 분리한다.
+
+```text
+arm
+disarm
+stop
+joint base left 40
+joint base right 40
+joint base stop
+base angle left 45 40
+base angle right 30
+base stop
+```
+
+규칙:
+
+- `joint base ...` 는 개방루프 수동 구동이다.
+- `base angle ...` 는 센서 기반 상대각 폐루프 구동이다.
+- `base stop` 은 현재 base 상대각 제어를 취소하고 base 모터를 정지한다.
+
+### HTTP
+
+현재 웹 경계는 다음 라우트를 사용한다.
+
+- `POST /command`
+- `POST /motor`
+- `POST /joint`
+- `POST /base`
+- `POST /sequence`
+- `POST /light`
+- `GET /status`
+- `GET /events`
+
+base 상대각 제어는 전용 `/base` 경로로 분리한다.
+
+상대각 회전:
+
+```http
+POST /base?action=angle&direction=left&degrees=45&percent=40
+X-MotionBrain: 1
+```
+
+정지:
+
+```http
+POST /base?action=stop
+X-MotionBrain: 1
+```
+
+규칙:
+
+- `direction` 은 `left|right`
+- `degrees` 는 `3.0 .. 180.0`
+- `percent` 는 `1 .. 100`, 생략 시 기본값 `40`
+
+## 2. 상태 메시지 경계
+
+`GET /status` 응답은 아래 상위 필드를 유지한다.
+
+```json
+{
+  "schemaVersion": "phase3.v1",
+  "messageType": "status",
+  "uptimeMs": 18234,
+  "state": "ARMED",
+  "motorEnabled": true,
+  "motors": {},
+  "light": false,
+  "sensor": {},
+  "baseAngle": {}
+}
+```
+
+### `sensor`
+
+```json
+{
+  "connected": true,
+  "lastUpdateMs": 83,
+  "packetsReceived": 120,
+  "parseErrors": 0,
+  "imuOk": true,
+  "rangeOk": true,
+  "sourceTimestampMs": 123456,
+  "gyroX": 0.23,
+  "gyroY": -0.11,
+  "gyroZ": 14.62,
+  "roll": -2.10,
+  "pitch": 1.40,
+  "distCm": 42.7,
+  "vibe": 1.34,
+  "blocked": false,
+  "blockReason": "NONE",
+  "faultLatched": false,
+  "faultReason": "NONE"
+}
+```
+
+의미:
+
+- `lastUpdateMs`: 마지막 센서 패킷 이후 경과 시간
+- `blocked`: 현재 모션 차단 여부
+- `blockReason`: `NONE|SENSOR_STALE|IMU_FAULT|RANGE_FAULT|OBSTACLE|VIBRATION`
+
+### `baseAngle`
+
+```json
+{
+  "active": true,
+  "direction": "left",
+  "targetDeg": 45.0,
+  "currentDeg": 18.6,
+  "remainingDeg": 26.4,
+  "percent": 40,
+  "elapsedMs": 1120,
+  "timeoutMs": 7500,
+  "processedSamples": 18,
+  "lastRateDps": 14.62,
+  "lastStopReason": "NONE",
+  "lastTransitionMs": 8421
+}
+```
+
+의미:
+
+- `active`: 현재 base 상대각 제어 활성 여부
+- `direction`: 현재 목표 회전 방향
+- `targetDeg`: 목표 상대각
+- `currentDeg`: 시작 시점부터 적분된 현재 상대각 추정치
+- `remainingDeg`: 남은 상대각 추정치
+- `processedSamples`: 현재 명령 동안 적분에 사용한 샘플 수
+- `lastRateDps`: 마지막에 사용한 회전 속도 추정값
+- `lastStopReason`: 마지막 종료 이유
+
+`lastStopReason` 값:
+
+- `NONE`
+- `TARGET_REACHED`
+- `TIMEOUT`
+- `NO_ROTATION_FEEDBACK`
+- `SENSOR_BLOCK`
+- `STATE_CHANGED`
+- `MANUAL_STOP`
+- `OVERRIDDEN`
+- `START_FAILED`
+
+## 3. 종료 이유 의미
+
+base 상대각 제어는 다음 종료 이유를 가진다.
+
+- `TARGET_REACHED`: 목표각 허용 오차 내 도달
+- `TIMEOUT`: 최대 회전 시간 초과
+- `NO_ROTATION_FEEDBACK`: IMU가 base 회전에 함께 움직이지 않거나 잘못된 축을 보고 있어 의미 있는 각속도 피드백이 없음
+- `SENSOR_BLOCK`: safety block 발생
+- `STATE_CHANGED`: `ARMED` 이탈
+- `MANUAL_STOP`: 사용자가 `base stop` 또는 base 정지 명령 수행
+- `OVERRIDDEN`: 다른 base 수동 명령이나 시퀀스가 제어를 덮어씀
+- `START_FAILED`: base 모터 시작 실패 또는 의존성 부족
+
+## 4. 명령 응답 경계
+
+모든 `POST` 명령 응답은 같은 envelope를 사용한다.
+
+```json
+{
+  "schemaVersion": "phase3.v1",
+  "messageType": "command_result",
+  "success": true,
+  "commandId": 42,
+  "message": "System armed successfully",
+  "state": "ARMED",
+  "sensorBlocked": false,
+  "blockReason": "NONE",
+  "faultLatched": false,
+  "faultReason": "NONE",
+  "baseAngleActive": false,
+  "baseAngleReason": "NO_ROTATION_FEEDBACK"
+}
+```
+
+규칙:
+
+- `commandId` 는 ESP32 내부 실행 단위 식별자다.
+- `message` 는 사용자 표시용 짧은 설명이다.
+- `state`, `sensorBlocked`, `blockReason`, `faultLatched`, `baseAngleActive` 는 상위 호스트가 후속 행동을 결정하는 데 쓸 수 있는 최소 상태 요약이다.
+- 각 라우트는 여기에 추가 필드를 덧붙일 수 있다.
+  - 예: `/light` 는 `light`
+  - 예: `/sequence` 는 `count`
+  - 예: `/base` 는 `baseAngleActive`, `baseAngleReason`
+
+## 5. 에러 응답 경계
+
+유효성 검사 실패나 초기화 실패는 아래 구조를 사용한다.
+
+```json
+{
+  "schemaVersion": "phase3.v1",
+  "messageType": "error",
+  "success": false,
+  "error": "Missing 'action' parameter",
+  "details": "angle",
+  "state": "IDLE",
+  "sensorBlocked": false,
+  "blockReason": "NONE",
+  "faultLatched": false,
+  "faultReason": "NONE",
+  "baseAngleActive": false,
+  "baseAngleReason": "NONE"
+}
+```
+
+규칙:
+
+- `error` 는 짧은 실패 이유다.
+- `details` 는 선택적 보조 정보다.
+- 에러 응답도 상태 요약을 포함하므로, 상위 호스트는 실패 직후 추가 `/status` 호출 없이도 기본 판단이 가능하다.
+
+## 6. 시퀀스 상태 응답
+
+`GET /sequence` 는 별도 메시지 타입을 사용한다.
+
+```json
+{
+  "schemaVersion": "phase3.v1",
+  "messageType": "sequence_status",
+  "state": "ARMED",
+  "sensorBlocked": false,
+  "blockReason": "NONE",
+  "faultLatched": false,
+  "faultReason": "NONE",
+  "baseAngleActive": false,
+  "baseAngleReason": "NONE",
+  "sequence": {
+    "state": "IDLE",
+    "currentStep": 1,
+    "totalCount": 0,
+    "remainingMs": 0,
+    "full": false
+  }
+}
+```
+
+## 7. 이벤트 응답 경계
+
+`GET /events` 는 최근 시스템 이벤트를 oldest-first 배열로 반환한다.
+
+```json
+{
+  "schemaVersion": "phase3.v1",
+  "messageType": "event_list",
+  "state": "IDLE",
+  "sensorBlocked": false,
+  "blockReason": "NONE",
+  "faultLatched": false,
+  "faultReason": "NONE",
+  "baseAngleActive": false,
+  "baseAngleReason": "NO_ROTATION_FEEDBACK",
+  "count": 3,
+  "events": [
+    {
+      "id": 1,
+      "tsMs": 1500,
+      "severity": "INFO",
+      "category": "system",
+      "code": "BOOT_COMPLETE",
+      "detail": "IDLE"
+    },
+    {
+      "id": 2,
+      "tsMs": 8420,
+      "severity": "INFO",
+      "category": "base_angle",
+      "code": "BASE_ANGLE_START",
+      "detail": "dir=left target_deg=20.0 speed_pct=35"
+    },
+    {
+      "id": 3,
+      "tsMs": 9950,
+      "severity": "WARN",
+      "category": "base_angle",
+      "code": "BASE_ANGLE_STOP",
+      "detail": "reason=NO_ROTATION_FEEDBACK current_deg=0.9 target_deg=20.0 imu not moving with base?"
+    }
+  ]
+}
+```
+
+규칙:
+
+- 기본은 최근 전체 이벤트를 반환하고, `limit` 쿼리로 마지막 N개만 잘라 받을 수 있다.
+- `severity` 는 `INFO|WARN|ERROR`
+- `category` 는 현재 `system|safety|base_angle` 를 사용한다.
+- `code` 는 상위 호스트에서 문자열 비교가 가능하도록 안정적인 식별자 이름을 유지한다.
+- `detail` 은 짧은 설명 문자열이며, 상위 호스트 UI 표시나 디버그 로그 연결 용도다.
+
+현재 발생 가능한 대표 이벤트:
+
+- `BOOT_COMPLETE`
+- `FAULT_CLEARED`
+- `BLOCK_CLEARED`
+- `BLOCK_CHANGED`
+- `EMERGENCY_STOP`
+- `EMERGENCY_FAULT`
+- `BASE_ANGLE_START`
+- `BASE_ANGLE_TARGET_REACHED`
+- `BASE_ANGLE_STOP`
+
+## 8. Phase 4로 넘길 때 유지할 약속
+
+- 센서 상태는 `sensor` 객체 안에 계속 둔다.
+- 폐루프 base 상태는 `baseAngle` 객체로 분리 유지한다.
+- 상위 호스트는 문자열 로그 파싱 대신 `GET /status` 필드를 사용한다.
+- 이벤트 스트림은 `GET /events` 구조를 기반으로 확장하고, 종료 이유 문자열은 위 enum 이름을 유지한다.
+- `schemaVersion` 과 `messageType` 는 Phase 4에서도 유지한다.

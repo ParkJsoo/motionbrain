@@ -43,6 +43,7 @@ bool SafetyGate::requiresArmedState(CommandType type) const {
   switch (type) {
     case CommandType::MOTOR_RUN:
     case CommandType::JOINT_RUN:
+    case CommandType::BASE_ANGLE_RUN:
     case CommandType::SEQUENCE_RUN:
       return true;
     default:
@@ -55,6 +56,7 @@ bool SafetyGate::requiresMotionClearance(CommandType type) const {
     case CommandType::ARM:
     case CommandType::MOTOR_RUN:
     case CommandType::JOINT_RUN:
+    case CommandType::BASE_ANGLE_RUN:
     case CommandType::SEQUENCE_RUN:
       return true;
     default:

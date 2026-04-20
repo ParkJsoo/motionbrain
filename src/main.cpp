@@ -8,7 +8,9 @@
 #include "network/web_server.h"        // MotionBrainWebServer 사용
 #include "peripheral/search_light.h"   // SearchLight 사용
 #include "bridge/stm32_bridge.h"
+#include "control/angle_controller.h"
 #include "control/command_bus.h"
+#include "control/event_log.h"
 #include "control/dispatcher.h"
 #include "control/safety_gate.h"
 #include "safety/safety_monitor.h"
@@ -25,6 +27,8 @@ MotionBrainWebServer webServer;   // MotionBrainWebServer 객체 생성
 SearchLight searchLight;          // SearchLight 객체 생성
 Stm32Bridge stm32Bridge;          // STM32 센서 브리지
 SafetyMonitor safetyMonitor;      // 센서 기반 safety 모니터
+AngleController angleController;  // base 상대각 폐루프 제어
+EventLog eventLog;                // 최근 시스템 이벤트 로그
 CommandBus commandBus;            // 공통 명령 버스
 Dispatcher dispatcher;            // 공통 명령 디스패처
 SafetyGate safetyGate;            // 공통 safety 정책 게이트
@@ -76,8 +80,10 @@ void setup() {
   // 9. STM32 센서 브리지 및 safety 모니터 초기화
   stm32Bridge.init();
   safetyMonitor.init(&systemState, &motorControl, &motionSequence);
+  angleController.init(&systemState, &robotArm, &safetyMonitor);
   safetyGate.init(&systemState, &safetyMonitor);
-  dispatcher.init(&systemState, &motorControl, &robotArm, &motionSequence, &searchLight, &safetyGate);
+  dispatcher.init(&systemState, &motorControl, &robotArm, &motionSequence, &searchLight,
+                  &safetyGate, &angleController);
 
   // 10. 시리얼 명령 모듈 초기화
   serialCommand.init(&systemState, &motorControl, &robotArm, &motionSequence, &searchLight,
@@ -108,6 +114,7 @@ void setup() {
   
   DebugLog::info("Boot complete - system is in %s state", systemState.getStateString());
   DebugLog::info("=== MotionBrain Core Ready: 5-axis control + web UI ===");
+  eventLog.push("system", "BOOT_COMPLETE", EventSeverity::INFO, systemState.getStateString());
 }
 
 /**
@@ -128,6 +135,9 @@ void loop() {
 
   // 센서 기반 safety 평가
   safetyMonitor.update(stm32Bridge.getSnapshot());
+
+  // base 상대각 폐루프 업데이트
+  angleController.update(stm32Bridge.getSnapshot());
 
   // 공통 명령 처리
   dispatcher.dispatchPending(commandBus);

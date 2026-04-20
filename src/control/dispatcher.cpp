@@ -2,6 +2,7 @@
 
 #include <stdarg.h>
 #include <stdio.h>
+#include "control/angle_controller.h"
 #include "control/command_bus.h"
 #include "control/safety_gate.h"
 #include "debug/debug_log.h"
@@ -28,6 +29,7 @@ const char* commandTypeToString(CommandType type) {
     case CommandType::JOINT_RUN:               return "joint run";
     case CommandType::JOINT_STOP:              return "joint stop";
     case CommandType::JOINT_STOP_ALL:          return "joint stop all";
+    case CommandType::BASE_ANGLE_RUN:          return "base angle";
     case CommandType::SEQUENCE_ADD:            return "sequence add";
     case CommandType::SEQUENCE_RUN:            return "sequence run";
     case CommandType::SEQUENCE_STOP:           return "sequence stop";
@@ -87,6 +89,7 @@ Dispatcher::Dispatcher()
   , motionSequence_(nullptr)
   , searchLight_(nullptr) {
   safetyGate_ = nullptr;
+  angleController_ = nullptr;
 }
 
 void Dispatcher::init(SystemStateManager* systemState,
@@ -94,13 +97,15 @@ void Dispatcher::init(SystemStateManager* systemState,
                       RobotArm* robotArm,
                       MotionSequence* motionSequence,
                       SearchLight* searchLight,
-                      SafetyGate* safetyGate) {
+                      SafetyGate* safetyGate,
+                      AngleController* angleController) {
   systemState_ = systemState;
   motorControl_ = motorControl;
   robotArm_ = robotArm;
   motionSequence_ = motionSequence;
   searchLight_ = searchLight;
   safetyGate_ = safetyGate;
+  angleController_ = angleController;
 }
 
 bool Dispatcher::isReady() const {
@@ -126,6 +131,15 @@ bool Dispatcher::hasDependenciesFor(CommandType type, const char** missingDepend
       if (robotArm_ == nullptr) {
         if (missingDependency != nullptr) {
           *missingDependency = "robot arm";
+        }
+        return false;
+      }
+      break;
+
+    case CommandType::BASE_ANGLE_RUN:
+      if (angleController_ == nullptr) {
+        if (missingDependency != nullptr) {
+          *missingDependency = "angle controller";
         }
         return false;
       }
@@ -169,6 +183,7 @@ bool Dispatcher::commandExtendsTimeout(CommandType type) const {
     case CommandType::JOINT_RUN:
     case CommandType::JOINT_STOP:
     case CommandType::JOINT_STOP_ALL:
+    case CommandType::BASE_ANGLE_RUN:
     case CommandType::SEQUENCE_RUN:
     case CommandType::SEQUENCE_STOP:
       return true;
@@ -189,6 +204,8 @@ bool Dispatcher::execute(const Command& command, CommandResult& result) {
     return false;
   }
 
+  cancelBaseAngleIfNeeded(command);
+
   bool success = false;
 
   switch (command.type) {
@@ -200,6 +217,9 @@ bool Dispatcher::execute(const Command& command, CommandResult& result) {
       break;
 
     case CommandType::DISARM:
+      if (angleController_ != nullptr) {
+        angleController_->cancel(AngleControllerStopReason::STATE_CHANGED, "disarm");
+      }
       success = systemState_->disarm();
       setResult(result, command.id, success, success
         ? "System disarmed successfully"
@@ -208,6 +228,9 @@ bool Dispatcher::execute(const Command& command, CommandResult& result) {
 
     case CommandType::STOP: {
       SystemState previousState = systemState_->getState();
+      if (angleController_ != nullptr) {
+        angleController_->cancel(AngleControllerStopReason::STATE_CHANGED, "stop");
+      }
       if (motionSequence_ != nullptr) {
         motionSequence_->stop();
       }
@@ -284,6 +307,20 @@ bool Dispatcher::execute(const Command& command, CommandResult& result) {
                 success ? "All joints stopped" : "Failed to stop all joints");
       break;
 
+    case CommandType::BASE_ANGLE_RUN: {
+      char message[sizeof(result.message)] = {0};
+      success = angleController_->startRelative(command.direction, command.targetDegrees,
+                                                command.percent, message, sizeof(message));
+      if (success) {
+        setResult(result, command.id, true, "%s", message);
+      } else if (message[0] != '\0') {
+        setResult(result, command.id, false, "%s", message);
+      } else {
+        setResult(result, command.id, false, "Failed to start base angle control");
+      }
+      break;
+    }
+
     case CommandType::SEQUENCE_ADD:
       success = motionSequence_->addCommand(command.joint, command.direction, command.percent, command.durationMs);
       if (success) {
@@ -344,6 +381,58 @@ bool Dispatcher::execute(const Command& command, CommandResult& result) {
 
   DebugLog::command(commandTypeToString(command.type), result.success, result.message);
   return result.success;
+}
+
+void Dispatcher::cancelBaseAngleIfNeeded(const Command& command) {
+  if (angleController_ == nullptr || !angleController_->isActive()) {
+    return;
+  }
+
+  switch (command.type) {
+    case CommandType::STOP:
+    case CommandType::DISARM:
+      angleController_->cancel(AngleControllerStopReason::STATE_CHANGED, commandTypeToString(command.type));
+      return;
+
+    case CommandType::SEQUENCE_RUN:
+    case CommandType::SEQUENCE_STOP:
+    case CommandType::SEQUENCE_CLEAR:
+      angleController_->cancel(AngleControllerStopReason::OVERRIDDEN, commandTypeToString(command.type));
+      return;
+
+    case CommandType::MOTOR_STOP_ALL:
+    case CommandType::JOINT_STOP_ALL:
+      angleController_->cancel(AngleControllerStopReason::MANUAL_STOP, commandTypeToString(command.type));
+      return;
+
+    case CommandType::MOTOR_RUN:
+      if (command.motorId == MotorControl::MOTOR_5) {
+        angleController_->cancel(AngleControllerStopReason::OVERRIDDEN, "base motor override");
+      }
+      return;
+
+    case CommandType::MOTOR_STOP:
+      if (command.motorId == MotorControl::MOTOR_5) {
+        angleController_->cancel(command.type == CommandType::MOTOR_STOP
+                                   ? AngleControllerStopReason::MANUAL_STOP
+                                   : AngleControllerStopReason::OVERRIDDEN,
+                                 "base motor override");
+      }
+      return;
+
+    case CommandType::JOINT_RUN:
+    case CommandType::JOINT_STOP:
+      if (command.joint == MotionJoint::BASE) {
+        angleController_->cancel(command.type == CommandType::JOINT_STOP
+                                   ? AngleControllerStopReason::MANUAL_STOP
+                                   : AngleControllerStopReason::OVERRIDDEN,
+                                 "base joint override");
+      }
+      return;
+
+    default:
+      return;
+  }
 }
 
 bool Dispatcher::dispatchNext(CommandBus& commandBus, uint32_t* processedId, CommandResult* result) {

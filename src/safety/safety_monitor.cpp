@@ -1,4 +1,5 @@
 #include "safety/safety_monitor.h"
+#include "control/event_log.h"
 #include "debug/debug_log.h"
 #include "motor/motor_driver.h"
 #include "motion/motion_sequence.h"
@@ -16,6 +17,8 @@ SafetyMonitor::SafetyMonitor()
   , vibrationHighSamples_(0)
   , vibrationLowSamples_(0)
   , lastSafetyEventMs_(0) {}
+
+extern EventLog eventLog;
 
 void SafetyMonitor::init(SystemStateManager* systemState, MotorControl* motorControl, MotionSequence* motionSequence) {
   systemState_ = systemState;
@@ -37,6 +40,7 @@ void SafetyMonitor::update(const SensorSnapshot& snapshot) {
 
   if (latchedFault_ && systemState_ != nullptr && systemState_->getState() != SystemState::FAULT) {
     DebugLog::safety("FAULT_CLEARED", reasonToString(latchedFaultReason_));
+    eventLog.push("safety", "FAULT_CLEARED", EventSeverity::INFO, reasonToString(latchedFaultReason_));
     latchedFault_ = false;
     latchedFaultReason_ = SafetyBlockReason::NONE;
   }
@@ -94,6 +98,7 @@ void SafetyMonitor::update(const SensorSnapshot& snapshot) {
                                            latchedFaultReason_ == SafetyBlockReason::VIBRATION;
     if (blocked_ && !suppressVibrationClearLog) {
       DebugLog::safety("BLOCK_CLEARED", reasonToString(blockReason_));
+      eventLog.push("safety", "BLOCK_CLEARED", EventSeverity::INFO, reasonToString(blockReason_));
     }
     blocked_ = false;
     blockReason_ = SafetyBlockReason::NONE;
@@ -113,6 +118,7 @@ void SafetyMonitor::update(const SensorSnapshot& snapshot) {
       triggerStop(reasonToString(nextReason), details.c_str());
     } else {
       DebugLog::safety("BLOCK_CHANGED", details.c_str());
+      eventLog.push("safety", "BLOCK_CHANGED", EventSeverity::WARN, details.c_str());
     }
     lastSafetyEventMs_ = now;
   }
@@ -188,6 +194,7 @@ void SafetyMonitor::triggerStop(const char* eventName, const char* details) {
     }
   }
   DebugLog::safety(eventName, details);
+  eventLog.push("safety", eventName, EventSeverity::WARN, details);
 }
 
 void SafetyMonitor::triggerFault(const char* eventName, const char* details) {
@@ -203,4 +210,5 @@ void SafetyMonitor::triggerFault(const char* eventName, const char* details) {
   latchedFault_ = true;
   latchedFaultReason_ = SafetyBlockReason::VIBRATION;
   DebugLog::safety(eventName, details);
+  eventLog.push("safety", eventName, EventSeverity::ERROR, details);
 }

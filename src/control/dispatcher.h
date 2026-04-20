@@ -12,6 +12,7 @@ class MotionSequence;
 class SearchLight;
 class CommandBus;
 class SafetyGate;
+class AngleController;
 
 class Dispatcher {
 public:
@@ -22,7 +23,8 @@ public:
             RobotArm* robotArm,
             MotionSequence* motionSequence,
             SearchLight* searchLight,
-            SafetyGate* safetyGate);
+            SafetyGate* safetyGate,
+            AngleController* angleController);
 
   bool isReady() const;
   bool execute(const Command& command, CommandResult& result);
@@ -36,10 +38,12 @@ private:
   MotionSequence*     motionSequence_;
   SearchLight*        searchLight_;
   SafetyGate*         safetyGate_;
+  AngleController*    angleController_;
 
   bool hasCoreDependencies() const;
   bool hasDependenciesFor(CommandType type, const char** missingDependency) const;
   bool commandExtendsTimeout(CommandType type) const;
+  void cancelBaseAngleIfNeeded(const Command& command);
   void setResult(CommandResult& result, uint32_t commandId, bool success, const char* format, ...) const;
   bool executeJointRun(MotionJoint joint, MotionDirection direction, uint8_t percent);
   bool executeJointStop(MotionJoint joint);

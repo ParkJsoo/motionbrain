@@ -1,7 +1,9 @@
 #include "web_server.h"
 #include "bridge/stm32_bridge.h"
+#include "control/angle_controller.h"
 #include "control/command.h"
 #include "control/command_bus.h"
+#include "control/event_log.h"
 #include "control/dispatcher.h"
 #include "safety/safety_monitor.h"
 #include "system/system_init.h"       // SystemStateManager 사용
@@ -13,6 +15,33 @@
 
 extern Stm32Bridge stm32Bridge;
 extern SafetyMonitor safetyMonitor;
+extern AngleController angleController;
+extern EventLog eventLog;
+
+namespace {
+
+constexpr const char* MESSAGE_SCHEMA_VERSION = "phase3.v1";
+
+String jsonEscape(const String& raw) {
+  String escaped;
+  escaped.reserve(raw.length() + 8);
+
+  for (size_t i = 0; i < raw.length(); ++i) {
+    char c = raw[i];
+    switch (c) {
+      case '\\': escaped += "\\\\"; break;
+      case '"':  escaped += "\\\""; break;
+      case '\n': escaped += "\\n"; break;
+      case '\r': escaped += "\\r"; break;
+      case '\t': escaped += "\\t"; break;
+      default:   escaped += c; break;
+    }
+  }
+
+  return escaped;
+}
+
+} // namespace
 
 /**
  * MotionBrainWebServer 생성자
@@ -55,9 +84,11 @@ bool MotionBrainWebServer::init(SystemStateManager* systemState, MotorControl* m
   // 람다 함수를 사용하여 클래스 메서드 호출
   server_.on("/", HTTP_GET, [this]() { this->handleRoot(); });
   server_.on("/status", HTTP_GET, [this]() { this->handleStatus(); });
+  server_.on("/events", HTTP_GET, [this]() { this->handleEvents(); });
   server_.on("/command", HTTP_POST, [this]() { this->handleCommand(); });
   server_.on("/motor", HTTP_POST, [this]() { this->handleMotor(); });
   server_.on("/joint", HTTP_POST, [this]() { this->handleJoint(); });
+  server_.on("/base", HTTP_POST, [this]() { this->handleBase(); });
   server_.on("/sequence", HTTP_POST, [this]() { this->handleSequence(); });
   server_.on("/sequence", HTTP_GET,  [this]() { this->handleSequenceStatus(); });
   server_.on("/light",    HTTP_POST, [this]() { this->handleLight(); });
@@ -78,9 +109,11 @@ bool MotionBrainWebServer::init(SystemStateManager* systemState, MotorControl* m
   DebugLog::info("Web Server: Routes registered");
   DebugLog::debug("  GET  /         -> Dashboard");
   DebugLog::debug("  GET  /status   -> JSON status");
+  DebugLog::debug("  GET  /events   -> JSON recent events");
   DebugLog::debug("  POST /command  -> Execute command");
   DebugLog::debug("  POST /motor    -> Motor control");
   DebugLog::debug("  POST /joint     -> Joint control");
+  DebugLog::debug("  POST /base      -> Base angle control");
   DebugLog::debug("  POST /sequence  -> Sequence control");
   DebugLog::debug("  GET  /sequence  -> Sequence status");
   DebugLog::debug("  POST /light     -> Search light control");
@@ -106,12 +139,54 @@ bool MotionBrainWebServer::submitCommand(const Command& command, CommandResult& 
   return dispatcher_->execute(queued, result);
 }
 
-void MotionBrainWebServer::sendCommandResult(const CommandResult& result, const String& extraJson) {
-  String json = "{\"success\":";
-  json += result.success ? "true" : "false";
-  json += ",\"message\":\"";
-  json += result.message;
+void MotionBrainWebServer::appendStateSummaryJson(String& json) const {
+  json += "\"state\":\"";
+  json += systemState_ != nullptr ? systemState_->getStateString() : "UNKNOWN";
+  json += "\",\"sensorBlocked\":";
+  json += safetyMonitor.isMotionBlocked() ? "true" : "false";
+  json += ",\"blockReason\":\"";
+  json += safetyMonitor.getBlockReasonString();
+  json += "\",\"faultLatched\":";
+  json += safetyMonitor.hasLatchedFault() ? "true" : "false";
+  json += ",\"faultReason\":\"";
+  json += safetyMonitor.getLatchedFaultReasonString();
+  json += "\",\"baseAngleActive\":";
+  json += angleController.isActive() ? "true" : "false";
+  json += ",\"baseAngleReason\":\"";
+  json += angleController.getLastStopReasonString();
   json += "\"";
+}
+
+void MotionBrainWebServer::sendErrorJson(int statusCode, const char* error, const String& details) {
+  String json = "{\"schemaVersion\":\"";
+  json += MESSAGE_SCHEMA_VERSION;
+  json += "\",\"messageType\":\"error\",\"success\":false,\"error\":\"";
+  json += jsonEscape(error != nullptr ? error : "Unknown error");
+  json += "\"";
+
+  if (details.length() > 0) {
+    json += ",\"details\":\"";
+    json += jsonEscape(details);
+    json += "\"";
+  }
+
+  json += ",";
+  appendStateSummaryJson(json);
+  json += "}";
+  server_.send(statusCode, "application/json", json);
+}
+
+void MotionBrainWebServer::sendCommandResult(const CommandResult& result, const String& extraJson) {
+  String json = "{\"schemaVersion\":\"";
+  json += MESSAGE_SCHEMA_VERSION;
+  json += "\",\"messageType\":\"command_result\",\"success\":";
+  json += result.success ? "true" : "false";
+  json += ",\"commandId\":";
+  json += String(result.commandId);
+  json += ",\"message\":\"";
+  json += jsonEscape(result.message);
+  json += "\",";
+  appendStateSummaryJson(json);
   if (extraJson.length() > 0) {
     json += ",";
     json += extraJson;
@@ -390,7 +465,7 @@ void MotionBrainWebServer::handleStatus() {
   DebugLog::debug("Web Server: GET /status requested");
   
   if (systemState_ == nullptr) {
-    server_.send(500, "application/json", "{\"error\":\"SystemStateManager not initialized\"}");
+    sendErrorJson(500, "SystemStateManager not initialized");
     return;
   }
   
@@ -404,9 +479,12 @@ void MotionBrainWebServer::handleStatus() {
   
   // JSON 응답 생성
   String json;
-  json.reserve(800);  // pre-allocate to avoid realloc
-  json = "{";
-  json += "\"state\":\"";
+  json.reserve(1200);  // pre-allocate to avoid realloc
+  json = "{\"schemaVersion\":\"";
+  json += MESSAGE_SCHEMA_VERSION;
+  json += "\",\"messageType\":\"status\",\"uptimeMs\":";
+  json += String(millis());
+  json += ",\"state\":\"";
   json += stateString;
   json += "\",";
   json += "\"motorEnabled\":";
@@ -465,6 +543,18 @@ void MotionBrainWebServer::handleStatus() {
   json += snapshot.imuOk ? "true" : "false";
   json += ",\"rangeOk\":";
   json += snapshot.rangeOk ? "true" : "false";
+  json += ",\"sourceTimestampMs\":";
+  json += String(snapshot.sourceTimestampMs);
+  json += ",\"gyroX\":";
+  json += String(snapshot.gyroX, 2);
+  json += ",\"gyroY\":";
+  json += String(snapshot.gyroY, 2);
+  json += ",\"gyroZ\":";
+  json += String(snapshot.gyroZ, 2);
+  json += ",\"roll\":";
+  json += String(snapshot.roll, 2);
+  json += ",\"pitch\":";
+  json += String(snapshot.pitch, 2);
   json += ",\"distCm\":";
   json += String(snapshot.distanceCm, 1);
   json += ",\"vibe\":";
@@ -480,11 +570,91 @@ void MotionBrainWebServer::handleStatus() {
   json += safetyMonitor.getLatchedFaultReasonString();
   json += "\"}";
 
+  json += ",\"baseAngle\":{";
+  json += "\"active\":";
+  json += angleController.isActive() ? "true" : "false";
+  json += ",\"direction\":\"";
+  json += angleController.getDirectionString();
+  json += "\"";
+  json += ",\"targetDeg\":";
+  json += String(angleController.getTargetDegrees(), 1);
+  json += ",\"currentDeg\":";
+  json += String(angleController.getAccumulatedDegrees(), 1);
+  json += ",\"remainingDeg\":";
+  json += String(angleController.getRemainingDegrees(), 1);
+  json += ",\"percent\":";
+  json += String(angleController.getPercent());
+  json += ",\"elapsedMs\":";
+  json += String(angleController.getElapsedMs());
+  json += ",\"timeoutMs\":";
+  json += String(angleController.getTimeoutMs());
+  json += ",\"processedSamples\":";
+  json += String(angleController.getProcessedSamples());
+  json += ",\"lastRateDps\":";
+  json += String(angleController.getLastRateDegreesPerSecond(), 2);
+  json += ",\"lastStopReason\":\"";
+  json += angleController.getLastStopReasonString();
+  json += "\"";
+  json += ",\"lastTransitionMs\":";
+  json += String(angleController.getLastTransitionMs());
+  json += "}";
+
   json += "}";
 
   DebugLog::debug("Web Server: Status response - state: %s, motor: %s",
                   stateString, motorEnabled ? "enabled" : "disabled");
 
+  server_.send(200, "application/json", json);
+}
+
+void MotionBrainWebServer::handleEvents() {
+  DebugLog::debug("Web Server: GET /events requested");
+
+  uint8_t limit = eventLog.size();
+  String limitStr = server_.arg("limit");
+  if (limitStr.length() > 0) {
+    int parsedLimit = limitStr.toInt();
+    if (parsedLimit > 0 && parsedLimit < limit) {
+      limit = static_cast<uint8_t>(parsedLimit);
+    }
+  }
+
+  String json = "{\"schemaVersion\":\"";
+  json += MESSAGE_SCHEMA_VERSION;
+  json += "\",\"messageType\":\"event_list\",";
+  appendStateSummaryJson(json);
+  json += ",\"count\":";
+  json += String(limit);
+  json += ",\"events\":[";
+
+  uint8_t total = eventLog.size();
+  uint8_t startIndex = total > limit ? total - limit : 0;
+  bool first = true;
+  for (uint8_t i = startIndex; i < total; ++i) {
+    MotionEvent event;
+    if (!eventLog.getOldestFirst(i, event)) {
+      continue;
+    }
+    if (!first) {
+      json += ",";
+    }
+    first = false;
+    json += "{\"id\":";
+    json += String(event.id);
+    json += ",\"tsMs\":";
+    json += String(event.tsMs);
+    json += ",\"severity\":\"";
+    json += EventLog::severityToString(event.severity);
+    json += "\",\"category\":\"";
+    json += jsonEscape(event.category);
+    json += "\",\"code\":\"";
+    json += jsonEscape(event.code);
+    json += "\",\"detail\":\"";
+    json += jsonEscape(event.detail);
+    json += "\"}";
+  }
+
+  json += "]}";
   server_.send(200, "application/json", json);
 }
 
@@ -499,12 +669,12 @@ void MotionBrainWebServer::handleCommand() {
   DebugLog::debug("Web Server: POST /command requested");
   
   if (systemState_ == nullptr || motorControl_ == nullptr) {
-    server_.send(500, "application/json", "{\"error\":\"System not initialized\"}");
+    sendErrorJson(500, "System not initialized");
     return;
   }
 
   if (server_.header("X-MotionBrain") != "1") {
-    server_.send(403, "application/json", "{\"error\":\"Forbidden: missing X-MotionBrain header\"}");
+    sendErrorJson(403, "Forbidden: missing X-MotionBrain header");
     return;
   }
 
@@ -513,7 +683,7 @@ void MotionBrainWebServer::handleCommand() {
   
   if (cmd.length() == 0) {
     DebugLog::warn("Web Server: Command parameter missing");
-    server_.send(400, "application/json", "{\"error\":\"Missing 'cmd' parameter\"}");
+    sendErrorJson(400, "Missing 'cmd' parameter");
     return;
   }
   
@@ -532,7 +702,7 @@ void MotionBrainWebServer::handleCommand() {
   }
   else {
     DebugLog::warn("Web Server: Unknown command: %s", cmd.c_str());
-    server_.send(400, "application/json", "{\"error\":\"Unknown command\"}");
+    sendErrorJson(400, "Unknown command", cmd);
     return;
   }
 
@@ -549,12 +719,12 @@ void MotionBrainWebServer::handleMotor() {
   DebugLog::debug("Web Server: POST /motor requested");
   
   if (motorControl_ == nullptr) {
-    server_.send(500, "application/json", "{\"error\":\"MotorControl not initialized\"}");
+    sendErrorJson(500, "MotorControl not initialized");
     return;
   }
 
   if (server_.header("X-MotionBrain") != "1") {
-    server_.send(403, "application/json", "{\"error\":\"Forbidden: missing X-MotionBrain header\"}");
+    sendErrorJson(403, "Forbidden: missing X-MotionBrain header");
     return;
   }
 
@@ -569,13 +739,13 @@ void MotionBrainWebServer::handleMotor() {
   
   if (action == "forward") {
     if (motorIdStr.length() == 0) {
-      server_.send(400, "application/json", "{\"error\":\"Motor ID required\"}");
+      sendErrorJson(400, "Motor ID required");
       return;
     }
 
     int motorIdInt = motorIdStr.toInt();
     if (motorIdInt < 1 || motorIdInt > MotorControl::NUM_MOTORS) {
-      server_.send(400, "application/json", "{\"error\":\"Invalid motor ID (1-5)\"}");
+      sendErrorJson(400, "Invalid motor ID (1-5)", motorIdStr);
       return;
     }
     uint8_t motorId = (uint8_t)motorIdInt;
@@ -584,11 +754,11 @@ void MotionBrainWebServer::handleMotor() {
     if (percentStr.length() > 0) {
       int pv = percentStr.toInt();
       if (pv < 0 || pv > 100 || (pv == 0 && percentStr != "0")) {
-        server_.send(400, "application/json", "{\"error\":\"Invalid percent value (0-100)\"}");
+        sendErrorJson(400, "Invalid percent value (0-100)", percentStr);
         return;
       }
       if (pv == 0) {
-        server_.send(400, "application/json", "{\"error\":\"Use 'stop' action for 0% speed\"}");
+        sendErrorJson(400, "Use 'stop' action for 0% speed");
         return;
       }
       percent = (uint8_t)pv;
@@ -601,13 +771,13 @@ void MotionBrainWebServer::handleMotor() {
   }
   else if (action == "reverse") {
     if (motorIdStr.length() == 0) {
-      server_.send(400, "application/json", "{\"error\":\"Motor ID required\"}");
+      sendErrorJson(400, "Motor ID required");
       return;
     }
 
     int motorIdInt = motorIdStr.toInt();
     if (motorIdInt < 1 || motorIdInt > MotorControl::NUM_MOTORS) {
-      server_.send(400, "application/json", "{\"error\":\"Invalid motor ID (1-5)\"}");
+      sendErrorJson(400, "Invalid motor ID (1-5)", motorIdStr);
       return;
     }
     uint8_t motorId = (uint8_t)motorIdInt;
@@ -616,11 +786,11 @@ void MotionBrainWebServer::handleMotor() {
     if (percentStr.length() > 0) {
       int pv = percentStr.toInt();
       if (pv < 0 || pv > 100 || (pv == 0 && percentStr != "0")) {
-        server_.send(400, "application/json", "{\"error\":\"Invalid percent value (0-100)\"}");
+        sendErrorJson(400, "Invalid percent value (0-100)", percentStr);
         return;
       }
       if (pv == 0) {
-        server_.send(400, "application/json", "{\"error\":\"Use 'stop' action for 0% speed\"}");
+        sendErrorJson(400, "Use 'stop' action for 0% speed");
         return;
       }
       percent = (uint8_t)pv;
@@ -633,13 +803,13 @@ void MotionBrainWebServer::handleMotor() {
   }
   else if (action == "stop") {
     if (motorIdStr.length() == 0) {
-      server_.send(400, "application/json", "{\"error\":\"Motor ID required\"}");
+      sendErrorJson(400, "Motor ID required");
       return;
     }
 
     int motorIdInt = motorIdStr.toInt();
     if (motorIdInt < 1 || motorIdInt > MotorControl::NUM_MOTORS) {
-      server_.send(400, "application/json", "{\"error\":\"Invalid motor ID (1-5)\"}");
+      sendErrorJson(400, "Invalid motor ID (1-5)", motorIdStr);
       return;
     }
     uint8_t motorId = (uint8_t)motorIdInt;
@@ -649,18 +819,18 @@ void MotionBrainWebServer::handleMotor() {
   }
   else if (action == "default") {
     if (speedStr.length() == 0) {
-      server_.send(400, "application/json", "{\"error\":\"Speed value required\"}");
+      sendErrorJson(400, "Speed value required");
       return;
     }
     
     int speedInt = speedStr.toInt();
     
     if (speedInt < 1) {
-      server_.send(400, "application/json", "{\"error\":\"Default speed must be between 1 and 255 (0 means no movement)\"}");
+      sendErrorJson(400, "Default speed must be between 1 and 255 (0 means no movement)");
       return;
     }
     if (speedInt > 255) {
-      server_.send(400, "application/json", "{\"error\":\"Default speed must be between 1 and 255\"}");
+      sendErrorJson(400, "Default speed must be between 1 and 255");
       return;
     }
     
@@ -671,7 +841,7 @@ void MotionBrainWebServer::handleMotor() {
   }
   else {
     DebugLog::warn("Web Server: Unknown motor action: %s", action.c_str());
-    server_.send(400, "application/json", "{\"error\":\"Unknown action\"}");
+    sendErrorJson(400, "Unknown action", action);
     return;
   }
 
@@ -688,12 +858,12 @@ void MotionBrainWebServer::handleJoint() {
   DebugLog::debug("Web Server: POST /joint requested");
 
   if (robotArm_ == nullptr) {
-    server_.send(500, "application/json", "{\"error\":\"RobotArm not initialized\"}");
+    sendErrorJson(500, "RobotArm not initialized");
     return;
   }
 
   if (server_.header("X-MotionBrain") != "1") {
-    server_.send(403, "application/json", "{\"error\":\"Forbidden: missing X-MotionBrain header\"}");
+    sendErrorJson(403, "Forbidden: missing X-MotionBrain header");
     return;
   }
 
@@ -701,11 +871,11 @@ void MotionBrainWebServer::handleJoint() {
   String action = server_.arg("action");
 
   if (joint.length() == 0) {
-    server_.send(400, "application/json", "{\"error\":\"Missing 'joint' parameter\"}");
+    sendErrorJson(400, "Missing 'joint' parameter");
     return;
   }
   if (action.length() == 0) {
-    server_.send(400, "application/json", "{\"error\":\"Missing 'action' parameter\"}");
+    sendErrorJson(400, "Missing 'action' parameter");
     return;
   }
 
@@ -714,11 +884,11 @@ void MotionBrainWebServer::handleJoint() {
   if (percentStr.length() > 0) {
     int pVal = percentStr.toInt();
     if (pVal < 0 || pVal > 100 || (pVal == 0 && percentStr != "0")) {
-      server_.send(400, "application/json", "{\"error\":\"Invalid 'percent' value (0-100)\"}");
+      sendErrorJson(400, "Invalid 'percent' value (0-100)", percentStr);
       return;
     }
     if (pVal == 0 && action != "stop") {
-      server_.send(400, "application/json", "{\"error\":\"Use 'stop' action for 0% speed\"}");
+      sendErrorJson(400, "Use 'stop' action for 0% speed");
       return;
     }
     percent = (uint8_t)pVal;
@@ -732,42 +902,42 @@ void MotionBrainWebServer::handleJoint() {
     if      (action == "open")  { command.type = CommandType::JOINT_RUN;  command.direction = MotionDirection::OPEN; }
     else if (action == "close") { command.type = CommandType::JOINT_RUN;  command.direction = MotionDirection::CLOSE; }
     else if (action == "stop")  { command.type = CommandType::JOINT_STOP; }
-    else { server_.send(400, "application/json", "{\"error\":\"Unknown action\"}"); return; }
+    else { sendErrorJson(400, "Unknown action", action); return; }
   }
   else if (joint == "wrist") {
     command.joint = MotionJoint::WRIST;
     if      (action == "up")   { command.type = CommandType::JOINT_RUN;  command.direction = MotionDirection::UP; }
     else if (action == "down") { command.type = CommandType::JOINT_RUN;  command.direction = MotionDirection::DOWN; }
     else if (action == "stop") { command.type = CommandType::JOINT_STOP; }
-    else { server_.send(400, "application/json", "{\"error\":\"Unknown action\"}"); return; }
+    else { sendErrorJson(400, "Unknown action", action); return; }
   }
   else if (joint == "elbow") {
     command.joint = MotionJoint::ELBOW;
     if      (action == "up")   { command.type = CommandType::JOINT_RUN;  command.direction = MotionDirection::UP; }
     else if (action == "down") { command.type = CommandType::JOINT_RUN;  command.direction = MotionDirection::DOWN; }
     else if (action == "stop") { command.type = CommandType::JOINT_STOP; }
-    else { server_.send(400, "application/json", "{\"error\":\"Unknown action\"}"); return; }
+    else { sendErrorJson(400, "Unknown action", action); return; }
   }
   else if (joint == "shoulder") {
     command.joint = MotionJoint::SHOULDER;
     if      (action == "up")   { command.type = CommandType::JOINT_RUN;  command.direction = MotionDirection::UP; }
     else if (action == "down") { command.type = CommandType::JOINT_RUN;  command.direction = MotionDirection::DOWN; }
     else if (action == "stop") { command.type = CommandType::JOINT_STOP; }
-    else { server_.send(400, "application/json", "{\"error\":\"Unknown action\"}"); return; }
+    else { sendErrorJson(400, "Unknown action", action); return; }
   }
   else if (joint == "base") {
     command.joint = MotionJoint::BASE;
     if      (action == "left")  { command.type = CommandType::JOINT_RUN;  command.direction = MotionDirection::LEFT; }
     else if (action == "right") { command.type = CommandType::JOINT_RUN;  command.direction = MotionDirection::RIGHT; }
     else if (action == "stop")  { command.type = CommandType::JOINT_STOP; }
-    else { server_.send(400, "application/json", "{\"error\":\"Unknown action\"}"); return; }
+    else { sendErrorJson(400, "Unknown action", action); return; }
   }
   else if (joint == "all" && action == "stop") {
     command.type = CommandType::JOINT_STOP_ALL;
   }
   else {
     DebugLog::warn("Web Server: Unknown joint: %s", joint.c_str());
-    server_.send(400, "application/json", "{\"error\":\"Unknown joint\"}");
+    sendErrorJson(400, "Unknown joint", joint);
     return;
   }
 
@@ -776,6 +946,87 @@ void MotionBrainWebServer::handleJoint() {
   CommandResult result;
   submitCommand(command, result);
   sendCommandResult(result);
+}
+
+void MotionBrainWebServer::handleBase() {
+  DebugLog::debug("Web Server: POST /base requested");
+
+  if (server_.header("X-MotionBrain") != "1") {
+    sendErrorJson(403, "Forbidden: missing X-MotionBrain header");
+    return;
+  }
+
+  String action = server_.arg("action");
+  if (action.length() == 0) {
+    sendErrorJson(400, "Missing 'action' parameter");
+    return;
+  }
+
+  Command command;
+  command.source = CommandSource::WEB_INPUT;
+
+  if (action == "stop") {
+    command.type = CommandType::JOINT_STOP;
+    command.joint = MotionJoint::BASE;
+  }
+  else if (action == "angle") {
+    String directionStr = server_.arg("direction");
+    String degreesStr = server_.arg("degrees");
+    String percentStr = server_.arg("percent");
+
+    if (directionStr.length() == 0 || degreesStr.length() == 0) {
+      sendErrorJson(400, "Missing direction or degrees");
+      return;
+    }
+
+    float degrees = degreesStr.toFloat();
+    if (degrees <= 0.0f && degreesStr != "0" && degreesStr != "0.0") {
+      sendErrorJson(400, "Invalid degrees value", degreesStr);
+      return;
+    }
+
+    int percent = AngleController::DEFAULT_SPEED;
+    if (percentStr.length() > 0) {
+      percent = percentStr.toInt();
+      if ((percent == 0 && percentStr != "0") || percent < 1 || percent > 100) {
+        sendErrorJson(400, "Percent must be 1-100", percentStr);
+        return;
+      }
+    }
+
+    MotionDirection direction;
+    if (directionStr == "left") {
+      direction = MotionDirection::LEFT;
+    } else if (directionStr == "right") {
+      direction = MotionDirection::RIGHT;
+    } else {
+      sendErrorJson(400, "Direction must be left or right", directionStr);
+      return;
+    }
+
+    if (degrees < AngleController::MIN_TARGET_DEGREES ||
+        degrees > AngleController::MAX_TARGET_DEGREES) {
+      sendErrorJson(400, "Degrees must be between 3 and 180", degreesStr);
+      return;
+    }
+
+    command.type = CommandType::BASE_ANGLE_RUN;
+    command.joint = MotionJoint::BASE;
+    command.direction = direction;
+    command.targetDegrees = degrees;
+    command.percent = static_cast<uint8_t>(percent);
+  }
+  else {
+    sendErrorJson(400, "Unknown action (angle/stop)", action);
+    return;
+  }
+
+  CommandResult result;
+  submitCommand(command, result);
+  sendCommandResult(
+    result,
+    String("\"baseAngleActive\":") + (angleController.isActive() ? "true" : "false") +
+      ",\"baseAngleReason\":\"" + angleController.getLastStopReasonString() + "\"");
 }
 
 /**
@@ -787,18 +1038,18 @@ void MotionBrainWebServer::handleSequence() {
   DebugLog::debug("Web Server: POST /sequence requested");
 
   if (motionSequence_ == nullptr) {
-    server_.send(500, "application/json", "{\"error\":\"MotionSequence not initialized\"}");
+    sendErrorJson(500, "MotionSequence not initialized");
     return;
   }
 
   if (server_.header("X-MotionBrain") != "1") {
-    server_.send(403, "application/json", "{\"error\":\"Forbidden: missing X-MotionBrain header\"}");
+    sendErrorJson(403, "Forbidden: missing X-MotionBrain header");
     return;
   }
 
   String action = server_.arg("action");
   if (action.length() == 0) {
-    server_.send(400, "application/json", "{\"error\":\"Missing 'action' parameter\"}");
+    sendErrorJson(400, "Missing 'action' parameter");
     return;
   }
 
@@ -821,7 +1072,7 @@ void MotionBrainWebServer::handleSequence() {
     long   duration = server_.arg("duration").toInt();
 
     if (jointStr.length() == 0 || dirStr.length() == 0) {
-      server_.send(400, "application/json", "{\"error\":\"Missing joint or direction\"}");
+      sendErrorJson(400, "Missing joint or direction");
       return;
     }
 
@@ -829,19 +1080,19 @@ void MotionBrainWebServer::handleSequence() {
     MotionDirection direction;
 
     if (!MotionSequence::parseJoint(jointStr.c_str(), joint)) {
-      server_.send(400, "application/json", "{\"error\":\"Unknown joint\"}");
+      sendErrorJson(400, "Unknown joint", jointStr);
       return;
     }
     if (!MotionSequence::parseDirection(joint, dirStr.c_str(), direction)) {
-      server_.send(400, "application/json", "{\"error\":\"Invalid direction for joint\"}");
+      sendErrorJson(400, "Invalid direction for joint", dirStr);
       return;
     }
     if (speed < 1 || speed > 100) {
-      server_.send(400, "application/json", "{\"error\":\"Speed must be 1-100\"}");
+      sendErrorJson(400, "Speed must be 1-100", String(speed));
       return;
     }
     if (duration <= 0) {
-      server_.send(400, "application/json", "{\"error\":\"Duration must be > 0\"}");
+      sendErrorJson(400, "Duration must be > 0", String(duration));
       return;
     }
 
@@ -852,7 +1103,7 @@ void MotionBrainWebServer::handleSequence() {
     command.durationMs = (uint32_t)duration;
   }
   else {
-    server_.send(400, "application/json", "{\"error\":\"Unknown action\"}");
+    sendErrorJson(400, "Unknown action", action);
     return;
   }
 
@@ -871,11 +1122,15 @@ void MotionBrainWebServer::handleSequenceStatus() {
   DebugLog::debug("Web Server: GET /sequence requested");
 
   if (motionSequence_ == nullptr) {
-    server_.send(500, "application/json", "{\"error\":\"MotionSequence not initialized\"}");
+    sendErrorJson(500, "MotionSequence not initialized");
     return;
   }
 
-  String json = "{";
+  String json = "{\"schemaVersion\":\"";
+  json += MESSAGE_SCHEMA_VERSION;
+  json += "\",\"messageType\":\"sequence_status\",";
+  appendStateSummaryJson(json);
+  json += ",\"sequence\":{";
   json += "\"state\":\"";
   json += MotionSequence::stateToString(motionSequence_->getState());
   json += "\",\"currentStep\":";
@@ -886,6 +1141,7 @@ void MotionBrainWebServer::handleSequenceStatus() {
   json += motionSequence_->getRemainingMs();
   json += ",\"full\":";
   json += motionSequence_->isFull() ? "true" : "false";
+  json += "}";
   json += "}";
 
   server_.send(200, "application/json", json);
@@ -957,12 +1213,12 @@ void MotionBrainWebServer::handleNotFound() {
  */
 void MotionBrainWebServer::handleLight() {
   if (server_.header("X-MotionBrain") != "1") {
-    server_.send(403, "application/json", "{\"error\":\"Forbidden: missing X-MotionBrain header\"}");
+    sendErrorJson(403, "Forbidden: missing X-MotionBrain header");
     return;
   }
 
   if (searchLight_ == nullptr) {
-    server_.send(500, "application/json", "{\"error\":\"SearchLight not initialized\"}");
+    sendErrorJson(500, "SearchLight not initialized");
     return;
   }
 
@@ -977,7 +1233,7 @@ void MotionBrainWebServer::handleLight() {
   } else if (action == "toggle") {
     command.type = CommandType::LIGHT_TOGGLE;
   } else {
-    server_.send(400, "application/json", "{\"error\":\"Unknown action (on/off/toggle)\"}");
+    sendErrorJson(400, "Unknown action (on/off/toggle)", action);
     return;
   }
 

@@ -13,6 +13,7 @@ class MotionSequence;
 class SearchLight;
 class CommandBus;
 class Dispatcher;
+struct MotionEvent;
 struct Command;
 struct CommandResult;
 
@@ -94,6 +95,8 @@ private:
   Dispatcher* dispatcher_;
 
   bool submitCommand(const Command& command, CommandResult& result);
+  void appendStateSummaryJson(String& json) const;
+  void sendErrorJson(int statusCode, const char* error, const String& details = "");
   void sendCommandResult(const CommandResult& result, const String& extraJson = "");
 
   // ===== HTTP 라우트 핸들러 (private) =====
@@ -112,6 +115,12 @@ private:
   void handleStatus();
 
   /**
+   * GET /events 처리
+   * 최근 이벤트 목록 JSON 반환
+   */
+  void handleEvents();
+
+  /**
    * POST /command 처리
    * 명령 실행 (arm, disarm, stop 등)
    */
@@ -128,6 +137,12 @@ private:
    * 관절 제어 (gripper/wrist/elbow/shoulder/base)
    */
   void handleJoint();
+
+  /**
+   * POST /base 처리
+   * base 상대각 제어 및 정지
+   */
+  void handleBase();
 
   /**
    * POST /sequence 처리

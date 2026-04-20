@@ -16,6 +16,7 @@ enum class CommandType : uint8_t {
   JOINT_RUN,
   JOINT_STOP,
   JOINT_STOP_ALL,
+  BASE_ANGLE_RUN,
   SEQUENCE_ADD,
   SEQUENCE_RUN,
   SEQUENCE_STOP,
@@ -43,6 +44,7 @@ struct Command {
   MotionJoint     joint;
   MotionDirection direction;
   uint32_t        durationMs;
+  float           targetDegrees;
 
   Command()
     : id(0)
@@ -55,7 +57,8 @@ struct Command {
     , speed(0)
     , joint(MotionJoint::GRIPPER)
     , direction(MotionDirection::OPEN)
-    , durationMs(0) {
+    , durationMs(0)
+    , targetDegrees(0.0f) {
   }
 };
 
