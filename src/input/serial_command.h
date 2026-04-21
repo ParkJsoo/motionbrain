@@ -170,7 +170,10 @@ private:
   /**
    * sequence 명령어 처리 (Phase 2-B)
    * 모션 시퀀스 큐 제어
-   * @param args 명령어 인자 (예: "add shoulder up 50 2000", "run", "stop", "clear", "status")
+   * @param args 명령어 인자
+   *   예: "add shoulder up 50 2000"
+   *       "add base left 40 angle=45"
+   *       "run", "stop", "clear", "status"
    */
   void handleSequence(const char* args);
 
@@ -179,6 +182,12 @@ private:
    * 서치라이트 on/off/toggle/status
    */
   void handleLight(const char* args);
+
+  /**
+   * sensor 명령어 처리
+   * 센서 상태 조회 및 simulation 주입
+   */
+  void handleSensor(const char* args);
 
   // 외부 객체 참조 (명령어 처리용)
   SystemStateManager* systemState_;

@@ -107,7 +107,12 @@ Stm32Bridge::Stm32Bridge()
   , lineIndex_(0)
   , overflowDropping_(false)
   , packetsReceived_(0)
-  , parseErrors_(0) {}
+  , parseErrors_(0)
+  , simulationMode_(SensorSimulationMode::OFF)
+  , simulatedSnapshot_()
+  , simulatedPacketPeriodMs_(DEFAULT_SIM_PACKET_PERIOD_MS)
+  , lastSimulatedEmitMs_(0)
+  , nextSimulatedSourceTimestampMs_(0) {}
 
 bool Stm32Bridge::init() {
   serial_->begin(BAUD_RATE, SERIAL_8N1, RX_PIN, TX_PIN);
@@ -116,6 +121,14 @@ bool Stm32Bridge::init() {
 }
 
 void Stm32Bridge::update() {
+  if (simulationMode_ == SensorSimulationMode::AUTO) {
+    uint32_t now = millis();
+    if (lastSimulatedEmitMs_ == 0 || (now - lastSimulatedEmitMs_) >= simulatedPacketPeriodMs_) {
+      emitSimulatedSnapshot(now);
+    }
+    return;
+  }
+
   while (serial_ != nullptr && serial_->available() > 0) {
     processIncomingByte(static_cast<char>(serial_->read()));
   }
@@ -145,6 +158,59 @@ uint32_t Stm32Bridge::getPacketsReceived() const {
 
 uint32_t Stm32Bridge::getParseErrors() const {
   return parseErrors_;
+}
+
+bool Stm32Bridge::isSimulationEnabled() const {
+  return simulationMode_ != SensorSimulationMode::OFF;
+}
+
+SensorSimulationMode Stm32Bridge::getSimulationMode() const {
+  return simulationMode_;
+}
+
+const char* Stm32Bridge::getSimulationModeString() const {
+  switch (simulationMode_) {
+    case SensorSimulationMode::OFF:    return "OFF";
+    case SensorSimulationMode::AUTO:   return "AUTO";
+    case SensorSimulationMode::FROZEN: return "FROZEN";
+    default:                           return "UNKNOWN";
+  }
+}
+
+void Stm32Bridge::setSimulatedSnapshot(const SensorSnapshot& snapshot, uint32_t packetPeriodMs) {
+  simulatedSnapshot_ = snapshot;
+  simulatedSnapshot_.connected = true;
+  simulatedSnapshot_.imuOk = snapshot.imuOk;
+  simulatedSnapshot_.rangeOk = snapshot.rangeOk;
+  simulatedPacketPeriodMs_ = packetPeriodMs > 0 ? packetPeriodMs : DEFAULT_SIM_PACKET_PERIOD_MS;
+  simulationMode_ = SensorSimulationMode::AUTO;
+  lastSimulatedEmitMs_ = 0;
+  nextSimulatedSourceTimestampMs_ = snapshot.sourceTimestampMs;
+  if (nextSimulatedSourceTimestampMs_ == 0) {
+    nextSimulatedSourceTimestampMs_ = millis();
+  }
+  DebugLog::info("STM32 bridge simulation enabled (%s, period=%lums)",
+                 getSimulationModeString(), simulatedPacketPeriodMs_);
+}
+
+void Stm32Bridge::freezeSimulation() {
+  if (simulationMode_ == SensorSimulationMode::OFF) {
+    return;
+  }
+  simulationMode_ = SensorSimulationMode::FROZEN;
+  DebugLog::info("STM32 bridge simulation frozen");
+}
+
+void Stm32Bridge::clearSimulation(bool clearSnapshot) {
+  simulationMode_ = SensorSimulationMode::OFF;
+  simulatedSnapshot_ = SensorSnapshot();
+  simulatedPacketPeriodMs_ = DEFAULT_SIM_PACKET_PERIOD_MS;
+  lastSimulatedEmitMs_ = 0;
+  nextSimulatedSourceTimestampMs_ = 0;
+  if (clearSnapshot) {
+    snapshot_ = SensorSnapshot();
+  }
+  DebugLog::info("STM32 bridge simulation disabled%s", clearSnapshot ? " and snapshot cleared" : "");
 }
 
 void Stm32Bridge::processIncomingByte(char c) {
@@ -248,4 +314,14 @@ bool Stm32Bridge::parseSensorLine(const char* line, SensorSnapshot& parsedSnapsh
 
   parsedSnapshot = candidate;
   return true;
+}
+
+void Stm32Bridge::emitSimulatedSnapshot(uint32_t now) {
+  snapshot_ = simulatedSnapshot_;
+  snapshot_.connected = true;
+  snapshot_.lastUpdateMs = now;
+  snapshot_.sourceTimestampMs = nextSimulatedSourceTimestampMs_;
+  packetsReceived_++;
+  lastSimulatedEmitMs_ = now;
+  nextSimulatedSourceTimestampMs_ += simulatedPacketPeriodMs_;
 }

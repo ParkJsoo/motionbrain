@@ -533,6 +533,11 @@ void MotionBrainWebServer::handleStatus() {
   json += ",\"sensor\":{";
   json += "\"connected\":";
   json += stm32Bridge.isConnected() ? "true" : "false";
+  json += ",\"simulated\":";
+  json += stm32Bridge.isSimulationEnabled() ? "true" : "false";
+  json += ",\"simulationMode\":\"";
+  json += stm32Bridge.getSimulationModeString();
+  json += "\"";
   json += ",\"lastUpdateMs\":";
   json += String(stm32Bridge.getLastPacketAgeMs());
   json += ",\"packetsReceived\":";
@@ -1032,7 +1037,9 @@ void MotionBrainWebServer::handleBase() {
 /**
  * POST /sequence 처리 (Phase 2-B)
  * 시퀀스 제어: action=add|run|stop|clear
- * add 추가 파라미터: joint, direction, speed, duration
+ * add 추가 파라미터:
+ * - duration 기반: joint, direction, speed, duration
+ * - base angle 기반: joint=base, direction, speed, degrees
  */
 void MotionBrainWebServer::handleSequence() {
   DebugLog::debug("Web Server: POST /sequence requested");
@@ -1069,7 +1076,8 @@ void MotionBrainWebServer::handleSequence() {
     String jointStr = server_.arg("joint");
     String dirStr   = server_.arg("direction");
     int    speed    = server_.arg("speed").toInt();
-    long   duration = server_.arg("duration").toInt();
+    String durationStr = server_.arg("duration");
+    String degreesStr = server_.arg("degrees");
 
     if (jointStr.length() == 0 || dirStr.length() == 0) {
       sendErrorJson(400, "Missing joint or direction");
@@ -1091,16 +1099,36 @@ void MotionBrainWebServer::handleSequence() {
       sendErrorJson(400, "Speed must be 1-100", String(speed));
       return;
     }
-    if (duration <= 0) {
-      sendErrorJson(400, "Duration must be > 0", String(duration));
-      return;
-    }
 
     command.type = CommandType::SEQUENCE_ADD;
     command.joint = joint;
     command.direction = direction;
     command.percent = (uint8_t)speed;
-    command.durationMs = (uint32_t)duration;
+
+    if (joint == MotionJoint::BASE && degreesStr.length() > 0) {
+      if (durationStr.length() > 0) {
+        sendErrorJson(400, "Use either duration or degrees", durationStr + "," + degreesStr);
+        return;
+      }
+
+      float degrees = degreesStr.toFloat();
+      if ((degrees <= 0.0f && degreesStr != "0" && degreesStr != "0.0") ||
+          degrees < AngleController::MIN_TARGET_DEGREES ||
+          degrees > AngleController::MAX_TARGET_DEGREES) {
+        sendErrorJson(400, "Degrees must be between 3 and 180", degreesStr);
+        return;
+      }
+      command.targetDegrees = degrees;
+      command.durationMs = 0;
+    } else {
+      long duration = durationStr.toInt();
+      if (duration <= 0) {
+        sendErrorJson(400, "Duration must be > 0", durationStr);
+        return;
+      }
+      command.durationMs = (uint32_t)duration;
+      command.targetDegrees = 0.0f;
+    }
   }
   else {
     sendErrorJson(400, "Unknown action", action);

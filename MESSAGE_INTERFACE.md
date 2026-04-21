@@ -23,6 +23,7 @@ joint base stop
 base angle left 45 40
 base angle right 30
 base stop
+sequence add base left 40 angle=45
 ```
 
 규칙:
@@ -30,6 +31,7 @@ base stop
 - `joint base ...` 는 개방루프 수동 구동이다.
 - `base angle ...` 는 센서 기반 상대각 폐루프 구동이다.
 - `base stop` 은 현재 base 상대각 제어를 취소하고 base 모터를 정지한다.
+- `sequence add base ... angle=...` 는 시퀀스 안에 base 상대각 폐루프 step을 추가한다.
 
 ### HTTP
 
@@ -60,11 +62,20 @@ POST /base?action=stop
 X-MotionBrain: 1
 ```
 
+시퀀스용 base angle step:
+
+```http
+POST /sequence?action=add&joint=base&direction=left&speed=40&degrees=45
+X-MotionBrain: 1
+```
+
 규칙:
 
 - `direction` 은 `left|right`
 - `degrees` 는 `3.0 .. 180.0`
 - `percent` 는 `1 .. 100`, 생략 시 기본값 `40`
+- `/sequence?action=add` 는 `duration` 또는 `degrees` 중 하나를 사용한다.
+- `degrees` 는 `joint=base` 일 때만 허용한다.
 
 ## 2. 상태 메시지 경계
 
@@ -89,6 +100,8 @@ X-MotionBrain: 1
 ```json
 {
   "connected": true,
+  "simulated": false,
+  "simulationMode": "OFF",
   "lastUpdateMs": 83,
   "packetsReceived": 120,
   "parseErrors": 0,
@@ -111,6 +124,8 @@ X-MotionBrain: 1
 
 의미:
 
+- `simulated`: 현재 STM32 UART 대신 내부 simulation snapshot을 쓰는지 여부
+- `simulationMode`: `OFF|AUTO|FROZEN`
 - `lastUpdateMs`: 마지막 센서 패킷 이후 경과 시간
 - `blocked`: 현재 모션 차단 여부
 - `blockReason`: `NONE|SENSOR_STALE|IMU_FAULT|RANGE_FAULT|OBSTACLE|VIBRATION`

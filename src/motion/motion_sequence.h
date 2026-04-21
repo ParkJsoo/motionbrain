@@ -7,6 +7,7 @@
 // 전방 선언
 class RobotArm;
 class SystemStateManager;
+class AngleController;
 
 /**
  * 모션 관절 종류
@@ -35,13 +36,17 @@ enum class MotionDirection : uint8_t {
 };
 
 /**
- * 단일 모션 명령 (16바이트)
+ * 단일 모션 명령
+ *
+ * 기본은 duration 기반 step이며, base 전용 폐루프 step은
+ * `joint=BASE` + `targetDegrees>0` 조합으로 표현한다.
  */
 struct MotionCommand {
   MotionJoint     joint;
   MotionDirection direction;
   uint8_t         speed;      // 1~100 (%)
   uint32_t        durationMs; // 동작 지속 시간 (ms), 최소 1
+  float           targetDegrees;
 };
 
 /**
@@ -77,8 +82,10 @@ public:
    * 초기화
    * @param robotArm       RobotArm 참조 (관절 제어용)
    * @param systemState    SystemStateManager 참조 (ARMED 체크 및 timeout 리셋)
+   * @param angleController base 상대각 폐루프 제어기 참조
    */
-  void init(RobotArm* robotArm, SystemStateManager* systemState);
+  void init(RobotArm* robotArm, SystemStateManager* systemState,
+            AngleController* angleController = nullptr);
 
   /**
    * 업데이트 — loop()에서 주기 호출 필수
@@ -95,6 +102,14 @@ public:
    * @return 추가 성공 여부 (full이거나 durationMs==0이면 false)
    */
   bool addCommand(MotionJoint joint, MotionDirection direction, uint8_t speed, uint32_t durationMs);
+
+  /**
+   * base 상대각 step 추가
+   * @param direction     left/right
+   * @param speed         속도 (1~100%)
+   * @param targetDegrees 목표 상대각 (3~180 deg)
+   */
+  bool addBaseAngleCommand(MotionDirection direction, uint8_t speed, float targetDegrees);
 
   /**
    * 시퀀스 실행 시작
@@ -152,9 +167,13 @@ private:
   uint32_t            stepStartMs_;
   RobotArm*           robotArm_;
   SystemStateManager* systemState_;
+  AngleController*    angleController_;
 
-  /** 현재 명령 실행 (관절 구동 시작) */
-  void executeCommand(const MotionCommand& cmd);
+  bool isBaseAngleCommand(const MotionCommand& cmd) const;
+  bool executeCommand(const MotionCommand& cmd, char* errorMessage, size_t errorMessageSize);
+  bool startCurrentCommand();
+  void advanceToNextStep();
+  void stopWithReason(const char* reason);
 
   /** 현재 관절 정지 */
   void stopCurrentJoint(const MotionCommand& cmd);

@@ -173,6 +173,66 @@ pio run -t upload
 pio device monitor
 ```
 
+### Host-Side 상태 감시
+
+```bash
+python3 tools/motionbrain_watch.py --host 192.168.4.1 --interval 1.0
+```
+
+이 스크립트는 `GET /status`, `GET /events` 를 주기적으로 읽어 `state`, `blockReason`, `faultReason`, `baseAngle` 상태를 한 줄로 보여준다.
+
+시리얼만으로 safety/base-angle 상태를 bench에서 재현하려면 아래 simulation 명령을 사용할 수 있다.
+
+```text
+sensor sim healthy
+sensor sim obstacle 10
+sensor sim vibration 9
+sensor sim rotate left 15
+sensor sim stale
+sensor sim off
+```
+
+### 시뮬레이션 검증 절차
+
+하드웨어 없이 safety/base-angle 경로를 빠르게 점검할 때는 아래 순서가 기준이다.
+
+1. `sensor sim off`
+2. `sensor sim healthy`
+3. `status`
+기대 결과:
+`sensor.connected=true`, `blockReason=NONE`, `faultReason=NONE`
+
+4. `arm`
+5. `base angle left 20 35`
+6. `sensor sim rotate left 15`
+기대 결과:
+`TARGET_REACHED`로 종료되거나, 최소한 `NO_ROTATION_FEEDBACK` 대신 회전 샘플이 누적된다.
+
+7. `sensor sim obstacle 10`
+8. `arm`
+기대 결과:
+`OBSTACLE` 때문에 `ARM` 거부
+
+9. `sensor sim healthy`
+10. `arm`
+11. `sensor sim vibration 9`
+기대 결과:
+`VIBRATION`으로 `FAULT` latch
+
+12. `stop`
+13. `sensor sim stale`
+14. 잠시 대기 후 `status`
+기대 결과:
+`SENSOR_STALE` 감지
+
+15. `sensor sim off`
+
+상태를 더 보기 쉽게 보려면 다른 터미널에서 아래 watcher를 같이 실행하면 된다.
+
+```bash
+python3 tools/motionbrain_watch.py --host 192.168.4.1 --interval 1.0
+```
+
 ### 기본 사용 흐름
 
 1. ESP32 부팅
@@ -180,7 +240,8 @@ pio device monitor
 3. `arm`
 4. `joint`, `motor`, `sequence`, `light` 명령 사용
 5. 상대각 회전이 필요하면 `base angle left 45 40` 같은 명령 사용
-6. 필요 시 `stop` 또는 `disarm`
+6. 시퀀스에 폐루프 base step을 넣고 싶으면 `sequence add base left 40 angle=45` 사용
+7. 필요 시 `stop` 또는 `disarm`
 
 ## 문서 구조
 

@@ -71,16 +71,17 @@ void setup() {
     systemState.transitionTo(SystemState::IDLE);
   }
   
-  // 7. 모션 시퀀스 초기화 (Phase 2-B)
-  motionSequence.init(&robotArm, &systemState);
-
-  // 8. 서치라이트 초기화
+  // 7. 서치라이트 초기화
   searchLight.init();
 
-  // 9. STM32 센서 브리지 및 safety 모니터 초기화
+  // 8. STM32 센서 브리지 및 safety 모니터 초기화
   stm32Bridge.init();
   safetyMonitor.init(&systemState, &motorControl, &motionSequence);
   angleController.init(&systemState, &robotArm, &safetyMonitor);
+
+  // 9. 모션 시퀀스 초기화 (base angle step 지원)
+  motionSequence.init(&robotArm, &systemState, &angleController);
+
   safetyGate.init(&systemState, &safetyMonitor);
   dispatcher.init(&systemState, &motorControl, &robotArm, &motionSequence, &searchLight,
                   &safetyGate, &angleController);

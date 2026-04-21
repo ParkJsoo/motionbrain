@@ -3,4 +3,6 @@ firmware/
 .claude/
 .omc/
 .codex/
+__pycache__/
+*.pyc
 .DS_Store

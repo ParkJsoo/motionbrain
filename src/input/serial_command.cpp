@@ -292,6 +292,9 @@ void SerialCommand::processCommand(const char* cmdName, const char* args) {
   else if (strcasecmp(cmdName, "light") == 0) {
     handleLight(args);
   }
+  else if (strcasecmp(cmdName, "sensor") == 0) {
+    handleSensor(args);
+  }
   else {
     // 알 수 없는 명령어
     DebugLog::warn("Unknown command: %s", cmdName);
@@ -309,6 +312,7 @@ void SerialCommand::handleHelp() {
   DebugLog::info("  arm       - Arm the system (IDLE -> ARMED)");
   DebugLog::info("  disarm    - Disarm the system (ARMED -> IDLE)");
   DebugLog::info("  stop      - Emergency stop / FAULT 상태 복구");
+  DebugLog::info("  sensor    - Show sensor status / simulation control");
   DebugLog::info("");
   DebugLog::info("=== Motor Control Commands ===");
   DebugLog::info("  motor forward <id> [percent]  - Motor forward (default: 100%%)");
@@ -347,6 +351,7 @@ void SerialCommand::handleHelp() {
   DebugLog::info("");
   DebugLog::info("=== Sequence Commands (Phase 2-B) ===");
   DebugLog::info("  sequence add <joint> <dir> <speed%%> <ms>  - Add command to queue");
+  DebugLog::info("  sequence add base <dir> <speed%%> angle=<deg> - Add base angle step");
   DebugLog::info("  sequence run             - Start executing sequence");
   DebugLog::info("  sequence stop            - Stop running sequence");
   DebugLog::info("  sequence clear           - Clear all commands");
@@ -355,6 +360,7 @@ void SerialCommand::handleHelp() {
   DebugLog::info("Examples:");
   DebugLog::info("  sequence add shoulder up 50 2000  - Shoulder up 50%% for 2 sec");
   DebugLog::info("  sequence add gripper open 80 1000 - Gripper open 80%% for 1 sec");
+  DebugLog::info("  sequence add base left 40 angle=45 - Base relative left 45 deg");
   DebugLog::info("  sequence run");
   DebugLog::info("");
   DebugLog::info("=== Search Light Commands ===");
@@ -362,6 +368,17 @@ void SerialCommand::handleHelp() {
   DebugLog::info("  light off     - Turn off search light");
   DebugLog::info("  light toggle  - Toggle search light");
   DebugLog::info("  light status  - Show light state");
+  DebugLog::info("");
+  DebugLog::info("=== Sensor Simulation Commands ===");
+  DebugLog::info("  sensor status                 - Show sensor + simulation state");
+  DebugLog::info("  sensor sim healthy [dist]     - Continuous healthy packets");
+  DebugLog::info("  sensor sim obstacle [dist]    - Continuous obstacle packets");
+  DebugLog::info("  sensor sim vibration [vibe]   - Continuous vibration fault packets");
+  DebugLog::info("  sensor sim imu_fault          - Continuous imu fault packets");
+  DebugLog::info("  sensor sim range_fault        - Continuous range fault packets");
+  DebugLog::info("  sensor sim rotate <dir> <dps> - Continuous gyro packets for base angle");
+  DebugLog::info("  sensor sim stale              - Emit once, then freeze for stale");
+  DebugLog::info("  sensor sim off                - Disable simulation and clear snapshot");
 }
 
 /**
@@ -396,6 +413,7 @@ void SerialCommand::handleStatus() {
   const SensorSnapshot& snapshot = stm32Bridge.getSnapshot();
   DebugLog::info("=== Sensor Status ===");
   DebugLog::info("Connected: %s", stm32Bridge.isConnected() ? "YES" : "NO");
+  DebugLog::info("Simulation: %s", stm32Bridge.getSimulationModeString());
   DebugLog::info("Packets : %lu", stm32Bridge.getPacketsReceived());
   DebugLog::info("Parse errors: %lu", stm32Bridge.getParseErrors());
   DebugLog::info("Last update age: %lums", stm32Bridge.getLastPacketAgeMs());
@@ -424,6 +442,139 @@ void SerialCommand::handleStatus() {
                  angleController.getProcessedSamples(),
                  angleController.getLastRateDegreesPerSecond());
   DebugLog::info("Last stop reason: %s", angleController.getLastStopReasonString());
+}
+
+void SerialCommand::handleSensor(const char* args) {
+  if (args == nullptr || strlen(args) == 0 || strcasecmp(args, "status") == 0) {
+    handleStatus();
+    return;
+  }
+
+  char action[CMD_NAME_SIZE];
+  size_t i = 0;
+  while (args[i] != '\0' && args[i] != ' ' && args[i] != '\t' && i < CMD_NAME_SIZE - 1) {
+    action[i] = args[i];
+    i++;
+  }
+  action[i] = '\0';
+
+  while (args[i] == ' ' || args[i] == '\t') i++;
+  const char* rest = &args[i];
+
+  if (strcasecmp(action, "sim") != 0) {
+    DebugLog::warn("sensor: unknown action '%s' (status/sim)", action);
+    return;
+  }
+
+  if (rest == nullptr || rest[0] == '\0') {
+    DebugLog::info("sensor sim: mode=%s", stm32Bridge.getSimulationModeString());
+    return;
+  }
+
+  char mode[CMD_NAME_SIZE];
+  i = 0;
+  while (rest[i] != '\0' && rest[i] != ' ' && rest[i] != '\t' && i < CMD_NAME_SIZE - 1) {
+    mode[i] = rest[i];
+    i++;
+  }
+  mode[i] = '\0';
+
+  while (rest[i] == ' ' || rest[i] == '\t') i++;
+  const char* simArgs = &rest[i];
+
+  if (strcasecmp(mode, "off") == 0) {
+    stm32Bridge.clearSimulation(true);
+    return;
+  }
+
+  SensorSnapshot snapshot;
+  snapshot.connected = true;
+  snapshot.imuOk = true;
+  snapshot.rangeOk = true;
+  snapshot.distanceCm = 50.0f;
+  snapshot.vibe = 0.0f;
+
+  if (strcasecmp(mode, "healthy") == 0) {
+    float dist = 50.0f;
+    if (simArgs[0] != '\0') {
+      dist = strtof(simArgs, nullptr);
+    }
+    snapshot.distanceCm = dist > 0.0f ? dist : 50.0f;
+    stm32Bridge.setSimulatedSnapshot(snapshot);
+    return;
+  }
+
+  if (strcasecmp(mode, "obstacle") == 0) {
+    float dist = 10.0f;
+    if (simArgs[0] != '\0') {
+      dist = strtof(simArgs, nullptr);
+    }
+    snapshot.distanceCm = dist > 0.0f ? dist : 10.0f;
+    stm32Bridge.setSimulatedSnapshot(snapshot);
+    return;
+  }
+
+  if (strcasecmp(mode, "vibration") == 0) {
+    float vibe = 9.0f;
+    if (simArgs[0] != '\0') {
+      vibe = strtof(simArgs, nullptr);
+    }
+    snapshot.vibe = vibe > 0.0f ? vibe : 9.0f;
+    stm32Bridge.setSimulatedSnapshot(snapshot);
+    return;
+  }
+
+  if (strcasecmp(mode, "imu_fault") == 0) {
+    snapshot.imuOk = false;
+    stm32Bridge.setSimulatedSnapshot(snapshot);
+    return;
+  }
+
+  if (strcasecmp(mode, "range_fault") == 0) {
+    snapshot.rangeOk = false;
+    stm32Bridge.setSimulatedSnapshot(snapshot);
+    return;
+  }
+
+  if (strcasecmp(mode, "stale") == 0) {
+    stm32Bridge.setSimulatedSnapshot(snapshot);
+    stm32Bridge.update();
+    stm32Bridge.freezeSimulation();
+    return;
+  }
+
+  if (strcasecmp(mode, "rotate") == 0) {
+    char directionStr[CMD_NAME_SIZE];
+    float degreesPerSecond = 0.0f;
+    int parsed = sscanf(simArgs, "%31s %f", directionStr, &degreesPerSecond);
+    if (parsed < 2) {
+      DebugLog::warn("sensor sim rotate: needs <left|right> <dps>");
+      return;
+    }
+
+    if (degreesPerSecond <= 0.0f) {
+      DebugLog::warn("sensor sim rotate: dps must be > 0");
+      return;
+    }
+
+    if (strcasecmp(directionStr, "left") == 0) {
+      snapshot.gyroZ = AngleController::GYRO_Z_LEFT_IS_POSITIVE
+        ? degreesPerSecond
+        : -degreesPerSecond;
+    } else if (strcasecmp(directionStr, "right") == 0) {
+      snapshot.gyroZ = AngleController::GYRO_Z_LEFT_IS_POSITIVE
+        ? -degreesPerSecond
+        : degreesPerSecond;
+    } else {
+      DebugLog::warn("sensor sim rotate: direction must be left or right");
+      return;
+    }
+
+    stm32Bridge.setSimulatedSnapshot(snapshot);
+    return;
+  }
+
+  DebugLog::warn("sensor sim: unknown mode '%s'", mode);
 }
 
 /**
@@ -918,8 +1069,9 @@ void SerialCommand::handleBase(const char* args) {
 
 /**
  * sequence 명령어 처리 (Phase 2-B)
- * 형식: sequence <action> [joint direction speed durationMs]
+ * 형식: sequence <action> [joint direction speed durationMs|angle=<deg>]
  *   add <joint> <direction> <speed> <durationMs>
+ *   add base <left|right> <speed> angle=<deg>
  *   run | stop | clear | status
  */
 void SerialCommand::handleSequence(const char* args) {
@@ -989,22 +1141,24 @@ void SerialCommand::handleSequence(const char* args) {
   }
 
   if (strcasecmp(action, "add") == 0) {
-    // "add <joint> <direction> <speed> <durationMs>"
-    // rest 예: "shoulder up 50 2000"
+    // "add <joint> <direction> <speed> <durationMs|angle=deg>"
     char jointStr[CMD_NAME_SIZE];
     char dirStr[CMD_NAME_SIZE];
     int  speed    = 0;
-    long duration = 0;
+    char valueStr[ARGS_SIZE];
 
-    int parsed = sscanf(rest, "%31s %31s %d %ld", jointStr, dirStr, &speed, &duration);
+    int parsed = sscanf(rest, "%31s %31s %d %47s", jointStr, dirStr, &speed, valueStr);
     if (parsed < 4) {
-      DebugLog::warn("sequence add: needs <joint> <direction> <speed%%> <durationMs>");
+      DebugLog::warn("sequence add: needs <joint> <direction> <speed%%> <durationMs|angle=deg>");
       DebugLog::info("  Example: sequence add shoulder up 50 2000");
+      DebugLog::info("  Example: sequence add base left 40 angle=45");
       return;
     }
 
     MotionJoint     joint;
     MotionDirection direction;
+    uint32_t        durationMs = 0;
+    float           targetDegrees = 0.0f;
 
     if (!MotionSequence::parseJoint(jointStr, joint)) {
       DebugLog::warn("sequence add: unknown joint '%s'", jointStr);
@@ -1018,9 +1172,25 @@ void SerialCommand::handleSequence(const char* args) {
       DebugLog::warn("sequence add: speed must be 1-100 (got %d)", speed);
       return;
     }
-    if (duration <= 0) {
-      DebugLog::warn("sequence add: durationMs must be > 0 (got %ld)", duration);
-      return;
+
+    if (joint == MotionJoint::BASE && strncasecmp(valueStr, "angle=", 6) == 0) {
+      char* endPtr = nullptr;
+      targetDegrees = strtof(valueStr + 6, &endPtr);
+      if (endPtr == valueStr + 6 || targetDegrees < AngleController::MIN_TARGET_DEGREES ||
+          targetDegrees > AngleController::MAX_TARGET_DEGREES) {
+        DebugLog::warn("sequence add: base angle must be %.0f-%.0f deg",
+                       AngleController::MIN_TARGET_DEGREES,
+                       AngleController::MAX_TARGET_DEGREES);
+        return;
+      }
+    } else {
+      char* endPtr = nullptr;
+      long duration = strtol(valueStr, &endPtr, 10);
+      if (endPtr == valueStr || duration <= 0) {
+        DebugLog::warn("sequence add: durationMs must be > 0 (got %s)", valueStr);
+        return;
+      }
+      durationMs = (uint32_t)duration;
     }
 
     Command command;
@@ -1029,7 +1199,8 @@ void SerialCommand::handleSequence(const char* args) {
     command.joint = joint;
     command.direction = direction;
     command.percent = (uint8_t)speed;
-    command.durationMs = (uint32_t)duration;
+    command.durationMs = durationMs;
+    command.targetDegrees = targetDegrees;
 
     CommandResult result;
     submitCommand(command, result);

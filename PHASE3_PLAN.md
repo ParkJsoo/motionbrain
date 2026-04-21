@@ -13,6 +13,24 @@ Phase 3에서 반드시 만들어야 하는 결과는 다음 네 가지다.
 - 입력 채널이 직접 모터를 때리지 않고 공통 명령 경로를 지난다.
 - 베이스 회전에 한정한 최소 폐루프 제어를 만든다.
 
+## 현재 진행 상태
+
+기준 날짜: `2026-04-21`
+
+- `Phase 1`: 완료
+- `Phase 2`: 사실상 완료
+- `Phase 3`: 진행 중
+- `3-A Sensor Feedback Layer`: bench 기준 거의 완료, 최종 실장 후 재검증만 남음
+- `3-B Decision Layer`: 1차 완료
+- `3-C Closed-Loop Motion`: 1차 구현 완료, 실기 검증 대기
+- `3-D Message Bridge`: 부분 완료
+
+현재 해석은 다음과 같다.
+
+- 코드 구조상 Phase 3의 핵심 모듈은 이미 들어가 있다.
+- 지금 병목은 새 기능 추가보다 최종 배치, 배선, 통합 검증 준비다.
+- IMU와 보드들을 실제 배치하지 않은 상태이므로 base 상대각 폐루프의 물리 검증은 아직 완료로 보지 않는다.
+
 ## 현재 확정 사실
 
 ### ESP32 측
@@ -27,15 +45,24 @@ Phase 3에서 반드시 만들어야 하는 결과는 다음 네 가지다.
   - `WiFiAP`
   - `MotionBrainWebServer`
   - `SearchLight`
+  - `Stm32Bridge`
+  - `SafetyMonitor`
+  - `CommandBus`
+  - `SafetyGate`
+  - `Dispatcher`
+  - `AngleController`
+  - `EventLog`
 - 웹 라우트:
-  - `/status`
-  - `/command`
-  - `/motor`
-  - `/joint`
-  - `/sequence`
-  - `/light`
-- 현재 구조에서는 `SerialCommand`와 `MotionBrainWebServer`가 비교적 직접 실행 경로를 가진다.
-- 현재 `/status`는 시스템 상태와 모터 상태 중심이며 센서 health는 포함하지 않는다.
+  - `GET /status`
+  - `GET /events`
+  - `POST /command`
+  - `POST /motor`
+  - `POST /joint`
+  - `POST /base`
+  - `POST /sequence`
+  - `POST /light`
+- `SerialCommand`와 `MotionBrainWebServer`는 공통 `Command` 경로를 사용한다.
+- 현재 `/status`는 시스템 상태, 모터 상태, 센서 health, base angle 상태를 모두 포함한다.
 
 ### STM32 측
 
@@ -46,6 +73,8 @@ Phase 3에서 반드시 만들어야 하는 결과는 다음 네 가지다.
 - `WHO_AM_I = 0x68` 확인 완료
 - 자이로 바이어스 캘리브레이션 추가 완료
 - 200Hz 샘플링 동작 확인 완료
+- `HC-SR04` 측정과 UART 센서 송신을 bench에서 확인했다.
+- `STM32 -> ESP32` 센서 브리지는 bench 기준으로 수신 확인이 끝났다.
 
 ### 검증된 STM32 핀
 
@@ -74,10 +103,14 @@ Phase 3에서 반드시 만들어야 하는 결과는 다음 네 가지다.
 
 ### `src/main.cpp`
 
-현재 `setup()`과 `loop()`는 아래 흐름으로 묶여 있다.
+현재 `loop()`는 아래 흐름으로 묶여 있다.
 
 ```text
 systemState.update()
+stm32Bridge.update()
+safetyMonitor.update()
+angleController.update()
+dispatcher.dispatchPending()
 motorControl.update()
 motionSequence.update()
 serialCommand.update()
@@ -85,42 +118,24 @@ wifiAP.update()
 webServer.update()
 ```
 
-Phase 3에서는 여기에 최소한 다음 계층이 추가돼야 한다.
-
-- `stm32_bridge.update()`
-- `safety_monitor.update()`
-- 이후 `command_bus` 또는 `dispatcher.update()`
-
-권장 순서는 다음과 같다.
-
-```text
-systemState.update()
-stm32_bridge.update()
-safety_monitor.update()
-dispatcher/update command processing
-motorControl.update()
-motionSequence.update()
-serial/web update
-wifiAP.update()
-webServer.update()
-```
+즉, Phase 3에서 계획했던 계층은 이미 메인 루프에 삽입된 상태다.
 
 ### `src/input/serial_command.*`
 
-- 현재는 시리얼 입력을 읽고 바로 명령을 실행한다.
-- Phase 3-B 이후에는 "파싱 -> Command 생성"까지만 담당하도록 줄인다.
+- 현재는 문자열 파싱 후 `Command`를 생성하고 공통 경로로 넘긴다.
+- base 상대각용 `base angle ...`, `base stop` 명령도 지원한다.
 
 ### `src/network/web_server.*`
 
-- 현재는 HTTP 요청이 직접 상태 전환, 모터, 관절, 시퀀스 실행으로 이어진다.
-- Phase 3-B 이후에는 웹도 동일한 `Command` 경로를 사용해야 한다.
-- `/status`는 센서 상태를 포함하도록 확장해야 한다.
+- 현재는 HTTP 파라미터를 검증한 뒤 `Command`를 생성하고 공통 경로로 넘긴다.
+- `/status`는 센서 상태와 `baseAngle` 상태를 포함한다.
+- `/events`와 `/base`가 추가돼 메시지 경계가 확장됐다.
 
 ### `src/system/system_init.*`
 
-- 현재는 타임아웃 중심 안전 상태 머신만 있다.
-- 센서 기반 차단 이유를 표현할 방법이 아직 없다.
-- 최소한 로그와 `/status`에 safety reason을 남길 경로가 필요하다.
+- 기본 상태 머신은 여전히 핵심 safety 축이다.
+- 센서 기반 차단 이유는 `SafetyMonitor`와 `EventLog`를 통해 노출된다.
+- `/status`와 `/events`에서 safety reason을 확인할 수 있다.
 
 ## Phase 3 범위
 
@@ -244,6 +259,23 @@ GND common
 - `abnormal vibration -> FAULT`
 - 수신 센서 상태를 `/status` 또는 로그로 확인할 수 있다.
 
+### 3-A 현재 상태
+
+- `Stm32Bridge`와 `SafetyMonitor`는 ESP32 코드에 반영 완료
+- `/status.sensor`에 `connected`, `packetsReceived`, `imuOk`, `rangeOk`, `distCm`, `vibe`, `blockReason`, `faultLatched` 노출 완료
+- bench 기준으로 아래 동작을 확인했다.
+  - `STM32 -> ESP32` UART 센서 브리지 수신
+  - `OBSTACLE` 차단
+  - `VIBRATION`만 `FAULT` latch
+  - `SENSOR_STALE` 감지
+  - `OBSTACLE` 또는 `SENSOR_STALE` 중 `ARM` 거부
+
+### 3-A 남은 작업
+
+- 최종 실장 상태에서 센서 스트림 안정성 재검증
+- 임시 점퍼선이 아닌 실제 배선 상태에서 `RANGE_FAULT` 간헐 개입 여부 재확인
+- 조립 후 센서 하우징/방향에 따라 임계값 재조정 필요 여부 확인
+
 ## 3-B. Decision Layer
 
 목표는 입력이 직접 모터를 때리지 않게 만드는 것이다.
@@ -312,6 +344,19 @@ GND common
 - 거부된 명령은 이유가 로그에 남는다.
 - 직접 실행 경로가 정리된다.
 
+### 3-B 현재 상태
+
+- `Command`, `CommandBus`, `SafetyGate`, `Dispatcher` 구현 완료
+- 시리얼과 웹 입력 모두 공통 `Command` 경로를 사용한다.
+- 거부 사유는 `CommandResult`, 로그, `/events`로 확인할 수 있다.
+- `MOTOR`, `JOINT`, `SEQUENCE`, `LIGHT`, `BASE_ANGLE_RUN`까지 공통 경로에 포함됐다.
+
+### 3-B 남은 작업
+
+- 직접 실행 경로가 남아 있지 않은지 조립 전 한 번 더 점검
+- 최종 통합 검증 중 발견되는 예외 케이스를 `SafetyGate` 메시지와 로그에 보강
+- 필요 시 시퀀스와 base 상대각 명령의 충돌 규칙을 더 명확히 문서화
+
 ## 3-C. Closed-Loop Motion
 
 목표는 센서를 실제 동작 제어에 연결하는 것이다.
@@ -372,6 +417,21 @@ MVP에서는 새 명령을 과하게 늘리지 말고 베이스 전용 상대각
 - 목표각 근처에서 자동 정지한다.
 - 로그에서 목표각, 현재각, 종료 이유를 확인할 수 있다.
 
+### 3-C 현재 상태
+
+- `AngleController` 구현 완료
+- 시리얼 `base angle <left|right> <deg> [percent]` 지원 완료
+- HTTP `POST /base?action=angle...` 및 `POST /base?action=stop` 지원 완료
+- `/status.baseAngle`에서 현재 추정각, 남은 각도, 처리 샘플 수, 마지막 종료 이유를 확인할 수 있다.
+- 센서 미실장 상태 bench에서는 `NO_ROTATION_FEEDBACK` 보호 종료가 정상 동작하는 것을 확인했다.
+
+### 3-C 남은 작업
+
+- IMU를 실제 base 회전부와 함께 배치한 뒤 물리 검증
+- 최종 조립 상태에서 `TARGET_REACHED`, `TIMEOUT`, `SENSOR_BLOCK` 종료 이유 재현 확인
+- 필요 시 각속도 축 부호, 임계값, 타임아웃 재튜닝
+- 필요 시 `MotionSequence`에 base angle step 추가
+
 ## 3-D. Message Bridge
 
 목표는 향후 Raspberry Pi + ROS2 연결 전에 메시지 경계를 정리하는 것이다.
@@ -409,42 +469,89 @@ MVP에서는 새 명령을 과하게 늘리지 말고 베이스 전용 상대각
 - ESP32 내부와 상위 호스트 간 메시지 경계가 문서로 정리된다.
 - Phase 4에서 ROS2 메시지로 옮길 때 재설계 비용이 크지 않다.
 
-## 구현 순서
+### 3-D 현재 상태
 
-1. STM32 `HC-SR04` 추가
-2. STM32 UART JSON 송신
-3. ESP32 `stm32_bridge`
-4. ESP32 `safety_monitor`
-5. `/status` 센서 상태 노출
-6. `Dispatcher` 도입
-7. `SerialCommand`를 `Command` 생산자로 전환
-8. `WebServer`를 같은 경로로 전환
-9. 베이스 상대각 제어 추가
-10. 메시지 인터페이스 정리
+- `MESSAGE_INTERFACE.md`에 `phase3.v1` 메시지 경계 정리 완료
+- `GET /status`, `GET /events`, 명령 응답 envelope, base angle 종료 이유를 문서화했다.
+- `GET /events` 최근 이벤트 API가 구현돼 있다.
+
+### 3-D 남은 작업
+
+- Phase 4 진입 전 host-side poll 주기와 상태/이벤트 소비 방식 확정
+- `ESP32-CAM`, `RPi/ROS2 + AI`가 사용할 최소 명령/상태 집합 최종 확정
+- 필요 시 event stream 또는 host bridge 형식 초안 추가
+
+## 구현 순서와 현재 상태
+
+- [x] STM32 `HC-SR04` 추가
+- [x] STM32 UART JSON 송신
+- [x] ESP32 `stm32_bridge`
+- [x] ESP32 `safety_monitor`
+- [x] `/status` 센서 상태 노출
+- [x] `Dispatcher` 도입
+- [x] `SerialCommand`를 `Command` 생산자로 전환
+- [x] `WebServer`를 같은 경로로 전환
+- [x] 베이스 상대각 제어 추가
+- [x] 메시지 인터페이스 1차 정리
+- [ ] 최종 배치도와 배선표 확정
+- [ ] 조립 후 bring-up 체크리스트에 따라 통합 검증
+- [ ] base 상대각 물리 검증 및 튜닝
+- [ ] Phase 4 진입용 host-side 경계 최종 확정
+
+## 조립 전에 할 일
+
+- 최종 부품 배치안 확정
+- 전원, 공통 GND, 모터선, UART, I2C, 초음파 배선을 포함한 배선표 확정
+- 조립 후 1차 bring-up 절차 문서화
+- `PHASE3_PLAN.md`, `README.md`, `MESSAGE_INTERFACE.md` 간 상태 설명 불일치 제거
+- 실장 후 바로 확인할 핵심 시나리오 고정
+  - `sensor stream`
+  - `OBSTACLE`
+  - `SENSOR_STALE`
+  - `VIBRATION`
+  - `arm/disarm/recover`
+  - `base angle`
 
 ## 검증 체크리스트
 
+### Bench Simulation Gate
+
+하드웨어 재배치 전에는 시리얼 `sensor sim ...` 명령으로 아래 항목을 재현 가능해야 한다.
+
+- `healthy -> arm` 에서 차단 없이 진입
+- `healthy + rotate left/right` 에서 base angle 종료 이유가 `NO_ROTATION_FEEDBACK` 대신 진행 가능한 형태로 바뀌는지 확인
+- `obstacle` 에서 `ARM` 거부 또는 동작 중 즉시 차단
+- `vibration` 에서 `FAULT` latch
+- `stale` 에서 `SENSOR_STALE`
+
+이 gate는 실기 검증을 대체하지는 않지만, Phase 3의 safety/state/base-angle 경로가 코드상으로 유지되는지 빠르게 확인하는 용도다.
+
 ### Gate 1. 센서 스트림
 
-- STM32 UART에서 JSON 라인이 안정적으로 나온다.
-- ESP32가 1분 이상 패킷 누락 없이 수신한다.
-- 센서 끊김 시 stale 감지가 동작한다.
+- 현재 상태: bench 기준 1차 통과
+- 남은 것: 최종 실장 후 1분 이상 연속 수신과 간헐 `RANGE_FAULT` 여부 재검증
 
 ### Gate 2. Safety
 
-- 장애물 접근 시 모터 또는 시퀀스가 멈춘다.
-- 진동 조건에서 `FAULT` 전환이 일어난다.
-- safety 해제 전에는 재실행이 거부된다.
+- 현재 상태: bench 기준 1차 통과
+- 확인한 것:
+  - 장애물 접근 시 즉시 차단
+  - `VIBRATION`만 `FAULT` latch
+  - `RECOVER` 후 `IDLE` 복귀
+  - non-motion 명령 중에도 `AUTO_SAFE_TIMEOUT` 동작
+- 남은 것: 최종 조립 상태에서 재현성 확인
 
 ### Gate 3. 명령 경로 통합
 
-- 시리얼과 웹이 같은 경로를 사용한다.
-- 거부 사유가 일관되게 보인다.
+- 현재 상태: 구현 완료
+- 남은 것: 최종 통합 중 발견되는 예외 케이스 점검
 
 ### Gate 4. 폐루프 데모
 
-- 베이스 상대각 회전이 재현 가능하다.
-- 종료 이유가 `target reached`, `timeout`, `sensor block` 중 하나로 설명 가능하다.
+- 현재 상태: 코드/bench 보호동작 확인 완료
+- 남은 것:
+  - IMU 실장 후 실제 상대각 회전 재현
+  - 종료 이유가 `TARGET_REACHED`, `TIMEOUT`, `SENSOR_BLOCK`, `NO_ROTATION_FEEDBACK` 중 하나로 일관되게 설명 가능한지 확인
 
 ## 현재 핵심 리스크
 
@@ -462,6 +569,11 @@ Phase 4는 아래 조건이 충족된 뒤 시작한다.
 - 시리얼/웹 입력이 공통 명령 경로를 쓴다.
 - `/status`에서 센서 health와 block reason을 확인할 수 있다.
 - 베이스 상대각 회전 데모가 가능하다.
+
+현재 판정:
+
+- 앞의 네 조건은 bench 기준으로 대부분 충족
+- 마지막 조건인 "베이스 상대각 회전 데모"는 최종 실장 기반 물리 검증이 남아 있으므로 아직 완료로 보지 않는다
 
 ## Phase 4 연결 방향
 

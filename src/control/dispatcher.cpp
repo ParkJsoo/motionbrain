@@ -322,12 +322,25 @@ bool Dispatcher::execute(const Command& command, CommandResult& result) {
     }
 
     case CommandType::SEQUENCE_ADD:
-      success = motionSequence_->addCommand(command.joint, command.direction, command.percent, command.durationMs);
-      if (success) {
-        setResult(result, command.id, true, "Command added [%u/%u]",
-                  motionSequence_->getTotalCount(), MotionSequence::MAX_COMMANDS);
+      if (command.joint == MotionJoint::BASE && command.targetDegrees > 0.0f) {
+        success = motionSequence_->addBaseAngleCommand(command.direction, command.percent,
+                                                       command.targetDegrees);
+        if (success) {
+          setResult(result, command.id, true, "Base angle step added [%.1fdeg] [%u/%u]",
+                    command.targetDegrees,
+                    motionSequence_->getTotalCount(), MotionSequence::MAX_COMMANDS);
+        } else {
+          setResult(result, command.id, false, "Base angle add failed (queue full or invalid params)");
+        }
       } else {
-        setResult(result, command.id, false, "Add failed (queue full or invalid params)");
+        success = motionSequence_->addCommand(command.joint, command.direction, command.percent,
+                                              command.durationMs);
+        if (success) {
+          setResult(result, command.id, true, "Command added [%u/%u]",
+                    motionSequence_->getTotalCount(), MotionSequence::MAX_COMMANDS);
+        } else {
+          setResult(result, command.id, false, "Add failed (queue full or invalid params)");
+        }
       }
       break;
 
