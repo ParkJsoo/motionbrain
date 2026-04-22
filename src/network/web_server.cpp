@@ -6,6 +6,7 @@
 #include "control/event_log.h"
 #include "control/dispatcher.h"
 #include "safety/safety_monitor.h"
+#include "input/teleop_adapter.h"
 #include "system/system_init.h"       // SystemStateManager 사용
 #include "motor/motor_driver.h"        // MotorControl 사용
 #include "motion/robot_arm.h"          // RobotArm 사용
@@ -17,6 +18,7 @@ extern Stm32Bridge stm32Bridge;
 extern SafetyMonitor safetyMonitor;
 extern AngleController angleController;
 extern EventLog eventLog;
+extern TeleopAdapter teleopAdapter;
 
 namespace {
 
@@ -603,6 +605,35 @@ void MotionBrainWebServer::handleStatus() {
   json += ",\"lastTransitionMs\":";
   json += String(angleController.getLastTransitionMs());
   json += "}";
+
+  json += ",\"teleop\":{";
+  json += "\"connected\":";
+  json += teleopAdapter.isConnected() ? "true" : "false";
+  json += ",\"deadman\":";
+  json += teleopAdapter.isDeadmanHeld() ? "true" : "false";
+  json += ",\"controlActive\":";
+  json += teleopAdapter.isControlActive() ? "true" : "false";
+  json += ",\"lastFrameAgeMs\":";
+  json += String(teleopAdapter.getLastFrameAgeMs());
+  json += ",\"packetsReceived\":";
+  json += String(teleopAdapter.getPacketsReceived());
+  json += ",\"parseErrors\":";
+  json += String(teleopAdapter.getParseErrors());
+  json += ",\"session\":";
+  json += String(teleopAdapter.getLastSession());
+  json += ",\"seq\":";
+  json += String(teleopAdapter.getLastSequence());
+  json += ",\"reach\":";
+  json += String(teleopAdapter.getLastReach(), 2);
+  json += ",\"lift\":";
+  json += String(teleopAdapter.getLastLift(), 2);
+  json += ",\"twist\":";
+  json += String(teleopAdapter.getLastTwist(), 2);
+  json += ",\"ledToggleSeq\":";
+  json += String(teleopAdapter.getLastLedToggleSeq());
+  json += ",\"lastStopReason\":\"";
+  json += teleopAdapter.getLastStopReasonString();
+  json += "\"}";
 
   json += "}";
 

@@ -77,6 +77,64 @@ X-MotionBrain: 1
 - `/sequence?action=add` 는 `duration` 또는 `degrees` 중 하나를 사용한다.
 - `degrees` 는 `joint=base` 일 때만 허용한다.
 
+### Wired Handheld Teleop
+
+handheld remote v1은 discrete command 나열이 아니라 line-delimited teleop frame을 유선 serial/UART로 보낸다.
+
+이 채널은 현재 serial/web command를 대체하지 않고, "이미 `ARMED`인 시스템에 연속 조작 입력을 공급하는 보조 입력 채널"로 취급한다.
+
+권장 구조:
+
+```text
+remote
+  -> teleop frame (wired UART)
+  -> ESP32 teleop adapter
+  -> RobotArm / MotorControl
+```
+
+v1 frame은 flat JSON 한 줄을 사용한다.
+
+```json
+{
+  "type": "teleop",
+  "ts_ms": 12345,
+  "seq": 18,
+  "session": 3,
+  "deadman": true,
+  "reach": 0.42,
+  "lift": -0.18,
+  "twist": 0.31,
+  "grip_open": false,
+  "grip_close": true,
+  "led_toggle_seq": 2
+}
+```
+
+필드 의미:
+
+- `type`: 항상 `teleop`
+- `ts_ms`: remote 기준 timestamp
+- `seq`: frame sequence
+- `session`: deadman을 새로 누를 때마다 증가하는 조작 세션 번호
+- `deadman`: motion enable hold 상태
+- `reach`: `-1.0 .. 1.0`, 앞/뒤 기울이기에서 나온 normalized 축
+- `lift`: `-1.0 .. 1.0`, 좌/우 기울이기에서 나온 normalized 축
+- `twist`: `-1.0 .. 1.0`, 손잡이 축 비틀기에서 나온 normalized 축
+- `grip_open`: 그리퍼 열기 버튼 상태
+- `grip_close`: 그리퍼 닫기 버튼 상태
+- `led_toggle_seq`: LED toggle rising edge 누적 카운터
+
+규칙:
+
+- `reach/lift/twist`는 remote에서 중립 재설정과 deadzone을 반영한 뒤 normalized 값으로 보낸다.
+- `deadman=false`이면 ESP32는 teleop가 제어하던 관절을 즉시 정지한다.
+- frame freshness가 timeout을 넘기면 deadman release와 동일하게 즉시 정지한다.
+- v1 freshness timeout 시작값은 약 `200ms`다.
+- v1 frame rate 시작값은 `20~50Hz` 범위를 쓰고, 초기 구현은 `25Hz` 전후를 권장한다.
+- `grip_open`과 `grip_close`가 동시에 true이거나 동시에 false이면 그리퍼는 정지한다.
+- `led_toggle_seq`는 level이 아니라 edge counter다. ESP32는 값이 증가했을 때만 `LIGHT_TOGGLE`을 한 번 수행한다.
+- `twist`는 v1에서 base open-loop manual control로 해석한다. 즉, `BASE_ANGLE_RUN`이 아니라 base manual jog 성격이다.
+
 ## 2. 상태 메시지 경계
 
 `GET /status` 응답은 아래 상위 필드를 유지한다.

@@ -1,5 +1,6 @@
 .pio
-firmware/
+firmware/**/Debug/
+firmware/**/.settings/
 .claude/
 .omc/
 .codex/

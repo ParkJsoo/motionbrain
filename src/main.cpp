@@ -4,6 +4,7 @@
 #include "motion/robot_arm.h"          // RobotArm 사용 (Phase 2-A)
 #include "motion/motion_sequence.h"    // MotionSequence 사용 (Phase 2-B)
 #include "input/serial_command.h"      // SerialCommand 사용
+#include "input/teleop_adapter.h"      // TeleopAdapter 사용
 #include "network/wifi_ap.h"           // WiFiAP 사용
 #include "network/web_server.h"        // MotionBrainWebServer 사용
 #include "peripheral/search_light.h"   // SearchLight 사용
@@ -22,6 +23,7 @@ MotorControl motorControl;        // MotorControl 객체 생성
 RobotArm robotArm(&motorControl); // RobotArm 객체 생성 (Phase 2-A)
 MotionSequence motionSequence;    // MotionSequence 객체 생성 (Phase 2-B)
 SerialCommand serialCommand;      // SerialCommand 객체 생성
+TeleopAdapter teleopAdapter;      // 유선 handheld teleop adapter
 WiFiAP wifiAP;                    // WiFiAP 객체 생성
 MotionBrainWebServer webServer;   // MotionBrainWebServer 객체 생성
 SearchLight searchLight;          // SearchLight 객체 생성
@@ -89,6 +91,10 @@ void setup() {
   // 10. 시리얼 명령 모듈 초기화
   serialCommand.init(&systemState, &motorControl, &robotArm, &motionSequence, &searchLight,
                      &commandBus, &dispatcher);
+
+  // 10-B. 유선 handheld teleop adapter 초기화
+  teleopAdapter.init(&systemState, &motorControl, &motionSequence, &safetyMonitor,
+                     &angleController, &commandBus, &dispatcher);
   
   // 11. Wi-Fi AP 초기화
   const char* apSSID = "MotionBrain-AP";
@@ -142,6 +148,9 @@ void loop() {
 
   // 공통 명령 처리
   dispatcher.dispatchPending(commandBus);
+
+  // 유선 handheld teleop 처리
+  teleopAdapter.update();
   
   // 모터 제어 업데이트 (점진적 속도 변경 처리)
   motorControl.update();

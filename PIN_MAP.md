@@ -179,6 +179,56 @@ ESP32 GND ──┬── TB6612FNG #1 GND
 
 ---
 
+## Wired Handheld Teleop UART
+
+유선 handheld remote v1은 모터 제어 핀과 별도로 teleop frame 수신용 UART 한 줄을 사용한다.
+
+### ESP32 수신 핀
+
+| 용도 | ESP32 GPIO | 시리얼 포트 | 방향 | 비고 |
+| ---- | ---------- | ----------- | ---- | ---- |
+| teleop RX | GPIO 34 | `Serial1 RX` | INPUT | 입력 전용 핀, TX 없이 RX-only 사용 |
+
+### STM32 송신 핀
+
+| 용도 | STM32 핀 | 보드 표기 | 주변장치 | 방향 |
+| ---- | -------- | --------- | -------- | ---- |
+| teleop TX | PD5 | Arduino D1 | `USART2_TX` | OUTPUT |
+
+### 배선
+
+```text
+STM32 PD5 / D1 / USART2_TX  ->  ESP32 GPIO34 / Serial1 RX
+STM32 GND                   ->  ESP32 GND
+```
+
+주의:
+
+- teleop v1은 단방향 UART만 사용한다.
+- `GPIO34`는 입력 전용이므로 teleop RX에 적합하다.
+- 기존 STM32 sensor bridge가 쓰던 `Serial2 RX=GPIO35`와 별도 채널이다.
+- 센서 허브와 teleop remote를 동시에 별도 STM32 보드로 운용하는 구성을 우선 가정한다.
+
+---
+
+## STM32 Handheld Teleop Provisional Buttons
+
+현재 `MotionBrainSensor`의 `APP_MODE_TELEOP_REMOTE`는 아래 임시 버튼 핀 매핑을 사용한다.
+
+| 기능 | STM32 핀 | 비고 |
+| ---- | -------- | ---- |
+| `deadman` | `PA0` | hold-to-enable |
+| `LED toggle` | `PA1` | rising edge counter |
+| `grip open` | `PA4` | active-low pull-up 기준 |
+| `grip close` | `PB0` | active-low pull-up 기준 |
+
+주의:
+
+- 현재 코드는 내부 pull-up + active-low 버튼을 가정한다.
+- 실제 handheld 하우징과 버튼 배치가 확정되면 STM32 `main.c` 상단 매크로를 기준으로 핀만 교체하면 된다.
+
+---
+
 ## 모터 방향 제어 로직
 
 ### 정방향 (Forward)

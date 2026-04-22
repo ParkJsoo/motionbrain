@@ -68,7 +68,7 @@ Phase 3에서 반드시 만들어야 하는 결과는 다음 네 가지다.
 
 - 보드: `B-F446E-96B01A`
 - 프로젝트 경로:
-  - `/Users/jeongsoopark/STM32CubeIDE/workspace_2.1.1/MotionBrainSensor`
+  - `firmware/stm32/MotionBrainSensor`
 - `MPU-6050` 통신 확인 완료
 - `WHO_AM_I = 0x68` 확인 완료
 - 자이로 바이어스 캘리브레이션 추가 완료
