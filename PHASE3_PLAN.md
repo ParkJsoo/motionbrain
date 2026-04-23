@@ -8,28 +8,30 @@ Phase 3는 MotionBrain을 "움직이는 ESP32 프로젝트"에서 "센서 피드
 
 Phase 3에서 반드시 만들어야 하는 결과는 다음 네 가지다.
 
-- STM32 센서 허브가 `MPU-6050 + HC-SR04`를 읽고 ESP32로 보낸다.
+- STM32 기반 센서/teleop 계층이 `HC-SR04` safety input과 `GY-521` handheld input을 ESP32로 보낸다.
 - ESP32가 센서를 받아 safety에 반영한다.
 - 입력 채널이 직접 모터를 때리지 않고 공통 명령 경로를 지난다.
-- 베이스 회전에 한정한 최소 폐루프 제어를 만든다.
+- 유선 handheld teleop 입력을 안전한 motion 입력 채널로 붙인다.
 
 ## 현재 진행 상태
 
-기준 날짜: `2026-04-21`
+기준 날짜: `2026-04-23`
 
 - `Phase 1`: 완료
 - `Phase 2`: 사실상 완료
 - `Phase 3`: 진행 중
 - `3-A Sensor Feedback Layer`: bench 기준 거의 완료, 최종 실장 후 재검증만 남음
 - `3-B Decision Layer`: 1차 완료
-- `3-C Closed-Loop Motion`: 1차 구현 완료, 실기 검증 대기
+- `3-C Base Closed-Loop Motion`: 1차 구현 완료, 현재는 optional/보류 기능
+- `3-C Teleop Motion Input`: 유선 MVP 구현 완료, 실기 튜닝 대기
 - `3-D Message Bridge`: 부분 완료
 
 현재 해석은 다음과 같다.
 
 - 코드 구조상 Phase 3의 핵심 모듈은 이미 들어가 있다.
 - 지금 병목은 새 기능 추가보다 최종 배치, 배선, 통합 검증 준비다.
-- IMU와 보드들을 실제 배치하지 않은 상태이므로 base 상대각 폐루프의 물리 검증은 아직 완료로 보지 않는다.
+- `GY-521`은 handheld remote 입력용으로 쓰기로 했으므로 base 상대각 폐루프 물리 검증은 현재 Phase 3 gate에서 제외한다.
+- 기존 `base angle` 기능은 구현/문서화된 optional 실험 기능으로 남기며, 실제 폐루프를 다시 목표로 잡으려면 별도 base-mounted IMU/엔코더 같은 피드백 센서가 필요하다.
 
 ## 현재 확정 사실
 
@@ -96,7 +98,8 @@ Phase 3에서 반드시 만들어야 하는 결과는 다음 네 가지다.
 - 첫 목적은 "센서값 표시"가 아니라 "센서 기반 safety와 구조 분리"다.
 - 최소 경로가 먼저다. `STM32 -> ESP32` 단방향 센서 스트림이 우선이다.
 - 현재 코드 구조에 무리하게 큰 리팩터링을 걸지 않는다. `3-A`와 `3-B`는 단계적으로 분리한다.
-- `MPU-6050` yaw는 절대 방향 기준이 아니라 상대 회전 보조용으로만 취급한다.
+- 현재 보유 `MPU-6050`/`GY-521`은 handheld remote 입력용으로 취급한다.
+- 로봇 본체의 base 상대각 폐루프나 vibration fault를 다시 활성 데모로 잡으려면 별도 본체 IMU 또는 회전 피드백 센서가 필요하다.
 - `ESP32-CAM`과 `RPi/ROS2 + AI`는 Phase 3의 구현 대상이 아니라, Phase 3 결과를 받는 다음 단계다.
 
 ## 현재 코드 기준 삽입 지점
@@ -145,7 +148,8 @@ webServer.update()
 - ESP32 센서 수신
 - 거리/진동 기반 safety
 - 공통 명령 경로 분리
-- 베이스 상대각 제어
+- 유선 handheld teleop 입력
+- 베이스 상대각 제어는 optional 구현 상태로 유지
 - Phase 4로 넘길 메시지 규격 초안
 
 ### 이번 단계에서 제외
@@ -162,7 +166,7 @@ webServer.update()
 
 ### 3-A STM32 작업
 
-1. `MPU-6050`에서 safety와 폐루프에 필요한 값만 정리한다.
+1. `MPU-6050`에서 sensor stream/teleop에 필요한 값만 정리한다.
    - `roll`
    - `pitch`
    - `gyro_x`, `gyro_y`, `gyro_z`
@@ -424,13 +428,12 @@ MVP에서는 새 명령을 과하게 늘리지 말고 베이스 전용 상대각
 - HTTP `POST /base?action=angle...` 및 `POST /base?action=stop` 지원 완료
 - `/status.baseAngle`에서 현재 추정각, 남은 각도, 처리 샘플 수, 마지막 종료 이유를 확인할 수 있다.
 - 센서 미실장 상태 bench에서는 `NO_ROTATION_FEEDBACK` 보호 종료가 정상 동작하는 것을 확인했다.
+- 이후 `GY-521`을 handheld remote 입력용으로 쓰기로 했으므로 base 상대각 물리 검증은 현재 활성 gate에서 제외한다.
 
 ### 3-C 남은 작업
 
-- IMU를 실제 base 회전부와 함께 배치한 뒤 물리 검증
-- 최종 조립 상태에서 `TARGET_REACHED`, `TIMEOUT`, `SENSOR_BLOCK` 종료 이유 재현 확인
-- 필요 시 각속도 축 부호, 임계값, 타임아웃 재튜닝
-- 필요 시 `MotionSequence`에 base angle step 추가
+- 현재 로드맵에서는 없음
+- base 상대각 폐루프를 다시 목표로 잡으면 별도 base-mounted IMU/엔코더를 추가한 뒤 물리 검증과 튜닝을 재개한다.
 
 ## 3-D. Message Bridge
 
@@ -491,11 +494,13 @@ MVP에서는 새 명령을 과하게 늘리지 말고 베이스 전용 상대각
 - [x] `Dispatcher` 도입
 - [x] `SerialCommand`를 `Command` 생산자로 전환
 - [x] `WebServer`를 같은 경로로 전환
-- [x] 베이스 상대각 제어 추가
+- [x] 베이스 상대각 제어 추가, 현재 optional/보류
+- [x] 유선 handheld teleop v1 구현
 - [x] 메시지 인터페이스 1차 정리
 - [ ] 최종 배치도와 배선표 확정
-- [ ] 조립 후 bring-up 체크리스트에 따라 통합 검증
-- [ ] base 상대각 물리 검증 및 튜닝
+- [ ] handheld remote 버튼/배선 확정
+- [ ] teleop mixer 부호와 비중 실기 튜닝
+- [ ] 조립 후 safety/teleop bring-up 체크리스트에 따라 통합 검증
 - [ ] Phase 4 진입용 host-side 경계 최종 확정
 
 ## 조립 전에 할 일
@@ -510,7 +515,8 @@ MVP에서는 새 명령을 과하게 늘리지 말고 베이스 전용 상대각
   - `SENSOR_STALE`
   - `VIBRATION`
   - `arm/disarm/recover`
-  - `base angle`
+  - `teleop deadman/freshness`
+  - `reach/lift/twist/grip`
 
 ## 검증 체크리스트
 
@@ -519,12 +525,11 @@ MVP에서는 새 명령을 과하게 늘리지 말고 베이스 전용 상대각
 하드웨어 재배치 전에는 시리얼 `sensor sim ...` 명령으로 아래 항목을 재현 가능해야 한다.
 
 - `healthy -> arm` 에서 차단 없이 진입
-- `healthy + rotate left/right` 에서 base angle 종료 이유가 `NO_ROTATION_FEEDBACK` 대신 진행 가능한 형태로 바뀌는지 확인
 - `obstacle` 에서 `ARM` 거부 또는 동작 중 즉시 차단
 - `vibration` 에서 `FAULT` latch
 - `stale` 에서 `SENSOR_STALE`
 
-이 gate는 실기 검증을 대체하지는 않지만, Phase 3의 safety/state/base-angle 경로가 코드상으로 유지되는지 빠르게 확인하는 용도다.
+이 gate는 실기 검증을 대체하지는 않지만, Phase 3의 safety/state 경로가 코드상으로 유지되는지 빠르게 확인하는 용도다.
 
 ### Gate 1. 센서 스트림
 
@@ -546,18 +551,21 @@ MVP에서는 새 명령을 과하게 늘리지 말고 베이스 전용 상대각
 - 현재 상태: 구현 완료
 - 남은 것: 최종 통합 중 발견되는 예외 케이스 점검
 
-### Gate 4. 폐루프 데모
+### Gate 4. Handheld Teleop
 
-- 현재 상태: 코드/bench 보호동작 확인 완료
+- 현재 상태: ESP32/STM32 코드 구현 완료
 - 남은 것:
-  - IMU 실장 후 실제 상대각 회전 재현
-  - 종료 이유가 `TARGET_REACHED`, `TIMEOUT`, `SENSOR_BLOCK`, `NO_ROTATION_FEEDBACK` 중 하나로 일관되게 설명 가능한지 확인
+  - 실제 버튼 배선 확정
+  - ESP32<->STM32 teleop UART 연결
+  - 단일 STM32 remote bench에서는 `sensor sim healthy`로 safety gate를 열고 테스트
+  - `deadman`, `FRAME_TIMEOUT`, `reach/lift/twist/grip` 실기 확인
+  - mixer 부호와 비중 조정
 
 ## 현재 핵심 리스크
 
 - ESP32 수신 핀을 잘못 고르면 boot strapping 이슈가 생길 수 있다.
-- `MPU-6050` 진동/각속도 임계값은 실측 튜닝이 필요하다.
-- `MPU-6050` 단독 yaw 적분은 장기 드리프트가 커서 Phase 3-C 범위를 짧은 회전에 제한해야 한다.
+- `GY-521`을 remote에 쓰면 로봇 본체 vibration fault와 base 폐루프는 별도 센서 없이는 활성 데모가 아니다.
+- teleop는 deadman/freshness fail-safe가 실제 배선 노이즈와 함께 검증돼야 한다.
 - Command 구조를 너무 크게 설계하면 실제 구현보다 구조 논의만 길어질 수 있다.
 
 ## Phase 4 진입 조건
@@ -568,12 +576,12 @@ Phase 4는 아래 조건이 충족된 뒤 시작한다.
 - ESP32 safety가 센서 기반으로 동작한다.
 - 시리얼/웹 입력이 공통 명령 경로를 쓴다.
 - `/status`에서 센서 health와 block reason을 확인할 수 있다.
-- 베이스 상대각 회전 데모가 가능하다.
+- 유선 handheld teleop가 deadman/freshness fail-safe 아래에서 동작한다.
 
 현재 판정:
 
-- 앞의 네 조건은 bench 기준으로 대부분 충족
-- 마지막 조건인 "베이스 상대각 회전 데모"는 최종 실장 기반 물리 검증이 남아 있으므로 아직 완료로 보지 않는다
+- 센서/safety/command 경로는 bench 기준으로 대부분 충족
+- 마지막 조건인 handheld teleop 실기 bring-up과 mixer 튜닝이 남아 있다.
 
 ## Phase 4 연결 방향
 
@@ -599,7 +607,7 @@ Phase 3를 마치면 Phase 5에서 아래 산출물로 묶을 수 있어야 한�
 
 - 센서 허브와 모션 제어가 분리된 아키텍처 다이어그램
 - 센서 기반 safety 데모 로그 또는 영상
-- 베이스 상대각 제어 데모
+- handheld teleop 데모
 - 명령 흐름 다이어그램
 - 한계와 리스크 설명
 

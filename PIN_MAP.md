@@ -207,7 +207,9 @@ STM32 GND                   ->  ESP32 GND
 - teleop v1은 단방향 UART만 사용한다.
 - `GPIO34`는 입력 전용이므로 teleop RX에 적합하다.
 - 기존 STM32 sensor bridge가 쓰던 `Serial2 RX=GPIO35`와 별도 채널이다.
-- 센서 허브와 teleop remote를 동시에 별도 STM32 보드로 운용하는 구성을 우선 가정한다.
+- 현재 STM32 펌웨어는 `APP_MODE_TELEOP_REMOTE`와 `APP_MODE_SENSOR_BRIDGE` 중 하나로 빌드된다.
+- 한 개 STM32를 teleop remote로 쓰는 bench에서는 ESP32 sensor bridge가 비므로 `sensor sim healthy`로 safety gate를 열어야 한다.
+- 최종 실장에서는 센서 허브와 teleop remote를 별도 보드로 운용하거나, 동등한 본체 safety 입력 채널을 따로 확보해야 한다.
 
 ---
 

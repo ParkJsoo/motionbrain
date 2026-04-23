@@ -5,6 +5,7 @@
 #include "control/command.h"
 #include "control/command_bus.h"
 #include "control/dispatcher.h"
+#include "input/teleop_adapter.h"
 #include "safety/safety_monitor.h"
 #include "system/system_init.h"
 #include "motor/motor_driver.h"
@@ -15,6 +16,7 @@
 extern Stm32Bridge stm32Bridge;
 extern SafetyMonitor safetyMonitor;
 extern AngleController angleController;
+extern TeleopAdapter teleopAdapter;
 
 /**
  * SerialCommand 생성자
@@ -379,6 +381,10 @@ void SerialCommand::handleHelp() {
   DebugLog::info("  sensor sim rotate <dir> <dps> - Continuous gyro packets for base angle");
   DebugLog::info("  sensor sim stale              - Emit once, then freeze for stale");
   DebugLog::info("  sensor sim off                - Disable simulation and clear snapshot");
+  DebugLog::info("");
+  DebugLog::info("=== Teleop Bring-Up Note ===");
+  DebugLog::info("  Single-STM32 remote bench: run 'sensor sim healthy' before 'arm'");
+  DebugLog::info("  Then watch 'status' for teleop connected/deadman/reach/lift/twist");
 }
 
 /**
@@ -427,6 +433,24 @@ void SerialCommand::handleStatus() {
   DebugLog::info("Block reason: %s", safetyMonitor.getBlockReasonString());
   DebugLog::info("Fault latched: %s", safetyMonitor.hasLatchedFault() ? "YES" : "NO");
   DebugLog::info("Fault reason: %s", safetyMonitor.getLatchedFaultReasonString());
+  DebugLog::info("=== Teleop Status ===");
+  DebugLog::info("Connected: %s", teleopAdapter.isConnected() ? "YES" : "NO");
+  DebugLog::info("Deadman / Active: %s / %s",
+                 teleopAdapter.isDeadmanHeld() ? "YES" : "NO",
+                 teleopAdapter.isControlActive() ? "YES" : "NO");
+  DebugLog::info("Frame age: %lums", teleopAdapter.getLastFrameAgeMs());
+  DebugLog::info("Packets / Parse errors: %lu / %lu",
+                 teleopAdapter.getPacketsReceived(),
+                 teleopAdapter.getParseErrors());
+  DebugLog::info("Session / Sequence: %lu / %lu",
+                 teleopAdapter.getLastSession(),
+                 teleopAdapter.getLastSequence());
+  DebugLog::info("Reach / Lift / Twist: %.2f / %.2f / %.2f",
+                 teleopAdapter.getLastReach(),
+                 teleopAdapter.getLastLift(),
+                 teleopAdapter.getLastTwist());
+  DebugLog::info("LED toggle seq: %lu", teleopAdapter.getLastLedToggleSeq());
+  DebugLog::info("Last stop reason: %s", teleopAdapter.getLastStopReasonString());
   DebugLog::info("=== Base Angle Control ===");
   DebugLog::info("Active: %s", angleController.isActive() ? "YES" : "NO");
   DebugLog::info("Direction: %s", angleController.getDirectionString());

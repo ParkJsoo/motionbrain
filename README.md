@@ -31,7 +31,7 @@ ESP32 기반 5축 로봇팔 제어 시스템에서 출발해, STM32 센서 허�
 - STM32 `MotionBrainSensor` 프로젝트에서 `MPU-6050 + HC-SR04 + UART` 센서 스트림 bench 검증 완료
 - ESP32 `stm32_bridge`, `safety_monitor`, `Dispatcher`, `SafetyGate` 추가
 - 시리얼/HTTP 입력을 공통 `Command` 경로로 통합
-- 베이스 상대각 제어 1차 구현 완료 (`base angle ...`, `POST /base`)
+- 베이스 상대각 제어 1차 구현 완료 (`base angle ...`, `POST /base`) 단, 현재는 optional 실험 기능
 - 최근 이벤트 로그와 `GET /events` API 추가
 - `sensor sim ...` 기반 bench simulation 경로 추가
 - 유선 handheld teleop v1 골격 구현 완료
@@ -43,9 +43,9 @@ ESP32 기반 5축 로봇팔 제어 시스템에서 출발해, STM32 센서 허�
 
 - 최종 부품 배치와 배선표 확정
 - 최종 실장 상태에서 센서 스트림 안정성 재검증
-- IMU 실제 장착 후 베이스 상대각 물리 검증 및 튜닝
 - handheld remote provisional 버튼 핀과 UART 배선 확정
 - teleop 실기에서 `reach/lift/twist` 부호와 비중 조정
+- `HC-SR04` 기반 obstacle safety 최종 배치 검증
 - Phase 4 진입 전 host-side 상태/이벤트 소비 경계 최종 확정
 - ESP32-CAM 영상 스트리밍 및 비전 입력 연동
 - Raspberry Pi + ROS2 + AI 연동
@@ -63,6 +63,7 @@ ESP32 기반 5축 로봇팔 제어 시스템에서 출발해, STM32 센서 허�
 [ESP32 Motion Controller]
   Stm32Bridge
   SafetyMonitor
+  TeleopAdapter
   Dispatcher + SafetyGate
   AngleController
   RobotArm + MotionSequence
@@ -76,10 +77,10 @@ TB6612FNG x3
 ### 목표 아키텍처
 
 ```text
-[STM32 Sensor Hub]
-  MPU-6050
-  HC-SR04
-  UART sensor stream
+[STM32 Sensor / Teleop Layer]
+  HC-SR04 safety input
+  GY-521 handheld remote
+  UART sensor/teleop stream
         ->
 [ESP32 Motion Controller]
   Safety state machine
@@ -115,6 +116,8 @@ TB6612FNG x3
 
 - 보드: `B-F446E-96B01A`
 - `MPU-6050` 응답 확인 완료
+- 현재 `MPU-6050 (GY-521)`은 handheld remote 입력용으로 쓰는 방향이다.
+- 따라서 base 상대각 폐루프나 본체 vibration fault를 활성 데모로 다시 잡으려면 별도 본체 센서가 필요하다.
 - 실제 I2C 매핑:
   - `D15 = PB10 = I2C2_SCL`
   - `D14 = PC12 = I2C2_SDA`
@@ -170,6 +173,26 @@ STM32 센서 프로젝트 경로:
 
 - STM32CubeIDE
 - HAL / CubeMX
+
+### STM32 CLI Helpers
+
+추가된 스크립트:
+
+- `tools/stm32_build.sh`: STM32CubeIDE headless build
+- `tools/stm32_upload.sh`: STM32CubeProgrammer CLI로 ST-LINK 업로드
+- `tools/stm32_build_upload.sh`: 빌드 후 바로 업로드
+
+현재 macOS에서는 `STM32_Programmer_CLI`를 arm64로 직접 실행하면 Qt/neon 오류가 나므로, 스크립트에서 자동으로 `arch -x86_64`를 사용한다.
+
+예시:
+
+```bash
+tools/stm32_build.sh
+tools/stm32_upload.sh
+tools/stm32_build_upload.sh
+```
+
+업로드는 ST-LINK가 연결되어 있어야 한다. 현재 기준 미연결 상태에서는 `Error: No debug probe detected.` 가 정상이다.
 
 ### 향후 상위 제어
 
@@ -241,14 +264,21 @@ python3 tools/motionbrain_watch.py --host 192.168.4.1 --interval 1.0
 1. ESP32 펌웨어 업로드 후 `status` 또는 웹 `/status` 확인
 2. STM32 teleop remote 펌웨어 업로드
 3. `STM32 PD5 -> ESP32 GPIO34`, `GND common` 연결
-4. ESP32를 `arm`
-5. deadman을 누른 채 STM32를 중립 자세로 잡기
-6. deadman을 떼고 다시 누르며 새 중립이 잡히는지 SWV 로그 확인
-7. deadman을 누른 채 앞/뒤/좌/우/비틀기 입력으로 teleop 반응 확인
-8. `/status.teleop`에서 `connected`, `deadman`, `reach`, `lift`, `twist`, `lastStopReason` 확인
-9. deadman release 또는 선 분리 시 `FRAME_TIMEOUT` / `DEADMAN_RELEASE` 정지 확인
+4. 센서 허브 없이 단일 STM32 remote만 bench 테스트한다면 ESP32 시리얼에서 `sensor sim healthy` 실행
+5. ESP32를 `arm`
+6. deadman을 누른 채 STM32를 중립 자세로 잡기
+7. deadman을 떼고 다시 누르며 새 중립이 잡히는지 SWV 로그 확인
+8. deadman을 누른 채 앞/뒤/좌/우/비틀기 입력으로 teleop 반응 확인
+9. `/status.teleop` 또는 시리얼 `status`에서 `connected`, `deadman`, `reach`, `lift`, `twist`, `lastStopReason` 확인
+10. deadman release 또는 선 분리 시 `FRAME_TIMEOUT` / `DEADMAN_RELEASE` 정지 확인
 
-시리얼만으로 safety/base-angle 상태를 bench에서 재현하려면 아래 simulation 명령을 사용할 수 있다.
+주의:
+
+- 현재 STM32 펌웨어는 `APP_MODE_TELEOP_REMOTE`와 `APP_MODE_SENSOR_BRIDGE` 중 하나로 동작한다.
+- 한 개 STM32를 remote 모드로 쓰는 bench에서는 ESP32 sensor bridge가 실제 센서 패킷을 받지 못하므로 `sensor sim healthy`가 필요하다.
+- 최종 실장에서는 `HC-SR04` safety stream을 별도 sensor bridge로 유지하거나, 동등한 본체 safety 입력 채널을 따로 확보해야 한다.
+
+시리얼만으로 safety 상태를 bench에서 재현하려면 아래 simulation 명령을 사용할 수 있다. `base angle` 관련 simulation은 구현 검사용으로 남아 있지만, 현재 하드웨어 로드맵의 필수 gate는 아니다.
 
 ```text
 sensor sim healthy
@@ -261,7 +291,7 @@ sensor sim off
 
 ### 시뮬레이션 검증 절차
 
-하드웨어 없이 safety/base-angle 경로를 빠르게 점검할 때는 아래 순서가 기준이다.
+하드웨어 없이 safety 경로를 빠르게 점검할 때는 아래 순서가 기준이다.
 
 1. `sensor sim off`
 2. `sensor sim healthy`
@@ -269,30 +299,24 @@ sensor sim off
 기대 결과:
 `sensor.connected=true`, `blockReason=NONE`, `faultReason=NONE`
 
-4. `arm`
-5. `base angle left 20 35`
-6. `sensor sim rotate left 15`
-기대 결과:
-`TARGET_REACHED`로 종료되거나, 최소한 `NO_ROTATION_FEEDBACK` 대신 회전 샘플이 누적된다.
-
-7. `sensor sim obstacle 10`
-8. `arm`
+4. `sensor sim obstacle 10`
+5. `arm`
 기대 결과:
 `OBSTACLE` 때문에 `ARM` 거부
 
-9. `sensor sim healthy`
-10. `arm`
-11. `sensor sim vibration 9`
+6. `sensor sim healthy`
+7. `arm`
+8. `sensor sim vibration 9`
 기대 결과:
 `VIBRATION`으로 `FAULT` latch
 
-12. `stop`
-13. `sensor sim stale`
-14. 잠시 대기 후 `status`
+9. `stop`
+10. `sensor sim stale`
+11. 잠시 대기 후 `status`
 기대 결과:
 `SENSOR_STALE` 감지
 
-15. `sensor sim off`
+12. `sensor sim off`
 
 상태를 더 보기 쉽게 보려면 다른 터미널에서 아래 watcher를 같이 실행하면 된다.
 
@@ -306,9 +330,8 @@ python3 tools/motionbrain_watch.py --host 192.168.4.1 --interval 1.0
 2. Wi-Fi AP `MotionBrain-AP` 접속 또는 USB 시리얼 연결
 3. `arm`
 4. `joint`, `motor`, `sequence`, `light` 명령 사용
-5. 상대각 회전이 필요하면 `base angle left 45 40` 같은 명령 사용
-6. 시퀀스에 폐루프 base step을 넣고 싶으면 `sequence add base left 40 angle=45` 사용
-7. 필요 시 `stop` 또는 `disarm`
+5. 유선 handheld teleop를 쓸 때는 deadman을 누른 상태에서 `reach/lift/twist/grip` 입력 사용
+6. 필요 시 `stop` 또는 `disarm`
 
 ## 문서 구조
 
@@ -329,18 +352,19 @@ python3 tools/motionbrain_watch.py --host 192.168.4.1 --interval 1.0
 ## 다음 우선순위
 
 1. 최종 부품 배치도와 배선표 확정
-2. 최종 실장 후 센서 스트림과 `RANGE_FAULT` 간헐 개입 여부 재검증
-3. IMU를 실제 base 회전부에 장착한 뒤 `base angle` 물리 검증
-4. `GET /events`와 host watcher 기준으로 base-angle / safety 이벤트 확인
-5. `ESP32-CAM` 스트리밍과 비전 입력 연결
-6. Raspberry Pi + ROS2 + AI 연동
-7. 데모 시나리오, 문서, 포트폴리오 정리
+2. handheld remote 버튼 핀과 ESP32<->STM32 teleop UART 배선 확정
+3. teleop 실기에서 `reach/lift/twist/grip` 부호, deadzone, 속도 비중 조정
+4. 최종 실장 후 `HC-SR04` safety와 `RANGE_FAULT` 간헐 개입 여부 재검증
+5. `GET /status`, `GET /events`, host watcher 기준으로 teleop/safety 이벤트 확인
+6. `ESP32-CAM` 스트리밍과 비전 입력 연결
+7. Raspberry Pi + ROS2 + AI 연동
+8. 데모 시나리오, 문서, 포트폴리오 정리
 
 ## 포트폴리오 관점에서의 핵심 어필 포인트
 
 - 멀티 MCU 역할 분리 설계
 - 안전 상태 머신 기반 모터 제어
-- 센서 피드백을 통한 폐루프 제어 확장
+- 센서 피드백과 handheld teleop를 통한 입력/안전 계층 확장
 - 웹/시리얼/센서/카메라/ROS2까지 이어지는 입력 계층 설계
 - 카메라 기반 인식과 로봇 동작 연결
 - 단순 동작이 아니라 구조와 진화 경로를 설명 가능한 프로젝트

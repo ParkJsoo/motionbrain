@@ -185,8 +185,12 @@ void TeleopAdapter::update() {
   uint32_t now = millis();
   if (isConnected()) {
     handleFreshFrame(now);
-  } else if (lastFrameReceivedMs_ > 0 && controlActive_) {
-    stopControlledOutputs(TeleopStopReason::FRAME_TIMEOUT, "frame timeout");
+  } else if (lastFrameReceivedMs_ > 0) {
+    if (controlActive_) {
+      stopControlledOutputs(TeleopStopReason::FRAME_TIMEOUT, "frame timeout");
+    } else {
+      lastStopReason_ = TeleopStopReason::FRAME_TIMEOUT;
+    }
   }
 }
 
@@ -204,7 +208,7 @@ bool TeleopAdapter::isConnected() const {
 }
 
 bool TeleopAdapter::isDeadmanHeld() const {
-  return lastFrame_.deadman;
+  return isConnected() && lastFrame_.deadman;
 }
 
 bool TeleopAdapter::isControlActive() const {
@@ -365,6 +369,8 @@ void TeleopAdapter::handleFreshFrame(uint32_t now) {
   if (!lastFrame_.deadman) {
     if (controlActive_) {
       stopControlledOutputs(TeleopStopReason::DEADMAN_RELEASE, "deadman released");
+    } else {
+      lastStopReason_ = TeleopStopReason::DEADMAN_RELEASE;
     }
     return;
   }
@@ -372,6 +378,8 @@ void TeleopAdapter::handleFreshFrame(uint32_t now) {
   if (systemState_->getState() != SystemState::ARMED) {
     if (controlActive_) {
       stopControlledOutputs(TeleopStopReason::NOT_ARMED, systemState_->getStateString());
+    } else {
+      lastStopReason_ = TeleopStopReason::NOT_ARMED;
     }
     return;
   }
@@ -379,6 +387,8 @@ void TeleopAdapter::handleFreshFrame(uint32_t now) {
   if (safetyMonitor_->isMotionBlocked()) {
     if (controlActive_) {
       stopControlledOutputs(TeleopStopReason::SAFETY_BLOCK, safetyMonitor_->getBlockReasonString());
+    } else {
+      lastStopReason_ = TeleopStopReason::SAFETY_BLOCK;
     }
     return;
   }
