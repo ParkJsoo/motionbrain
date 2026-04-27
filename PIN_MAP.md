@@ -213,20 +213,40 @@ STM32 GND                   ->  ESP32 GND
 
 ---
 
-## STM32 Handheld Teleop Provisional Buttons
+## STM32 Handheld Teleop Buttons
 
-현재 `MotionBrainSensor`의 `APP_MODE_TELEOP_REMOTE`는 아래 임시 버튼 핀 매핑을 사용한다.
+현재 `MotionBrainSensor`의 `APP_MODE_TELEOP_REMOTE` 버튼 핀 source of truth는 아래와 같다.
 
-| 기능 | STM32 핀 | 비고 |
-| ---- | -------- | ---- |
-| `deadman` | `PA0` | hold-to-enable |
-| `LED toggle` | `PA1` | rising edge counter |
-| `grip open` | `PA4` | active-low pull-up 기준 |
-| `grip close` | `PB0` | active-low pull-up 기준 |
+| 기능 | STM32 핀 | Arduino 헤더 | 배선 규칙 | 비고 |
+| ---- | -------- | ------------ | --------- | ---- |
+| `deadman` | `PE4` | `D10` | 버튼 한쪽 `PE4`, 다른 쪽 `GND` | hold-to-enable |
+| `LED toggle` | `PB4` | `D9` | 버튼 한쪽 `PB4`, 다른 쪽 `GND` | rising edge counter |
+| `grip open` | `PE2` | `D13` | 버튼 한쪽 `PE2`, 다른 쪽 `GND` | active-low |
+| `grip close` | `PE6` | `D11` | 버튼 한쪽 `PE6`, 다른 쪽 `GND` | active-low |
+
+### 버튼 배선표
+
+```text
+STM32 D10 / PE4  -> deadman button -> GND
+STM32 D9  / PB4  -> LED button     -> GND
+STM32 D13 / PE2  -> grip open      -> GND
+STM32 D11 / PE6  -> grip close     -> GND
+STM32 GND        -> button common ground rail
+```
 
 주의:
 
 - 현재 코드는 내부 pull-up + active-low 버튼을 가정한다.
+- 이 보드의 Arduino 아날로그 헤더는 `A0=PA1`, `A1=PA2`, `A2=PC3`, `A3=PC2`, `A4=PB1`, `A5=PC0` 이다.
+- 따라서 예전 메모에 있던 `A0/A1/A2/A3 = PA0/PA1/PA4/PB0` 해석은 잘못된 매핑이다.
+- `D2=PD4`, `D3=PC8` 는 현재 `HC-SR04`가 사용 중이므로 버튼 핀으로 쓰지 않는다.
+- `D1=PD5` 는 teleop UART TX, `D14=PC12` / `D15=PB10` 는 I2C2가 사용 중이므로 버튼 핀에서 제외한다.
+- `PE3(D8)`는 선을 분리해도 `deadman=YES`로 고정되어 deadman 후보에서 제외했다.
+- `PE5(D12)`는 선을 분리해도 `grip_open=YES`가 유지되어 grip open 후보에서 제외했다.
+- 현재 확정 버튼은 Arduino digital header `D9/D10/D11/D13`만 사용한다.
+- `LED toggle=D5(PD15)`, `grip open=D4(PD2)` fallback은 현재 코드에서 비활성화되어 있다.
+- `PE2/PE4/PE6` 입력을 위해 teleop 초기화에서 `GPIOE` 클럭을 직접 켠다.
+- 2026-04-27 실기 기준으로 `deadman`, `LED toggle`, `grip open`, `grip close` 모두 동작 확인 완료다.
 - 실제 handheld 하우징과 버튼 배치가 확정되면 STM32 `main.c` 상단 매크로를 기준으로 핀만 교체하면 된다.
 
 ---

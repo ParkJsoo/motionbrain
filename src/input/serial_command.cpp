@@ -449,6 +449,9 @@ void SerialCommand::handleStatus() {
                  teleopAdapter.getLastReach(),
                  teleopAdapter.getLastLift(),
                  teleopAdapter.getLastTwist());
+  DebugLog::info("Grip open / close: %s / %s",
+                 teleopAdapter.getLastGripOpen() ? "YES" : "NO",
+                 teleopAdapter.getLastGripClose() ? "YES" : "NO");
   DebugLog::info("LED toggle seq: %lu", teleopAdapter.getLastLedToggleSeq());
   DebugLog::info("Last stop reason: %s", teleopAdapter.getLastStopReasonString());
   DebugLog::info("=== Base Angle Control ===");

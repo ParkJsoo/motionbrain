@@ -629,6 +629,10 @@ void MotionBrainWebServer::handleStatus() {
   json += String(teleopAdapter.getLastLift(), 2);
   json += ",\"twist\":";
   json += String(teleopAdapter.getLastTwist(), 2);
+  json += ",\"gripOpen\":";
+  json += teleopAdapter.getLastGripOpen() ? "true" : "false";
+  json += ",\"gripClose\":";
+  json += teleopAdapter.getLastGripClose() ? "true" : "false";
   json += ",\"ledToggleSeq\":";
   json += String(teleopAdapter.getLastLedToggleSeq());
   json += ",\"lastStopReason\":\"";

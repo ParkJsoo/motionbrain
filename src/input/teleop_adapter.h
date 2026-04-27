@@ -75,6 +75,8 @@ public:
   uint32_t getLastSequence() const;
   uint32_t getLastSession() const;
   uint32_t getLastLedToggleSeq() const;
+  bool getLastGripOpen() const;
+  bool getLastGripClose() const;
   float getLastReach() const;
   float getLastLift() const;
   float getLastTwist() const;
@@ -83,7 +85,8 @@ public:
   static const char* stopReasonToString(TeleopStopReason reason);
 
 private:
-  static const size_t LINE_BUFFER_SIZE = 256;
+  static const size_t LINE_BUFFER_SIZE = 384;
+  static const size_t RX_BUFFER_SIZE = 1024;
   static const uint8_t OUTPUT_QUANT_STEP_PERCENT = 5;
   static const uint8_t GRIPPER_BUTTON_PERCENT = 70;
 

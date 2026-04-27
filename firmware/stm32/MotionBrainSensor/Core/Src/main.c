@@ -41,6 +41,7 @@
 #define APP_MODE_SENSOR_BRIDGE 0U
 #define APP_MODE_TELEOP_REMOTE 1U
 #define APP_MODE APP_MODE_TELEOP_REMOTE
+#define TELEOP_DIAGNOSTIC_BUTTON_SCAN 0U
 
 #define MPU_SAMPLE_RATE_HZ 200U
 #define SENSOR_TX_RATE_HZ 10U
@@ -53,15 +54,64 @@
 #define HCSR04_CM_PER_US 0.01715f
 
 // Handheld remote v1 provisional button map.
-// TODO: final handheld wiring 확정 후 여기만 교체.
-#define TELEOP_DEADMAN_GPIO_Port GPIOA
-#define TELEOP_DEADMAN_Pin GPIO_PIN_0
-#define TELEOP_LED_GPIO_Port GPIOA
-#define TELEOP_LED_Pin GPIO_PIN_1
-#define TELEOP_GRIP_OPEN_GPIO_Port GPIOA
-#define TELEOP_GRIP_OPEN_Pin GPIO_PIN_4
-#define TELEOP_GRIP_CLOSE_GPIO_Port GPIOB
-#define TELEOP_GRIP_CLOSE_Pin GPIO_PIN_0
+// B-F446E-96B01A에서 현재 바로 꽂기 쉬운 Arduino digital header 기준.
+// 현재 사용 중인 D1(UART TX), D2/D3(HC-SR04), D14/D15(I2C2)를 피하고
+// 완전히 비어 있는 D9/D10/D11/D13만 버튼 입력으로 사용한다.
+#define TELEOP_DEADMAN_GPIO_Port GPIOE
+#define TELEOP_DEADMAN_Pin GPIO_PIN_4   // Arduino D10
+#define TELEOP_LED_GPIO_Port GPIOB
+#define TELEOP_LED_Pin GPIO_PIN_4       // Arduino D9
+#define TELEOP_LED_ALT_ENABLED 0U
+#define TELEOP_LED_ALT_GPIO_Port GPIOD
+#define TELEOP_LED_ALT_Pin GPIO_PIN_15  // Arduino D5 fallback
+#define TELEOP_GRIP_OPEN_GPIO_Port GPIOE
+#define TELEOP_GRIP_OPEN_Pin GPIO_PIN_2 // Arduino D13
+#define TELEOP_GRIP_OPEN_ALT_ENABLED 0U
+#define TELEOP_GRIP_OPEN_ALT_GPIO_Port GPIOD
+#define TELEOP_GRIP_OPEN_ALT_Pin GPIO_PIN_2 // Arduino D4 fallback
+#define TELEOP_GRIP_CLOSE_GPIO_Port GPIOE
+#define TELEOP_GRIP_CLOSE_Pin GPIO_PIN_6 // Arduino D11
+
+#define DIAG_G1_D4_GPIO_Port GPIOD
+#define DIAG_G1_D4_Pin GPIO_PIN_2
+#define DIAG_G1_D5_GPIO_Port GPIOD
+#define DIAG_G1_D5_Pin GPIO_PIN_15
+#define DIAG_G1_D6_GPIO_Port GPIOD
+#define DIAG_G1_D6_Pin GPIO_PIN_14
+#define DIAG_G1_D7_GPIO_Port GPIOD
+#define DIAG_G1_D7_Pin GPIO_PIN_13
+#define DIAG_G1_D8_GPIO_Port GPIOE
+#define DIAG_G1_D8_Pin GPIO_PIN_3
+#define DIAG_G1_D9_GPIO_Port GPIOB
+#define DIAG_G1_D9_Pin GPIO_PIN_4
+#define DIAG_G1_D10_GPIO_Port GPIOE
+#define DIAG_G1_D10_Pin GPIO_PIN_4
+#define DIAG_G1_D11_GPIO_Port GPIOE
+#define DIAG_G1_D11_Pin GPIO_PIN_6
+
+#define DIAG_G2_D12_GPIO_Port GPIOE
+#define DIAG_G2_D12_Pin GPIO_PIN_5
+#define DIAG_G2_D13_GPIO_Port GPIOE
+#define DIAG_G2_D13_Pin GPIO_PIN_2
+#define DIAG_G2_A0_GPIO_Port GPIOA
+#define DIAG_G2_A0_Pin GPIO_PIN_1
+#define DIAG_G2_A1_GPIO_Port GPIOA
+#define DIAG_G2_A1_Pin GPIO_PIN_2
+#define DIAG_G2_A2_GPIO_Port GPIOC
+#define DIAG_G2_A2_Pin GPIO_PIN_3
+#define DIAG_G2_A3_GPIO_Port GPIOC
+#define DIAG_G2_A3_Pin GPIO_PIN_2
+#define DIAG_G2_A4_GPIO_Port GPIOB
+#define DIAG_G2_A4_Pin GPIO_PIN_1
+#define DIAG_G2_A5_GPIO_Port GPIOC
+#define DIAG_G2_A5_Pin GPIO_PIN_0
+
+#define DIAG_G3_PA0_GPIO_Port GPIOA
+#define DIAG_G3_PA0_Pin GPIO_PIN_0
+#define DIAG_G3_PA4_GPIO_Port GPIOA
+#define DIAG_G3_PA4_Pin GPIO_PIN_4
+#define DIAG_G3_PB0_GPIO_Port GPIOB
+#define DIAG_G3_PB0_Pin GPIO_PIN_0
 
 #define TELEOP_BUTTON_ACTIVE_STATE GPIO_PIN_RESET
 #define TELEOP_BUTTON_PULL GPIO_PULLUP
@@ -99,6 +149,7 @@ static float g_gyro_z_dps = 0.0f;
 static float g_vibe = 0.0f;
 static uint8_t g_attitude_ready = 0;
 static uint32_t g_tx_divider = 0;
+#if APP_MODE == APP_MODE_SENSOR_BRIDGE
 static float g_distance_cm = 0.0f;
 static uint8_t g_range_ok = 0;
 static uint32_t g_last_hcsr04_trigger_ms = 0;
@@ -108,6 +159,7 @@ static volatile uint32_t g_hcsr04_echo_width_us = 0;
 static volatile uint8_t g_hcsr04_echo_pending = 0;
 static volatile uint8_t g_hcsr04_waiting_for_fall = 0;
 static volatile uint8_t g_hcsr04_measurement_ready = 0;
+#endif
 static uint32_t g_teleop_session = 0;
 static uint32_t g_teleop_sequence = 0;
 static uint32_t g_teleop_led_toggle_seq = 0;
@@ -143,6 +195,7 @@ static void EnableCycleCounter(void)
     DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
 }
 
+#if APP_MODE == APP_MODE_SENSOR_BRIDGE
 static uint32_t Micros(void)
 {
     return DWT->CYCCNT / (HAL_RCC_GetHCLKFreq() / 1000000UL);
@@ -154,6 +207,7 @@ static void DelayUs(uint32_t delay_us)
     while ((Micros() - start) < delay_us) {
     }
 }
+#endif
 
 static void ProbeMpu6050(I2C_HandleTypeDef *hi2c)
 {
@@ -230,6 +284,7 @@ static void FormatFixedValue(char *buffer, size_t size, float value, uint32_t sc
     }
 }
 
+#if APP_MODE == APP_MODE_SENSOR_BRIDGE
 static void TriggerHcsr04(void)
 {
     HAL_GPIO_WritePin(HCSR04_TRIG_GPIO_Port, HCSR04_TRIG_Pin, GPIO_PIN_RESET);
@@ -270,6 +325,7 @@ static void UpdateRangeMeasurement(void)
         printf("HC-SR04 timeout\r\n");
     }
 }
+#endif
 
 static float ClampUnit(float value)
 {
@@ -288,19 +344,106 @@ static uint8_t ReadButton(GPIO_TypeDef *port, uint16_t pin)
     return (state == TELEOP_BUTTON_ACTIVE_STATE) ? 1U : 0U;
 }
 
+static uint8_t ReadDiagnosticGroup1Mask(void)
+{
+    uint8_t mask = 0U;
+    if (ReadButton(DIAG_G1_D4_GPIO_Port, DIAG_G1_D4_Pin)) mask |= 0x01U;
+    if (ReadButton(DIAG_G1_D5_GPIO_Port, DIAG_G1_D5_Pin)) mask |= 0x02U;
+    if (ReadButton(DIAG_G1_D6_GPIO_Port, DIAG_G1_D6_Pin)) mask |= 0x04U;
+    if (ReadButton(DIAG_G1_D7_GPIO_Port, DIAG_G1_D7_Pin)) mask |= 0x08U;
+    if (ReadButton(DIAG_G1_D8_GPIO_Port, DIAG_G1_D8_Pin)) mask |= 0x10U;
+    if (ReadButton(DIAG_G1_D9_GPIO_Port, DIAG_G1_D9_Pin)) mask |= 0x20U;
+    if (ReadButton(DIAG_G1_D10_GPIO_Port, DIAG_G1_D10_Pin)) mask |= 0x40U;
+    if (ReadButton(DIAG_G1_D11_GPIO_Port, DIAG_G1_D11_Pin)) mask |= 0x80U;
+    return mask;
+}
+
+static uint8_t ReadDiagnosticGroup2Mask(void)
+{
+    uint8_t mask = 0U;
+    if (ReadButton(DIAG_G2_D12_GPIO_Port, DIAG_G2_D12_Pin)) mask |= 0x01U;
+    if (ReadButton(DIAG_G2_D13_GPIO_Port, DIAG_G2_D13_Pin)) mask |= 0x02U;
+    if (ReadButton(DIAG_G2_A0_GPIO_Port, DIAG_G2_A0_Pin)) mask |= 0x04U;
+    if (ReadButton(DIAG_G2_A1_GPIO_Port, DIAG_G2_A1_Pin)) mask |= 0x08U;
+    if (ReadButton(DIAG_G2_A2_GPIO_Port, DIAG_G2_A2_Pin)) mask |= 0x10U;
+    if (ReadButton(DIAG_G2_A3_GPIO_Port, DIAG_G2_A3_Pin)) mask |= 0x20U;
+    if (ReadButton(DIAG_G2_A4_GPIO_Port, DIAG_G2_A4_Pin)) mask |= 0x40U;
+    if (ReadButton(DIAG_G2_A5_GPIO_Port, DIAG_G2_A5_Pin)) mask |= 0x80U;
+    return mask;
+}
+
+static uint8_t ReadDiagnosticGroup3Mask(void)
+{
+    uint8_t mask = 0U;
+    if (ReadButton(DIAG_G3_PA0_GPIO_Port, DIAG_G3_PA0_Pin)) mask |= 0x01U;
+    if (ReadButton(DIAG_G3_PA4_GPIO_Port, DIAG_G3_PA4_Pin)) mask |= 0x02U;
+    if (ReadButton(DIAG_G3_PB0_GPIO_Port, DIAG_G3_PB0_Pin)) mask |= 0x04U;
+    return mask;
+}
+
+static uint8_t ReadEitherButton(GPIO_TypeDef *primaryPort, uint16_t primaryPin,
+                                GPIO_TypeDef *alternatePort, uint16_t alternatePin)
+{
+    return (ReadButton(primaryPort, primaryPin) || ReadButton(alternatePort, alternatePin)) ? 1U : 0U;
+}
+
+static uint8_t ReadButtonWithOptionalAlternate(GPIO_TypeDef *primaryPort, uint16_t primaryPin,
+                                               uint8_t alternateEnabled,
+                                               GPIO_TypeDef *alternatePort, uint16_t alternatePin)
+{
+    if (!alternateEnabled) {
+        return ReadButton(primaryPort, primaryPin);
+    }
+    return ReadEitherButton(primaryPort, primaryPin, alternatePort, alternatePin);
+}
+
 static void InitTeleopInputs(void)
 {
     GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+    __HAL_RCC_GPIOC_CLK_ENABLE();
+    __HAL_RCC_GPIOD_CLK_ENABLE();
+    __HAL_RCC_GPIOE_CLK_ENABLE();
 
     GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
     GPIO_InitStruct.Pull = TELEOP_BUTTON_PULL;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
 
-    GPIO_InitStruct.Pin = TELEOP_DEADMAN_Pin | TELEOP_LED_Pin | TELEOP_GRIP_OPEN_Pin;
-    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+    GPIO_InitStruct.Pin = TELEOP_DEADMAN_Pin;
+    HAL_GPIO_Init(TELEOP_DEADMAN_GPIO_Port, &GPIO_InitStruct);
+
+    GPIO_InitStruct.Pin = TELEOP_LED_Pin;
+    HAL_GPIO_Init(TELEOP_LED_GPIO_Port, &GPIO_InitStruct);
+
+    GPIO_InitStruct.Pin = TELEOP_LED_ALT_Pin;
+    HAL_GPIO_Init(TELEOP_LED_ALT_GPIO_Port, &GPIO_InitStruct);
+
+    GPIO_InitStruct.Pin = TELEOP_GRIP_OPEN_Pin;
+    HAL_GPIO_Init(TELEOP_GRIP_OPEN_GPIO_Port, &GPIO_InitStruct);
+
+    GPIO_InitStruct.Pin = TELEOP_GRIP_OPEN_ALT_Pin;
+    HAL_GPIO_Init(TELEOP_GRIP_OPEN_ALT_GPIO_Port, &GPIO_InitStruct);
 
     GPIO_InitStruct.Pin = TELEOP_GRIP_CLOSE_Pin;
+    HAL_GPIO_Init(TELEOP_GRIP_CLOSE_GPIO_Port, &GPIO_InitStruct);
+
+    GPIO_InitStruct.Pin = DIAG_G1_D4_Pin | DIAG_G1_D5_Pin | DIAG_G1_D6_Pin | DIAG_G1_D7_Pin;
+    HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
+
+    GPIO_InitStruct.Pin = DIAG_G1_D8_Pin | DIAG_G1_D10_Pin | DIAG_G1_D11_Pin |
+                          DIAG_G2_D12_Pin | DIAG_G2_D13_Pin;
+    HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
+
+    GPIO_InitStruct.Pin = DIAG_G1_D9_Pin | DIAG_G2_A4_Pin | DIAG_G3_PB0_Pin;
     HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+    GPIO_InitStruct.Pin = DIAG_G2_A0_Pin | DIAG_G2_A1_Pin | DIAG_G3_PA0_Pin | DIAG_G3_PA4_Pin;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+    GPIO_InitStruct.Pin = DIAG_G2_A2_Pin | DIAG_G2_A3_Pin | DIAG_G2_A5_Pin;
+    HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 }
 
 static float NormalizeAxis(float value, float deadzone, float fullScale)
@@ -327,8 +470,17 @@ static float NormalizeAxis(float value, float deadzone, float fullScale)
 
 static void UpdateTeleopState(void)
 {
+#if TELEOP_DIAGNOSTIC_BUTTON_SCAN
+    g_deadman_active = 0U;
+    g_prev_deadman_pressed = 0U;
+    g_prev_led_button_pressed = 0U;
+    return;
+#endif
+
     uint8_t deadman_pressed = ReadButton(TELEOP_DEADMAN_GPIO_Port, TELEOP_DEADMAN_Pin);
-    uint8_t led_pressed = ReadButton(TELEOP_LED_GPIO_Port, TELEOP_LED_Pin);
+    uint8_t led_pressed = ReadButtonWithOptionalAlternate(TELEOP_LED_GPIO_Port, TELEOP_LED_Pin,
+                                                          TELEOP_LED_ALT_ENABLED,
+                                                          TELEOP_LED_ALT_GPIO_Port, TELEOP_LED_ALT_Pin);
 
     if (deadman_pressed && !g_prev_deadman_pressed) {
         g_teleop_session++;
@@ -362,11 +514,23 @@ static void SendTeleopPacket(void)
     float reach = 0.0f;
     float lift = 0.0f;
     float twist = 0.0f;
-    uint8_t grip_open = ReadButton(TELEOP_GRIP_OPEN_GPIO_Port, TELEOP_GRIP_OPEN_Pin);
+    uint32_t frame_sequence = g_teleop_sequence;
+    uint32_t frame_session = g_teleop_session;
+    uint32_t frame_led_toggle_seq = g_teleop_led_toggle_seq;
+    uint8_t grip_open = ReadButtonWithOptionalAlternate(TELEOP_GRIP_OPEN_GPIO_Port, TELEOP_GRIP_OPEN_Pin,
+                                                        TELEOP_GRIP_OPEN_ALT_ENABLED,
+                                                        TELEOP_GRIP_OPEN_ALT_GPIO_Port, TELEOP_GRIP_OPEN_ALT_Pin);
     uint8_t grip_close = ReadButton(TELEOP_GRIP_CLOSE_GPIO_Port, TELEOP_GRIP_CLOSE_Pin);
 
     UpdateTeleopState();
 
+#if TELEOP_DIAGNOSTIC_BUTTON_SCAN
+    frame_session = ReadDiagnosticGroup1Mask();
+    frame_sequence = ReadDiagnosticGroup2Mask();
+    frame_led_toggle_seq = ReadDiagnosticGroup3Mask();
+    grip_open = 0U;
+    grip_close = 0U;
+#else
     if (g_deadman_active && g_imu_ok) {
         reach = NormalizeAxis((g_pitch_deg - g_teleop_neutral_pitch_deg) * TELEOP_REACH_SIGN,
                               TELEOP_ANGLE_DEADZONE_DEG,
@@ -379,6 +543,7 @@ static void SendTeleopPacket(void)
                               TELEOP_TWIST_DEADZONE_DPS,
                               TELEOP_TWIST_FULL_SCALE_DPS);
     }
+#endif
 
     reach = ClampUnit(reach);
     lift = ClampUnit(lift);
@@ -388,22 +553,27 @@ static void SendTeleopPacket(void)
     FormatFixedValue(lift_str, sizeof(lift_str), lift, 1000U, 3U);
     FormatFixedValue(twist_str, sizeof(twist_str), twist, 1000U, 3U);
 
-    g_teleop_sequence++;
+    if (!TELEOP_DIAGNOSTIC_BUTTON_SCAN) {
+        g_teleop_sequence++;
+        frame_sequence = g_teleop_sequence;
+        frame_session = g_teleop_session;
+        frame_led_toggle_seq = g_teleop_led_toggle_seq;
+    }
     length = snprintf(tx_buffer,
                       sizeof(tx_buffer),
                       "{\"type\":\"teleop\",\"ts_ms\":%lu,\"seq\":%lu,\"session\":%lu,"
                       "\"deadman\":%s,\"reach\":%s,\"lift\":%s,\"twist\":%s,"
                       "\"grip_open\":%s,\"grip_close\":%s,\"led_toggle_seq\":%lu}\r\n",
                       (unsigned long)HAL_GetTick(),
-                      (unsigned long)g_teleop_sequence,
-                      (unsigned long)g_teleop_session,
+                      (unsigned long)frame_sequence,
+                      (unsigned long)frame_session,
                       g_deadman_active ? "true" : "false",
                       reach_str,
                       lift_str,
                       twist_str,
                       grip_open ? "true" : "false",
                       grip_close ? "true" : "false",
-                      (unsigned long)g_teleop_led_toggle_seq);
+                      (unsigned long)frame_led_toggle_seq);
 
     if (length > 0) {
         HAL_UART_Transmit(&huart2, (uint8_t *)tx_buffer, (uint16_t)length, 50U);
@@ -416,6 +586,11 @@ static void PrintTeleopToSwv(void)
     float lift = 0.0f;
     float twist = 0.0f;
 
+#if TELEOP_DIAGNOSTIC_BUTTON_SCAN
+    reach = 0.0f;
+    lift = 0.0f;
+    twist = 0.0f;
+#else
     if (g_deadman_active && g_imu_ok) {
         reach = NormalizeAxis((g_pitch_deg - g_teleop_neutral_pitch_deg) * TELEOP_REACH_SIGN,
                               TELEOP_ANGLE_DEADZONE_DEG,
@@ -427,6 +602,7 @@ static void PrintTeleopToSwv(void)
                               TELEOP_TWIST_DEADZONE_DPS,
                               TELEOP_TWIST_FULL_SCALE_DPS);
     }
+#endif
 
     printf("teleop session=%lu deadman=%d ",
            (unsigned long)g_teleop_session,
@@ -437,11 +613,14 @@ static void PrintTeleopToSwv(void)
     printf(" ");
     PrintFixed3("twist", twist);
     printf(" grip_open=%d grip_close=%d led_seq=%lu\r\n",
-           ReadButton(TELEOP_GRIP_OPEN_GPIO_Port, TELEOP_GRIP_OPEN_Pin),
+           ReadButtonWithOptionalAlternate(TELEOP_GRIP_OPEN_GPIO_Port, TELEOP_GRIP_OPEN_Pin,
+                                           TELEOP_GRIP_OPEN_ALT_ENABLED,
+                                           TELEOP_GRIP_OPEN_ALT_GPIO_Port, TELEOP_GRIP_OPEN_ALT_Pin),
            ReadButton(TELEOP_GRIP_CLOSE_GPIO_Port, TELEOP_GRIP_CLOSE_Pin),
            (unsigned long)g_teleop_led_toggle_seq);
 }
 
+#if APP_MODE == APP_MODE_SENSOR_BRIDGE
 static void SendSensorPacket(void)
 {
     char roll_str[24];
@@ -501,6 +680,7 @@ static void PrintTelemetryToSwv(void)
     PrintFixed3("dist_cm", g_distance_cm);
     printf(" range_ok=%d\r\n", g_range_ok);
 }
+#endif
 
 static HAL_StatusTypeDef CalibrateMpu6050(I2C_HandleTypeDef *hi2c)
 {
@@ -642,7 +822,10 @@ int main(void)
 #if APP_MODE == APP_MODE_TELEOP_REMOTE
   printf("Mode: handheld teleop remote\r\n");
   printf("UART teleop stream: USART2 TX=PD5 (Arduino D1) @ 115200\r\n");
-  printf("Provisional button map: deadman=PA0 led=PA1 grip_open=PA4 grip_close=PB0\r\n");
+#if TELEOP_DIAGNOSTIC_BUTTON_SCAN
+  printf("Diagnostic scan mode: session=D4/D5/D6/D7/D8/D9/D10/D11, sequence=D12/D13/A0/A1/A2/A3/A4/A5, led_seq=PA0/PA4/PB0 bits\r\n");
+#endif
+  printf("Provisional button map: deadman=PE4(D10) led=PB4(D9) grip_open=PE2(D13) grip_close=PE6(D11)\r\n");
   InitTeleopInputs();
 #else
   printf("Board mapping: D15=PB10 (I2C2_SCL), D14=PC12 (I2C2_SDA)\r\n");
@@ -760,6 +943,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   }
 }
 
+#if APP_MODE == APP_MODE_SENSOR_BRIDGE
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
     if (GPIO_Pin == HCSR04_ECHO_Pin) {
@@ -776,6 +960,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
         }
     }
 }
+#endif
 
 /* USER CODE END 4 */
 

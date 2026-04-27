@@ -227,7 +227,7 @@ pio device monitor
 python3 tools/motionbrain_watch.py --host 192.168.4.1 --interval 1.0
 ```
 
-이 스크립트는 `GET /status`, `GET /events` 를 주기적으로 읽어 `state`, `blockReason`, `faultReason`, `baseAngle` 상태를 한 줄로 보여준다.
+이 스크립트는 `GET /status`, `GET /events` 를 주기적으로 읽어 `state`, `blockReason`, `faultReason`, `baseAngle`, `teleop` 상태를 한 줄로 보여준다.
 
 ### Wired Handheld Teleop Bring-Up
 
@@ -246,16 +246,28 @@ python3 tools/motionbrain_watch.py --host 192.168.4.1 --interval 1.0
 - frame timeout: 약 `200ms`
 - 권장 frame rate: 약 `25Hz`
 
-현재 STM32 teleop provisional 버튼 매핑:
+현재 STM32 teleop 버튼 매핑:
 
-- `PA0`: `deadman`
-- `PA1`: `LED toggle`
-- `PA4`: `grip open`
-- `PB0`: `grip close`
+- `PE4 = D10`: `deadman`
+- `PB4 = D9`: `LED toggle`
+- `PE2 = D13`: `grip open`
+- `PE6 = D11`: `grip close`
+
+현재 버튼 배선 기준:
+
+- 각 버튼은 한쪽만 해당 STM32 GPIO로 연결
+- 버튼 다른 쪽은 `STM32 GND` 공통 rail로 연결
+- 내부 pull-up + active-low 기준이므로, 미입력은 HIGH, 눌리면 LOW다
 
 주의:
 
-- 위 버튼 핀은 현재 코드상 provisional mapping이다.
+- 위 버튼 핀은 2026-04-27 실기 기준으로 확인 완료된 source of truth다.
+- 이 보드의 Arduino `A0~A5` 헤더는 `PA0/PA1/PA4/PB0`가 아니다.
+- `D2/D3`는 현재 `HC-SR04`가 쓰므로 버튼에서는 제외한다.
+- `D1`은 teleop UART TX, `D14/D15`는 I2C2라서 버튼에서 제외한다.
+- `PE3(D8)`는 선을 뽑아도 `deadman=YES`가 유지돼 deadman 후보에서 제외했다.
+- `PE5(D12)`는 선을 뽑아도 `gripOpen=YES`가 유지돼 grip open 후보에서 제외했다.
+- 현재는 이미 쓰는 핀을 피하기 위해 digital header `D9/D10/D11/D13`를 버튼 입력으로 사용한다.
 - 실제 handheld 배선이 정해지면 STM32 `main.c` 상단 매크로만 바꾸면 된다.
 - teleop v1은 `ARM/DISARM`을 직접 처리하지 않는다. 먼저 ESP32를 `ARMED` 상태로 올린 뒤 사용해야 한다.
 
@@ -269,13 +281,14 @@ python3 tools/motionbrain_watch.py --host 192.168.4.1 --interval 1.0
 6. deadman을 누른 채 STM32를 중립 자세로 잡기
 7. deadman을 떼고 다시 누르며 새 중립이 잡히는지 SWV 로그 확인
 8. deadman을 누른 채 앞/뒤/좌/우/비틀기 입력으로 teleop 반응 확인
-9. `/status.teleop` 또는 시리얼 `status`에서 `connected`, `deadman`, `reach`, `lift`, `twist`, `lastStopReason` 확인
+9. `/status.teleop` 또는 시리얼 `status`에서 `connected`, `deadman`, `reach`, `lift`, `twist`, `gripOpen`, `gripClose`, `lastStopReason` 확인
 10. deadman release 또는 선 분리 시 `FRAME_TIMEOUT` / `DEADMAN_RELEASE` 정지 확인
 
 주의:
 
 - 현재 STM32 펌웨어는 `APP_MODE_TELEOP_REMOTE`와 `APP_MODE_SENSOR_BRIDGE` 중 하나로 동작한다.
 - 한 개 STM32를 remote 모드로 쓰는 bench에서는 ESP32 sensor bridge가 실제 센서 패킷을 받지 못하므로 `sensor sim healthy`가 필요하다.
+- 따라서 현재 single-STM32 remote bench에서는 `GY-521`이 active handheld 입력이고, `HC-SR04`는 연결돼 있어도 active safety stream에 올라오지 않는다.
 - 최종 실장에서는 `HC-SR04` safety stream을 별도 sensor bridge로 유지하거나, 동등한 본체 safety 입력 채널을 따로 확보해야 한다.
 
 시리얼만으로 safety 상태를 bench에서 재현하려면 아래 simulation 명령을 사용할 수 있다. `base angle` 관련 simulation은 구현 검사용으로 남아 있지만, 현재 하드웨어 로드맵의 필수 gate는 아니다.

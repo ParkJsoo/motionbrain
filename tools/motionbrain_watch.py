@@ -18,6 +18,7 @@ def format_status(status: dict) -> str:
     state = status.get("state", "UNKNOWN")
     sensor = status.get("sensor", {})
     base = status.get("baseAngle", {})
+    teleop = status.get("teleop", {})
 
     sensor_connected = "up" if sensor.get("connected") else "down"
     simulated = sensor.get("simulated", False)
@@ -26,6 +27,15 @@ def format_status(status: dict) -> str:
     fault_reason = sensor.get("faultReason", "NONE")
     dist_cm = sensor.get("distCm")
     vibe = sensor.get("vibe")
+    teleop_connected = teleop.get("connected", False)
+    teleop_deadman = teleop.get("deadman", False)
+    teleop_active = teleop.get("controlActive", False)
+    teleop_stop = teleop.get("lastStopReason", "NONE")
+    teleop_reach = teleop.get("reach")
+    teleop_lift = teleop.get("lift")
+    teleop_twist = teleop.get("twist")
+    grip_open = teleop.get("gripOpen", False)
+    grip_close = teleop.get("gripClose", False)
 
     if base.get("active"):
         base_summary = (
@@ -36,6 +46,28 @@ def format_status(status: dict) -> str:
     else:
         base_summary = f"idle last={base.get('lastStopReason', 'NONE')}"
 
+    if grip_open and not grip_close:
+        grip_summary = "open"
+    elif grip_close and not grip_open:
+        grip_summary = "close"
+    else:
+        grip_summary = "idle"
+
+    if teleop_connected:
+        teleop_summary = (
+            f"up dm={'Y' if teleop_deadman else 'N'}"
+            f" act={'Y' if teleop_active else 'N'}"
+        )
+        if isinstance(teleop_reach, (int, float)):
+            teleop_summary += f" r={teleop_reach:.2f}"
+        if isinstance(teleop_lift, (int, float)):
+            teleop_summary += f" l={teleop_lift:.2f}"
+        if isinstance(teleop_twist, (int, float)):
+            teleop_summary += f" t={teleop_twist:.2f}"
+        teleop_summary += f" grip={grip_summary}"
+    else:
+        teleop_summary = f"down last={teleop_stop}"
+
     parts = [
         f"state={state}",
         f"sensor={sensor_connected}",
@@ -43,6 +75,7 @@ def format_status(status: dict) -> str:
         f"block={block_reason}",
         f"fault={fault_reason}",
         f"base={base_summary}",
+        f"teleop={teleop_summary}",
     ]
     if isinstance(dist_cm, (int, float)):
         parts.append(f"dist={dist_cm:.1f}cm")

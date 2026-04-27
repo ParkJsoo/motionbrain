@@ -171,9 +171,10 @@ bool TeleopAdapter::init(SystemStateManager* systemState,
   commandBus_ = commandBus;
   dispatcher_ = dispatcher;
 
+  serial_->setRxBufferSize(RX_BUFFER_SIZE);
   serial_->begin(BAUD_RATE, SERIAL_8N1, RX_PIN, TX_PIN);
-  DebugLog::info("Teleop adapter initialized (Serial1 RX=%d @ %lu, timeout=%lums)",
-                 RX_PIN, BAUD_RATE, LINK_TIMEOUT_MS);
+  DebugLog::info("Teleop adapter initialized (Serial1 RX=%d @ %lu, timeout=%lums, rxbuf=%u)",
+                 RX_PIN, BAUD_RATE, LINK_TIMEOUT_MS, static_cast<unsigned>(RX_BUFFER_SIZE));
   return isReady();
 }
 
@@ -242,6 +243,14 @@ uint32_t TeleopAdapter::getLastLedToggleSeq() const {
   return lastFrame_.ledToggleSeq;
 }
 
+bool TeleopAdapter::getLastGripOpen() const {
+  return lastFrame_.gripOpen;
+}
+
+bool TeleopAdapter::getLastGripClose() const {
+  return lastFrame_.gripClose;
+}
+
 float TeleopAdapter::getLastReach() const {
   return lastFrame_.reach;
 }
@@ -271,6 +280,20 @@ const char* TeleopAdapter::stopReasonToString(TeleopStopReason reason) {
 
 void TeleopAdapter::processIncomingByte(char c) {
   if (c == '\r') {
+    return;
+  }
+
+  // 프레임 중간에 새 JSON 시작 문자가 보이면, 이전 프레임은 깨진 것으로 보고 최신 시작점으로 재동기화한다.
+  if (c == '{' && lineIndex_ > 0) {
+    parseErrors_++;
+    DebugLog::warn("Teleop adapter framing resync - restarting at new JSON start");
+    overflowDropping_ = false;
+    lineIndex_ = 0;
+    lineBuffer_[0] = '\0';
+  }
+
+  // UART attach/reset 시 중간 프레임 조각이나 잡음을 만나도 JSON 시작 전까지는 버린다.
+  if (lineIndex_ == 0 && c != '{' && c != '\n') {
     return;
   }
 
@@ -321,8 +344,17 @@ bool TeleopAdapter::parseTeleopLine(const char* line, TeleopFrame& outFrame) con
   }
 
   String json(line);
+  json.trim();
+  if (json.length() == 0 || json[0] != '{') {
+    return false;
+  }
+
   String typeValue;
-  if (!extractRawValue(json, "type", typeValue) || typeValue != "teleop") {
+  if (!extractRawValue(json, "type", typeValue)) {
+    return false;
+  }
+  typeValue.toLowerCase();
+  if (typeValue != "teleop") {
     return false;
   }
 

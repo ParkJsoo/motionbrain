@@ -149,7 +149,8 @@ v1 frame은 flat JSON 한 줄을 사용한다.
   "motors": {},
   "light": false,
   "sensor": {},
-  "baseAngle": {}
+  "baseAngle": {},
+  "teleop": {}
 }
 ```
 
@@ -217,6 +218,43 @@ v1 frame은 flat JSON 한 줄을 사용한다.
 - `processedSamples`: 현재 명령 동안 적분에 사용한 샘플 수
 - `lastRateDps`: 마지막에 사용한 회전 속도 추정값
 - `lastStopReason`: 마지막 종료 이유
+
+### `teleop`
+
+```json
+{
+  "connected": true,
+  "deadman": true,
+  "controlActive": true,
+  "lastFrameAgeMs": 18,
+  "packetsReceived": 231,
+  "parseErrors": 0,
+  "session": 4,
+  "seq": 91,
+  "reach": 0.42,
+  "lift": -0.18,
+  "twist": 0.31,
+  "gripOpen": false,
+  "gripClose": true,
+  "ledToggleSeq": 2,
+  "lastStopReason": "NONE"
+}
+```
+
+의미:
+
+- `connected`: teleop frame freshness timeout 안에 최근 프레임이 있는지 여부
+- `deadman`: 최근 frame의 `deadman` 상태
+- `controlActive`: 현재 teleop가 실제 모터 출력을 점유 중인지 여부
+- `lastFrameAgeMs`: 마지막 teleop frame 이후 경과 시간
+- `packetsReceived`: 누적 teleop frame 수
+- `parseErrors`: teleop frame 파싱 실패 수
+- `session`: 최근 teleop session 번호
+- `seq`: 최근 teleop sequence 번호
+- `reach`, `lift`, `twist`: 최근 normalized primitive 값
+- `gripOpen`, `gripClose`: 최근 teleop 그리퍼 버튼 상태
+- `ledToggleSeq`: 최근 LED toggle edge counter
+- `lastStopReason`: 마지막 teleop 정지 이유
 
 `lastStopReason` 값:
 
