@@ -259,14 +259,10 @@ v1 frame은 flat JSON 한 줄을 사용한다.
 `lastStopReason` 값:
 
 - `NONE`
-- `TARGET_REACHED`
-- `TIMEOUT`
-- `NO_ROTATION_FEEDBACK`
-- `SENSOR_BLOCK`
-- `STATE_CHANGED`
-- `MANUAL_STOP`
-- `OVERRIDDEN`
-- `START_FAILED`
+- `DEADMAN_RELEASE`
+- `FRAME_TIMEOUT`
+- `NOT_ARMED`
+- `SAFETY_BLOCK`
 
 ## 3. 종료 이유 의미
 

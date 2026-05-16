@@ -231,6 +231,7 @@ void SerialCommand::processSerialInput() {
 
         // 디버그 로그 (나중에 제거 가능)
         DebugLog::debug("Command received: %s", commandBuffer_);
+        return;
       }
     }
     // 오버플로우 드롭 중이면 '\n' 전까지 모두 버림

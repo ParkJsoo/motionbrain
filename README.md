@@ -365,13 +365,12 @@ python3 tools/motionbrain_watch.py --host 192.168.4.1 --interval 1.0
 ## 다음 우선순위
 
 1. 최종 부품 배치도와 배선표 확정
-2. handheld remote 버튼 핀과 ESP32<->STM32 teleop UART 배선 확정
-3. teleop 실기에서 `reach/lift/twist/grip` 부호, deadzone, 속도 비중 조정
-4. 최종 실장 후 `HC-SR04` safety와 `RANGE_FAULT` 간헐 개입 여부 재검증
-5. `GET /status`, `GET /events`, host watcher 기준으로 teleop/safety 이벤트 확인
-6. `ESP32-CAM` 스트리밍과 비전 입력 연결
-7. Raspberry Pi + ROS2 + AI 연동
-8. 데모 시나리오, 문서, 포트폴리오 정리
+2. teleop 실기에서 `reach/lift/twist/grip` 부호, deadzone, 속도 비중 조정
+3. 최종 실장 후 `HC-SR04` safety와 `RANGE_FAULT` 간헐 개입 여부 재검증
+4. `GET /status`, `GET /events`, host watcher 기준으로 teleop/safety 이벤트 확인
+5. `ESP32-CAM` 스트리밍과 비전 입력 연결
+6. Raspberry Pi + ROS2 + AI 연동
+7. 데모 시나리오, 문서, 포트폴리오 정리
 
 ## 포트폴리오 관점에서의 핵심 어필 포인트
 

@@ -497,8 +497,11 @@ MVP에서는 새 명령을 과하게 늘리지 말고 베이스 전용 상대각
 - [x] 베이스 상대각 제어 추가, 현재 optional/보류
 - [x] 유선 handheld teleop v1 구현
 - [x] 메시지 인터페이스 1차 정리
+- [x] handheld remote 버튼/배선 확정
+- [x] teleop UART 파서 경고 출력 정리
+- [x] teleop UART 파서 경고 실기 재확인
+- [x] `sensor sim off` AUTO 해제 확인
 - [ ] 최종 배치도와 배선표 확정
-- [ ] handheld remote 버튼/배선 확정
 - [ ] teleop mixer 부호와 비중 실기 튜닝
 - [ ] 조립 후 safety/teleop bring-up 체크리스트에 따라 통합 검증
 - [ ] Phase 4 진입용 host-side 경계 최종 확정
@@ -555,10 +558,9 @@ MVP에서는 새 명령을 과하게 늘리지 말고 베이스 전용 상대각
 
 - 현재 상태: ESP32/STM32 코드 구현 완료
 - 남은 것:
-  - 실제 버튼 배선 확정
-  - ESP32<->STM32 teleop UART 연결
+  - 최종 실장 기준 부품 배치와 배선 고정
   - 단일 STM32 remote bench에서는 `sensor sim healthy`로 safety gate를 열고 테스트
-  - `deadman`, `FRAME_TIMEOUT`, `reach/lift/twist/grip` 실기 확인
+  - `deadman`, `FRAME_TIMEOUT`, `reach/lift/twist/grip` 실기 재확인
   - mixer 부호와 비중 조정
 
 ## 현재 핵심 리스크

@@ -148,6 +148,8 @@ TeleopAdapter::TeleopAdapter()
   , packetsReceived_(0)
   , parseErrors_(0)
   , lastHandledLedToggleSeq_(0)
+  , lastParserWarningMs_(0)
+  , suppressedParserWarnings_(0)
   , lastStopReason_(TeleopStopReason::NONE)
   , appliedGripPercent_(0)
   , appliedWristPercent_(0)
@@ -286,7 +288,7 @@ void TeleopAdapter::processIncomingByte(char c) {
   // 프레임 중간에 새 JSON 시작 문자가 보이면, 이전 프레임은 깨진 것으로 보고 최신 시작점으로 재동기화한다.
   if (c == '{' && lineIndex_ > 0) {
     parseErrors_++;
-    DebugLog::warn("Teleop adapter framing resync - restarting at new JSON start");
+    warnParserDrop("framing resync");
     overflowDropping_ = false;
     lineIndex_ = 0;
     lineBuffer_[0] = '\0';
@@ -317,7 +319,7 @@ void TeleopAdapter::processIncomingByte(char c) {
       handleFrame(parsedFrame, millis());
     } else {
       parseErrors_++;
-      DebugLog::warn("Teleop adapter parse failed: %s", lineBuffer_);
+      warnParserDrop("parse failed", lineBuffer_);
     }
 
     lineIndex_ = 0;
@@ -328,7 +330,7 @@ void TeleopAdapter::processIncomingByte(char c) {
   if (lineIndex_ >= (LINE_BUFFER_SIZE - 1)) {
     overflowDropping_ = true;
     parseErrors_++;
-    DebugLog::warn("Teleop adapter line overflow - dropping until newline");
+    warnParserDrop("line overflow");
     lineIndex_ = 0;
     lineBuffer_[0] = '\0';
     return;
@@ -602,4 +604,38 @@ int8_t TeleopAdapter::quantizePercentMagnitude(uint8_t percent) {
     quantized = 100;
   }
   return static_cast<int8_t>(quantized);
+}
+
+void TeleopAdapter::warnParserDrop(const char* reason, const char* line) {
+  uint32_t now = millis();
+  if (lastParserWarningMs_ != 0 && (now - lastParserWarningMs_) < PARSER_WARNING_INTERVAL_MS) {
+    suppressedParserWarnings_++;
+    return;
+  }
+
+  uint32_t suppressed = suppressedParserWarnings_;
+  suppressedParserWarnings_ = 0;
+  lastParserWarningMs_ = now;
+
+  if (line == nullptr || line[0] == '\0') {
+    DebugLog::warn("Teleop adapter %s (parseErrors=%lu, suppressed=%lu)",
+                   reason,
+                   parseErrors_,
+                   suppressed);
+    return;
+  }
+
+  char preview[81];
+  size_t lineLength = strlen(line);
+  size_t previewLength = lineLength < (sizeof(preview) - 1) ? lineLength : (sizeof(preview) - 1);
+  memcpy(preview, line, previewLength);
+  preview[previewLength] = '\0';
+
+  DebugLog::warn("Teleop adapter %s len=%u preview=%s%s (parseErrors=%lu, suppressed=%lu)",
+                 reason,
+                 static_cast<unsigned>(lineLength),
+                 preview,
+                 lineLength > previewLength ? "..." : "",
+                 parseErrors_,
+                 suppressed);
 }

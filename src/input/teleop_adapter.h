@@ -87,6 +87,7 @@ public:
 private:
   static const size_t LINE_BUFFER_SIZE = 384;
   static const size_t RX_BUFFER_SIZE = 1024;
+  static const uint32_t PARSER_WARNING_INTERVAL_MS = 2000;
   static const uint8_t OUTPUT_QUANT_STEP_PERCENT = 5;
   static const uint8_t GRIPPER_BUTTON_PERCENT = 70;
 
@@ -108,6 +109,8 @@ private:
   uint32_t    packetsReceived_;
   uint32_t    parseErrors_;
   uint32_t    lastHandledLedToggleSeq_;
+  uint32_t    lastParserWarningMs_;
+  uint32_t    suppressedParserWarnings_;
   TeleopStopReason lastStopReason_;
 
   int8_t appliedGripPercent_;
@@ -135,6 +138,7 @@ private:
   static float absf(float value);
   static int8_t quantizeNormalized(float value);
   static int8_t quantizePercentMagnitude(uint8_t percent);
+  void warnParserDrop(const char* reason, const char* line = nullptr);
 };
 
 #endif // INPUT_TELEOP_ADAPTER_H
