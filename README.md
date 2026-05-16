@@ -38,13 +38,18 @@ ESP32 기반 5축 로봇팔 제어 시스템에서 출발해, STM32 센서 허�
   - ESP32 `teleop_adapter`
   - STM32 `APP_MODE_TELEOP_REMOTE`
   - `teleop` JSON frame / `deadman` / freshness timeout / LED edge / primitive mixer
+- 유선 handheld teleop 실기 확인 완료
+  - `sensor sim healthy -> arm`
+  - deadman + IMU 입력으로 실제 모터 출력 확인
+  - release 시 `DEADMAN_RELEASE` 정지 확인
+  - `teleop.parseErrors=0`, `sensor.parseErrors=0`
+- `sensor sim off` AUTO 해제 버그 수정 및 실기 확인 완료
 
 ### 현재 핵심 미완료
 
 - 최종 부품 배치와 배선표 확정
 - 최종 실장 상태에서 센서 스트림 안정성 재검증
-- handheld remote provisional 버튼 핀과 UART 배선 확정
-- teleop 실기에서 `reach/lift/twist` 부호와 비중 조정
+- 최종 배치 확정 후 teleop `reach/lift/twist` 부호와 비중 조정
 - `HC-SR04` 기반 obstacle safety 최종 배치 검증
 - Phase 4 진입 전 host-side 상태/이벤트 소비 경계 최종 확정
 - ESP32-CAM 영상 스트리밍 및 비전 입력 연동
@@ -290,6 +295,7 @@ python3 tools/motionbrain_watch.py --host 192.168.4.1 --interval 1.0
 - 한 개 STM32를 remote 모드로 쓰는 bench에서는 ESP32 sensor bridge가 실제 센서 패킷을 받지 못하므로 `sensor sim healthy`가 필요하다.
 - 따라서 현재 single-STM32 remote bench에서는 `GY-521`이 active handheld 입력이고, `HC-SR04`는 연결돼 있어도 active safety stream에 올라오지 않는다.
 - 최종 실장에서는 `HC-SR04` safety stream을 별도 sensor bridge로 유지하거나, 동등한 본체 safety 입력 채널을 따로 확보해야 한다.
+- teleop mixer 부호와 비중은 로봇팔 초기 자세, 링크 배치, 리모컨을 잡는 방향이 고정된 뒤 튜닝한다. 현재 임시 배선 상태에서 깊게 맞춘 값은 최종 실장 후 다시 바뀔 가능성이 높다.
 
 시리얼만으로 safety 상태를 bench에서 재현하려면 아래 simulation 명령을 사용할 수 있다. `base angle` 관련 simulation은 구현 검사용으로 남아 있지만, 현재 하드웨어 로드맵의 필수 gate는 아니다.
 

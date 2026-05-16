@@ -15,7 +15,7 @@ Phase 3에서 반드시 만들어야 하는 결과는 다음 네 가지다.
 
 ## 현재 진행 상태
 
-기준 날짜: `2026-04-23`
+기준 날짜: `2026-05-16`
 
 - `Phase 1`: 완료
 - `Phase 2`: 사실상 완료
@@ -23,7 +23,7 @@ Phase 3에서 반드시 만들어야 하는 결과는 다음 네 가지다.
 - `3-A Sensor Feedback Layer`: bench 기준 거의 완료, 최종 실장 후 재검증만 남음
 - `3-B Decision Layer`: 1차 완료
 - `3-C Base Closed-Loop Motion`: 1차 구현 완료, 현재는 optional/보류 기능
-- `3-C Teleop Motion Input`: 유선 MVP 구현 완료, 실기 튜닝 대기
+- `3-C Teleop Motion Input`: 유선 MVP 구현과 parser 실기 검증 완료, 최종 배치 후 mixer 튜닝 대기
 - `3-D Message Bridge`: 부분 완료
 
 현재 해석은 다음과 같다.
@@ -32,6 +32,7 @@ Phase 3에서 반드시 만들어야 하는 결과는 다음 네 가지다.
 - 지금 병목은 새 기능 추가보다 최종 배치, 배선, 통합 검증 준비다.
 - `GY-521`은 handheld remote 입력용으로 쓰기로 했으므로 base 상대각 폐루프 물리 검증은 현재 Phase 3 gate에서 제외한다.
 - 기존 `base angle` 기능은 구현/문서화된 optional 실험 기능으로 남기며, 실제 폐루프를 다시 목표로 잡으려면 별도 base-mounted IMU/엔코더 같은 피드백 센서가 필요하다.
+- teleop mixer의 부호와 비중은 로봇팔 최종 자세, 링크 배치, 리모컨 장착/파지 방향이 확정된 뒤 튜닝한다.
 
 ## 현재 확정 사실
 
@@ -556,12 +557,17 @@ MVP에서는 새 명령을 과하게 늘리지 말고 베이스 전용 상대각
 
 ### Gate 4. Handheld Teleop
 
-- 현재 상태: ESP32/STM32 코드 구현 완료
+- 현재 상태: ESP32/STM32 코드 구현과 bench 실기 확인 완료
+- 확인한 것:
+  - `sensor sim healthy -> arm`
+  - deadman hold + IMU 입력으로 실제 모터 출력
+  - release 시 `DEADMAN_RELEASE`
+  - `teleop.parseErrors=0`, `sensor.parseErrors=0`
+  - `sensor sim off` 후 `Simulation: OFF`, `SENSOR_STALE` 복귀
 - 남은 것:
   - 최종 실장 기준 부품 배치와 배선 고정
-  - 단일 STM32 remote bench에서는 `sensor sim healthy`로 safety gate를 열고 테스트
-  - `deadman`, `FRAME_TIMEOUT`, `reach/lift/twist/grip` 실기 재확인
-  - mixer 부호와 비중 조정
+  - 최종 배치 상태에서 `deadman`, `FRAME_TIMEOUT`, `reach/lift/twist/grip` 재확인
+  - 최종 배치 상태에서 mixer 부호와 비중 조정
 
 ## 현재 핵심 리스크
 
@@ -582,8 +588,8 @@ Phase 4는 아래 조건이 충족된 뒤 시작한다.
 
 현재 판정:
 
-- 센서/safety/command 경로는 bench 기준으로 대부분 충족
-- 마지막 조건인 handheld teleop 실기 bring-up과 mixer 튜닝이 남아 있다.
+- 센서/safety/command/teleop 경로는 bench 기준으로 대부분 충족
+- Phase 4 전에 최종 실장 배치, safety 재검증, host-side 상태/이벤트 경계 확정이 남아 있다.
 
 ## Phase 4 연결 방향
 
