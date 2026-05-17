@@ -47,7 +47,7 @@ ESP32 기반 5축 로봇팔 제어 시스템에서 출발해, STM32 센서 허�
 
 ### 현재 핵심 미완료
 
-- 최종 부품 배치와 배선표 확정
+- 최종 부품 배치와 배선표 실물 확정 및 검증
 - 최종 실장 상태에서 센서 스트림 안정성 재검증
 - 최종 배치 확정 후 teleop `reach/lift/twist` 부호와 비중 조정
 - `HC-SR04` 기반 obstacle safety 최종 배치 검증
@@ -104,6 +104,8 @@ TB6612FNG x3
 ```
 
 ## 하드웨어 구성
+
+세부 GPIO와 전원 기준은 [PIN_MAP.md](/Users/jeongsoopark/develop/arduino/motionbrain/PIN_MAP.md:1)를 기준으로 확인한다. 최종 외장 전자박스 실장은 Phase 4 MVP 이후로 미룬다.
 
 ### 현재 핵심 구성품
 
@@ -370,12 +372,12 @@ python3 tools/motionbrain_watch.py --host 192.168.4.1 --interval 1.0
 
 ## 다음 우선순위
 
-1. 최종 부품 배치도와 배선표 확정
-2. teleop 실기에서 `reach/lift/twist/grip` 부호, deadzone, 속도 비중 조정
-3. 최종 실장 후 `HC-SR04` safety와 `RANGE_FAULT` 간헐 개입 여부 재검증
-4. `GET /status`, `GET /events`, host watcher 기준으로 teleop/safety 이벤트 확인
-5. `ESP32-CAM` 스트리밍과 비전 입력 연결
-6. Raspberry Pi + ROS2 + AI 연동
+1. `ESP32-CAM` 스트리밍과 Mac host-side 비전 입력 MVP 연결
+2. `GET /status`, `GET /events`, host watcher 기준으로 teleop/safety 이벤트 확인
+3. 카메라 입력 결과를 `/light`, `/joint`, `/sequence` 같은 안전한 명령 경로로 연결
+4. Raspberry Pi 구매 전 Mac host bridge 기준으로 ROS2 메시지 경계 초안 작성
+5. 최종 외장 전자박스 실장과 `HC-SR04` safety 재검증
+6. teleop 실기에서 `reach/lift/twist/grip` 부호, deadzone, 속도 비중 조정
 7. 데모 시나리오, 문서, 포트폴리오 정리
 
 ## 포트폴리오 관점에서의 핵심 어필 포인트
