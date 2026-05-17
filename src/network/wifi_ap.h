@@ -75,8 +75,9 @@ public:
   const char* getSSID() const;
 
 private:
-  // 안전 규칙: 단일 클라이언트만 허용 (명령 충돌 방지)
-  static const uint8_t MAX_CLIENTS = 1;
+  // Phase 4 MVP: Mac host + ESP32-CAM vision node 동시 접속 허용.
+  // 명령 권한은 HTTP CSRF 헤더와 host-side 정책으로 제한한다.
+  static const uint8_t MAX_CLIENTS = 2;
 
   bool active_;                   // AP 활성화 여부
   IPAddress apIP_;                // AP IP 주소
@@ -92,4 +93,3 @@ private:
 };
 
 #endif // WIFI_AP_H
-

@@ -208,6 +208,8 @@ tools/stm32_build_upload.sh
 - 카메라/비전 처리
 - AI 연동
 
+Phase 4 MVP는 Raspberry Pi 구매 전 Mac host와 ESP32-CAM으로 먼저 검증한다. 상세 절차는 [PHASE4_MVP.md](/Users/jeongsoopark/develop/arduino/motionbrain/PHASE4_MVP.md:1)를 기준으로 한다.
+
 ## 빠른 시작
 
 ### ESP32 빌드
@@ -361,6 +363,7 @@ python3 tools/motionbrain_watch.py --host 192.168.4.1 --interval 1.0
 - [README.md](/Users/jeongsoopark/develop/arduino/motionbrain/README.md:1): 프로젝트 개요와 현재 상태
 - [로드맵.md](/Users/jeongsoopark/develop/arduino/motionbrain/로드맵.md:1): 포트폴리오 기준 전체 단계
 - [PHASE3_PLAN.md](/Users/jeongsoopark/develop/arduino/motionbrain/PHASE3_PLAN.md:1): 현재 핵심 작업인 센서/브리지 계획
+- [PHASE4_MVP.md](/Users/jeongsoopark/develop/arduino/motionbrain/PHASE4_MVP.md:1): ESP32-CAM + Mac host 비전 MVP
 - [MESSAGE_INTERFACE.md](/Users/jeongsoopark/develop/arduino/motionbrain/MESSAGE_INTERFACE.md:1): 시리얼/HTTP/status 메시지 경계 정리
 - [PIN_MAP.md](/Users/jeongsoopark/develop/arduino/motionbrain/PIN_MAP.md:1): ESP32 모터 핀 연결
 - [.codex/START_HERE.md](/Users/jeongsoopark/develop/arduino/motionbrain/.codex/START_HERE.md:1): 다음 세션용 빠른 복구 메모
