@@ -37,34 +37,29 @@ input -> decision -> state -> motion -> feedback
   - deadman handling
   - frame freshness timeout
   - LED edge counter
-  - primitive teleop mixer
+  - initial teleop mixer
 - Physical wired teleop bench validation:
   - `sensor sim healthy -> arm`
   - real motor output from deadman + IMU input
   - stop on `DEADMAN_RELEASE`
   - `teleop.parseErrors=0`, `sensor.parseErrors=0`
-- Fix for `sensor sim off` returning from AUTO simulation mode
 
-### Not Yet Complete
+### Current Focus
 
-- Final mechanical layout and wiring verification
-- Sensor stream revalidation after final mounting
-- Final sign and weight tuning for teleop `reach/lift/twist`
-- Final `HC-SR04` obstacle-safety placement validation
-- Host-side status/event consumption boundary before Phase 4
-- ESP32-CAM video streaming and vision-input integration
-- Raspberry Pi + ROS2 + AI integration
-- Public demo photos or videos
+- Connect ESP32-CAM streaming to the Mac host-side vision MVP
+- Finalize the physical layout and wiring table
+- Revalidate sensor, obstacle-safety, and teleop behavior after final mounting
+- Define the Raspberry Pi + ROS2 + AI high-level control path
 
 ## Architecture
 
 ### Implemented Layers
 
 ```text
-[STM32 Sensor Hub]
+[STM32 Sensor / Teleop Layer]
   MPU-6050
   HC-SR04
-  UART sensor stream
+  UART sensor/teleop stream
         ->
 [ESP32 Motion Controller]
   Stm32Bridge
@@ -119,6 +114,8 @@ Main components:
 - Jumper wires, power modules, and breadboard wiring
 
 The current hardware source of truth is [PIN_MAP.md](PIN_MAP.md).
+
+Wired teleop wiring and bench bring-up notes are documented in [docs/TELEOP_BRINGUP.md](docs/TELEOP_BRINGUP.md).
 
 ## Software Structure
 
@@ -232,6 +229,7 @@ This repository is structured as an embedded robotics portfolio project. The mos
 - [PHASE4_MVP.md](PHASE4_MVP.md): ESP32-CAM + Mac host MVP
 - [MESSAGE_INTERFACE.md](MESSAGE_INTERFACE.md): command, teleop, and status message boundary
 - [PIN_MAP.md](PIN_MAP.md): ESP32 motor pin mapping
+- [docs/TELEOP_BRINGUP.md](docs/TELEOP_BRINGUP.md): wired handheld teleop bring-up notes
 - [로드맵.md](%EB%A1%9C%EB%93%9C%EB%A7%B5.md): Korean project roadmap
 
 ## License
