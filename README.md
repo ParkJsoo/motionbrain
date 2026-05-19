@@ -1,5 +1,11 @@
 # MotionBrain
 
+[English README](README.en.md) | [Portfolio One-Pager](PORTFOLIO.en.md) | 한국어 README
+
+MotionBrain is an embedded robotics portfolio project built around an ESP32-based 5-axis robotic arm controller, an STM32 sensor/teleop layer, ESP32-CAM vision input, and a future Raspberry Pi + ROS2 + AI high-level control stack.
+
+Key engineering areas: safety state machine, multi-MCU role separation, UART sensor feedback, unified serial/HTTP command dispatch, wired handheld teleoperation, and a clear path toward host-side robotics orchestration.
+
 ESP32 기반 5축 로봇팔 제어 시스템에서 출발해, STM32 센서 허브, ESP32-CAM 비전 입력, Raspberry Pi + ROS2 + AI 상위 제어까지 확장하는 로봇 개발 포트폴리오 프로젝트.
 
 ## 프로젝트 목표
@@ -105,7 +111,7 @@ TB6612FNG x3
 
 ## 하드웨어 구성
 
-세부 GPIO와 전원 기준은 [PIN_MAP.md](/Users/jeongsoopark/develop/arduino/motionbrain/PIN_MAP.md:1)를 기준으로 확인한다. 최종 외장 전자박스 실장은 Phase 4 MVP 이후로 미룬다.
+세부 GPIO와 전원 기준은 [PIN_MAP.md](PIN_MAP.md)를 기준으로 확인한다. 최종 외장 전자박스 실장은 Phase 4 MVP 이후로 미룬다.
 
 ### 현재 핵심 구성품
 
@@ -144,7 +150,7 @@ STM32 센서 프로젝트 경로:
 
 ## 소프트웨어 구성
 
-현재 ESP32 메인 진입점은 [src/main.cpp](/Users/jeongsoopark/develop/arduino/motionbrain/src/main.cpp:1)이며, 주요 모듈은 다음과 같다.
+현재 ESP32 메인 진입점은 [src/main.cpp](src/main.cpp)이며, 주요 모듈은 다음과 같다.
 
 - `system/`: 상태 머신과 시스템 초기화
 - `motor/`: `TB6612FNG` 기반 모터 제어
@@ -208,7 +214,7 @@ tools/stm32_build_upload.sh
 - 카메라/비전 처리
 - AI 연동
 
-Phase 4 MVP는 Raspberry Pi 구매 전 Mac host와 ESP32-CAM으로 먼저 검증한다. 상세 절차는 [PHASE4_MVP.md](/Users/jeongsoopark/develop/arduino/motionbrain/PHASE4_MVP.md:1)를 기준으로 한다.
+Phase 4 MVP는 Raspberry Pi 구매 전 Mac host와 ESP32-CAM으로 먼저 검증한다. 상세 절차는 [PHASE4_MVP.md](PHASE4_MVP.md)를 기준으로 한다.
 
 ## 빠른 시작
 
@@ -360,13 +366,15 @@ python3 tools/motionbrain_watch.py --host 192.168.4.1 --interval 1.0
 
 ### 현재 기준으로 유지하는 문서
 
-- [README.md](/Users/jeongsoopark/develop/arduino/motionbrain/README.md:1): 프로젝트 개요와 현재 상태
-- [로드맵.md](/Users/jeongsoopark/develop/arduino/motionbrain/로드맵.md:1): 포트폴리오 기준 전체 단계
-- [PHASE3_PLAN.md](/Users/jeongsoopark/develop/arduino/motionbrain/PHASE3_PLAN.md:1): 현재 핵심 작업인 센서/브리지 계획
-- [PHASE4_MVP.md](/Users/jeongsoopark/develop/arduino/motionbrain/PHASE4_MVP.md:1): ESP32-CAM + Mac host 비전 MVP
-- [MESSAGE_INTERFACE.md](/Users/jeongsoopark/develop/arduino/motionbrain/MESSAGE_INTERFACE.md:1): 시리얼/HTTP/status 메시지 경계 정리
-- [PIN_MAP.md](/Users/jeongsoopark/develop/arduino/motionbrain/PIN_MAP.md:1): ESP32 모터 핀 연결
-- [.codex/START_HERE.md](/Users/jeongsoopark/develop/arduino/motionbrain/.codex/START_HERE.md:1): 다음 세션용 빠른 복구 메모
+- [README.md](README.md): 프로젝트 개요와 현재 상태
+- [README.en.md](README.en.md): 외국 기업/외국계 기업용 영어 프로젝트 개요
+- [PORTFOLIO.en.md](PORTFOLIO.en.md): 영어 포트폴리오 one-pager
+- [로드맵.md](%EB%A1%9C%EB%93%9C%EB%A7%B5.md): 포트폴리오 기준 전체 단계
+- [PHASE3_PLAN.md](PHASE3_PLAN.md): 현재 핵심 작업인 센서/브리지 계획
+- [PHASE4_MVP.md](PHASE4_MVP.md): ESP32-CAM + Mac host 비전 MVP
+- [MESSAGE_INTERFACE.md](MESSAGE_INTERFACE.md): 시리얼/HTTP/status 메시지 경계 정리
+- [PIN_MAP.md](PIN_MAP.md): ESP32 모터 핀 연결
+- [.codex/START_HERE.md](.codex/START_HERE.md): 다음 세션용 빠른 복구 메모
 
 ### 현재 기준에서 제외하는 문서
 
