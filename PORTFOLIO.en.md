@@ -1,6 +1,6 @@
 # MotionBrain Portfolio One-Pager
 
-[Korean README](README.md) | [English README](README.en.md)
+[한국어 README](README.md) | [English README](README.en.md)
 
 ## Summary
 

@@ -1,6 +1,6 @@
 # MotionBrain
 
-[Korean README](README.md) | [English README](README.en.md) | [Portfolio One-Pager](PORTFOLIO.en.md)
+[한국어 README](README.md) | [English README](README.en.md) | [Portfolio One-Pager](PORTFOLIO.en.md)
 
 MotionBrain is an embedded robotics portfolio project that starts with an ESP32-based 5-axis robotic arm controller and expands toward an STM32 sensor hub, ESP32-CAM vision input, and Raspberry Pi + ROS2 + AI high-level control.
 
