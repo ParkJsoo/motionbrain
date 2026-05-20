@@ -3,6 +3,7 @@
 import argparse
 import json
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -463,7 +464,7 @@ INDEX_HTML = """<!doctype html>
     }
 
     refresh();
-    setInterval(refresh, 1000);
+    setInterval(refresh, 1500);
   </script>
 </body>
 </html>
@@ -581,7 +582,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self.handle_detection()
             else:
                 self.send_error_json(HTTPStatus.NOT_FOUND, "not_found")
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as exc:
             self.send_error_json(HTTPStatus.BAD_GATEWAY, str(exc))
 
     def do_POST(self) -> None:
@@ -603,7 +604,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             result = post_motionbrain(self.server.motion_base_url, path, self.server.timeout)
             result["requestedAction"] = action
             self.send_json(result)
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError) as exc:
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError, OSError) as exc:
             self.send_error_json(HTTPStatus.BAD_GATEWAY, str(exc))
 
     def handle_capture(self) -> None:
@@ -611,7 +612,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.send_error_json(HTTPStatus.BAD_REQUEST, "camera_url_not_configured")
             return
 
-        frame, content_type = fetch_bytes(f"{self.server.camera_url}/capture", self.server.timeout)
+        frame, content_type = self.server.get_camera_frame()
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", content_type)
         self.send_header("Cache-Control", "no-store")
@@ -624,7 +625,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.send_error_json(HTTPStatus.BAD_REQUEST, "camera_url_not_configured")
             return
 
-        frame, _ = fetch_bytes(f"{self.server.camera_url}/capture", self.server.timeout)
+        frame, _ = self.server.get_camera_frame()
         payload = detect_colored_target(frame, self.server.detect_color)
         payload["cameraUrl"] = self.server.camera_url
         payload["ts"] = time.time()
@@ -669,6 +670,24 @@ class DashboardServer(ThreadingHTTPServer):
         self.detect_color = detect_color
         self.timeout = timeout
         self.events_limit = events_limit
+        self.camera_cache_lock = threading.Lock()
+        self.camera_cache: tuple[float, bytes, str] | None = None
+        self.camera_cache_seconds = 1.0
+
+    def get_camera_frame(self) -> tuple[bytes, str]:
+        if not self.camera_url:
+            raise ValueError("camera_url_not_configured")
+
+        now = time.monotonic()
+        with self.camera_cache_lock:
+            if self.camera_cache is not None:
+                fetched_at, frame, content_type = self.camera_cache
+                if now - fetched_at <= self.camera_cache_seconds:
+                    return frame, content_type
+
+            frame, content_type = fetch_bytes(f"{self.camera_url}/capture", self.timeout)
+            self.camera_cache = (time.monotonic(), frame, content_type)
+            return frame, content_type
 
 
 def run(args: argparse.Namespace) -> int:
