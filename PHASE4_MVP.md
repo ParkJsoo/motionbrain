@@ -240,3 +240,18 @@ python3 -m pip install opencv-python numpy
 - target 감지 결과가 로그에 남는다.
 - `--enable-action`에서 MotionBrain `/light` 명령이 성공한다.
 - 이 흐름이 나중에 ROS2 node로 옮길 host-side bridge 경계가 된다.
+
+## 2026-05-20 실기 검증 결과
+
+- ESP32-CAM CH340 upload board 기준 firmware upload 성공
+- ESP32-CAM은 `MotionBrain-AP`에 접속했고 `192.168.4.2`로 확인
+- iPhone Safari에서 `/status`, `/capture`, `/stream` 확인 완료
+- Mac host가 `MotionBrain-AP`에 연결된 상태에서 controller `/status`와 camera `/capture`를 같은 loop에서 읽음
+- `sensor sim healthy` 후 safe host action 확인:
+  - `state=ARMED detected=Y assume_detected frame=14743B allowed=Y`
+  - `ACTION light.toggle success=True`
+- OpenCV red target detection 확인:
+  - dry-run: `detected=Y red_ratio=0.254 frame=13089B allowed=Y`
+  - action run: red target 감지 시 `ACTION light.toggle success=True`
+  - target 제거 시 `detected=N red_ratio=0.000`
+- 사용자 실기 확인 기준 search light 실제 점등 완료
