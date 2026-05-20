@@ -4,7 +4,7 @@
 
 ## Summary
 
-MotionBrain is a multi-MCU robotic arm control project built around an ESP32 motion controller, STM32 sensor/teleop layer, and a planned ESP32-CAM + host-side robotics stack. The project focuses on reliable embedded control, safety state management, sensor feedback, and a clean command boundary that can later be bridged into ROS2 and AI-driven planning.
+MotionBrain is a multi-MCU robotic arm control project built around an ESP32 motion controller, STM32 sensor/teleop layer, ESP32-CAM vision input, and a Mac host-side perception loop. The project focuses on reliable embedded control, safety state management, sensor feedback, and a clean command boundary that can later be bridged into ROS2 and AI-driven planning.
 
 ## Engineering Problem
 
@@ -25,6 +25,9 @@ I designed and implemented the embedded control structure, including:
 - STM32 UART sensor bridge integration
 - Safety monitor for sensor-based blocking and latching
 - Wired handheld teleop path with deadman and frame freshness timeout
+- ESP32-CAM capture/stream firmware
+- Mac host-side OpenCV red-target detection MVP
+- Safe host-triggered `/light` action through the existing MotionBrain command boundary
 - Bench simulation commands for hardware-independent validation
 - Documentation for pin mapping, message boundaries, and Phase 4 host-side integration
 
@@ -39,7 +42,11 @@ STM32 Sensor / Teleop Layer
   -> TB6612FNG motor drivers
   -> 5-axis DC motor robotic arm
 
-ESP32-CAM and host-side vision are planned as the next input layer.
+ESP32-CAM Vision Node
+  -> HTTP /status, /capture, /stream
+  -> Mac host OpenCV target detection
+  -> MotionBrain /status safety check
+  -> safe /light demo action
 ```
 
 ## Technical Highlights
@@ -95,6 +102,16 @@ sensor sim stale
 sensor sim off
 ```
 
+### ESP32-CAM Host Vision MVP
+
+The Phase 4 MVP proves the first camera-to-host-to-controller loop before moving to Raspberry Pi or ROS2:
+
+- ESP32-CAM joins the `MotionBrain-AP` network as a camera node.
+- Mac host fetches ESP32-CAM `/capture` frames and MotionBrain `/status`.
+- OpenCV detects a red target in the camera frame.
+- The host only triggers an action when MotionBrain status allows it.
+- The demo action uses the safe non-motion `/light?action=toggle` path.
+
 ## Validation So Far
 
 - ESP32 firmware builds with PlatformIO.
@@ -104,12 +121,19 @@ sensor sim off
 - Wired handheld teleop produced real motor output under deadman control.
 - Deadman release stopped teleop-controlled motion.
 - `teleop.parseErrors=0` and `sensor.parseErrors=0` were observed in the current bench path.
+- ESP32-CAM firmware was uploaded and joined `MotionBrain-AP` at `192.168.4.2`.
+- ESP32-CAM `/status`, `/capture`, and `/stream` were verified from a phone viewer.
+- Mac host fetched MotionBrain `/status` and ESP32-CAM `/capture` in the same loop.
+- Host action MVP succeeded with `ACTION light.toggle success=True`.
+- OpenCV red target detection succeeded with `red_ratio=0.254` in dry-run.
+- Red target action test toggled the real search light; removing the target produced `detected=N red_ratio=0.000`.
 
 ## Current Limitations
 
 - Final hardware enclosure and wiring layout are not locked yet.
 - Public demo images and videos are not included yet.
-- ESP32-CAM streaming and host-side vision input are still in Phase 4 MVP work.
+- Phase 4 currently uses a Mac host; Raspberry Pi deployment is not complete yet.
+- The first vision action is intentionally limited to a safe search-light command, not motor motion.
 - Raspberry Pi, ROS2, and AI integration are planned but not complete.
 - Teleop sign, deadzone, and speed weights need final tuning after mechanical mounting is fixed.
 
@@ -127,8 +151,8 @@ This project demonstrates practical embedded robotics engineering:
 
 ## Next Steps
 
-1. Connect ESP32-CAM capture/streaming to a Mac host MVP.
-2. Use host-side status and event polling to make safe demo decisions.
-3. Route camera or host decisions through existing safe command paths.
+1. Prepare public demo media showing teleop, safety/status, camera capture, red detection, and host-triggered light action.
+2. Harden the host vision demo with capture retry and clearer action modes.
+3. Extend camera or host decisions from light-only actions toward alignment or semi-autonomous pick behavior.
 4. Finalize wiring, obstacle-safety placement, and teleop tuning.
-5. Add public demo media once the physical layout is stable.
+5. Move the host-side boundary toward Raspberry Pi + ROS2.

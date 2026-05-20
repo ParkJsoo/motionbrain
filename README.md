@@ -38,10 +38,17 @@ ESP32 기반 5축 로봇팔 제어 시스템에서 출발해, STM32 센서 허�
 - 유선 handheld teleop v1: deadman, frame freshness timeout, LED edge, initial mixer
 - `TB6612FNG x3` + `M1~M5` 실물 연결 및 모터 출력 확인
 - 유선 teleop deadman + IMU 입력으로 실제 모터 출력 및 release 정지 확인
+- ESP32-CAM + Mac host Phase 4 MVP
+  - `/status`, `/capture`, `/stream` 실기 확인
+  - Mac host에서 MotionBrain `/status`와 ESP32-CAM frame 동시 fetch 확인
+  - OpenCV red target detection 확인
+  - red target 감지 시 안전한 `/light?action=toggle` command path 확인
+  - 실제 search light 점등 확인
 
 ### 현재 집중 작업
 
-- ESP32-CAM 스트리밍과 Mac host-side vision MVP 연결
+- Phase 4 데모 영상과 포트폴리오 문서 정리
+- host-side vision loop 안정화: capture retry, action mode, demo logging
 - 최종 부품 배치와 배선표 확정
 - 최종 실장 후 센서/obstacle safety/teleop 튜닝 재검증
 - Raspberry Pi + ROS2 + AI 상위 제어 연동 설계
@@ -92,6 +99,25 @@ TB6612FNG x3
   Vision processing
   Message bridge
   Portfolio demo orchestration
+```
+
+### Phase 4 MVP 검증 완료 계층
+
+```text
+[ESP32-CAM Vision Node]
+  /status
+  /capture
+  /stream
+        ->
+[Mac Host Script]
+  OpenCV red target detection
+  MotionBrain /status safety check
+        ->
+[ESP32 Motion Controller]
+  Dispatcher + SafetyGate
+  /light?action=toggle
+        ->
+SearchLight
 ```
 
 ## 하드웨어
@@ -166,6 +192,13 @@ pio run -d firmware/esp32cam
 
 카메라와 Mac host를 연결하는 Phase 4 MVP 절차는 [PHASE4_MVP.md](PHASE4_MVP.md)를 기준으로 한다.
 
+검증된 host-side vision loop:
+
+```bash
+python3 tools/vision_host_mvp.py --camera-url http://192.168.4.2 --detect-color red --once
+python3 tools/vision_host_mvp.py --camera-url http://192.168.4.2 --detect-color red --enable-action --once
+```
+
 ### STM32 Sensor / Teleop Layer
 
 - STM32CubeIDE
@@ -213,6 +246,7 @@ sensor sim off
 - 센서 피드백과 handheld teleop를 통한 입력/안전 계층 확장
 - 시리얼/HTTP/status/event 경계 설계
 - 카메라 입력, host-side decision, ROS2로 확장 가능한 구조
+- ESP32-CAM + OpenCV 기반 host-side perception/action loop 실기 검증
 - 하드웨어 bench 검증과 문서화
 
 ## 문서
