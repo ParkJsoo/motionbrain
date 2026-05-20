@@ -194,6 +194,29 @@ python3 tools/vision_host_mvp.py --camera-url http://<esp32-cam-ip> --assume-det
 python3 tools/vision_host_mvp.py --camera-url http://<esp32-cam-ip> --detect-color red --once
 ```
 
+### 5-1. 운영 대시보드 확인
+
+CLI loop 확인 후에는 브라우저 대시보드로 상태, 이벤트, 카메라 capture, 색상 감지, light command 결과를 한 화면에서 확인한다.
+
+```bash
+python3 tools/motionbrain_dashboard.py --camera-url http://<esp32-cam-ip>
+```
+
+브라우저:
+
+```text
+http://127.0.0.1:8765
+```
+
+대시보드 확인 항목:
+
+- `Status`: state, safety block/fault, sensor, light 상태
+- `Base Angle`: 폐루프 base command 진행 상태와 마지막 stop reason
+- `Teleop`: handheld connection, deadman, axes, grip 입력
+- `Events`: `GET /events` 기반 최신 시스템 이벤트
+- `Camera Detection`: ESP32-CAM capture와 red target detection ratio
+- `Action Log`: 대시보드에서 보낸 light command 결과
+
 ### 6. 실패 시 우선 확인
 
 - `ESP32-CAM IP`가 serial log에 찍혔는지 확인한다.
