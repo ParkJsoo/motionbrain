@@ -432,3 +432,29 @@ base 상대각 제어는 다음 종료 이유를 가진다.
 - 상위 호스트는 문자열 로그 파싱 대신 `GET /status` 필드를 사용한다.
 - 이벤트 스트림은 `GET /events` 구조를 기반으로 확장하고, 종료 이유 문자열은 위 enum 이름을 유지한다.
 - `schemaVersion` 과 `messageType` 는 Phase 4에서도 유지한다.
+
+## 9. ROS2 Bridge MVP
+
+ROS2 MVP는 커스텀 메시지 정의 없이 `std_msgs/String` JSON payload를 사용한다. 목적은 메시지 설계보다 먼저 기존 HTTP 경계를 ROS2 graph에 노출해, Raspberry Pi/ROS2 상위 제어로 넘어갈 수 있는 최소 연결을 만드는 것이다.
+
+패키지:
+
+```text
+ros2_ws/src/motionbrain_ros_bridge
+```
+
+노드:
+
+```text
+motionbrain_status_node
+```
+
+토픽:
+
+- `pub /motionbrain/status` -> raw `GET /status` JSON
+- `pub /motionbrain/events` -> raw `GET /events?limit=N` JSON
+- `pub /camera/detection` -> ESP32-CAM `/capture` 기반 색상 감지 JSON
+- `sub /motionbrain/light_cmd` -> `on|off|toggle` 또는 `{"action":"toggle"}`
+- `pub /motionbrain/light_result` -> raw `POST /light` command result JSON
+
+초기에는 `String` payload를 유지한다. 후속 단계에서 메시지 필드가 안정화되면 `motionbrain_msgs` 같은 커스텀 message package로 승격한다.

@@ -162,6 +162,33 @@ SearchLight
 - `POST /sequence`
 - `POST /light`
 
+### ROS2 Bridge MVP
+
+Phase 4 host path is also exposed through a minimal ROS2 package:
+
+```text
+ros2_ws/src/motionbrain_ros_bridge
+```
+
+It keeps the ESP32 HTTP API unchanged and publishes JSON payloads on:
+
+- `/motionbrain/status`
+- `/motionbrain/events`
+- `/camera/detection`
+
+It also subscribes to `/motionbrain/light_cmd` and forwards `on`, `off`, or `toggle` to `POST /light`.
+
+Build and run:
+
+```bash
+cd ros2_ws
+colcon build --packages-select motionbrain_ros_bridge
+source install/setup.bash
+ros2 run motionbrain_ros_bridge motionbrain_status_node --ros-args -p motion_host:=192.168.4.1 -p camera_url:=http://192.168.4.2
+```
+
+Package notes are in [ros2_ws/src/motionbrain_ros_bridge/README.md](ros2_ws/src/motionbrain_ros_bridge/README.md).
+
 ## 개발 환경
 
 ### ESP32 Motion Controller
