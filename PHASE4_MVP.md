@@ -23,7 +23,7 @@ ESP32 Motion Controller
 - MotionBrain motion controller는 `MotionBrain-AP`를 띄운다.
 - ESP32-CAM은 `MotionBrain-AP`에 station으로 접속한다.
 - Mac도 `MotionBrain-AP`에 접속한다.
-- Phase 4 MVP 브랜치에서는 Mac host와 ESP32-CAM 동시 접속을 위해 MotionBrain AP 최대 client 수를 2로 둔다.
+- Phase 4 MVP에서는 Mac host, ESP32-CAM, phone viewer 동시 접속을 위해 MotionBrain AP 최대 client 수를 3으로 둔다.
 
 기본값:
 
@@ -115,7 +115,7 @@ pio device monitor -b 115200 -p /dev/cu.usbserial-1110
 
 ```text
 MotionBrain-AP
-Max clients: 2
+Max clients: 3
 192.168.4.1
 BOOT_COMPLETE
 ```
@@ -199,6 +199,7 @@ python3 tools/vision_host_mvp.py --camera-url http://<esp32-cam-ip> --detect-col
 - `ESP32-CAM IP`가 serial log에 찍혔는지 확인한다.
 - ESP32-CAM과 Mac이 모두 `MotionBrain-AP`에 붙어 있는지 확인한다.
 - `http://192.168.4.1/status`가 Mac에서 열리는지 확인한다.
+- `/stream`을 장시간 열어둔 뒤 `/status`나 `/capture`가 timeout되면 ESP32-CAM을 reset하거나 최신 펌웨어를 다시 올린다. 최신 펌웨어는 stream을 시간 제한으로 끊어 HTTP 서버가 회복되게 한다.
 - `/capture`가 느리거나 실패하면 ESP32-CAM 전원을 다시 연결한다.
 - `brownout` 또는 반복 reboot가 보이면 ESP32-CAM 전원 부족으로 본다.
 - 업로드가 실패하면 다른 serial monitor가 포트를 잡고 있는지 확인한다.

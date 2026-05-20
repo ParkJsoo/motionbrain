@@ -37,7 +37,7 @@ bool WiFiAP::init(const char* ssid, const char* password, IPAddress ip) {
   DebugLog::info("SSID: %s", ssid);
   DebugLog::info("Password: %s", password ? "***" : "(open)");
   DebugLog::info("IP: %d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
-  DebugLog::info("Max clients: %d (Phase 4: host + vision node)", MAX_CLIENTS);
+  DebugLog::info("Max clients: %d (Phase 4: host + vision + viewer)", MAX_CLIENTS);
 
   // Wi-Fi 모드 설정 (AP 모드)
   WiFi.mode(WIFI_AP);
@@ -70,7 +70,7 @@ bool WiFiAP::init(const char* ssid, const char* password, IPAddress ip) {
   DebugLog::info("WiFi AP: Started successfully");
   DebugLog::info("AP IP: %s", WiFi.softAPIP().toString().c_str());
   DebugLog::info("AP MAC: %s", WiFi.softAPmacAddress().c_str());
-  DebugLog::info("Max clients: %d (Phase 4: host + vision node)", MAX_CLIENTS);
+  DebugLog::info("Max clients: %d (Phase 4: host + vision + viewer)", MAX_CLIENTS);
 
   lastCheckTime_ = millis();
   return true;

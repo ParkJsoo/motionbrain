@@ -34,6 +34,9 @@ namespace {
 const char* WIFI_SSID = MOTIONBRAIN_WIFI_SSID;
 const char* WIFI_PASSWORD = MOTIONBRAIN_WIFI_PASSWORD;
 
+const uint32_t STREAM_FRAME_DELAY_MS = 100;
+const uint32_t STREAM_MAX_DURATION_MS = 20000;
+
 WebServer server(80);
 
 bool initCamera() {
@@ -84,7 +87,7 @@ void handleRoot() {
       "<!doctype html><html><head><title>MotionBrain ESP32-CAM</title></head>"
       "<body><h1>MotionBrain ESP32-CAM</h1>"
       "<p><a href=\"/capture\">capture</a> | <a href=\"/stream\">stream</a> | <a href=\"/status\">status</a></p>"
-      "<img src=\"/stream\" style=\"max-width:100%;height:auto\">"
+      "<img src=\"/capture\" style=\"max-width:100%;height:auto\">"
       "</body></html>");
 }
 
@@ -115,6 +118,7 @@ void handleCapture() {
 
 void handleStream() {
   WiFiClient client = server.client();
+  const uint32_t startedAt = millis();
   String response =
       "HTTP/1.1 200 OK\r\n"
       "Content-Type: multipart/x-mixed-replace; boundary=frame\r\n"
@@ -122,19 +126,27 @@ void handleStream() {
       "Connection: close\r\n\r\n";
   client.print(response);
 
-  while (client.connected()) {
+  while (client.connected() && (millis() - startedAt) < STREAM_MAX_DURATION_MS) {
     camera_fb_t* fb = esp_camera_fb_get();
     if (fb == nullptr) {
       break;
     }
 
-    client.printf("--frame\r\nContent-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n", fb->len);
-    client.write(fb->buf, fb->len);
-    client.print("\r\n");
+    bool ok = client.printf("--frame\r\nContent-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n", fb->len) > 0;
+    if (ok) {
+      ok = client.write(fb->buf, fb->len) == fb->len;
+    }
+    if (ok) {
+      ok = client.print("\r\n") > 0;
+    }
     esp_camera_fb_return(fb);
+    if (!ok) {
+      break;
+    }
 
-    delay(80);
+    delay(STREAM_FRAME_DELAY_MS);
   }
+  client.stop();
 }
 
 void connectWifi() {
