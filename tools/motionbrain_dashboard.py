@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import os
 import sys
 import threading
 import time
@@ -508,11 +509,14 @@ def fetch_bytes(url: str, timeout: float) -> tuple[bytes, str]:
         return response.read(), content_type
 
 
-def post_motionbrain(base_url: str, path: str, timeout: float) -> dict[str, Any]:
+def post_motionbrain(base_url: str, path: str, timeout: float, token: str = "") -> dict[str, Any]:
+    headers = {"X-MotionBrain": "1"}
+    if token:
+        headers["X-MotionBrain-Token"] = token
     request = urllib.request.Request(
         f"{base_url}{path}",
         method="POST",
-        headers={"X-MotionBrain": "1"},
+        headers=headers,
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
@@ -662,7 +666,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return
 
             path = f"/light?action={urllib.parse.quote(action)}"
-            result = post_motionbrain(self.server.motion_base_url, path, self.server.timeout)
+            result = post_motionbrain(self.server.motion_base_url, path, self.server.timeout, self.server.http_token)
             result["requestedAction"] = action
             self.send_json(result)
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError, OSError) as exc:
@@ -724,6 +728,7 @@ class DashboardServer(ThreadingHTTPServer):
         detect_color: str,
         timeout: float,
         events_limit: int,
+        http_token: str,
     ) -> None:
         super().__init__(server_address, handler_class)
         self.motion_base_url = motion_base_url
@@ -731,6 +736,7 @@ class DashboardServer(ThreadingHTTPServer):
         self.detect_color = detect_color
         self.timeout = timeout
         self.events_limit = events_limit
+        self.http_token = http_token
         self.camera_cache_lock = threading.Lock()
         self.camera_cache: tuple[float, bytes, str] | None = None
         self.camera_cache_seconds = 1.0
@@ -761,6 +767,7 @@ def run(args: argparse.Namespace) -> int:
         args.detect_color,
         args.timeout,
         args.events_limit,
+        args.http_token,
     )
     print(f"MotionBrain ops dashboard: http://{args.host}:{args.port}")
     print(f"motion={motion_base_url}")
@@ -786,6 +793,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--detect-color", choices=("red", "green", "blue"), default="red")
     parser.add_argument("--timeout", type=float, default=2.0, help="HTTP timeout in seconds")
     parser.add_argument("--events-limit", type=int, default=12, help="Default event query limit")
+    parser.add_argument("--http-token", default=os.environ.get("MOTIONBRAIN_HTTP_TOKEN", ""), help="Optional X-MotionBrain-Token for controller POST endpoints")
     return parser.parse_args()
 
 

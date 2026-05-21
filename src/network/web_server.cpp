@@ -58,6 +58,7 @@ MotionBrainWebServer::MotionBrainWebServer()
   , searchLight_(nullptr)
   , commandBus_(nullptr)
   , dispatcher_(nullptr)
+  , commandToken_{0}
 {
   // 생성자에서는 초기화만 수행
   // 실제 서버 시작은 init()에서 수행
@@ -69,7 +70,7 @@ MotionBrainWebServer::MotionBrainWebServer()
 bool MotionBrainWebServer::init(SystemStateManager* systemState, MotorControl* motorControl,
                                 RobotArm* robotArm, MotionSequence* motionSequence,
                                 SearchLight* searchLight, CommandBus* commandBus,
-                                Dispatcher* dispatcher, uint16_t port) {
+                                Dispatcher* dispatcher, uint16_t port, const char* commandToken) {
   systemState_    = systemState;
   motorControl_   = motorControl;
   robotArm_       = robotArm;
@@ -78,6 +79,11 @@ bool MotionBrainWebServer::init(SystemStateManager* systemState, MotorControl* m
   commandBus_     = commandBus;
   dispatcher_     = dispatcher;
   port_           = port;
+  if (commandToken != nullptr) {
+    strlcpy(commandToken_, commandToken, sizeof(commandToken_));
+  } else {
+    commandToken_[0] = '\0';
+  }
 
   DebugLog::info("=== Web Server Initialization ===");
   DebugLog::info("Port: %d", port_);
@@ -102,8 +108,8 @@ bool MotionBrainWebServer::init(SystemStateManager* systemState, MotorControl* m
   server_.onNotFound([this]() { this->handleNotFound(); });
 
   // CSRF 방지: X-MotionBrain 헤더 수집
-  const char* csrfHeader[] = {"X-MotionBrain"};
-  server_.collectHeaders(csrfHeader, 1);
+  const char* authHeaders[] = {"X-MotionBrain", "X-MotionBrain-Token"};
+  server_.collectHeaders(authHeaders, 2);
 
   // ESP32 WebServer 시작
   server_.begin();
@@ -123,7 +129,6 @@ bool MotionBrainWebServer::init(SystemStateManager* systemState, MotorControl* m
   active_ = true;
 
   DebugLog::info("Web Server: Started successfully");
-  DebugLog::info("Access dashboard at: http://192.168.4.1");
 
   return true;
 }
@@ -139,6 +144,20 @@ bool MotionBrainWebServer::submitCommand(const Command& command, CommandResult& 
   queued.id = commandBus_->allocateId();
   queued.createdAtMs = millis();
   return dispatcher_->execute(queued, result);
+}
+
+bool MotionBrainWebServer::requireCommandAuth() {
+  if (server_.header("X-MotionBrain") != "1") {
+    sendErrorJson(403, "Forbidden: missing X-MotionBrain header");
+    return false;
+  }
+
+  if (commandToken_[0] != '\0' && server_.header("X-MotionBrain-Token") != commandToken_) {
+    sendErrorJson(403, "Forbidden: invalid X-MotionBrain-Token");
+    return false;
+  }
+
+  return true;
 }
 
 void MotionBrainWebServer::appendStateSummaryJson(String& json) const {
@@ -713,8 +732,7 @@ void MotionBrainWebServer::handleCommand() {
     return;
   }
 
-  if (server_.header("X-MotionBrain") != "1") {
-    sendErrorJson(403, "Forbidden: missing X-MotionBrain header");
+  if (!requireCommandAuth()) {
     return;
   }
 
@@ -763,8 +781,7 @@ void MotionBrainWebServer::handleMotor() {
     return;
   }
 
-  if (server_.header("X-MotionBrain") != "1") {
-    sendErrorJson(403, "Forbidden: missing X-MotionBrain header");
+  if (!requireCommandAuth()) {
     return;
   }
 
@@ -902,8 +919,7 @@ void MotionBrainWebServer::handleJoint() {
     return;
   }
 
-  if (server_.header("X-MotionBrain") != "1") {
-    sendErrorJson(403, "Forbidden: missing X-MotionBrain header");
+  if (!requireCommandAuth()) {
     return;
   }
 
@@ -991,8 +1007,7 @@ void MotionBrainWebServer::handleJoint() {
 void MotionBrainWebServer::handleBase() {
   DebugLog::debug("Web Server: POST /base requested");
 
-  if (server_.header("X-MotionBrain") != "1") {
-    sendErrorJson(403, "Forbidden: missing X-MotionBrain header");
+  if (!requireCommandAuth()) {
     return;
   }
 
@@ -1084,8 +1099,7 @@ void MotionBrainWebServer::handleSequence() {
     return;
   }
 
-  if (server_.header("X-MotionBrain") != "1") {
-    sendErrorJson(403, "Forbidden: missing X-MotionBrain header");
+  if (!requireCommandAuth()) {
     return;
   }
 
@@ -1275,8 +1289,7 @@ void MotionBrainWebServer::handleNotFound() {
  * 서치라이트 on/off/toggle
  */
 void MotionBrainWebServer::handleLight() {
-  if (server_.header("X-MotionBrain") != "1") {
-    sendErrorJson(403, "Forbidden: missing X-MotionBrain header");
+  if (!requireCommandAuth()) {
     return;
   }
 

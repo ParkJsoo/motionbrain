@@ -25,6 +25,8 @@ ESP32 Motion Controller
 - Mac도 `MotionBrain-AP`에 접속한다.
 - Phase 4 MVP에서는 Mac host, ESP32-CAM, phone viewer 동시 접속을 위해 MotionBrain AP 최대 client 수를 3으로 둔다.
 
+집/벤치 테스트에서는 Mac Wi-Fi 전환을 피하기 위해 controller와 ESP32-CAM을 기존 집 Wi-Fi에 station으로 붙일 수 있다. 이 모드는 serial monitor에서 입력한 값을 ESP32 NVS flash에 저장해서 사용하며, 실제 SSID/password와 command token은 프로젝트 파일이나 git에 남기지 않는다. 절차는 [docs/HOME_WIFI_MODE.md](docs/HOME_WIFI_MODE.md)를 따른다.
+
 기본값:
 
 | 항목 | 값 |
@@ -34,13 +36,7 @@ ESP32 Motion Controller
 | MotionBrain IP | `192.168.4.1` |
 | ESP32-CAM URL | serial log의 `ESP32-CAM IP` 확인 |
 
-`motionbrain`은 로컬 데모 AP 기본값이며 개인 계정 비밀번호가 아니다. 배포/시연 환경에서 바꾸려면 `firmware/esp32cam/platformio.ini`에 빌드 플래그를 추가한다.
-
-```ini
-build_flags =
-  -DMOTIONBRAIN_WIFI_SSID=\"MotionBrain-AP\"
-  -DMOTIONBRAIN_WIFI_PASSWORD=\"changed-password\"
-```
+`motionbrain`은 로컬 데모 AP 기본값이며 개인 계정 비밀번호가 아니다. 집 Wi-Fi station 모드에서는 부팅 직후 serial monitor 프롬프트에 SSID/password를 입력한다. 저장된 값을 지우려면 boot prompt에서 `CLEAR`를 입력한다.
 
 ## ESP32-CAM 펌웨어
 

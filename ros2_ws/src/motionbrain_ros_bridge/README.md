@@ -35,6 +35,16 @@ ros2 run motionbrain_ros_bridge motionbrain_status_node \
   -p camera_url:=http://192.168.4.2
 ```
 
+When Home Wi-Fi mode is enabled, hostnames can be used instead:
+
+```bash
+export MOTIONBRAIN_HTTP_TOKEN="your-local-command-token"
+ros2 run motionbrain_ros_bridge motionbrain_status_node \
+  --ros-args \
+  -p motion_host:=motionbrain.local \
+  -p camera_url:=http://motionbrain-cam.local
+```
+
 Watch bridge output:
 
 ```bash

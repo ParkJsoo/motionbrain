@@ -6,6 +6,7 @@
 #include "input/serial_command.h"      // SerialCommand 사용
 #include "input/teleop_adapter.h"      // TeleopAdapter 사용
 #include "network/wifi_ap.h"           // WiFiAP 사용
+#include "network/wifi_provisioning.h" // Wi-Fi NVS provisioning
 #include "network/web_server.h"        // MotionBrainWebServer 사용
 #include "peripheral/search_light.h"   // SearchLight 사용
 #include "bridge/stm32_bridge.h"
@@ -16,6 +17,10 @@
 #include "control/safety_gate.h"
 #include "safety/safety_monitor.h"
 #include "debug/debug_log.h"
+
+#ifndef MOTIONBRAIN_CONTROLLER_HOSTNAME
+#define MOTIONBRAIN_CONTROLLER_HOSTNAME "motionbrain"
+#endif
 
 // 전역 객체 생성
 SystemStateManager systemState;
@@ -34,6 +39,8 @@ EventLog eventLog;                // 최근 시스템 이벤트 로그
 CommandBus commandBus;            // 공통 명령 버스
 Dispatcher dispatcher;            // 공통 명령 디스패처
 SafetyGate safetyGate;            // 공통 safety 정책 게이트
+WifiProvisioningConfig wifiConfig;
+bool homeWifiMode = false;
 
 /**
  * setup() - ESP32 부팅 시 한 번만 실행
@@ -96,22 +103,33 @@ void setup() {
   teleopAdapter.init(&systemState, &motorControl, &motionSequence, &safetyMonitor,
                      &angleController, &commandBus, &dispatcher);
   
-  // 11. Wi-Fi AP 초기화
-  const char* apSSID = "MotionBrain-AP";
-  const char* apPassword = "motionbrain";  // WPA2 보호 — 배포 전 반드시 변경
-
-  if (!wifiAP.init(apSSID, apPassword)) {
-    DebugLog::error("Wi-Fi AP initialization failed");
-    // Wi-Fi AP 실패는 치명적 오류는 아니므로 계속 진행
+  // 11. Wi-Fi 초기화
+  WifiProvisioning::clearRequestedOnBoot();
+  homeWifiMode = WifiProvisioning::promptIfMissing(wifiConfig);
+  if (homeWifiMode &&
+      wifiAP.initStation(wifiConfig.ssid, wifiConfig.password, MOTIONBRAIN_CONTROLLER_HOSTNAME)) {
+    DebugLog::info("Wi-Fi STA: Ready");
+    DebugLog::info("Access controller at: http://%s.local or http://%s",
+                   MOTIONBRAIN_CONTROLLER_HOSTNAME, wifiAP.getIP().toString().c_str());
   } else {
-    DebugLog::info("Wi-Fi AP: Ready for connections");
-    DebugLog::info("Connect to SSID: %s", apSSID);
-    DebugLog::info("AP IP: %s", wifiAP.getIP().toString().c_str());
+    homeWifiMode = false;
+    DebugLog::warn("Wi-Fi STA unavailable; falling back to MotionBrain-AP");
+    const char* apSSID = "MotionBrain-AP";
+    const char* apPassword = "motionbrain";
+    if (!wifiAP.init(apSSID, apPassword)) {
+      DebugLog::error("Wi-Fi AP initialization failed");
+      // Wi-Fi AP 실패는 치명적 오류는 아니므로 계속 진행
+    } else {
+      DebugLog::info("Wi-Fi AP: Ready for connections");
+      DebugLog::info("Connect to SSID: %s", apSSID);
+      DebugLog::info("AP IP: %s", wifiAP.getIP().toString().c_str());
+    }
   }
 
   // 12. 웹 서버 초기화 (Wi-Fi AP 이후에 초기화)
   if (!webServer.init(&systemState, &motorControl, &robotArm, &motionSequence, &searchLight,
-                      &commandBus, &dispatcher)) {
+                      &commandBus, &dispatcher, 80,
+                      homeWifiMode ? wifiConfig.commandToken : nullptr)) {
     DebugLog::error("Web server initialization failed");
     // 웹 서버 실패는 치명적 오류는 아니므로 계속 진행
   } else {

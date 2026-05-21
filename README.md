@@ -219,6 +219,8 @@ pio run -d firmware/esp32cam
 
 카메라와 Mac host를 연결하는 Phase 4 MVP 절차는 [PHASE4_MVP.md](PHASE4_MVP.md)를 기준으로 한다.
 
+집 Wi-Fi에서 controller와 ESP32-CAM을 같은 LAN에 붙여 Mac Wi-Fi 전환 없이 테스트하려면 [docs/HOME_WIFI_MODE.md](docs/HOME_WIFI_MODE.md)를 따른다. 실제 SSID/password와 command token은 serial monitor에서 입력하고 ESP32 NVS flash에만 저장한다.
+
 검증된 host-side vision loop:
 
 ```bash

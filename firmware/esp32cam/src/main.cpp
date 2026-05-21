@@ -1,6 +1,8 @@
 #include <Arduino.h>
 #include <WebServer.h>
 #include <WiFi.h>
+#include <ESPmDNS.h>
+#include <Preferences.h>
 #include "esp_camera.h"
 
 // AI Thinker ESP32-CAM pin map.
@@ -23,21 +25,146 @@
 
 namespace {
 
-#ifndef MOTIONBRAIN_WIFI_SSID
-#define MOTIONBRAIN_WIFI_SSID "MotionBrain-AP"
+#ifndef MOTIONBRAIN_CAMERA_HOSTNAME
+#define MOTIONBRAIN_CAMERA_HOSTNAME "motionbrain-cam"
 #endif
-
-#ifndef MOTIONBRAIN_WIFI_PASSWORD
-#define MOTIONBRAIN_WIFI_PASSWORD "motionbrain"
-#endif
-
-const char* WIFI_SSID = MOTIONBRAIN_WIFI_SSID;
-const char* WIFI_PASSWORD = MOTIONBRAIN_WIFI_PASSWORD;
 
 const uint32_t STREAM_FRAME_DELAY_MS = 100;
 const uint32_t STREAM_MAX_DURATION_MS = 20000;
+const uint32_t WIFI_CONNECT_TIMEOUT_MS = 30000;
 
 WebServer server(80);
+
+struct WifiConfig {
+  char ssid[33];
+  char password[65];
+};
+
+void drainLineEndings() {
+  delay(2);
+  while (Serial.available() > 0) {
+    int c = Serial.peek();
+    if (c != '\n' && c != '\r') {
+      return;
+    }
+    Serial.read();
+  }
+}
+
+bool readLine(const char* prompt, char* buffer, size_t bufferSize, bool allowEmpty) {
+  while (true) {
+    Serial.print(prompt);
+    String line;
+    while (true) {
+      while (Serial.available() > 0) {
+        char c = static_cast<char>(Serial.read());
+        if (c == '\n' || c == '\r') {
+          goto line_complete;
+        }
+        line += c;
+      }
+      delay(10);
+    }
+
+line_complete:
+    drainLineEndings();
+    line.trim();
+    if (line.length() == 0 && !allowEmpty) {
+      Serial.println("Value required.");
+      continue;
+    }
+    if (line.length() >= bufferSize) {
+      Serial.printf("Too long. Max %u characters.\n", static_cast<unsigned>(bufferSize - 1));
+      continue;
+    }
+    strlcpy(buffer, line.c_str(), bufferSize);
+    return true;
+  }
+}
+
+bool loadWifiConfig(WifiConfig& config) {
+  Preferences prefs;
+  if (!prefs.begin("mb_cam_wifi", true)) {
+    return false;
+  }
+  String ssid = prefs.getString("ssid", "");
+  String password = prefs.getString("password", "");
+  prefs.end();
+
+  ssid.trim();
+  if (ssid.length() == 0 || ssid.length() >= sizeof(config.ssid)) {
+    return false;
+  }
+  strlcpy(config.ssid, ssid.c_str(), sizeof(config.ssid));
+  strlcpy(config.password, password.c_str(), sizeof(config.password));
+  return true;
+}
+
+bool saveWifiConfig(const WifiConfig& config) {
+  Preferences prefs;
+  if (!prefs.begin("mb_cam_wifi", false)) {
+    return false;
+  }
+  bool ok = prefs.putString("ssid", config.ssid) > 0;
+  if (config.password[0] != '\0') {
+    ok = prefs.putString("password", config.password) > 0 && ok;
+  } else {
+    prefs.remove("password");
+  }
+  prefs.end();
+  return ok;
+}
+
+void clearWifiConfig() {
+  Preferences prefs;
+  if (prefs.begin("mb_cam_wifi", false)) {
+    prefs.clear();
+    prefs.end();
+  }
+  Serial.println("ESP32-CAM Wi-Fi config cleared.");
+}
+
+void clearRequestedOnBoot(uint32_t timeoutMs = 3000) {
+  Serial.printf("Type CLEAR within %lu ms to erase stored ESP32-CAM Wi-Fi config, or wait to continue.\n",
+                static_cast<unsigned long>(timeoutMs));
+  const uint32_t startedAt = millis();
+  String line;
+  while (millis() - startedAt < timeoutMs) {
+    while (Serial.available() > 0) {
+      char c = static_cast<char>(Serial.read());
+      if (c == '\n' || c == '\r') {
+        drainLineEndings();
+        line.trim();
+        if (line == "CLEAR") {
+          clearWifiConfig();
+        }
+        return;
+      }
+      line += c;
+    }
+    delay(10);
+  }
+}
+
+bool promptWifiConfig(WifiConfig& config) {
+  if (loadWifiConfig(config)) {
+    Serial.println("Loaded stored ESP32-CAM Wi-Fi config.");
+    return true;
+  }
+
+  Serial.println();
+  Serial.println("=== MotionBrain ESP32-CAM Wi-Fi Provisioning ===");
+  Serial.println("No stored Wi-Fi config found.");
+  Serial.println("Enter values here; they will be saved to ESP32 NVS flash, not to project files.");
+  readLine("Wi-Fi SSID: ", config.ssid, sizeof(config.ssid), false);
+  readLine("Wi-Fi password: ", config.password, sizeof(config.password), true);
+  if (!saveWifiConfig(config)) {
+    Serial.println("Failed to save ESP32-CAM Wi-Fi config.");
+    return false;
+  }
+  Serial.println("ESP32-CAM Wi-Fi config saved to NVS.");
+  return true;
+}
 
 bool initCamera() {
   camera_config_t config{};
@@ -94,8 +221,10 @@ void handleRoot() {
 void handleStatus() {
   String json = "{";
   json += "\"node\":\"esp32cam\",";
-  json += "\"wifi\":\"" + WiFi.SSID() + "\",";
+  json += "\"hostname\":\"" + String(MOTIONBRAIN_CAMERA_HOSTNAME) + "\",";
+  json += "\"wifi\":\"configured\",";
   json += "\"ip\":\"" + WiFi.localIP().toString() + "\",";
+  json += "\"mdns\":\"http://" + String(MOTIONBRAIN_CAMERA_HOSTNAME) + ".local\",";
   json += "\"rssi\":" + String(WiFi.RSSI());
   json += "}";
   server.send(200, "application/json", json);
@@ -150,16 +279,36 @@ void handleStream() {
 }
 
 void connectWifi() {
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  Serial.printf("Connecting to %s", WIFI_SSID);
+  WifiConfig config{};
+  if (!promptWifiConfig(config)) {
+    Serial.println("No Wi-Fi config available; rebooting.");
+    delay(5000);
+    ESP.restart();
+  }
 
-  while (WiFi.status() != WL_CONNECTED) {
+  WiFi.mode(WIFI_STA);
+  WiFi.setHostname(MOTIONBRAIN_CAMERA_HOSTNAME);
+  WiFi.begin(config.ssid, config.password[0] != '\0' ? config.password : nullptr);
+  Serial.print("Connecting to configured Wi-Fi");
+
+  const uint32_t startedAt = millis();
+  while (WiFi.status() != WL_CONNECTED && (millis() - startedAt) < WIFI_CONNECT_TIMEOUT_MS) {
     delay(500);
     Serial.print(".");
   }
   Serial.println();
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("Wi-Fi connect timeout; rebooting after checking credentials/network.");
+    delay(5000);
+    ESP.restart();
+  }
   Serial.printf("ESP32-CAM IP: %s\n", WiFi.localIP().toString().c_str());
+  if (MDNS.begin(MOTIONBRAIN_CAMERA_HOSTNAME)) {
+    MDNS.addService("http", "tcp", 80);
+    Serial.printf("ESP32-CAM mDNS: http://%s.local\n", MOTIONBRAIN_CAMERA_HOSTNAME);
+  } else {
+    Serial.println("ESP32-CAM mDNS start failed");
+  }
 }
 
 } // namespace
@@ -169,6 +318,7 @@ void setup() {
   Serial.setDebugOutput(false);
   Serial.println();
   Serial.println("MotionBrain ESP32-CAM boot");
+  clearRequestedOnBoot();
 
   if (!initCamera()) {
     Serial.println("Camera unavailable; reboot after checking power and camera ribbon.");

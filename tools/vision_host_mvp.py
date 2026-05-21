@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import os
 import sys
 import time
 import urllib.error
@@ -22,11 +23,14 @@ def fetch_bytes(url: str, timeout: float) -> bytes:
         return response.read()
 
 
-def post_motionbrain(base_url: str, path: str, timeout: float) -> dict:
+def post_motionbrain(base_url: str, path: str, timeout: float, token: str = "") -> dict:
+    headers = {"X-MotionBrain": "1"}
+    if token:
+        headers["X-MotionBrain-Token"] = token
     request = urllib.request.Request(
         f"{base_url}{path}",
         method="POST",
-        headers={"X-MotionBrain": "1"},
+        headers=headers,
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
@@ -204,6 +208,7 @@ def run(args: argparse.Namespace) -> int:
                     motion_base,
                     f"/light?action={urllib.parse.quote(args.action)}",
                     args.timeout,
+                    args.http_token,
                 )
                 print(f"[{timestamp}] ACTION light.{args.action} success={response.get('success')}", flush=True)
                 last_light_action_time = now
@@ -219,7 +224,7 @@ def run(args: argparse.Namespace) -> int:
                     f"/base?action=angle&direction={alignment}"
                     f"&degrees={args.align_degrees:.1f}&percent={args.align_percent}"
                 )
-                response = post_motionbrain(motion_base, path, args.timeout)
+                response = post_motionbrain(motion_base, path, args.timeout, args.http_token)
                 print(
                     f"[{timestamp}] ACTION base.{alignment} "
                     f"{args.align_degrees:.1f}deg success={response.get('success')} "
@@ -248,6 +253,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--interval", type=float, default=1.0)
     parser.add_argument("--timeout", type=float, default=2.0)
     parser.add_argument("--cooldown", type=float, default=5.0, help="Minimum seconds between actions")
+    parser.add_argument("--http-token", default=os.environ.get("MOTIONBRAIN_HTTP_TOKEN", ""), help="Optional X-MotionBrain-Token for controller POST endpoints")
     parser.add_argument("--action", choices=("on", "off", "toggle"), default="toggle", help="POST /light?action=...")
     parser.add_argument("--enable-action", action="store_true", help="Actually send /light action when target is detected")
     parser.add_argument("--align-deadband", type=float, default=0.15, help="Normalized horizontal center tolerance")

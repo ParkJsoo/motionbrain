@@ -5,7 +5,7 @@
 #include <WiFi.h>
 
 /**
- * MotionBrain Wi-Fi AP Module
+ * MotionBrain Wi-Fi Network Module
  * 
  * Phase 1.5-1: Wi-Fi AP 입력 채널
  * - ESP32를 Wi-Fi Access Point로 설정
@@ -21,8 +21,9 @@
 /**
  * WiFiAP 클래스
  * 
- * ESP32 Wi-Fi AP 모드 관리
+ * ESP32 Wi-Fi AP/STA 모드 관리
  * - AP 모드 설정
+ * - Station 모드 설정
  * - 클라이언트 접속 관리
  * - 접속 상태 모니터링
  */
@@ -42,6 +43,18 @@ public:
    * @return 초기화 성공 여부
    */
   bool init(const char* ssid, const char* password = nullptr, IPAddress ip = IPAddress(192, 168, 4, 1));
+
+  /**
+   * 초기화
+   * 기존 Wi-Fi에 station으로 접속
+   * @param ssid Wi-Fi SSID
+   * @param password Wi-Fi 비밀번호
+   * @param hostname mDNS/네트워크 hostname
+   * @param timeoutMs 접속 대기 시간
+   * @return 초기화 성공 여부
+   */
+  bool initStation(const char* ssid, const char* password, const char* hostname = "motionbrain",
+                   uint32_t timeoutMs = 15000);
 
   /**
    * 업데이트 (주기적으로 호출)
@@ -80,7 +93,9 @@ private:
   static const uint8_t MAX_CLIENTS = 3;
 
   bool active_;                   // AP 활성화 여부
+  bool stationMode_;              // Station 모드 여부
   IPAddress apIP_;                // AP IP 주소
+  char hostname_[33];             // hostname 버퍼
   char ssid_[33];       // SSID 버퍼 (최대 32자 + null) — 댕글링 포인터 방지
   char password_[65];   // 비밀번호 버퍼 (최대 64자 + null) — 댕글링 포인터 방지
   uint32_t lastCheckTime_;        // 마지막 접속 체크 시간
@@ -90,6 +105,7 @@ private:
    * 클라이언트 접속 상태 체크 (private)
    */
   void checkClients();
+  void checkStation();
 };
 
 #endif // WIFI_AP_H

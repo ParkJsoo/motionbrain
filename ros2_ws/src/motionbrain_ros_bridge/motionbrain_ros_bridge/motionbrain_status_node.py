@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import json
+import os
 import time
 import urllib.error
 import urllib.parse
@@ -28,11 +29,14 @@ def fetch_bytes(url: str, timeout: float) -> bytes:
         return response.read()
 
 
-def post_motionbrain(base_url: str, path: str, timeout: float) -> dict[str, Any]:
+def post_motionbrain(base_url: str, path: str, timeout: float, token: str = "") -> dict[str, Any]:
+    headers = {"X-MotionBrain": "1"}
+    if token:
+        headers["X-MotionBrain-Token"] = token
     request = urllib.request.Request(
         f"{base_url}{path}",
         method="POST",
-        headers={"X-MotionBrain": "1"},
+        headers=headers,
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
@@ -158,6 +162,7 @@ class MotionBrainStatusNode(Node):
         self.declare_parameter("poll_interval", 1.0)
         self.declare_parameter("http_timeout", 2.0)
         self.declare_parameter("events_limit", 8)
+        self.declare_parameter("http_token", os.environ.get("MOTIONBRAIN_HTTP_TOKEN", ""))
 
         self.motion_base_url = self._motion_base_url()
         self.status_pub = self.create_publisher(String, "/motionbrain/status", 10)
@@ -249,7 +254,8 @@ class MotionBrainStatusNode(Node):
 
         try:
             path = f"/light?action={urllib.parse.quote(action)}"
-            result = post_motionbrain(self.motion_base_url, path, self._timeout())
+            token = str(self.get_parameter("http_token").value)
+            result = post_motionbrain(self.motion_base_url, path, self._timeout(), token)
             result["requestedAction"] = action
             self.publish_json(self.light_result_pub, result)
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:

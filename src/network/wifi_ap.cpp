@@ -1,14 +1,17 @@
 #include "wifi_ap.h"
 #include "debug/debug_log.h"
+#include <ESPmDNS.h>
 
 /**
  * WiFiAP 생성자
  */
 WiFiAP::WiFiAP()
   : active_(false)
+  , stationMode_(false)
   , apIP_(192, 168, 4, 1)
   , lastCheckTime_(0)
 {
+  hostname_[0] = '\0';
   ssid_[0] = '\0';
   password_[0] = '\0';
 }
@@ -32,6 +35,8 @@ bool WiFiAP::init(const char* ssid, const char* password, IPAddress ip) {
     password_[0] = '\0';
   }
   apIP_ = ip;
+  stationMode_ = false;
+  hostname_[0] = '\0';
 
   DebugLog::info("=== Wi-Fi AP Initialization ===");
   DebugLog::info("SSID: %s", ssid);
@@ -76,6 +81,66 @@ bool WiFiAP::init(const char* ssid, const char* password, IPAddress ip) {
   return true;
 }
 
+bool WiFiAP::initStation(const char* ssid, const char* password, const char* hostname,
+                         uint32_t timeoutMs) {
+  if (ssid == nullptr || ssid[0] == '\0') {
+    DebugLog::error("WiFi STA: SSID is not configured");
+    return false;
+  }
+
+  strncpy(ssid_, ssid, sizeof(ssid_) - 1);
+  ssid_[sizeof(ssid_) - 1] = '\0';
+  if (password != nullptr) {
+    strncpy(password_, password, sizeof(password_) - 1);
+    password_[sizeof(password_) - 1] = '\0';
+  } else {
+    password_[0] = '\0';
+  }
+
+  const char* effectiveHostname =
+    (hostname != nullptr && hostname[0] != '\0') ? hostname : "motionbrain";
+  strncpy(hostname_, effectiveHostname, sizeof(hostname_) - 1);
+  hostname_[sizeof(hostname_) - 1] = '\0';
+  stationMode_ = true;
+  apIP_ = IPAddress(0, 0, 0, 0);
+
+  DebugLog::info("=== Wi-Fi Station Initialization ===");
+  DebugLog::info("SSID: configured");
+  DebugLog::info("Password: %s", password_[0] != '\0' ? "***" : "(open)");
+  DebugLog::info("Hostname: %s", hostname_);
+
+  WiFi.mode(WIFI_STA);
+  WiFi.setHostname(hostname_);
+  WiFi.begin(ssid_, password_[0] != '\0' ? password_ : nullptr);
+
+  const uint32_t startedAt = millis();
+  while (WiFi.status() != WL_CONNECTED && (millis() - startedAt) < timeoutMs) {
+    delay(250);
+  }
+
+  if (WiFi.status() != WL_CONNECTED) {
+    DebugLog::error("WiFi STA: Failed to connect within %lums", timeoutMs);
+    active_ = false;
+    return false;
+  }
+
+  active_ = true;
+  DebugLog::info("WiFi STA: Connected successfully");
+  DebugLog::info("STA IP: %s", WiFi.localIP().toString().c_str());
+  DebugLog::info("STA MAC: %s", WiFi.macAddress().c_str());
+  DebugLog::info("RSSI: %d dBm", WiFi.RSSI());
+
+  if (MDNS.begin(hostname_)) {
+    MDNS.addService("http", "tcp", 80);
+    DebugLog::info("mDNS: http://%s.local", hostname_);
+  } else {
+    DebugLog::warn("mDNS: start failed");
+  }
+
+  lastCheckTime_ = millis();
+  return true;
+}
+
 /**
  * 업데이트 (주기적으로 호출)
  * 클라이언트 접속 상태 확인
@@ -85,10 +150,14 @@ void WiFiAP::update() {
     return;
   }
 
-  // 5초마다 클라이언트 상태 체크
+  // 5초마다 네트워크 상태 체크
   uint32_t currentTime = millis();
   if (currentTime - lastCheckTime_ >= 5000) {
-    checkClients();
+    if (stationMode_) {
+      checkStation();
+    } else {
+      checkClients();
+    }
     lastCheckTime_ = currentTime;
   }
 }
@@ -107,6 +176,9 @@ uint8_t WiFiAP::getClientCount() const {
   if (!active_) {
     return 0;
   }
+  if (stationMode_) {
+    return WiFi.status() == WL_CONNECTED ? 1 : 0;
+  }
   return WiFi.softAPgetStationNum();
 }
 
@@ -116,6 +188,9 @@ uint8_t WiFiAP::getClientCount() const {
 IPAddress WiFiAP::getIP() const {
   if (!active_) {
     return IPAddress(0, 0, 0, 0);
+  }
+  if (stationMode_) {
+    return WiFi.localIP();
   }
   return WiFi.softAPIP();
 }
@@ -151,4 +226,18 @@ void WiFiAP::checkClients() {
     }
     lastClientCount_ = clientCount;
   }
+}
+
+void WiFiAP::checkStation() {
+  if (!stationMode_) {
+    return;
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    return;
+  }
+
+  DebugLog::warn("WiFi STA: disconnected; reconnecting");
+  WiFi.disconnect();
+  WiFi.begin(ssid_, password_[0] != '\0' ? password_ : nullptr);
 }

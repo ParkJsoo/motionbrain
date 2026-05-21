@@ -1,0 +1,100 @@
+# MotionBrain Home Wi-Fi Mode
+
+Home Wi-Fi mode lets the ESP32 motion controller and ESP32-CAM join the same
+trusted local network as the Mac. This removes the need to switch the Mac to
+`MotionBrain-AP` during bench testing.
+
+## Security Rules
+
+- Do not commit real Wi-Fi credentials.
+- Do not commit real command tokens.
+- Do not expose the ESP32 HTTP port through router port forwarding.
+- Use a trusted home/test SSID, not a public or shared guest network.
+- Prefer a router DHCP reservation or `.local` hostnames instead of hard-coded
+  changing IP addresses.
+
+## Provision Over Serial
+
+The firmware does not require a checked-in or local credential file. On first
+boot, each ESP32 asks for Wi-Fi credentials over the serial monitor and stores
+them in ESP32 NVS flash.
+
+Motion controller prompts:
+
+```text
+Wi-Fi SSID:
+Wi-Fi password:
+Command token (optional):
+```
+
+ESP32-CAM prompts:
+
+```text
+Wi-Fi SSID:
+Wi-Fi password:
+```
+
+Typed values are not written to project files or git. They are stored on the
+device. Rebooting uses the stored values automatically.
+
+To erase stored values, type `CLEAR` during the short boot prompt in the serial
+monitor. Then reboot or wait for the provisioning prompt.
+
+## Build And Upload
+
+Motion controller:
+
+```bash
+pio run -t upload
+```
+
+ESP32-CAM:
+
+```bash
+pio run -d firmware/esp32cam -t upload
+```
+
+After boot, serial logs should show:
+
+```text
+WiFi STA: Connected successfully
+mDNS: http://motionbrain.local
+ESP32-CAM mDNS: http://motionbrain-cam.local
+```
+
+## Host Commands
+
+Use hostnames when mDNS works:
+
+```bash
+export MOTIONBRAIN_HTTP_TOKEN="CHANGE_ME_TO_A_LONG_RANDOM_LOCAL_TOKEN"
+python3 tools/vision_host_mvp.py \
+  --motion-host motionbrain.local \
+  --camera-url http://motionbrain-cam.local \
+  --detect-color red \
+  --once
+```
+
+For the dashboard:
+
+```bash
+export MOTIONBRAIN_HTTP_TOKEN="CHANGE_ME_TO_A_LONG_RANDOM_LOCAL_TOKEN"
+python3 tools/motionbrain_dashboard.py \
+  --motion-host motionbrain.local \
+  --camera-url http://motionbrain-cam.local
+```
+
+If `.local` names do not resolve, use the IP addresses printed in serial logs or
+reserve fixed IP addresses in the router.
+
+## Notes
+
+- `GET /status`, `GET /events`, and camera capture endpoints remain readable on
+  the local network.
+- Motion controller POST endpoints still require `X-MotionBrain: 1`.
+- If a command token was provisioned on the motion controller, POST endpoints
+  also require `X-MotionBrain-Token`.
+- The built-in controller web page does not expose the token. With a token
+  enabled, use the host dashboard or CLI tools for command actions.
+- If station connection fails, the motion controller falls back to the original
+  `MotionBrain-AP` behavior for recovery.

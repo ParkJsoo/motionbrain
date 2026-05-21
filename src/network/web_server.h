@@ -63,7 +63,8 @@ public:
             SearchLight* searchLight = nullptr,
             CommandBus* commandBus = nullptr,
             Dispatcher* dispatcher = nullptr,
-            uint16_t port = 80);
+            uint16_t port = 80,
+            const char* commandToken = nullptr);
 
   /**
    * 업데이트 (주기적으로 호출)
@@ -93,8 +94,10 @@ private:
   SearchLight* searchLight_;
   CommandBus* commandBus_;
   Dispatcher* dispatcher_;
+  char commandToken_[65];
 
   bool submitCommand(const Command& command, CommandResult& result);
+  bool requireCommandAuth();
   void appendStateSummaryJson(String& json) const;
   void sendErrorJson(int statusCode, const char* error, const String& details = "");
   void sendCommandResult(const CommandResult& result, const String& extraJson = "");
