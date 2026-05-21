@@ -109,8 +109,10 @@ The Phase 4 MVP proves the first camera-to-host-to-controller loop before moving
 - ESP32-CAM joins the `MotionBrain-AP` network as a camera node.
 - Mac host fetches ESP32-CAM `/capture` frames and MotionBrain `/status`.
 - OpenCV detects a red target in the camera frame.
+- The host computes target centroid, normalized horizontal offset, and an alignment decision.
 - The host only triggers an action when MotionBrain status allows it.
-- The demo action uses the safe non-motion `/light?action=toggle` path.
+- The default demo action uses the safe non-motion `/light?action=toggle` path.
+- Base alignment is opt-in and uses safety-gated `/base?action=angle` relative steps.
 
 ## Validation So Far
 
@@ -127,13 +129,14 @@ The Phase 4 MVP proves the first camera-to-host-to-controller loop before moving
 - Host action MVP succeeded with `ACTION light.toggle success=True`.
 - OpenCV red target detection succeeded with `red_ratio=0.254` in dry-run.
 - Red target action test toggled the real search light; removing the target produced `detected=N red_ratio=0.000`.
+- Vision alignment now exposes centroid, horizontal offset, and `left/right/centered` decisions in the host loop, dashboard, and ROS2 detection payload.
 
 ## Current Limitations
 
 - Final hardware enclosure and wiring layout are not locked yet.
 - Public demo images and videos are not included yet.
 - Phase 4 currently uses a Mac host; Raspberry Pi deployment is not complete yet.
-- The first vision action is intentionally limited to a safe search-light command, not motor motion.
+- Vision-based base alignment is implemented as an explicit opt-in step and still needs full physical validation before pick behavior.
 - Raspberry Pi, ROS2, and AI integration are planned but not complete.
 - Teleop sign, deadzone, and speed weights need final tuning after mechanical mounting is fixed.
 

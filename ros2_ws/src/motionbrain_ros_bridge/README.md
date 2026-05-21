@@ -12,6 +12,8 @@ It keeps the current ESP32 HTTP boundary intact and exposes it as ROS2 topics:
 | `/motionbrain/light_cmd` | subscribe | `std_msgs/String` | `on`, `off`, `toggle`, or `{"action":"toggle"}` |
 | `/motionbrain/light_result` | publish | `std_msgs/String` | Raw `/light` command result JSON |
 
+`/camera/detection` includes the color ratio plus vision-alignment fields: `centroidX`, `centroidY`, `offsetX`, `offsetY`, `alignDeadband`, and `alignment` (`left`, `right`, `centered`, or `not_detected`).
+
 ## Build
 
 From this repository root:

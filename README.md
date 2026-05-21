@@ -224,7 +224,10 @@ pio run -d firmware/esp32cam
 ```bash
 python3 tools/vision_host_mvp.py --camera-url http://192.168.4.2 --detect-color red --once
 python3 tools/vision_host_mvp.py --camera-url http://192.168.4.2 --detect-color red --enable-action --once
+python3 tools/vision_host_mvp.py --camera-url http://192.168.4.2 --detect-color red --enable-align-action
 ```
+
+기본 vision loop는 target centroid와 horizontal offset을 dry-run으로 출력한다. `--enable-align-action`을 켠 경우에만 안전 조건 확인 후 `/base?action=angle`을 보낸다.
 
 ### STM32 Sensor / Teleop Layer
 

@@ -12,6 +12,10 @@ from rclpy.node import Node
 from std_msgs.msg import String
 
 
+TARGET_RATIO_THRESHOLD = 0.02
+ALIGN_DEADBAND = 0.15
+
+
 def fetch_json(url: str, timeout: float) -> dict[str, Any]:
     request = urllib.request.Request(url)
     with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -53,6 +57,16 @@ def parse_light_action(payload: str) -> str | None:
     return None
 
 
+def classify_alignment(offset_x: float | None, deadband: float = ALIGN_DEADBAND) -> str:
+    if offset_x is None:
+        return "unknown"
+    if offset_x < -deadband:
+        return "left"
+    if offset_x > deadband:
+        return "right"
+    return "centered"
+
+
 def detect_colored_target(frame: bytes, color: str) -> dict[str, Any]:
     try:
         import cv2  # type: ignore
@@ -63,6 +77,7 @@ def detect_colored_target(frame: bytes, color: str) -> dict[str, Any]:
             "color": color,
             "available": False,
             "reason": "opencv_unavailable",
+            "alignment": "unknown",
         }
 
     data = np.frombuffer(frame, dtype=np.uint8)
@@ -73,6 +88,7 @@ def detect_colored_target(frame: bytes, color: str) -> dict[str, Any]:
             "color": color,
             "available": True,
             "reason": "decode_failed",
+            "alignment": "unknown",
         }
 
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
@@ -90,15 +106,31 @@ def detect_colored_target(frame: bytes, color: str) -> dict[str, Any]:
             "color": color,
             "available": True,
             "reason": "unsupported_color",
+            "alignment": "unknown",
         }
 
     pixels = int(cv2.countNonZero(mask))
     height, width = image.shape[:2]
     area = max(height * width, 1)
     ratio = pixels / area
+    detected = ratio >= TARGET_RATIO_THRESHOLD
+    centroid_x: float | None = None
+    centroid_y: float | None = None
+    offset_x: float | None = None
+    offset_y: float | None = None
+
+    if detected and pixels > 0:
+        moments = cv2.moments(mask)
+        if moments["m00"] != 0:
+            centroid_x = float(moments["m10"] / moments["m00"])
+            centroid_y = float(moments["m01"] / moments["m00"])
+            center_x = (width - 1) / 2.0
+            center_y = (height - 1) / 2.0
+            offset_x = (centroid_x - center_x) / max(center_x, 1.0)
+            offset_y = (centroid_y - center_y) / max(center_y, 1.0)
 
     return {
-        "detected": ratio >= 0.02,
+        "detected": detected,
         "color": color,
         "available": True,
         "ratio": ratio,
@@ -106,6 +138,12 @@ def detect_colored_target(frame: bytes, color: str) -> dict[str, Any]:
         "width": width,
         "height": height,
         "frameBytes": len(frame),
+        "centroidX": centroid_x,
+        "centroidY": centroid_y,
+        "offsetX": offset_x,
+        "offsetY": offset_y,
+        "alignDeadband": ALIGN_DEADBAND,
+        "alignment": classify_alignment(offset_x) if detected else "not_detected",
     }
 
 

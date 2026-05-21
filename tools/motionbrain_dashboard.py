@@ -13,6 +13,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
 
+TARGET_RATIO_THRESHOLD = 0.02
+ALIGN_DEADBAND = 0.15
+
+
 INDEX_HTML = """<!doctype html>
 <html lang="en">
 <head>
@@ -315,6 +319,16 @@ INDEX_HTML = """<!doctype html>
               <div class="value" id="frameValue">-</div>
               <div class="subvalue" id="detectionReason">-</div>
             </div>
+            <div class="metric">
+              <div class="label">Target</div>
+              <div class="value" id="targetValue">-</div>
+              <div class="subvalue" id="targetOffset">-</div>
+            </div>
+            <div class="metric">
+              <div class="label">Alignment</div>
+              <div class="value" id="alignmentValue">-</div>
+              <div class="subvalue" id="alignmentDeadband">-</div>
+            </div>
           </div>
           <div class="controls">
             <button class="primary" onclick="sendLight('toggle')">Toggle Light</button>
@@ -411,6 +425,18 @@ INDEX_HTML = """<!doctype html>
       document.getElementById("detectionRatio").textContent = typeof payload.ratio === "number" ? `ratio ${(payload.ratio * 100).toFixed(2)}%` : "ratio -";
       setText("frameValue", payload.frameBytes ? `${payload.frameBytes} B` : "-");
       document.getElementById("detectionReason").textContent = payload.reason || `${payload.width || "-"}x${payload.height || "-"}`;
+      const centroid = typeof payload.centroidX === "number" && typeof payload.centroidY === "number"
+        ? `${payload.centroidX.toFixed(0)}, ${payload.centroidY.toFixed(0)}`
+        : "-";
+      setText("targetValue", centroid);
+      document.getElementById("targetOffset").textContent = typeof payload.offsetX === "number"
+        ? `x ${payload.offsetX >= 0 ? "+" : ""}${payload.offsetX.toFixed(2)}`
+        : "x -";
+      const alignment = payload.alignment || "-";
+      setText("alignmentValue", alignment.toUpperCase(), alignment === "centered" ? "ok" : detected ? "warn" : "");
+      document.getElementById("alignmentDeadband").textContent = typeof payload.alignDeadband === "number"
+        ? `deadband ${payload.alignDeadband.toFixed(2)}`
+        : "deadband -";
     }
 
     async function refresh() {
@@ -492,6 +518,16 @@ def post_motionbrain(base_url: str, path: str, timeout: float) -> dict[str, Any]
         return json.loads(response.read().decode("utf-8"))
 
 
+def classify_alignment(offset_x: float | None, deadband: float = ALIGN_DEADBAND) -> str:
+    if offset_x is None:
+        return "unknown"
+    if offset_x < -deadband:
+        return "left"
+    if offset_x > deadband:
+        return "right"
+    return "centered"
+
+
 def detect_colored_target(frame: bytes, color: str) -> dict[str, Any]:
     try:
         import cv2  # type: ignore
@@ -503,6 +539,7 @@ def detect_colored_target(frame: bytes, color: str) -> dict[str, Any]:
             "color": color,
             "reason": "opencv_unavailable",
             "frameBytes": len(frame),
+            "alignment": "unknown",
         }
 
     data = np.frombuffer(frame, dtype=np.uint8)
@@ -514,6 +551,7 @@ def detect_colored_target(frame: bytes, color: str) -> dict[str, Any]:
             "color": color,
             "reason": "decode_failed",
             "frameBytes": len(frame),
+            "alignment": "unknown",
         }
 
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
@@ -532,14 +570,31 @@ def detect_colored_target(frame: bytes, color: str) -> dict[str, Any]:
             "color": color,
             "reason": "unsupported_color",
             "frameBytes": len(frame),
+            "alignment": "unknown",
         }
 
     pixels = int(cv2.countNonZero(mask))
     height, width = image.shape[:2]
     area = max(height * width, 1)
     ratio = pixels / area
+    detected = ratio >= TARGET_RATIO_THRESHOLD
+    centroid_x: float | None = None
+    centroid_y: float | None = None
+    offset_x: float | None = None
+    offset_y: float | None = None
+
+    if detected and pixels > 0:
+        moments = cv2.moments(mask)
+        if moments["m00"] != 0:
+            centroid_x = float(moments["m10"] / moments["m00"])
+            centroid_y = float(moments["m01"] / moments["m00"])
+            center_x = (width - 1) / 2.0
+            center_y = (height - 1) / 2.0
+            offset_x = (centroid_x - center_x) / max(center_x, 1.0)
+            offset_y = (centroid_y - center_y) / max(center_y, 1.0)
+
     return {
-        "detected": ratio >= 0.02,
+        "detected": detected,
         "available": True,
         "color": color,
         "ratio": ratio,
@@ -547,6 +602,12 @@ def detect_colored_target(frame: bytes, color: str) -> dict[str, Any]:
         "width": width,
         "height": height,
         "frameBytes": len(frame),
+        "centroidX": centroid_x,
+        "centroidY": centroid_y,
+        "offsetX": offset_x,
+        "offsetY": offset_y,
+        "alignDeadband": ALIGN_DEADBAND,
+        "alignment": classify_alignment(offset_x) if detected else "not_detected",
     }
 
 

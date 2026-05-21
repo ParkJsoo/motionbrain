@@ -256,12 +256,48 @@ python3 -m pip install opencv-python numpy
 
 기본 action은 안전한 비모션 명령인 `/light?action=toggle`이다. 모터 명령은 카메라/상태/이벤트 경계가 안정된 뒤에 붙인다.
 
+## Vision-Based Alignment MVP
+
+light action 경로가 검증된 뒤의 다음 단계는 `detect -> align`이다. Host는 색상 mask에서 target centroid를 계산하고, frame 중심 대비 normalized horizontal offset을 만든다.
+
+- `alignment=left`: target이 화면 왼쪽에 있어 base를 left 방향으로 보정
+- `alignment=right`: target이 화면 오른쪽에 있어 base를 right 방향으로 보정
+- `alignment=centered`: offset이 deadband 안에 있어 정렬 완료
+- `alignment=not_detected`: target 없음
+
+기본 실행은 dry-run이라 base motor를 움직이지 않는다.
+
+```bash
+python3 tools/vision_host_mvp.py --camera-url http://<esp32-cam-ip> --detect-color red --once
+```
+
+로그 예:
+
+```text
+detected=Y red_ratio=0.254 offset_x=+0.32 align=right align_allowed=Y
+```
+
+실제 base 상대각 보정은 명시적으로 켠다. `/base?action=angle`은 controller가 `ARMED`, sensor clear, 기존 base angle inactive일 때만 통과한다.
+
+```bash
+python3 tools/vision_host_mvp.py \
+  --camera-url http://<esp32-cam-ip> \
+  --detect-color red \
+  --enable-align-action \
+  --align-degrees 5 \
+  --align-percent 35
+```
+
+대시보드의 `Camera Detection`도 centroid, x offset, alignment 상태를 표시한다. ROS2 bridge의 `/camera/detection` JSON에도 같은 필드가 포함된다.
+
 ## 완료 기준
 
 - ESP32-CAM `/capture`가 Mac에서 읽힌다.
 - Mac script가 MotionBrain `/status`와 ESP32-CAM frame을 같은 루프에서 읽는다.
 - target 감지 결과가 로그에 남는다.
 - `--enable-action`에서 MotionBrain `/light` 명령이 성공한다.
+- target centroid, horizontal offset, alignment 결정이 dashboard와 `/camera/detection`에 노출된다.
+- `--enable-align-action`에서 안전 조건을 만족할 때만 MotionBrain `/base?action=angle` 명령이 전송된다.
 - 이 흐름이 나중에 ROS2 node로 옮길 host-side bridge 경계가 된다.
 
 ## 2026-05-20 실기 검증 결과
