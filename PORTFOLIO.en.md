@@ -112,7 +112,7 @@ The Phase 4 MVP proves the first camera-to-host-to-controller loop before moving
 - The host computes target centroid, normalized horizontal offset, and an alignment decision.
 - The host only triggers an action when MotionBrain status allows it.
 - The default demo action uses the safe non-motion `/light?action=toggle` path.
-- Base alignment is opt-in and uses safety-gated `/base?action=angle` relative steps.
+- Base alignment is opt-in. On the current handheld-teleop hardware it uses a short safety-gated base nudge with an immediate stop; closed-loop `/base?action=angle` is kept for future base-mounted gyro or encoder feedback.
 
 ## Validation So Far
 
@@ -129,14 +129,15 @@ The Phase 4 MVP proves the first camera-to-host-to-controller loop before moving
 - Host action MVP succeeded with `ACTION light.toggle success=True`.
 - OpenCV red target detection succeeded with `red_ratio=0.254` in dry-run.
 - Red target action test toggled the real search light; removing the target produced `detected=N red_ratio=0.000`.
-- Vision alignment now exposes centroid, horizontal offset, and `left/right/centered` decisions in the host loop, dashboard, and ROS2 detection payload.
+- Vision alignment now exposes centroid, horizontal offset, `LEFT|CENTER|RIGHT|LOST` decisions, and command suggestions in the host loop, dashboard, and ROS2 detection payload.
+- Vision alignment nudge mode was physically validated in both directions: right target -> `base.right`, left target -> `base.left`, each with a 250 ms / 25% base nudge and confirmed stop.
 
 ## Current Limitations
 
 - Final hardware enclosure and wiring layout are not locked yet.
 - Public demo images and videos are not included yet.
 - Phase 4 currently uses a Mac host; Raspberry Pi deployment is not complete yet.
-- Vision-based base alignment is implemented as an explicit opt-in step and still needs full physical validation before pick behavior.
+- Vision-based base alignment is implemented as an explicit opt-in nudge step. It is validated for left/right correction nudges, but not yet for full pick behavior.
 - Raspberry Pi, ROS2, and AI integration are planned but not complete.
 - Teleop sign, deadzone, and speed weights need final tuning after mechanical mounting is fixed.
 
@@ -155,7 +156,7 @@ This project demonstrates practical embedded robotics engineering:
 ## Next Steps
 
 1. Prepare public demo media showing teleop, safety/status, camera capture, red detection, and host-triggered light action.
-2. Harden the host vision demo with capture retry and clearer action modes.
-3. Extend camera or host decisions from light-only actions toward alignment or semi-autonomous pick behavior.
+2. Capture demo media showing red target localization and left/right base nudge alignment.
+3. Extend camera or host decisions from alignment nudges toward semi-autonomous pick behavior.
 4. Finalize wiring, obstacle-safety placement, and teleop tuning.
 5. Move the host-side boundary toward Raspberry Pi + ROS2.

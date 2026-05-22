@@ -45,12 +45,14 @@ ESP32 기반 5축 로봇팔 제어 시스템에서 출발해, STM32 센서 허�
   - OpenCV red target detection 확인
   - red target 감지 시 안전한 `/light?action=toggle` command path 확인
   - 실제 search light 점등 확인
+  - Vision-Based Alignment dry-run `LEFT/CENTER/RIGHT` 판정 확인
+  - opt-in timed nudge mode로 `base.left` / `base.right` 실제 짧은 보정 동작 확인
 
 ### 현재 집중 작업
 
-- Home Wi-Fi + unified teleop/safety 작업 커밋 및 병합
-- Teleop output cap과 angle scale을 보수적으로 낮추는 실기 튜닝
-- Vision-Based Alignment dry-run 구현 재개
+- Vision-Based Alignment 1차 실기 검증 결과 정리
+- 포트폴리오용 데모 시나리오와 영상 캡처 준비
+- Tests / CI 보강
 - 최종 부품 배치와 배선표 확정
 - Raspberry Pi + ROS2 + AI 상위 제어 연동 설계
 

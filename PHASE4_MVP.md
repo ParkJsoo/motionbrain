@@ -319,3 +319,19 @@ python3 tools/vision_host_mvp.py \
   - action run: red target 감지 시 `ACTION light.toggle success=True`
   - target 제거 시 `detected=N red_ratio=0.000`
 - 사용자 실기 확인 기준 search light 실제 점등 완료
+
+## 2026-05-22 실기 검증 결과
+
+- Home Wi-Fi mode에서 controller `192.168.219.105`, ESP32-CAM `192.168.219.106` 조합으로 Mac Wi-Fi 전환 없이 테스트했다.
+- ESP32-CAM capture 안정화를 위해 QVGA/JPEG quality 15 프로파일과 `/status` capture diagnostics를 적용했다.
+- Host vision 기본값은 ESP32-CAM 부담을 줄이도록 timeout 6초, interval 3초, capture retry 2회로 조정했다.
+- Dry-run 기준 red target 위치 판정:
+  - left: `align=LEFT`, `suggest=base_left`
+  - center: `align=CENTER`, `suggest=hold`
+  - right: `align=RIGHT`, `suggest=base_right`
+- `ARM` 직후 안전 timeout이 즉시 만료되는 문제를 수정했다. `ARM` 성공도 timeout 기준 시간을 갱신한다.
+- `--enable-align-action --align-mode nudge --align-nudge-ms 250 --align-percent 25` 실기 확인:
+  - right target: `align=RIGHT`, `ACTION base.right nudge=250ms success=True stopped=True`
+  - left target: `align=LEFT`, `ACTION base.left nudge=250ms success=True stopped=True`
+- 테스트 종료 후 controller는 `IDLE`, motor off, fault 없음 상태로 확인했다.
+- 현재 STM32 IMU는 handheld teleop 장치에 있으므로 `/base?action=angle` 폐루프 검증에는 부적합하다. base-mounted IMU/encoder가 추가되기 전까지 실제 vision alignment action은 timed nudge mode를 기준으로 한다.
