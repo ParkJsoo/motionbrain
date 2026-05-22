@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include <stdint.h>
+#include "safety/sensor_snapshot.h"
 
 class SystemStateManager;
 class MotorControl;
@@ -31,6 +32,8 @@ struct TeleopFrame {
   bool     gripOpen;
   bool     gripClose;
   uint32_t ledToggleSeq;
+  bool     hasSafetySnapshot;
+  SensorSnapshot safetySnapshot;
 
   TeleopFrame()
     : sourceTimestampMs(0)
@@ -42,7 +45,9 @@ struct TeleopFrame {
     , twist(0.0f)
     , gripOpen(false)
     , gripClose(false)
-    , ledToggleSeq(0) {
+    , ledToggleSeq(0)
+    , hasSafetySnapshot(false)
+    , safetySnapshot() {
   }
 };
 
@@ -64,6 +69,8 @@ public:
             CommandBus* commandBus,
             Dispatcher* dispatcher);
   void update();
+  void processInput();
+  void updateControl();
 
   bool isReady() const;
   bool isConnected() const;
@@ -81,11 +88,15 @@ public:
   float getLastLift() const;
   float getLastTwist() const;
   const char* getLastStopReasonString() const;
+  bool hasEmbeddedSafetySnapshot() const;
+  const SensorSnapshot& getEmbeddedSafetySnapshot() const;
+  uint32_t getEmbeddedSafetyAgeMs() const;
+  uint32_t getEmbeddedSafetyPacketsReceived() const;
 
   static const char* stopReasonToString(TeleopStopReason reason);
 
 private:
-  static const size_t LINE_BUFFER_SIZE = 384;
+  static const size_t LINE_BUFFER_SIZE = 512;
   static const size_t RX_BUFFER_SIZE = 1024;
   static const uint32_t PARSER_WARNING_INTERVAL_MS = 2000;
   static const uint8_t OUTPUT_QUANT_STEP_PERCENT = 5;
@@ -101,6 +112,7 @@ private:
   Dispatcher*         dispatcher_;
 
   TeleopFrame lastFrame_;
+  SensorSnapshot embeddedSafetySnapshot_;
   char        lineBuffer_[LINE_BUFFER_SIZE];
   size_t      lineIndex_;
   bool        overflowDropping_;
@@ -108,6 +120,7 @@ private:
   uint32_t    lastFrameReceivedMs_;
   uint32_t    packetsReceived_;
   uint32_t    parseErrors_;
+  uint32_t    embeddedSafetyPacketsReceived_;
   uint32_t    lastHandledLedToggleSeq_;
   uint32_t    lastParserWarningMs_;
   uint32_t    suppressedParserWarnings_;

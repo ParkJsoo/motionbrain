@@ -550,21 +550,37 @@ void MotionBrainWebServer::handleStatus() {
     json += searchLight_->isOn() ? "true" : "false";
   }
 
-  const SensorSnapshot& snapshot = stm32Bridge.getSnapshot();
+  const bool useStm32Sensor = stm32Bridge.isSimulationEnabled() || stm32Bridge.isConnected() ||
+                              !teleopAdapter.hasEmbeddedSafetySnapshot();
+  const SensorSnapshot& snapshot = useStm32Sensor
+                                 ? stm32Bridge.getSnapshot()
+                                 : teleopAdapter.getEmbeddedSafetySnapshot();
+  const uint32_t sensorAgeMs = useStm32Sensor
+                             ? stm32Bridge.getLastPacketAgeMs()
+                             : teleopAdapter.getEmbeddedSafetyAgeMs();
+  const uint32_t sensorPackets = useStm32Sensor
+                               ? stm32Bridge.getPacketsReceived()
+                               : teleopAdapter.getEmbeddedSafetyPacketsReceived();
+  const uint32_t sensorParseErrors = useStm32Sensor ? stm32Bridge.getParseErrors() : teleopAdapter.getParseErrors();
+  const bool sensorConnected = useStm32Sensor
+                             ? stm32Bridge.isConnected()
+                             : (teleopAdapter.getEmbeddedSafetyAgeMs() <= SafetyMonitor::SENSOR_STALE_MS);
   json += ",\"sensor\":{";
-  json += "\"connected\":";
-  json += stm32Bridge.isConnected() ? "true" : "false";
+  json += "\"source\":\"";
+  json += useStm32Sensor ? "stm32_bridge" : "teleop_embedded";
+  json += "\",\"connected\":";
+  json += sensorConnected ? "true" : "false";
   json += ",\"simulated\":";
   json += stm32Bridge.isSimulationEnabled() ? "true" : "false";
   json += ",\"simulationMode\":\"";
   json += stm32Bridge.getSimulationModeString();
   json += "\"";
   json += ",\"lastUpdateMs\":";
-  json += String(stm32Bridge.getLastPacketAgeMs());
+  json += String(sensorAgeMs);
   json += ",\"packetsReceived\":";
-  json += String(stm32Bridge.getPacketsReceived());
+  json += String(sensorPackets);
   json += ",\"parseErrors\":";
-  json += String(stm32Bridge.getParseErrors());
+  json += String(sensorParseErrors);
   json += ",\"imuOk\":";
   json += snapshot.imuOk ? "true" : "false";
   json += ",\"rangeOk\":";
@@ -585,6 +601,20 @@ void MotionBrainWebServer::handleStatus() {
   json += String(snapshot.distanceCm, 1);
   json += ",\"vibe\":";
   json += String(snapshot.vibe, 2);
+  json += ",\"obstacleSafetyEnabled\":";
+  json += snapshot.obstacleSafetyEnabled ? "true" : "false";
+  json += ",\"vibrationSafetyEnabled\":";
+  json += snapshot.vibrationSafetyEnabled ? "true" : "false";
+  json += ",\"imuStatus\":";
+  json += String(snapshot.imuStatus);
+  json += ",\"imuAddress\":";
+  json += String(snapshot.imuAddress);
+  json += ",\"imuError\":";
+  json += String(snapshot.imuError);
+  json += ",\"i2cSclHigh\":";
+  json += snapshot.i2cSclHigh ? "true" : "false";
+  json += ",\"i2cSdaHigh\":";
+  json += snapshot.i2cSdaHigh ? "true" : "false";
   json += ",\"blocked\":";
   json += safetyMonitor.isMotionBlocked() ? "true" : "false";
   json += ",\"blockReason\":\"";
@@ -654,6 +684,12 @@ void MotionBrainWebServer::handleStatus() {
   json += teleopAdapter.getLastGripClose() ? "true" : "false";
   json += ",\"ledToggleSeq\":";
   json += String(teleopAdapter.getLastLedToggleSeq());
+  json += ",\"embeddedSafety\":";
+  json += teleopAdapter.hasEmbeddedSafetySnapshot() ? "true" : "false";
+  json += ",\"embeddedSafetyAgeMs\":";
+  json += String(teleopAdapter.getEmbeddedSafetyAgeMs());
+  json += ",\"embeddedSafetyPackets\":";
+  json += String(teleopAdapter.getEmbeddedSafetyPacketsReceived());
   json += ",\"lastStopReason\":\"";
   json += teleopAdapter.getLastStopReasonString();
   json += "\"}";

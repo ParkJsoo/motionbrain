@@ -140,6 +140,7 @@ TeleopAdapter::TeleopAdapter()
   , commandBus_(nullptr)
   , dispatcher_(nullptr)
   , lastFrame_()
+  , embeddedSafetySnapshot_()
   , lineBuffer_{0}
   , lineIndex_(0)
   , overflowDropping_(false)
@@ -147,6 +148,7 @@ TeleopAdapter::TeleopAdapter()
   , lastFrameReceivedMs_(0)
   , packetsReceived_(0)
   , parseErrors_(0)
+  , embeddedSafetyPacketsReceived_(0)
   , lastHandledLedToggleSeq_(0)
   , lastParserWarningMs_(0)
   , suppressedParserWarnings_(0)
@@ -181,10 +183,17 @@ bool TeleopAdapter::init(SystemStateManager* systemState,
 }
 
 void TeleopAdapter::update() {
+  processInput();
+  updateControl();
+}
+
+void TeleopAdapter::processInput() {
   while (serial_ != nullptr && serial_->available() > 0) {
     processIncomingByte(static_cast<char>(serial_->read()));
   }
+}
 
+void TeleopAdapter::updateControl() {
   uint32_t now = millis();
   if (isConnected()) {
     handleFreshFrame(now);
@@ -267,6 +276,25 @@ float TeleopAdapter::getLastTwist() const {
 
 const char* TeleopAdapter::getLastStopReasonString() const {
   return stopReasonToString(lastStopReason_);
+}
+
+bool TeleopAdapter::hasEmbeddedSafetySnapshot() const {
+  return embeddedSafetySnapshot_.connected;
+}
+
+const SensorSnapshot& TeleopAdapter::getEmbeddedSafetySnapshot() const {
+  return embeddedSafetySnapshot_;
+}
+
+uint32_t TeleopAdapter::getEmbeddedSafetyAgeMs() const {
+  if (!embeddedSafetySnapshot_.connected || embeddedSafetySnapshot_.lastUpdateMs == 0) {
+    return 0;
+  }
+  return millis() - embeddedSafetySnapshot_.lastUpdateMs;
+}
+
+uint32_t TeleopAdapter::getEmbeddedSafetyPacketsReceived() const {
+  return embeddedSafetyPacketsReceived_;
 }
 
 const char* TeleopAdapter::stopReasonToString(TeleopStopReason reason) {
@@ -371,6 +399,35 @@ bool TeleopAdapter::parseTeleopLine(const char* line, TeleopFrame& outFrame) con
   if (!extractBool(json, "grip_close", outFrame.gripClose)) return false;
   if (!extractUInt32(json, "led_toggle_seq", outFrame.ledToggleSeq)) return false;
 
+  SensorSnapshot safetySnapshot;
+  bool hasImuOk = extractBool(json, "imu_ok", safetySnapshot.imuOk);
+  bool hasRangeOk = extractBool(json, "range_ok", safetySnapshot.rangeOk);
+  bool hasVibe = extractFloat(json, "vibe", safetySnapshot.vibe);
+  bool hasDistance = extractFloat(json, "dist_cm", safetySnapshot.distanceCm);
+  bool hasRoll = extractFloat(json, "roll", safetySnapshot.roll);
+  bool hasPitch = extractFloat(json, "pitch", safetySnapshot.pitch);
+  bool hasGyroX = extractFloat(json, "gyro_x", safetySnapshot.gyroX);
+  bool hasGyroY = extractFloat(json, "gyro_y", safetySnapshot.gyroY);
+  bool hasGyroZ = extractFloat(json, "gyro_z", safetySnapshot.gyroZ);
+  extractUInt32(json, "imu_status", safetySnapshot.imuStatus);
+  extractUInt32(json, "imu_addr", safetySnapshot.imuAddress);
+  extractUInt32(json, "imu_error", safetySnapshot.imuError);
+  extractBool(json, "i2c_scl", safetySnapshot.i2cSclHigh);
+  extractBool(json, "i2c_sda", safetySnapshot.i2cSdaHigh);
+  bool hasAnySafetyField = hasImuOk || hasRangeOk || hasVibe || hasDistance ||
+                           hasRoll || hasPitch || hasGyroX || hasGyroY || hasGyroZ;
+  if (hasAnySafetyField) {
+    if (!hasImuOk || !hasRangeOk || !hasVibe || !hasDistance) {
+      return false;
+    }
+    safetySnapshot.connected = true;
+    safetySnapshot.sourceTimestampMs = outFrame.sourceTimestampMs;
+    safetySnapshot.obstacleSafetyEnabled = false;
+    safetySnapshot.vibrationSafetyEnabled = false;
+    outFrame.hasSafetySnapshot = true;
+    outFrame.safetySnapshot = safetySnapshot;
+  }
+
   outFrame.reach = clampUnit(outFrame.reach);
   outFrame.lift = clampUnit(outFrame.lift);
   outFrame.twist = clampUnit(outFrame.twist);
@@ -384,9 +441,21 @@ void TeleopAdapter::handleFrame(const TeleopFrame& frame, uint32_t now) {
   lastFrameReceivedMs_ = now;
   packetsReceived_++;
 
+  if (frame.hasSafetySnapshot) {
+    embeddedSafetySnapshot_ = frame.safetySnapshot;
+    embeddedSafetySnapshot_.connected = true;
+    embeddedSafetySnapshot_.lastUpdateMs = now;
+    embeddedSafetyPacketsReceived_++;
+  }
+
   if (firstPacket) {
     DebugLog::info("Teleop adapter connected - first frame received");
     eventLog.push("teleop", "CONNECTED", EventSeverity::INFO, "first teleop frame");
+  }
+
+  if (embeddedSafetyPacketsReceived_ == 1 && frame.hasSafetySnapshot) {
+    DebugLog::info("Teleop embedded safety telemetry connected");
+    eventLog.push("safety", "TELEOP_EMBEDDED_CONNECTED", EventSeverity::INFO, "teleop frame safety fields");
   }
 
   updateLedToggleIfNeeded();

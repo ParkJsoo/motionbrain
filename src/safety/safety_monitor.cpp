@@ -45,19 +45,25 @@ void SafetyMonitor::update(const SensorSnapshot& snapshot) {
     latchedFaultReason_ = SafetyBlockReason::NONE;
   }
 
-  if (snapshot.vibe >= VIBRATION_FAULT_ENTER_THRESHOLD) {
-    if (vibrationHighSamples_ < 255) {
-      vibrationHighSamples_++;
+  if (snapshot.vibrationSafetyEnabled) {
+    if (snapshot.vibe >= VIBRATION_FAULT_ENTER_THRESHOLD) {
+      if (vibrationHighSamples_ < 255) {
+        vibrationHighSamples_++;
+      }
+      vibrationLowSamples_ = 0;
+    } else if (snapshot.vibe <= VIBRATION_FAULT_CLEAR_THRESHOLD) {
+      if (vibrationLowSamples_ < 255) {
+        vibrationLowSamples_++;
+      }
+      vibrationHighSamples_ = 0;
+    } else {
+      vibrationHighSamples_ = 0;
+      vibrationLowSamples_ = 0;
     }
-    vibrationLowSamples_ = 0;
-  } else if (snapshot.vibe <= VIBRATION_FAULT_CLEAR_THRESHOLD) {
-    if (vibrationLowSamples_ < 255) {
-      vibrationLowSamples_++;
-    }
-    vibrationHighSamples_ = 0;
   } else {
     vibrationHighSamples_ = 0;
     vibrationLowSamples_ = 0;
+    vibrationActive_ = false;
   }
 
   if (!vibrationActive_ && vibrationHighSamples_ >= VIBRATION_ENTER_SAMPLES) {
@@ -76,7 +82,7 @@ void SafetyMonitor::update(const SensorSnapshot& snapshot) {
     nextReason = SafetyBlockReason::RANGE_FAULT;
   } else if (vibrationActive_) {
     nextReason = SafetyBlockReason::VIBRATION;
-  } else if (snapshot.distanceCm > 0.0f && snapshot.distanceCm < OBSTACLE_STOP_CM) {
+  } else if (snapshot.obstacleSafetyEnabled && snapshot.distanceCm > 0.0f && snapshot.distanceCm < OBSTACLE_STOP_CM) {
     nextReason = SafetyBlockReason::OBSTACLE;
   }
 

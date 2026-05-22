@@ -42,6 +42,20 @@ SafetyGate safetyGate;            // 공통 safety 정책 게이트
 WifiProvisioningConfig wifiConfig;
 bool homeWifiMode = false;
 
+namespace {
+
+const SensorSnapshot& getActiveSafetySnapshot() {
+  if (stm32Bridge.isSimulationEnabled() || stm32Bridge.isConnected()) {
+    return stm32Bridge.getSnapshot();
+  }
+  if (teleopAdapter.hasEmbeddedSafetySnapshot()) {
+    return teleopAdapter.getEmbeddedSafetySnapshot();
+  }
+  return stm32Bridge.getSnapshot();
+}
+
+} // namespace
+
 /**
  * setup() - ESP32 부팅 시 한 번만 실행
  * 
@@ -158,17 +172,21 @@ void loop() {
   // STM32 센서 브리지 업데이트
   stm32Bridge.update();
 
+  // 유선 handheld teleop 입력 수신. 출력 적용은 safety 평가 이후에 수행한다.
+  teleopAdapter.processInput();
+
   // 센서 기반 safety 평가
-  safetyMonitor.update(stm32Bridge.getSnapshot());
+  const SensorSnapshot& safetySnapshot = getActiveSafetySnapshot();
+  safetyMonitor.update(safetySnapshot);
 
   // base 상대각 폐루프 업데이트
-  angleController.update(stm32Bridge.getSnapshot());
+  angleController.update(safetySnapshot);
 
   // 공통 명령 처리
   dispatcher.dispatchPending(commandBus);
 
-  // 유선 handheld teleop 처리
-  teleopAdapter.update();
+  // 유선 handheld teleop 출력 처리
+  teleopAdapter.updateControl();
   
   // 모터 제어 업데이트 (점진적 속도 변경 처리)
   motorControl.update();

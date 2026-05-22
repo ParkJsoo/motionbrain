@@ -384,7 +384,7 @@ void SerialCommand::handleHelp() {
   DebugLog::info("  sensor sim off                - Disable simulation and clear snapshot");
   DebugLog::info("");
   DebugLog::info("=== Teleop Bring-Up Note ===");
-  DebugLog::info("  Single-STM32 remote bench: run 'sensor sim healthy' before 'arm'");
+  DebugLog::info("  Single-STM32 remote bench: teleop frames can carry embedded safety telemetry");
   DebugLog::info("  Then watch 'status' for teleop connected/deadman/reach/lift/twist");
 }
 
@@ -417,19 +417,44 @@ void SerialCommand::handleStatus() {
     }
   }
 
-  const SensorSnapshot& snapshot = stm32Bridge.getSnapshot();
+  const bool useStm32Sensor = stm32Bridge.isSimulationEnabled() || stm32Bridge.isConnected() ||
+                              !teleopAdapter.hasEmbeddedSafetySnapshot();
+  const SensorSnapshot& snapshot = useStm32Sensor
+                                 ? stm32Bridge.getSnapshot()
+                                 : teleopAdapter.getEmbeddedSafetySnapshot();
+  const uint32_t sensorAgeMs = useStm32Sensor
+                             ? stm32Bridge.getLastPacketAgeMs()
+                             : teleopAdapter.getEmbeddedSafetyAgeMs();
+  const uint32_t sensorPackets = useStm32Sensor
+                               ? stm32Bridge.getPacketsReceived()
+                               : teleopAdapter.getEmbeddedSafetyPacketsReceived();
+  const uint32_t sensorParseErrors = useStm32Sensor ? stm32Bridge.getParseErrors() : teleopAdapter.getParseErrors();
+  const bool sensorConnected = useStm32Sensor
+                             ? stm32Bridge.isConnected()
+                             : (teleopAdapter.getEmbeddedSafetyAgeMs() <= SafetyMonitor::SENSOR_STALE_MS);
   DebugLog::info("=== Sensor Status ===");
-  DebugLog::info("Connected: %s", stm32Bridge.isConnected() ? "YES" : "NO");
+  DebugLog::info("Source: %s", useStm32Sensor ? "stm32_bridge" : "teleop_embedded");
+  DebugLog::info("Connected: %s", sensorConnected ? "YES" : "NO");
   DebugLog::info("Simulation: %s", stm32Bridge.getSimulationModeString());
-  DebugLog::info("Packets : %lu", stm32Bridge.getPacketsReceived());
-  DebugLog::info("Parse errors: %lu", stm32Bridge.getParseErrors());
-  DebugLog::info("Last update age: %lums", stm32Bridge.getLastPacketAgeMs());
+  DebugLog::info("Packets : %lu", sensorPackets);
+  DebugLog::info("Parse errors: %lu", sensorParseErrors);
+  DebugLog::info("Last update age: %lums", sensorAgeMs);
   DebugLog::info("Source timestamp: %lums", snapshot.sourceTimestampMs);
   DebugLog::info("IMU OK / Range OK: %s / %s", snapshot.imuOk ? "YES" : "NO", snapshot.rangeOk ? "YES" : "NO");
   DebugLog::info("Gyro xyz: %.2f / %.2f / %.2f dps", snapshot.gyroX, snapshot.gyroY, snapshot.gyroZ);
   DebugLog::info("Roll / Pitch: %.2f / %.2f deg", snapshot.roll, snapshot.pitch);
   DebugLog::info("Distance: %.1f cm", snapshot.distanceCm);
   DebugLog::info("Vibration: %.2f", snapshot.vibe);
+  DebugLog::info("Obstacle / Vibration safety: %s / %s",
+                 snapshot.obstacleSafetyEnabled ? "ON" : "OFF",
+                 snapshot.vibrationSafetyEnabled ? "ON" : "OFF");
+  DebugLog::info("IMU diag: status=%lu addr=0x%02lX err=0x%08lX",
+                 snapshot.imuStatus,
+                 snapshot.imuAddress,
+                 snapshot.imuError);
+  DebugLog::info("I2C pins: SCL=%s SDA=%s",
+                 snapshot.i2cSclHigh ? "HIGH" : "LOW",
+                 snapshot.i2cSdaHigh ? "HIGH" : "LOW");
   DebugLog::info("Motion blocked: %s", safetyMonitor.isMotionBlocked() ? "YES" : "NO");
   DebugLog::info("Block reason: %s", safetyMonitor.getBlockReasonString());
   DebugLog::info("Fault latched: %s", safetyMonitor.hasLatchedFault() ? "YES" : "NO");

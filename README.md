@@ -35,9 +35,10 @@ ESP32 기반 5축 로봇팔 제어 시스템에서 출발해, STM32 센서 허�
 - ESP32 `Stm32Bridge`, `SafetyMonitor`, `EventLog`
 - `GET /status`, `GET /events` 기반 상태/이벤트 관측
 - `sensor sim ...` 기반 bench simulation 경로
-- 유선 handheld teleop v1: deadman, frame freshness timeout, LED edge, initial mixer
+- 유선 handheld teleop v1: deadman, frame freshness timeout, LED edge, initial mixer, embedded safety telemetry
 - `TB6612FNG x3` + `M1~M5` 실물 연결 및 모터 출력 확인
 - 유선 teleop deadman + IMU 입력으로 실제 모터 출력 및 release 정지 확인
+- trusted home Wi-Fi station mode와 token-aware host command path
 - ESP32-CAM + Mac host Phase 4 MVP
   - `/status`, `/capture`, `/stream` 실기 확인
   - Mac host에서 MotionBrain `/status`와 ESP32-CAM frame 동시 fetch 확인
@@ -47,10 +48,10 @@ ESP32 기반 5축 로봇팔 제어 시스템에서 출발해, STM32 센서 허�
 
 ### 현재 집중 작업
 
-- Phase 4 데모 영상과 포트폴리오 문서 정리
-- host-side vision loop 안정화: capture retry, action mode, demo logging
+- Home Wi-Fi + unified teleop/safety 작업 커밋 및 병합
+- Teleop output cap과 angle scale을 보수적으로 낮추는 실기 튜닝
+- Vision-Based Alignment dry-run 구현 재개
 - 최종 부품 배치와 배선표 확정
-- 최종 실장 후 센서/obstacle safety/teleop 튜닝 재검증
 - Raspberry Pi + ROS2 + AI 상위 제어 연동 설계
 
 ## 아키텍처
@@ -61,7 +62,7 @@ ESP32 기반 5축 로봇팔 제어 시스템에서 출발해, STM32 센서 허�
 [STM32 Sensor / Teleop Layer]
   MPU-6050
   HC-SR04
-  UART sensor/teleop stream
+  UART teleop stream + embedded safety telemetry
         ->
 [ESP32 Motion Controller]
   Stm32Bridge
@@ -263,7 +264,7 @@ python3 tools/motionbrain_dashboard.py --camera-url http://192.168.4.2
 http://127.0.0.1:8765
 ```
 
-시리얼만으로 safety 상태를 bench에서 재현할 때는 simulation 명령을 사용할 수 있다.
+STM32 teleop remote가 연결된 bench 구성에서는 teleop frame 안의 embedded safety telemetry로 `SENSOR_STALE`을 해제한다. 하드웨어 없이 safety 상태를 재현하거나 fault case를 강제로 만들 때는 simulation 명령을 사용할 수 있다.
 
 ```text
 sensor sim healthy

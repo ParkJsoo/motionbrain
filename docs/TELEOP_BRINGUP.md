@@ -4,20 +4,23 @@
 
 ## 구조
 
-유선 handheld remote v1은 STM32에서 `teleop` JSON frame을 만들고, ESP32가 `teleop_adapter`로 수신하는 구조다.
+유선 handheld remote v1은 STM32에서 `teleop` JSON frame을 만들고, ESP32가 `teleop_adapter`로 수신하는 구조다. 현재 teleop frame에는 safety telemetry도 같이 포함되어, 단일 STM32 bench 구성에서도 ESP32 safety monitor가 실제 센서 freshness를 확인할 수 있다.
 
 ```text
 STM32 handheld remote
-  -> UART teleop JSON frame
+  MPU-6050 + HC-SR04 + buttons
+  -> UART teleop JSON frame with embedded safety telemetry
   -> ESP32 Serial1 RX
   -> TeleopAdapter
-  -> RobotArm / MotorControl
+  -> SafetyMonitor + RobotArm / MotorControl
 ```
 
 ## 현재 배선
 
 - `STM32 USART2 TX = PD5 = D1` -> `ESP32 GPIO34 = Serial1 RX`
 - `STM32 GND` -> `ESP32 GND`
+- `HC-SR04 TRIG = PD4 = D2`
+- `HC-SR04 ECHO = PC8 = D3`
 
 ESP32 teleop 수신 기준:
 
@@ -26,6 +29,40 @@ ESP32 teleop 수신 기준:
 - `GPIO34`
 - frame timeout: 약 `200ms`
 - 권장 frame rate: 약 `25Hz`
+- embedded safety stale timeout: 약 `1000ms`
+
+Teleop JSON frame에는 기존 조작 필드와 함께 아래 safety 필드가 포함된다.
+STM32는 MPU가 감지되지 않아도 UART heartbeat를 계속 보내며, 이때 `imu_ok=false`로 ESP32 safety가 `IMU_FAULT`를 유지한다. 즉 `teleop.connected=YES`와 `sensor.source=teleop_embedded`는 UART 경로 확인, `imu_ok=YES`는 IMU 경로 확인으로 나누어 본다.
+
+`teleop_embedded` source는 handheld remote 자체에서 오는 값이므로 freshness, `imu_ok`, `range_ok`는 safety gate에 사용하지만, distance threshold 기반 `OBSTACLE`과 vibration latch 기반 `VIBRATION_FAULT`는 적용하지 않는다. 손으로 조작하는 리모컨의 초음파/IMU 값이 로봇 본체의 충돌/진동으로 오인되기 때문이다. 로봇 본체에 별도 safety sensor channel을 붙이면 그 채널에서는 obstacle/vibration safety를 다시 적용한다.
+
+```json
+{
+  "type": "teleop",
+  "deadman": true,
+  "reach": 0.0,
+  "lift": 0.0,
+  "twist": 0.0,
+  "imu_ok": true,
+  "range_ok": true,
+  "dist_cm": 50.0,
+  "vibe": 0.0,
+  "imu_status": 1,
+  "imu_addr": 104,
+  "imu_error": 0
+}
+```
+
+`status`의 `IMU diag` 값:
+
+- `status=1`: MPU ready
+- `status=2`: I2C probe fail
+- `status=3`: WHO_AM_I read/value fail
+- `status=4`: init register write fail
+- `status=5`: calibration fail
+- `status=6`: runtime read fail
+- `addr=0x68` 또는 `0x69`: 마지막으로 확인한 MPU address 후보
+- `err`: STM32 HAL I2C error bitmask
 
 ## STM32 버튼 매핑
 
@@ -65,25 +102,30 @@ ESP32 teleop 수신 기준:
 1. ESP32 펌웨어 업로드 후 `status` 또는 웹 `/status` 확인
 2. STM32 teleop remote 펌웨어 업로드
 3. `STM32 PD5 -> ESP32 GPIO34`, `GND common` 연결
-4. 센서 허브 없이 단일 STM32 remote만 bench 테스트한다면 ESP32 시리얼에서 `sensor sim healthy` 실행
+4. `status`에서 `sensor.source=teleop_embedded`, `sensor.blocked=false` 확인
+   - `teleop.connected=YES`인데 `blockReason=IMU_FAULT`이면 UART와 HC-SR04는 살아 있고 MPU-6050 I2C를 확인해야 한다.
+   - 현재 STM32 I2C2 기준은 `PB10/D15=SCL`, `PC12/D14=SDA`, 공통 `GND`, MPU 전원 연결이다.
 5. ESP32를 `arm`
 6. Deadman을 누른 채 STM32를 중립 자세로 잡기
 7. Deadman을 떼고 다시 누르며 새 중립이 잡히는지 확인
 8. Deadman을 누른 채 앞/뒤/좌/우/비틀기 입력으로 teleop 반응 확인
 9. `/status.teleop` 또는 시리얼 `status`에서 `connected`, `deadman`, `reach`, `lift`, `twist`, `gripOpen`, `gripClose`, `lastStopReason` 확인
-10. Deadman release 또는 선 분리 시 `FRAME_TIMEOUT` / `DEADMAN_RELEASE` 정지 확인
+10. `/status.sensor`에서 `source`, `connected`, `imuOk`, `rangeOk`, `distCm`, `vibe`, `blocked` 확인
+11. Deadman release 또는 선 분리 시 `FRAME_TIMEOUT` / `DEADMAN_RELEASE` 정지 확인
+12. STM32 UART 선 분리 시 sensor가 `SENSOR_STALE`로 막히는지 확인
 
 ## 현재 제약
 
-- 현재 STM32 펌웨어는 `APP_MODE_TELEOP_REMOTE`와 `APP_MODE_SENSOR_BRIDGE` 중 하나로 동작한다.
-- 한 개 STM32를 remote 모드로 쓰는 bench에서는 ESP32 sensor bridge가 실제 센서 패킷을 받지 못하므로 `sensor sim healthy`가 필요하다.
-- Single-STM32 remote bench에서는 `GY-521`이 active handheld 입력이고, `HC-SR04`는 연결돼 있어도 active safety stream에 올라오지 않는다.
-- 최종 실장에서는 `HC-SR04` safety stream을 별도 sensor bridge로 유지하거나, 동등한 본체 safety 입력 채널을 따로 확보해야 한다.
-- Teleop mixer 부호와 비중은 로봇팔 초기 자세, 링크 배치, 리모컨을 잡는 방향이 고정된 뒤 튜닝한다.
+- 현재 STM32 remote는 teleop와 safety telemetry를 같은 UART frame에 실어 보낸다.
+- Bench MVP에서는 단일 STM32로 teleop + safety freshness를 같이 검증한다.
+- 최종 제품형 구조에서는 safety sensor channel을 별도 MCU, 별도 UART, 또는 독립 safety node로 분리할 수 있도록 source 표시와 simulation 경로를 유지한다.
+- 2026-05-22 실기에서 deadman + IMU tilt가 실제 모터 출력으로 이어지고, deadman release에서 정지하는 것을 확인했다.
+- 같은 실기에서 작은 tilt에도 `M4`가 최대 `100%`, `M3`가 약 `85%`까지 올라갔으므로 반복 시연 전에는 teleop output cap과 angle scale을 보수적으로 낮춘다.
+- Teleop mixer 부호와 비중은 로봇팔 초기 자세, 링크 배치, 리모컨을 잡는 방향이 고정된 뒤 추가 튜닝한다.
 
 ## Safety Simulation
 
-하드웨어 없이 safety 경로를 빠르게 점검할 때는 아래 simulation 명령을 사용할 수 있다.
+하드웨어 없이 safety 경로를 빠르게 점검하거나 fault case를 강제로 재현할 때는 아래 simulation 명령을 사용할 수 있다. 실제 teleop+safety frame이 들어오는 상태에서는 simulation 없이도 safety가 clear되어야 한다.
 
 ```text
 sensor sim healthy

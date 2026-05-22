@@ -41,6 +41,7 @@
 #define APP_MODE_SENSOR_BRIDGE 0U
 #define APP_MODE_TELEOP_REMOTE 1U
 #define APP_MODE APP_MODE_TELEOP_REMOTE
+#define SAFETY_TELEMETRY_ENABLED ((APP_MODE == APP_MODE_SENSOR_BRIDGE) || (APP_MODE == APP_MODE_TELEOP_REMOTE))
 #define TELEOP_DIAGNOSTIC_BUTTON_SCAN 0U
 
 #define MPU_SAMPLE_RATE_HZ 200U
@@ -52,6 +53,14 @@
 #define HCSR04_TIMEOUT_US 30000U
 #define HCSR04_MAX_VALID_CM 400.0f
 #define HCSR04_CM_PER_US 0.01715f
+
+#define MPU_STATUS_NOT_PROBED 0U
+#define MPU_STATUS_READY 1U
+#define MPU_STATUS_PROBE_FAIL 2U
+#define MPU_STATUS_WHOAMI_FAIL 3U
+#define MPU_STATUS_INIT_FAIL 4U
+#define MPU_STATUS_CALIB_FAIL 5U
+#define MPU_STATUS_READ_FAIL 6U
 
 // Handheld remote v1 provisional button map.
 // B-F446E-96B01A에서 현재 바로 꽂기 쉬운 Arduino digital header 기준.
@@ -137,6 +146,8 @@
 static uint16_t g_mpu_addr = 0;
 static uint8_t g_mpu_ready = 0;
 static uint8_t g_imu_ok = 0;
+static uint32_t g_mpu_status = MPU_STATUS_NOT_PROBED;
+static uint32_t g_mpu_error = 0;
 static volatile uint32_t g_sample_due_count = 0;
 static float g_gyro_bias_x_dps = 0.0f;
 static float g_gyro_bias_y_dps = 0.0f;
@@ -148,8 +159,13 @@ static float g_gyro_y_dps = 0.0f;
 static float g_gyro_z_dps = 0.0f;
 static float g_vibe = 0.0f;
 static uint8_t g_attitude_ready = 0;
-static uint32_t g_tx_divider = 0;
 #if APP_MODE == APP_MODE_SENSOR_BRIDGE
+static uint32_t g_tx_divider = 0;
+#endif
+#if APP_MODE == APP_MODE_TELEOP_REMOTE
+static uint32_t g_last_teleop_tx_ms = 0;
+#endif
+#if SAFETY_TELEMETRY_ENABLED
 static float g_distance_cm = 0.0f;
 static uint8_t g_range_ok = 0;
 static uint32_t g_last_hcsr04_trigger_ms = 0;
@@ -195,7 +211,7 @@ static void EnableCycleCounter(void)
     DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
 }
 
-#if APP_MODE == APP_MODE_SENSOR_BRIDGE
+#if SAFETY_TELEMETRY_ENABLED
 static uint32_t Micros(void)
 {
     return DWT->CYCCNT / (HAL_RCC_GetHCLKFreq() / 1000000UL);
@@ -209,14 +225,57 @@ static void DelayUs(uint32_t delay_us)
 }
 #endif
 
+static void RecoverI2c2Bus(void)
+{
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+    __HAL_RCC_GPIOC_CLK_ENABLE();
+
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_OD;
+    GPIO_InitStruct.Pull = GPIO_PULLUP;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+
+    GPIO_InitStruct.Pin = GPIO_PIN_10;
+    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+    GPIO_InitStruct.Pin = GPIO_PIN_12;
+    HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_10, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_12, GPIO_PIN_SET);
+    HAL_Delay(2);
+
+    for (uint32_t i = 0; i < 18U && HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_12) == GPIO_PIN_RESET; ++i) {
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_10, GPIO_PIN_RESET);
+        for (volatile uint32_t delay = 0; delay < 120U; ++delay) {
+        }
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_10, GPIO_PIN_SET);
+        for (volatile uint32_t delay = 0; delay < 120U; ++delay) {
+        }
+    }
+
+    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_12, GPIO_PIN_RESET);
+    for (volatile uint32_t delay = 0; delay < 120U; ++delay) {
+    }
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_10, GPIO_PIN_SET);
+    for (volatile uint32_t delay = 0; delay < 120U; ++delay) {
+    }
+    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_12, GPIO_PIN_SET);
+    HAL_Delay(2);
+}
+
 static void ProbeMpu6050(I2C_HandleTypeDef *hi2c)
 {
     const uint16_t addresses[] = {0x68 << 1, 0x69 << 1};
+    g_mpu_status = MPU_STATUS_PROBE_FAIL;
+    g_mpu_error = 0;
 
     for (size_t i = 0; i < (sizeof(addresses) / sizeof(addresses[0])); ++i) {
         uint16_t addr = addresses[i];
         HAL_StatusTypeDef ready = HAL_I2C_IsDeviceReady(hi2c, addr, 3, 100);
         uint32_t err = HAL_I2C_GetError(hi2c);
+        g_mpu_addr = addr;
+        g_mpu_error = err;
 
         printf("Probe 0x%02X: ready=%d err=0x%08lX\r\n",
                addr >> 1,
@@ -229,6 +288,7 @@ static void ProbeMpu6050(I2C_HandleTypeDef *hi2c)
 
         uint8_t who = 0;
         HAL_StatusTypeDef check = MPU6050_Check(hi2c, addr, &who);
+        g_mpu_error = HAL_I2C_GetError(hi2c);
         printf("WHO_AM_I@0x%02X: ret=%d who=0x%02X err=0x%08lX\r\n",
                addr >> 1,
                check,
@@ -236,10 +296,12 @@ static void ProbeMpu6050(I2C_HandleTypeDef *hi2c)
                (unsigned long)HAL_I2C_GetError(hi2c));
 
         if (check != HAL_OK) {
+            g_mpu_status = MPU_STATUS_WHOAMI_FAIL;
             continue;
         }
 
         HAL_StatusTypeDef init = MPU6050_InitAt(hi2c, addr);
+        g_mpu_error = HAL_I2C_GetError(hi2c);
         printf("Init 0x%02X: ret=%d err=0x%08lX\r\n",
                addr >> 1,
                init,
@@ -248,8 +310,10 @@ static void ProbeMpu6050(I2C_HandleTypeDef *hi2c)
         if (init == HAL_OK) {
             g_mpu_addr = addr;
             g_mpu_ready = 1;
+            g_mpu_status = MPU_STATUS_READY;
             return;
         }
+        g_mpu_status = MPU_STATUS_INIT_FAIL;
     }
 }
 
@@ -284,7 +348,7 @@ static void FormatFixedValue(char *buffer, size_t size, float value, uint32_t sc
     }
 }
 
-#if APP_MODE == APP_MODE_SENSOR_BRIDGE
+#if SAFETY_TELEMETRY_ENABLED
 static void TriggerHcsr04(void)
 {
     HAL_GPIO_WritePin(HCSR04_TRIG_GPIO_Port, HCSR04_TRIG_Pin, GPIO_PIN_RESET);
@@ -344,6 +408,7 @@ static uint8_t ReadButton(GPIO_TypeDef *port, uint16_t pin)
     return (state == TELEOP_BUTTON_ACTIVE_STATE) ? 1U : 0U;
 }
 
+#if TELEOP_DIAGNOSTIC_BUTTON_SCAN
 static uint8_t ReadDiagnosticGroup1Mask(void)
 {
     uint8_t mask = 0U;
@@ -380,6 +445,7 @@ static uint8_t ReadDiagnosticGroup3Mask(void)
     if (ReadButton(DIAG_G3_PB0_GPIO_Port, DIAG_G3_PB0_Pin)) mask |= 0x04U;
     return mask;
 }
+#endif
 
 static uint8_t ReadEitherButton(GPIO_TypeDef *primaryPort, uint16_t primaryPin,
                                 GPIO_TypeDef *alternatePort, uint16_t alternatePin)
@@ -509,7 +575,14 @@ static void SendTeleopPacket(void)
     char reach_str[24];
     char lift_str[24];
     char twist_str[24];
-    char tx_buffer[256];
+    char roll_str[24];
+    char pitch_str[24];
+    char gyro_x_str[24];
+    char gyro_y_str[24];
+    char gyro_z_str[24];
+    char vibe_str[24];
+    char dist_str[24];
+    char tx_buffer[512];
     int length;
     float reach = 0.0f;
     float lift = 0.0f;
@@ -552,6 +625,13 @@ static void SendTeleopPacket(void)
     FormatFixedValue(reach_str, sizeof(reach_str), reach, 1000U, 3U);
     FormatFixedValue(lift_str, sizeof(lift_str), lift, 1000U, 3U);
     FormatFixedValue(twist_str, sizeof(twist_str), twist, 1000U, 3U);
+    FormatFixedValue(roll_str, sizeof(roll_str), g_roll_deg, 1000U, 3U);
+    FormatFixedValue(pitch_str, sizeof(pitch_str), g_pitch_deg, 1000U, 3U);
+    FormatFixedValue(gyro_x_str, sizeof(gyro_x_str), g_gyro_x_dps, 1000U, 3U);
+    FormatFixedValue(gyro_y_str, sizeof(gyro_y_str), g_gyro_y_dps, 1000U, 3U);
+    FormatFixedValue(gyro_z_str, sizeof(gyro_z_str), g_gyro_z_dps, 1000U, 3U);
+    FormatFixedValue(vibe_str, sizeof(vibe_str), g_vibe, 100U, 2U);
+    FormatFixedValue(dist_str, sizeof(dist_str), g_distance_cm, 10U, 1U);
 
     if (!TELEOP_DIAGNOSTIC_BUTTON_SCAN) {
         g_teleop_sequence++;
@@ -563,7 +643,11 @@ static void SendTeleopPacket(void)
                       sizeof(tx_buffer),
                       "{\"type\":\"teleop\",\"ts_ms\":%lu,\"seq\":%lu,\"session\":%lu,"
                       "\"deadman\":%s,\"reach\":%s,\"lift\":%s,\"twist\":%s,"
-                      "\"grip_open\":%s,\"grip_close\":%s,\"led_toggle_seq\":%lu}\r\n",
+                      "\"grip_open\":%s,\"grip_close\":%s,\"led_toggle_seq\":%lu,"
+                      "\"imu_ok\":%s,\"range_ok\":%s,\"roll\":%s,\"pitch\":%s,"
+                      "\"gyro_x\":%s,\"gyro_y\":%s,\"gyro_z\":%s,\"vibe\":%s,\"dist_cm\":%s,"
+                      "\"imu_status\":%lu,\"imu_addr\":%lu,\"imu_error\":%lu,"
+                      "\"i2c_scl\":%s,\"i2c_sda\":%s}\r\n",
                       (unsigned long)HAL_GetTick(),
                       (unsigned long)frame_sequence,
                       (unsigned long)frame_session,
@@ -573,7 +657,21 @@ static void SendTeleopPacket(void)
                       twist_str,
                       grip_open ? "true" : "false",
                       grip_close ? "true" : "false",
-                      (unsigned long)frame_led_toggle_seq);
+                      (unsigned long)frame_led_toggle_seq,
+                      g_imu_ok ? "true" : "false",
+                      g_range_ok ? "true" : "false",
+                      roll_str,
+                      pitch_str,
+                      gyro_x_str,
+                      gyro_y_str,
+                      gyro_z_str,
+                      vibe_str,
+                      dist_str,
+                      (unsigned long)g_mpu_status,
+                      (unsigned long)(g_mpu_addr >> 1),
+                      (unsigned long)g_mpu_error,
+                      HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_10) == GPIO_PIN_SET ? "true" : "false",
+                      HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_12) == GPIO_PIN_SET ? "true" : "false");
 
     if (length > 0) {
         HAL_UART_Transmit(&huart2, (uint8_t *)tx_buffer, (uint16_t)length, 50U);
@@ -741,10 +839,14 @@ static HAL_StatusTypeDef ProcessMpu6050Sample(I2C_HandleTypeDef *hi2c)
 
     if (ret != HAL_OK) {
         g_imu_ok = 0;
+        g_mpu_status = MPU_STATUS_READ_FAIL;
+        g_mpu_error = HAL_I2C_GetError(hi2c);
         return ret;
     }
 
     g_imu_ok = 1;
+    g_mpu_status = MPU_STATUS_READY;
+    g_mpu_error = 0;
     g_gyro_x_dps = sample.gx_dps - g_gyro_bias_x_dps;
     g_gyro_y_dps = sample.gy_dps - g_gyro_bias_y_dps;
     g_gyro_z_dps = sample.gz_dps - g_gyro_bias_z_dps;
@@ -763,14 +865,11 @@ static HAL_StatusTypeDef ProcessMpu6050Sample(I2C_HandleTypeDef *hi2c)
                       (1.0f - alpha) * sample.pitch_acc;
     }
 
-    g_tx_divider++;
 #if APP_MODE == APP_MODE_TELEOP_REMOTE
-    if (g_tx_divider >= (MPU_SAMPLE_RATE_HZ / TELEOP_TX_RATE_HZ)) {
-        g_tx_divider = 0U;
-        SendTeleopPacket();
-        PrintTeleopToSwv();
-    }
+    /* Teleop packets are emitted from the main loop so the UART heartbeat
+       continues even when IMU init/readout is unhealthy. */
 #else
+    g_tx_divider++;
     if (g_tx_divider >= (MPU_SAMPLE_RATE_HZ / SENSOR_TX_RATE_HZ)) {
         g_tx_divider = 0U;
         SendSensorPacket();
@@ -810,6 +909,7 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  RecoverI2c2Bus();
   MX_I2C2_Init();
   MX_TIM3_Init();
   MX_USART1_UART_Init();
@@ -822,6 +922,8 @@ int main(void)
 #if APP_MODE == APP_MODE_TELEOP_REMOTE
   printf("Mode: handheld teleop remote\r\n");
   printf("UART teleop stream: USART2 TX=PD5 (Arduino D1) @ 115200\r\n");
+  printf("Embedded safety telemetry: imu/range/vibe/dist fields included in teleop frames\r\n");
+  printf("HC-SR04 mapping: TRIG=PD4 (Arduino D2), ECHO=PC8 (Arduino D3)\r\n");
 #if TELEOP_DIAGNOSTIC_BUTTON_SCAN
   printf("Diagnostic scan mode: session=D4/D5/D6/D7/D8/D9/D10/D11, sequence=D12/D13/A0/A1/A2/A3/A4/A5, led_seq=PA0/PA4/PB0 bits\r\n");
 #endif
@@ -841,6 +943,8 @@ int main(void)
     if (CalibrateMpu6050(&hi2c2) != HAL_OK) {
       g_mpu_ready = 0;
       g_imu_ok = 0;
+      g_mpu_status = MPU_STATUS_CALIB_FAIL;
+      g_mpu_error = HAL_I2C_GetError(&hi2c2);
       printf("MPU-6050 calibration failed.\r\n");
     }
   }
@@ -856,7 +960,7 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-#if APP_MODE == APP_MODE_SENSOR_BRIDGE
+#if SAFETY_TELEMETRY_ENABLED
     if ((HAL_GetTick() - g_last_hcsr04_trigger_ms) >= HCSR04_TRIGGER_INTERVAL_MS && !g_hcsr04_echo_pending) {
       TriggerHcsr04();
       g_last_hcsr04_trigger_ms = HAL_GetTick();
@@ -884,6 +988,14 @@ int main(void)
         }
       }
     }
+
+#if APP_MODE == APP_MODE_TELEOP_REMOTE
+    if ((HAL_GetTick() - g_last_teleop_tx_ms) >= (1000U / TELEOP_TX_RATE_HZ)) {
+      g_last_teleop_tx_ms = HAL_GetTick();
+      SendTeleopPacket();
+      PrintTeleopToSwv();
+    }
+#endif
   }
   /* USER CODE END 3 */
 }
@@ -943,7 +1055,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   }
 }
 
-#if APP_MODE == APP_MODE_SENSOR_BRIDGE
+#if SAFETY_TELEMETRY_ENABLED
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
     if (GPIO_Pin == HCSR04_ECHO_Pin) {

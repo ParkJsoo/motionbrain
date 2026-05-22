@@ -33,22 +33,23 @@ input -> decision -> state -> motion -> feedback
 - Wired handheld teleoperation v1:
   - ESP32 `teleop_adapter`
   - STM32 `APP_MODE_TELEOP_REMOTE`
-  - JSON `teleop` frames
+  - JSON `teleop` frames with embedded safety telemetry
   - deadman handling
   - frame freshness timeout
   - LED edge counter
   - initial teleop mixer
 - Physical wired teleop bench validation:
-  - `sensor sim healthy -> arm`
+  - embedded teleop safety telemetry clears `SENSOR_STALE`
   - real motor output from deadman + IMU input
   - stop on `DEADMAN_RELEASE`
-  - `teleop.parseErrors=0`, `sensor.parseErrors=0`
+- trusted home Wi-Fi station mode with token-aware host commands
 
 ### Current Focus
 
-- Connect ESP32-CAM streaming to the Mac host-side vision MVP
+- Commit and merge the home Wi-Fi + unified teleop/safety branch
+- Tune teleop output caps and angle scaling conservatively
+- Resume Vision-Based Alignment in dry-run mode
 - Finalize the physical layout and wiring table
-- Revalidate sensor, obstacle-safety, and teleop behavior after final mounting
 - Define the Raspberry Pi + ROS2 + AI high-level control path
 
 ## Architecture
@@ -59,7 +60,7 @@ input -> decision -> state -> motion -> feedback
 [STM32 Sensor / Teleop Layer]
   MPU-6050
   HC-SR04
-  UART sensor/teleop stream
+  UART teleop stream + embedded safety telemetry
         ->
 [ESP32 Motion Controller]
   Stm32Bridge
