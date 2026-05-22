@@ -19,7 +19,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.x"
+          python-version: "3.12"
 
       - name: Cache PlatformIO
         uses: actions/cache@v4
@@ -32,7 +32,10 @@ jobs:
             ${{ runner.os }}-pio-
 
       - name: Install PlatformIO
-        run: python -m pip install --upgrade platformio
+        run: python -m pip install --upgrade platformio opencv-python-headless numpy
+
+      - name: Run Python vision tests
+        run: python -m unittest discover -s tests
 
       - name: Build ESP32 controller
         run: pio run

@@ -39,6 +39,7 @@ ESP32 기반 5축 로봇팔 제어 시스템에서 출발해, STM32 센서 허�
 - `TB6612FNG x3` + `M1~M5` 실물 연결 및 모터 출력 확인
 - 유선 teleop deadman + IMU 입력으로 실제 모터 출력 및 release 정지 확인
 - trusted home Wi-Fi station mode와 token-aware host command path
+- GitHub Actions 기반 PlatformIO 빌드와 host vision alignment synthetic test
 - ESP32-CAM + Mac host Phase 4 MVP
   - `/status`, `/capture`, `/stream` 실기 확인
   - Mac host에서 MotionBrain `/status`와 ESP32-CAM frame 동시 fetch 확인
