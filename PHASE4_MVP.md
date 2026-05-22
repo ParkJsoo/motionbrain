@@ -279,16 +279,19 @@ python3 tools/vision_host_mvp.py --camera-url http://<esp32-cam-ip> --detect-col
 detected=Y red_ratio=0.254 offset_x=+0.32 align=RIGHT suggest=base_right align_allowed=Y
 ```
 
-실제 base 상대각 보정은 명시적으로 켠다. `/base?action=angle`은 controller가 `ARMED`, sensor clear, 기존 base angle inactive일 때만 통과한다.
+실제 base 보정은 명시적으로 켠다. 현재 handheld STM32 telemetry 구성에서는 base-mounted gyro feedback이 없으므로 기본값은 timed nudge다. controller가 `ARMED`, sensor clear, 기존 base angle inactive일 때만 통과하고, host가 `/joint?joint=base&action=<left|right>`를 짧게 보낸 뒤 즉시 stop한다.
 
 ```bash
 python3 tools/vision_host_mvp.py \
   --camera-url http://<esp32-cam-ip> \
   --detect-color red \
   --enable-align-action \
-  --align-degrees 5 \
+  --align-mode nudge \
+  --align-nudge-ms 250 \
   --align-percent 35
 ```
+
+로봇 base에 별도 gyro feedback이 있을 때만 `--align-mode angle --align-degrees 5`로 `/base?action=angle` 폐루프를 검증한다.
 
 대시보드의 `Camera Detection`도 target center, x offset, alignment 상태, command suggestion을 표시한다. ROS2 bridge의 `/camera/detection` JSON에도 같은 필드가 포함된다.
 
@@ -299,7 +302,7 @@ python3 tools/vision_host_mvp.py \
 - target 감지 결과가 로그에 남는다.
 - `--enable-action`에서 MotionBrain `/light` 명령이 성공한다.
 - target center, horizontal offset, alignment 결정, command suggestion이 dashboard와 `/camera/detection`에 노출된다.
-- `--enable-align-action`에서 안전 조건을 만족할 때만 MotionBrain `/base?action=angle` 명령이 전송된다.
+- `--enable-align-action`에서 안전 조건을 만족할 때만 MotionBrain base nudge 또는 base angle 명령이 전송되고, nudge mode는 즉시 stop까지 확인된다.
 - 이 흐름이 나중에 ROS2 node로 옮길 host-side bridge 경계가 된다.
 
 ## 2026-05-20 실기 검증 결과

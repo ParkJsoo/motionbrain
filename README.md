@@ -230,7 +230,7 @@ python3 tools/vision_host_mvp.py --camera-url http://192.168.4.2 --detect-color 
 python3 tools/vision_host_mvp.py --camera-url http://192.168.4.2 --detect-color red --enable-align-action
 ```
 
-기본 vision loop는 target center, horizontal offset, `LEFT|CENTER|RIGHT|LOST` alignment, `commandSuggestion`을 dry-run으로 출력한다. ESP32-CAM 캡처 안정성을 위해 기본 요청 간격은 3초, timeout은 6초, capture retry는 2회다. `--enable-align-action`을 켠 경우에만 안전 조건 확인 후 `/base?action=angle`을 보낸다.
+기본 vision loop는 target center, horizontal offset, `LEFT|CENTER|RIGHT|LOST` alignment, `commandSuggestion`을 dry-run으로 출력한다. ESP32-CAM 캡처 안정성을 위해 기본 요청 간격은 3초, timeout은 6초, capture retry는 2회다. `--enable-align-action`을 켠 경우 현재 하드웨어 구성에서는 안전 조건 확인 후 짧은 `/joint?joint=base` nudge를 보내고 즉시 stop한다. base-mounted gyro feedback이 생기면 `--align-mode angle`로 `/base?action=angle` 폐루프를 쓸 수 있다.
 
 ### STM32 Sensor / Teleop Layer
 

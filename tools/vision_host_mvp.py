@@ -11,6 +11,8 @@ import urllib.request
 
 
 TARGET_RATIO_THRESHOLD = 0.02
+NETWORK_EXCEPTIONS = (urllib.error.URLError, TimeoutError, OSError)
+LOOP_EXCEPTIONS = NETWORK_EXCEPTIONS + (json.JSONDecodeError, ValueError)
 
 
 def fetch_json(url: str, timeout: float) -> dict:
@@ -28,7 +30,27 @@ def fetch_bytes_with_retries(url: str, timeout: float, attempts: int, retry_dela
     for attempt in range(1, attempts + 1):
         try:
             return fetch_bytes(url, timeout)
-        except (urllib.error.URLError, TimeoutError) as exc:
+        except NETWORK_EXCEPTIONS as exc:
+            last_exc = exc
+            if attempt < attempts:
+                time.sleep(retry_delay)
+    assert last_exc is not None
+    raise last_exc
+
+
+def post_motionbrain_with_retries(
+    base_url: str,
+    path: str,
+    timeout: float,
+    token: str,
+    attempts: int,
+    retry_delay: float,
+) -> dict:
+    last_exc: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return post_motionbrain(base_url, path, timeout, token)
+        except NETWORK_EXCEPTIONS as exc:
             last_exc = exc
             if attempt < attempts:
                 time.sleep(retry_delay)
@@ -200,7 +222,8 @@ def run(args: argparse.Namespace) -> int:
     print(
         "alignment="
         f"{'enabled' if args.enable_align_action else 'dry-run'} "
-        f"deadband={args.align_deadband:.2f} step={args.align_degrees:.1f}deg "
+        f"mode={args.align_mode} deadband={args.align_deadband:.2f} "
+        f"step={args.align_degrees:.1f}deg nudge={args.align_nudge_ms}ms "
         f"speed={args.align_percent}%"
     )
     print(
@@ -262,20 +285,68 @@ def run(args: argparse.Namespace) -> int:
                 and now - last_align_action_time >= args.cooldown
             ):
                 direction = alignment.lower()
-                path = (
-                    f"/base?action=angle&direction={direction}"
-                    f"&degrees={args.align_degrees:.1f}&percent={args.align_percent}"
-                )
-                response = post_motionbrain(motion_base, path, args.timeout, args.http_token)
-                print(
-                    f"[{timestamp}] ACTION base.{direction} "
-                    f"{args.align_degrees:.1f}deg success={response.get('success')} "
-                    f"message={response.get('message')}",
-                    flush=True,
-                )
+                if args.align_mode == "angle":
+                    path = (
+                        f"/base?action=angle&direction={direction}"
+                        f"&degrees={args.align_degrees:.1f}&percent={args.align_percent}"
+                    )
+                    response = post_motionbrain(motion_base, path, args.timeout, args.http_token)
+                    print(
+                        f"[{timestamp}] ACTION base.{direction} "
+                        f"{args.align_degrees:.1f}deg success={response.get('success')} "
+                        f"message={response.get('message')}",
+                        flush=True,
+                    )
+                else:
+                    start_path = f"/joint?joint=base&action={direction}&percent={args.align_percent}"
+                    stop_path = "/joint?joint=base&action=stop"
+                    response = post_motionbrain_with_retries(
+                        motion_base,
+                        start_path,
+                        args.timeout,
+                        args.http_token,
+                        args.command_retries,
+                        args.command_retry_delay,
+                    )
+                    stopped = False
+                    try:
+                        if response.get("success"):
+                            time.sleep(args.align_nudge_ms / 1000.0)
+                        stop_response = post_motionbrain_with_retries(
+                            motion_base,
+                            stop_path,
+                            args.timeout,
+                            args.http_token,
+                            args.command_retries,
+                            args.command_retry_delay,
+                        )
+                        stopped = bool(stop_response.get("success"))
+                    finally:
+                        if not stopped:
+                            try:
+                                post_motionbrain_with_retries(
+                                    motion_base,
+                                    stop_path,
+                                    args.timeout,
+                                    args.http_token,
+                                    3,
+                                    args.command_retry_delay,
+                                )
+                            except NETWORK_EXCEPTIONS as stop_exc:
+                                print(
+                                    f"[{timestamp}] ERROR base.stop retry failed: {stop_exc}",
+                                    file=sys.stderr,
+                                    flush=True,
+                                )
+                    print(
+                        f"[{timestamp}] ACTION base.{direction} "
+                        f"nudge={args.align_nudge_ms}ms success={response.get('success')} "
+                        f"stopped={stopped} message={response.get('message')}",
+                        flush=True,
+                    )
                 last_align_action_time = now
 
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError) as exc:
+        except LOOP_EXCEPTIONS as exc:
             print(f"[{timestamp}] ERROR {exc}", file=sys.stderr, flush=True)
 
         if args.once:
@@ -296,12 +367,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--timeout", type=float, default=6.0)
     parser.add_argument("--capture-retries", type=int, default=2, help="Camera capture attempts per loop")
     parser.add_argument("--capture-retry-delay", type=float, default=1.0, help="Seconds to wait before retrying camera capture")
+    parser.add_argument("--command-retries", type=int, default=2, help="Motion command POST attempts")
+    parser.add_argument("--command-retry-delay", type=float, default=0.2, help="Seconds to wait before retrying command POST")
     parser.add_argument("--cooldown", type=float, default=5.0, help="Minimum seconds between actions")
     parser.add_argument("--http-token", default=os.environ.get("MOTIONBRAIN_HTTP_TOKEN", ""), help="Optional X-MotionBrain-Token for controller POST endpoints")
     parser.add_argument("--action", choices=("on", "off", "toggle"), default="toggle", help="POST /light?action=...")
     parser.add_argument("--enable-action", action="store_true", help="Actually send /light action when target is detected")
     parser.add_argument("--align-deadband", type=float, default=0.15, help="Normalized horizontal center tolerance")
+    parser.add_argument(
+        "--align-mode",
+        choices=("nudge", "angle"),
+        default="nudge",
+        help="Use timed base nudge, or closed-loop angle when base-mounted gyro feedback is available",
+    )
     parser.add_argument("--align-degrees", type=float, default=5.0, help="Relative base angle step for alignment")
+    parser.add_argument("--align-nudge-ms", type=int, default=250, help="Timed base nudge duration when --align-mode nudge")
     parser.add_argument("--align-percent", type=int, default=35, help="Base speed percent for alignment")
     parser.add_argument("--enable-align-action", action="store_true", help="Actually send /base angle action when target is off-center")
     parser.add_argument("--once", action="store_true")
@@ -312,10 +392,16 @@ def parse_args() -> argparse.Namespace:
         parser.error("--align-degrees must be between 3 and 180")
     if args.align_percent < 1 or args.align_percent > 100:
         parser.error("--align-percent must be between 1 and 100")
+    if args.align_nudge_ms < 50 or args.align_nudge_ms > 2000:
+        parser.error("--align-nudge-ms must be between 50 and 2000")
     if args.capture_retries < 1:
         parser.error("--capture-retries must be >= 1")
     if args.capture_retry_delay < 0:
         parser.error("--capture-retry-delay must be >= 0")
+    if args.command_retries < 1:
+        parser.error("--command-retries must be >= 1")
+    if args.command_retry_delay < 0:
+        parser.error("--command-retry-delay must be >= 0")
     return args
 
 
