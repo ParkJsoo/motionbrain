@@ -219,7 +219,9 @@ http://127.0.0.1:8765
 - ESP32-CAM과 Mac이 모두 `MotionBrain-AP`에 붙어 있는지 확인한다.
 - `http://192.168.4.1/status`가 Mac에서 열리는지 확인한다.
 - `/stream`을 장시간 열어둔 뒤 `/status`나 `/capture`가 timeout되면 ESP32-CAM을 reset하거나 최신 펌웨어를 다시 올린다. 최신 펌웨어는 stream을 시간 제한으로 끊어 HTTP 서버가 회복되게 한다.
-- `/capture`가 느리거나 실패하면 ESP32-CAM 전원을 다시 연결한다.
+- `/capture`가 느리거나 실패하면 `/status`의 `captures`, `captureFailures`, `clientWriteFailures`, `lastCaptureMs`, `maxCaptureMs`, `lastFrameBytes`를 먼저 확인한다.
+- 반복 timeout이면 최신 ESP32-CAM 펌웨어를 다시 올린다. vision용 기본 카메라 프로파일은 QVGA/JPEG quality 15이며 host loop 기본값은 timeout 6초, interval 3초, capture retry 2회다.
+- 최신 펌웨어에서도 `/capture`가 회복되지 않으면 ESP32-CAM 전원을 다시 연결한다.
 - `brownout` 또는 반복 reboot가 보이면 ESP32-CAM 전원 부족으로 본다.
 - 업로드가 실패하면 다른 serial monitor가 포트를 잡고 있는지 확인한다.
 - `--enable-action`은 `/status.sensor.blocked=false`이고 controller state가 `IDLE` 또는 `ARMED`일 때만 동작한다.
@@ -231,6 +233,8 @@ dry-run:
 ```bash
 python3 tools/vision_host_mvp.py --camera-url http://<esp32-cam-ip> --once
 ```
+
+반복 테스트는 ESP32-CAM HTTP 서버 부담을 줄이기 위해 기본 3초 간격으로 돈다. 필요하면 `--timeout`, `--capture-retries`, `--capture-retry-delay`, `--interval`로 조정한다.
 
 OpenCV 없이 카메라/명령 경로만 검증:
 

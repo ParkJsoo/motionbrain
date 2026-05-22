@@ -75,6 +75,8 @@ python3 tools/vision_host_mvp.py \
   --once
 ```
 
+If ESP32-CAM mDNS is unreliable, use the IPs printed by each board's serial log. The vision host defaults are intentionally conservative for the ESP32-CAM HTTP server: `--timeout 6`, `--interval 3`, and `--capture-retries 2`.
+
 For the dashboard:
 
 ```bash

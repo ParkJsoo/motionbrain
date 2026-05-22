@@ -32,8 +32,21 @@ namespace {
 const uint32_t STREAM_FRAME_DELAY_MS = 100;
 const uint32_t STREAM_MAX_DURATION_MS = 20000;
 const uint32_t WIFI_CONNECT_TIMEOUT_MS = 30000;
+const framesize_t CAMERA_FRAME_SIZE = FRAMESIZE_QVGA;
+const int CAMERA_JPEG_QUALITY = 15;
 
 WebServer server(80);
+
+struct CameraStats {
+  uint32_t captures = 0;
+  uint32_t captureFailures = 0;
+  uint32_t clientWriteFailures = 0;
+  uint32_t lastCaptureMs = 0;
+  uint32_t maxCaptureMs = 0;
+  uint32_t lastFrameBytes = 0;
+};
+
+CameraStats cameraStats;
 
 struct WifiConfig {
   char ssid[33];
@@ -188,10 +201,10 @@ bool initCamera() {
   config.pin_reset = RESET_GPIO_NUM;
   config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_JPEG;
-  config.frame_size = psramFound() ? FRAMESIZE_VGA : FRAMESIZE_QVGA;
-  config.jpeg_quality = psramFound() ? 12 : 16;
+  config.frame_size = CAMERA_FRAME_SIZE;
+  config.jpeg_quality = CAMERA_JPEG_QUALITY;
   config.fb_count = psramFound() ? 2 : 1;
-  config.fb_location = CAMERA_FB_IN_PSRAM;
+  config.fb_location = psramFound() ? CAMERA_FB_IN_PSRAM : CAMERA_FB_IN_DRAM;
   config.grab_mode = CAMERA_GRAB_LATEST;
 
   esp_err_t err = esp_camera_init(&config);
@@ -202,7 +215,13 @@ bool initCamera() {
 
   sensor_t* sensor = esp_camera_sensor_get();
   if (sensor != nullptr) {
-    sensor->set_framesize(sensor, psramFound() ? FRAMESIZE_VGA : FRAMESIZE_QVGA);
+    sensor->set_framesize(sensor, CAMERA_FRAME_SIZE);
+    sensor->set_quality(sensor, CAMERA_JPEG_QUALITY);
+  }
+
+  camera_fb_t* warmup = esp_camera_fb_get();
+  if (warmup != nullptr) {
+    esp_camera_fb_return(warmup);
   }
   return true;
 }
@@ -225,23 +244,45 @@ void handleStatus() {
   json += "\"wifi\":\"configured\",";
   json += "\"ip\":\"" + WiFi.localIP().toString() + "\",";
   json += "\"mdns\":\"http://" + String(MOTIONBRAIN_CAMERA_HOSTNAME) + ".local\",";
-  json += "\"rssi\":" + String(WiFi.RSSI());
+  json += "\"rssi\":" + String(WiFi.RSSI()) + ",";
+  json += "\"heapFree\":" + String(ESP.getFreeHeap()) + ",";
+  json += "\"psram\":" + String(psramFound() ? "true" : "false") + ",";
+  json += "\"captures\":" + String(cameraStats.captures) + ",";
+  json += "\"captureFailures\":" + String(cameraStats.captureFailures) + ",";
+  json += "\"clientWriteFailures\":" + String(cameraStats.clientWriteFailures) + ",";
+  json += "\"lastCaptureMs\":" + String(cameraStats.lastCaptureMs) + ",";
+  json += "\"maxCaptureMs\":" + String(cameraStats.maxCaptureMs) + ",";
+  json += "\"lastFrameBytes\":" + String(cameraStats.lastFrameBytes);
   json += "}";
   server.send(200, "application/json", json);
 }
 
 void handleCapture() {
+  const uint32_t startedAt = millis();
   camera_fb_t* fb = esp_camera_fb_get();
+  const uint32_t captureMs = millis() - startedAt;
+  cameraStats.lastCaptureMs = captureMs;
+  if (captureMs > cameraStats.maxCaptureMs) {
+    cameraStats.maxCaptureMs = captureMs;
+  }
   if (fb == nullptr) {
+    cameraStats.captureFailures++;
     server.send(503, "text/plain", "camera capture failed");
     return;
   }
+  cameraStats.captures++;
+  cameraStats.lastFrameBytes = fb->len;
 
   server.sendHeader("Cache-Control", "no-store");
   server.setContentLength(fb->len);
   server.send(200, "image/jpeg", "");
   WiFiClient client = server.client();
-  client.write(fb->buf, fb->len);
+  client.setTimeout(2000);
+  client.setNoDelay(true);
+  const size_t written = client.connected() ? client.write(fb->buf, fb->len) : 0;
+  if (written != fb->len) {
+    cameraStats.clientWriteFailures++;
+  }
   esp_camera_fb_return(fb);
 }
 
@@ -318,6 +359,7 @@ void setup() {
   Serial.setDebugOutput(false);
   Serial.println();
   Serial.println("MotionBrain ESP32-CAM boot");
+  Serial.printf("Camera profile: QVGA JPEG quality=%d psram=%s\n", CAMERA_JPEG_QUALITY, psramFound() ? "yes" : "no");
   clearRequestedOnBoot();
 
   if (!initCamera()) {

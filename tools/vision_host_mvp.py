@@ -23,6 +23,19 @@ def fetch_bytes(url: str, timeout: float) -> bytes:
         return response.read()
 
 
+def fetch_bytes_with_retries(url: str, timeout: float, attempts: int, retry_delay: float) -> bytes:
+    last_exc: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return fetch_bytes(url, timeout)
+        except (urllib.error.URLError, TimeoutError) as exc:
+            last_exc = exc
+            if attempt < attempts:
+                time.sleep(retry_delay)
+    assert last_exc is not None
+    raise last_exc
+
+
 def post_motionbrain(base_url: str, path: str, timeout: float, token: str = "") -> dict:
     headers = {"X-MotionBrain": "1"}
     if token:
@@ -190,12 +203,21 @@ def run(args: argparse.Namespace) -> int:
         f"deadband={args.align_deadband:.2f} step={args.align_degrees:.1f}deg "
         f"speed={args.align_percent}%"
     )
+    print(
+        f"capture timeout={args.timeout:.1f}s retries={args.capture_retries} "
+        f"retry_delay={args.capture_retry_delay:.1f}s interval={args.interval:.1f}s"
+    )
 
     while True:
         timestamp = time.strftime("%H:%M:%S")
         try:
             status = fetch_json(f"{motion_base}/status", args.timeout)
-            frame = fetch_bytes(camera_capture, args.timeout)
+            frame = fetch_bytes_with_retries(
+                camera_capture,
+                args.timeout,
+                args.capture_retries,
+                args.capture_retry_delay,
+            )
             if args.assume_detected:
                 detection = {
                     "detected": True,
@@ -270,8 +292,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--camera-url", required=True, help="ESP32-CAM base URL, for example http://192.168.4.2")
     parser.add_argument("--detect-color", choices=("red", "green", "blue"), default="red")
     parser.add_argument("--assume-detected", action="store_true", help="Skip OpenCV and treat every fetched frame as a detection")
-    parser.add_argument("--interval", type=float, default=1.0)
-    parser.add_argument("--timeout", type=float, default=2.0)
+    parser.add_argument("--interval", type=float, default=3.0)
+    parser.add_argument("--timeout", type=float, default=6.0)
+    parser.add_argument("--capture-retries", type=int, default=2, help="Camera capture attempts per loop")
+    parser.add_argument("--capture-retry-delay", type=float, default=1.0, help="Seconds to wait before retrying camera capture")
     parser.add_argument("--cooldown", type=float, default=5.0, help="Minimum seconds between actions")
     parser.add_argument("--http-token", default=os.environ.get("MOTIONBRAIN_HTTP_TOKEN", ""), help="Optional X-MotionBrain-Token for controller POST endpoints")
     parser.add_argument("--action", choices=("on", "off", "toggle"), default="toggle", help="POST /light?action=...")
@@ -288,6 +312,10 @@ def parse_args() -> argparse.Namespace:
         parser.error("--align-degrees must be between 3 and 180")
     if args.align_percent < 1 or args.align_percent > 100:
         parser.error("--align-percent must be between 1 and 100")
+    if args.capture_retries < 1:
+        parser.error("--capture-retries must be >= 1")
+    if args.capture_retry_delay < 0:
+        parser.error("--capture-retry-delay must be >= 0")
     return args
 
 
