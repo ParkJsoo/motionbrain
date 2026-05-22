@@ -177,6 +177,7 @@ bool Dispatcher::hasDependenciesFor(CommandType type, const char** missingDepend
 
 bool Dispatcher::commandExtendsTimeout(CommandType type) const {
   switch (type) {
+    case CommandType::ARM:
     case CommandType::MOTOR_RUN:
     case CommandType::MOTOR_STOP:
     case CommandType::MOTOR_STOP_ALL:
