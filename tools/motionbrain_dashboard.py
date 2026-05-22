@@ -336,6 +336,11 @@ INDEX_HTML = """<!doctype html>
             <button onclick="sendLight('on')">Light On</button>
             <button onclick="sendLight('off')">Light Off</button>
           </div>
+          <div class="controls">
+            <button id="alignNudgeButton" class="primary" onclick="sendAlignNudge()" disabled>Nudge Once</button>
+            <button onclick="refresh()">Refresh</button>
+          </div>
+          <div class="subvalue" id="alignActionState">alignment action unavailable</div>
         </div>
       </section>
 
@@ -348,6 +353,9 @@ INDEX_HTML = """<!doctype html>
 
   <script>
     const logLines = [];
+    let lastStatus = null;
+    let lastDetection = null;
+    let dashboardConfig = null;
 
     function setText(id, value, className) {
       const el = document.getElementById(id);
@@ -380,6 +388,7 @@ INDEX_HTML = """<!doctype html>
     }
 
     function updateStatus(status) {
+      lastStatus = status;
       const sensor = status.sensor || {};
       const base = status.baseAngle || {};
       const teleop = status.teleop || {};
@@ -405,6 +414,7 @@ INDEX_HTML = """<!doctype html>
       document.getElementById("teleopDeadman").textContent = `deadman ${fmtBool(teleop.deadman)} active ${fmtBool(teleop.controlActive)}`;
       setText("teleopAxes", `R ${fmtNum(teleop.reach, 2)} L ${fmtNum(teleop.lift, 2)} T ${fmtNum(teleop.twist, 2)}`);
       document.getElementById("teleopGrip").textContent = `grip open ${fmtBool(teleop.gripOpen)} close ${fmtBool(teleop.gripClose)}`;
+      updateAlignActionState();
     }
 
     function updateEvents(payload) {
@@ -421,6 +431,7 @@ INDEX_HTML = """<!doctype html>
     }
 
     function updateDetection(payload) {
+      lastDetection = payload;
       const detected = Boolean(payload.detected);
       setText("detectedValue", detected ? "YES" : "NO", detected ? "ok" : "");
       const areaRatio = typeof payload.areaRatio === "number" ? payload.areaRatio : payload.ratio;
@@ -441,13 +452,52 @@ INDEX_HTML = """<!doctype html>
       const suggestion = payload.commandSuggestion || "none";
       const deadband = typeof payload.alignDeadband === "number" ? `db ${payload.alignDeadband.toFixed(2)}` : "db -";
       document.getElementById("alignmentSuggestion").textContent = `${suggestion} / ${deadband}`;
+      updateAlignActionState();
+    }
+
+    function alignActionEligibility() {
+      const status = lastStatus || {};
+      const sensor = status.sensor || {};
+      const base = status.baseAngle || {};
+      const detection = lastDetection || {};
+      const alignment = detection.alignment || "LOST";
+      if (!dashboardConfig || !dashboardConfig.hasHttpToken) {
+        return { ok: false, reason: "token missing" };
+      }
+      if (status.state !== "ARMED") {
+        return { ok: false, reason: `state ${status.state || "-"}` };
+      }
+      if (sensor.blocked || sensor.faultLatched) {
+        return { ok: false, reason: sensor.blockReason || sensor.faultReason || "safety block" };
+      }
+      if (base.active) {
+        return { ok: false, reason: "base busy" };
+      }
+      if (!detection.detected || !["LEFT", "RIGHT"].includes(alignment)) {
+        return { ok: false, reason: `alignment ${alignment}` };
+      }
+      return { ok: true, reason: `${alignment.toLowerCase()} nudge ready` };
+    }
+
+    function updateAlignActionState() {
+      const button = document.getElementById("alignNudgeButton");
+      const state = document.getElementById("alignActionState");
+      if (!button || !state) return;
+      const eligibility = alignActionEligibility();
+      button.disabled = !eligibility.ok;
+      const cfg = dashboardConfig || {};
+      const nudge = cfg.alignNudgeMs ? `${cfg.alignNudgeMs}ms` : "-";
+      const percent = cfg.alignPercent ? `${cfg.alignPercent}%` : "-";
+      state.textContent = `${eligibility.reason} / nudge ${nudge} @ ${percent}`;
     }
 
     async function refresh() {
       try {
         const config = await getJson("/api/config");
+        dashboardConfig = config;
         document.getElementById("motionTarget").textContent = `motion: ${config.motionBaseUrl}`;
         document.getElementById("cameraTarget").textContent = `camera: ${config.cameraUrl || "disabled"}`;
+        updateAlignActionState();
       } catch (err) {
         pushLog(`config error: ${err.message}`);
       }
@@ -490,6 +540,31 @@ INDEX_HTML = """<!doctype html>
         refresh();
       } catch (err) {
         pushLog(`light ${action} error: ${err.message}`);
+      }
+    }
+
+    async function sendAlignNudge() {
+      const eligibility = alignActionEligibility();
+      if (!eligibility.ok) {
+        pushLog(`align nudge blocked: ${eligibility.reason}`);
+        return;
+      }
+
+      const alignment = lastDetection.alignment;
+      try {
+        const response = await fetch("/api/align_nudge", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ alignment }),
+        });
+        const data = await response.json();
+        if (!response.ok || data.ok === false || data.success === false || data.stopped === false) {
+          throw new Error(data.error || data.message || "nudge failed");
+        }
+        pushLog(`align ${alignment}: ${data.message || "ok"} stopped=${data.stopped}`);
+        refresh();
+      } catch (err) {
+        pushLog(`align ${alignment} error: ${err.message}`);
       }
     }
 
@@ -543,6 +618,43 @@ def command_suggestion_for_alignment(alignment: str) -> str:
     if alignment == "CENTER":
         return "hold"
     return "none"
+
+
+def execute_base_nudge(
+    motion_base_url: str,
+    direction: str,
+    percent: int,
+    nudge_ms: int,
+    timeout: float,
+    token: str,
+) -> dict[str, Any]:
+    start_path = f"/joint?joint=base&action={urllib.parse.quote(direction)}&percent={percent}"
+    stop_path = "/joint?joint=base&action=stop"
+    start_result: dict[str, Any] = {}
+    stopped = False
+    stop_result: dict[str, Any] = {}
+    try:
+        start_result = post_motionbrain(motion_base_url, start_path, timeout, token)
+        if start_result.get("success"):
+            time.sleep(nudge_ms / 1000.0)
+    finally:
+        try:
+            stop_result = post_motionbrain(motion_base_url, stop_path, timeout, token)
+            stopped = bool(stop_result.get("success"))
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError):
+            pass
+
+    return {
+        "ok": bool(start_result.get("success")) and stopped,
+        "success": bool(start_result.get("success")),
+        "stopped": stopped,
+        "direction": direction,
+        "nudgeMs": nudge_ms,
+        "percent": percent,
+        "message": start_result.get("message", ""),
+        "start": start_result,
+        "stop": stop_result,
+    }
 
 
 def detect_colored_target(frame: bytes, color: str) -> dict[str, Any]:
@@ -655,6 +767,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
                         "motionBaseUrl": self.server.motion_base_url,
                         "cameraUrl": self.server.camera_url,
                         "detectColor": self.server.detect_color,
+                        "hasHttpToken": bool(self.server.http_token),
+                        "alignMode": "nudge",
+                        "alignNudgeMs": self.server.align_nudge_ms,
+                        "alignPercent": self.server.align_percent,
                     }
                 )
             elif parsed.path == "/api/status":
@@ -674,14 +790,22 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
-        if parsed.path != "/api/light":
+        if parsed.path == "/api/light":
+            self.handle_light()
+        elif parsed.path == "/api/align_nudge":
+            self.handle_align_nudge()
+        else:
             self.send_error_json(HTTPStatus.NOT_FOUND, "not_found")
             return
 
+    def read_json_body(self) -> dict[str, Any]:
+        length = int(self.headers.get("Content-Length", "0"))
+        raw = self.rfile.read(length).decode("utf-8")
+        return json.loads(raw) if raw else {}
+
+    def handle_light(self) -> None:
         try:
-            length = int(self.headers.get("Content-Length", "0"))
-            raw = self.rfile.read(length).decode("utf-8")
-            body = json.loads(raw) if raw else {}
+            body = self.read_json_body()
             action = str(body.get("action", "")).strip().lower()
             if action not in {"on", "off", "toggle"}:
                 self.send_error_json(HTTPStatus.BAD_REQUEST, "invalid_action")
@@ -690,6 +814,49 @@ class DashboardHandler(BaseHTTPRequestHandler):
             path = f"/light?action={urllib.parse.quote(action)}"
             result = post_motionbrain(self.server.motion_base_url, path, self.server.timeout, self.server.http_token)
             result["requestedAction"] = action
+            self.send_json(result)
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError, OSError) as exc:
+            self.send_error_json(HTTPStatus.BAD_GATEWAY, str(exc))
+
+    def handle_align_nudge(self) -> None:
+        try:
+            if not self.server.http_token:
+                self.send_error_json(HTTPStatus.FORBIDDEN, "http_token_required")
+                return
+
+            body = self.read_json_body()
+            alignment = str(body.get("alignment", "")).strip().upper()
+            if alignment not in {"LEFT", "RIGHT"}:
+                self.send_error_json(HTTPStatus.BAD_REQUEST, "alignment_must_be_LEFT_or_RIGHT")
+                return
+            if not self.server.camera_url:
+                self.send_error_json(HTTPStatus.BAD_REQUEST, "camera_url_not_configured")
+                return
+
+            frame, _ = self.server.get_camera_frame()
+            detection = detect_colored_target(frame, self.server.detect_color)
+            if not detection.get("detected") or detection.get("alignment") != alignment:
+                detected_alignment = str(detection.get("alignment", "LOST"))
+                self.send_error_json(HTTPStatus.CONFLICT, f"alignment_changed:{detected_alignment}")
+                return
+
+            status = fetch_json(f"{self.server.motion_base_url}/status", self.server.timeout)
+            allowed, reason = self.server.status_allows_align_nudge(status)
+            if not allowed:
+                self.send_error_json(HTTPStatus.CONFLICT, f"alignment_not_allowed:{reason}")
+                return
+
+            direction = alignment.lower()
+            result = execute_base_nudge(
+                self.server.motion_base_url,
+                direction,
+                self.server.align_percent,
+                self.server.align_nudge_ms,
+                self.server.timeout,
+                self.server.http_token,
+            )
+            result["alignment"] = alignment
+            result["detection"] = detection
             self.send_json(result)
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError, OSError) as exc:
             self.send_error_json(HTTPStatus.BAD_GATEWAY, str(exc))
@@ -751,6 +918,8 @@ class DashboardServer(ThreadingHTTPServer):
         timeout: float,
         events_limit: int,
         http_token: str,
+        align_nudge_ms: int,
+        align_percent: int,
     ) -> None:
         super().__init__(server_address, handler_class)
         self.motion_base_url = motion_base_url
@@ -759,9 +928,24 @@ class DashboardServer(ThreadingHTTPServer):
         self.timeout = timeout
         self.events_limit = events_limit
         self.http_token = http_token
+        self.align_nudge_ms = align_nudge_ms
+        self.align_percent = align_percent
         self.camera_cache_lock = threading.Lock()
         self.camera_cache: tuple[float, bytes, str] | None = None
         self.camera_cache_seconds = 1.0
+
+    def status_allows_align_nudge(self, status: dict[str, Any]) -> tuple[bool, str]:
+        sensor = status.get("sensor", {})
+        base = status.get("baseAngle", {})
+        if status.get("state") != "ARMED":
+            return False, f"state_{status.get('state', 'UNKNOWN')}"
+        if sensor.get("faultLatched", False):
+            return False, str(sensor.get("faultReason", "fault"))
+        if sensor.get("blocked", False):
+            return False, str(sensor.get("blockReason", "blocked"))
+        if base.get("active", False):
+            return False, "base_busy"
+        return True, "ok"
 
     def get_camera_frame(self) -> tuple[bytes, str]:
         if not self.camera_url:
@@ -790,6 +974,8 @@ def run(args: argparse.Namespace) -> int:
         args.timeout,
         args.events_limit,
         args.http_token,
+        args.align_nudge_ms,
+        args.align_percent,
     )
     print(f"MotionBrain ops dashboard: http://{args.host}:{args.port}")
     print(f"motion={motion_base_url}")
@@ -816,7 +1002,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--timeout", type=float, default=2.0, help="HTTP timeout in seconds")
     parser.add_argument("--events-limit", type=int, default=12, help="Default event query limit")
     parser.add_argument("--http-token", default=os.environ.get("MOTIONBRAIN_HTTP_TOKEN", ""), help="Optional X-MotionBrain-Token for controller POST endpoints")
-    return parser.parse_args()
+    parser.add_argument("--align-nudge-ms", type=int, default=250, help="Dashboard vision nudge duration in milliseconds")
+    parser.add_argument("--align-percent", type=int, default=25, help="Dashboard vision nudge base speed percent")
+    args = parser.parse_args()
+    if args.align_nudge_ms < 50 or args.align_nudge_ms > 2000:
+        parser.error("--align-nudge-ms must be between 50 and 2000")
+    if args.align_percent < 1 or args.align_percent > 100:
+        parser.error("--align-percent must be between 1 and 100")
+    return args
 
 
 if __name__ == "__main__":

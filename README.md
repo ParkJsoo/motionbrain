@@ -255,7 +255,7 @@ Host watcher는 `GET /status`, `GET /events`를 주기적으로 읽어 state, sa
 python3 tools/motionbrain_watch.py --host 192.168.4.1 --interval 1.0
 ```
 
-Local ops dashboard는 같은 상태/이벤트 경계에 ESP32-CAM capture, 색상 감지, light command log를 더해 브라우저에서 보여준다.
+Local ops dashboard는 같은 상태/이벤트 경계에 ESP32-CAM capture, 색상 감지, light command log, token-gated one-shot vision nudge control을 더해 브라우저에서 보여준다.
 
 ```bash
 python3 tools/motionbrain_dashboard.py --camera-url http://192.168.4.2

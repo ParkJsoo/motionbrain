@@ -211,7 +211,8 @@ http://127.0.0.1:8765
 - `Teleop`: handheld connection, deadman, axes, grip 입력
 - `Events`: `GET /events` 기반 최신 시스템 이벤트
 - `Camera Detection`: ESP32-CAM capture와 red target detection ratio
-- `Action Log`: 대시보드에서 보낸 light command 결과
+- `Action Log`: 대시보드에서 보낸 light / align nudge command 결과
+- `Nudge Once`: token이 있고, controller가 `ARMED`, safety clear, target이 `LEFT` 또는 `RIGHT`, base가 idle일 때만 활성화된다. 클릭 시 서버가 최신 camera frame을 다시 검증한 뒤 timed base nudge를 보내고 즉시 stop한다.
 
 ### 6. 실패 시 우선 확인
 
@@ -293,7 +294,7 @@ python3 tools/vision_host_mvp.py \
 
 로봇 base에 별도 gyro feedback이 있을 때만 `--align-mode angle --align-degrees 5`로 `/base?action=angle` 폐루프를 검증한다.
 
-대시보드의 `Camera Detection`도 target center, x offset, alignment 상태, command suggestion을 표시한다. ROS2 bridge의 `/camera/detection` JSON에도 같은 필드가 포함된다.
+대시보드의 `Camera Detection`도 target center, x offset, alignment 상태, command suggestion을 표시한다. Dashboard action은 token-gated `Nudge Once`만 제공하며, 서버가 클릭 시점에 camera frame과 controller status를 다시 확인한 뒤 실행한다. ROS2 bridge의 `/camera/detection` JSON에도 같은 필드가 포함된다.
 
 ## 완료 기준
 

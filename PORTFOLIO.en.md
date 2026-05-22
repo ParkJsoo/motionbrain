@@ -131,6 +131,7 @@ The Phase 4 MVP proves the first camera-to-host-to-controller loop before moving
 - Red target action test toggled the real search light; removing the target produced `detected=N red_ratio=0.000`.
 - Vision alignment now exposes centroid, horizontal offset, `LEFT|CENTER|RIGHT|LOST` decisions, and command suggestions in the host loop, dashboard, and ROS2 detection payload.
 - Vision alignment nudge mode was physically validated in both directions: right target -> `base.right`, left target -> `base.left`, each with a 250 ms / 25% base nudge and confirmed stop.
+- The dashboard includes a token-gated one-shot nudge control that revalidates the current camera frame and controller status server-side before motion.
 - CI now runs synthetic host-side vision alignment tests alongside ESP32 and ESP32-CAM PlatformIO builds.
 
 ## Current Limitations
