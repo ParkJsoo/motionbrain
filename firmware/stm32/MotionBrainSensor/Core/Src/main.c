@@ -129,10 +129,10 @@
 #define TELEOP_LIFT_SIGN 1.0f
 #define TELEOP_TWIST_SIGN 1.0f
 
-#define TELEOP_ANGLE_DEADZONE_DEG 4.0f
-#define TELEOP_ANGLE_FULL_SCALE_DEG 20.0f
-#define TELEOP_TWIST_DEADZONE_DPS 12.0f
-#define TELEOP_TWIST_FULL_SCALE_DPS 120.0f
+#define TELEOP_ANGLE_DEADZONE_DEG 6.0f
+#define TELEOP_ANGLE_FULL_SCALE_DEG 45.0f
+#define TELEOP_TWIST_DEADZONE_DPS 18.0f
+#define TELEOP_TWIST_FULL_SCALE_DPS 180.0f
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/

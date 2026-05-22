@@ -657,6 +657,9 @@ int8_t TeleopAdapter::quantizeNormalized(float value) {
   }
 
   uint8_t percent = static_cast<uint8_t>(magnitude * 100.0f + 0.5f);
+  if (percent > CONTINUOUS_OUTPUT_CAP_PERCENT) {
+    percent = CONTINUOUS_OUTPUT_CAP_PERCENT;
+  }
   uint8_t quantized = quantizePercentMagnitude(percent);
   if (quantized == 0) {
     return 0;

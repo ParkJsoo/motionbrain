@@ -100,7 +100,8 @@ private:
   static const size_t RX_BUFFER_SIZE = 1024;
   static const uint32_t PARSER_WARNING_INTERVAL_MS = 2000;
   static const uint8_t OUTPUT_QUANT_STEP_PERCENT = 5;
-  static const uint8_t GRIPPER_BUTTON_PERCENT = 70;
+  static const uint8_t CONTINUOUS_OUTPUT_CAP_PERCENT = 35;
+  static const uint8_t GRIPPER_BUTTON_PERCENT = 50;
 
   HardwareSerial*     serial_;
   SystemStateManager* systemState_;

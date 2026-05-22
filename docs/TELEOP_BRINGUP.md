@@ -120,7 +120,7 @@ STM32는 MPU가 감지되지 않아도 UART heartbeat를 계속 보내며, 이�
 - Bench MVP에서는 단일 STM32로 teleop + safety freshness를 같이 검증한다.
 - 최종 제품형 구조에서는 safety sensor channel을 별도 MCU, 별도 UART, 또는 독립 safety node로 분리할 수 있도록 source 표시와 simulation 경로를 유지한다.
 - 2026-05-22 실기에서 deadman + IMU tilt가 실제 모터 출력으로 이어지고, deadman release에서 정지하는 것을 확인했다.
-- 같은 실기에서 작은 tilt에도 `M4`가 최대 `100%`, `M3`가 약 `85%`까지 올라갔으므로 반복 시연 전에는 teleop output cap과 angle scale을 보수적으로 낮춘다.
+- 같은 실기에서 작은 tilt에도 `M4`가 최대 `100%`, `M3`가 약 `85%`까지 올라갔기 때문에 이후 튜닝에서 angle full-scale을 키우고 ESP32 continuous teleop output을 `35%`로 제한했다.
 - Teleop mixer 부호와 비중은 로봇팔 초기 자세, 링크 배치, 리모컨을 잡는 방향이 고정된 뒤 추가 튜닝한다.
 
 ## Safety Simulation
