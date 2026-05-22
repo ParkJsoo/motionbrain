@@ -55,12 +55,22 @@ def status_allows_base_alignment(status: dict) -> bool:
 
 def classify_alignment(offset_x: float | None, deadband: float) -> str:
     if offset_x is None:
-        return "unknown"
+        return "LOST"
     if offset_x < -deadband:
-        return "left"
+        return "LEFT"
     if offset_x > deadband:
-        return "right"
-    return "centered"
+        return "RIGHT"
+    return "CENTER"
+
+
+def command_suggestion_for_alignment(alignment: str) -> str:
+    if alignment == "LEFT":
+        return "base_left"
+    if alignment == "RIGHT":
+        return "base_right"
+    if alignment == "CENTER":
+        return "hold"
+    return "none"
 
 
 def detect_colored_target(frame: bytes, color: str, align_deadband: float) -> dict:
@@ -74,7 +84,8 @@ def detect_colored_target(frame: bytes, color: str, align_deadband: float) -> di
             "color": color,
             "reason": "opencv_unavailable",
             "frameBytes": len(frame),
-            "alignment": "unknown",
+            "alignment": "LOST",
+            "commandSuggestion": "none",
         }
 
     data = np.frombuffer(frame, dtype=np.uint8)
@@ -86,7 +97,8 @@ def detect_colored_target(frame: bytes, color: str, align_deadband: float) -> di
             "color": color,
             "reason": "decode_failed",
             "frameBytes": len(frame),
-            "alignment": "unknown",
+            "alignment": "LOST",
+            "commandSuggestion": "none",
         }
 
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
@@ -121,22 +133,27 @@ def detect_colored_target(frame: bytes, color: str, align_deadband: float) -> di
             offset_x = (centroid_x - center_x) / max(center_x, 1.0)
             offset_y = (centroid_y - center_y) / max(center_y, 1.0)
 
-    alignment = classify_alignment(offset_x, align_deadband) if detected else "not_detected"
+    alignment = classify_alignment(offset_x, align_deadband) if detected else "LOST"
+    command_suggestion = command_suggestion_for_alignment(alignment)
     return {
         "detected": detected,
         "available": True,
         "color": color,
         "ratio": ratio,
+        "areaRatio": ratio,
         "pixels": pixels,
         "width": width,
         "height": height,
         "frameBytes": len(frame),
+        "centerX": centroid_x,
+        "centerY": centroid_y,
         "centroidX": centroid_x,
         "centroidY": centroid_y,
         "offsetX": offset_x,
         "offsetY": offset_y,
         "alignDeadband": align_deadband,
         "alignment": alignment,
+        "commandSuggestion": command_suggestion,
     }
 
 
@@ -147,12 +164,13 @@ def format_detection_detail(detection: dict) -> str:
 
     ratio = detection.get("ratio")
     offset_x = detection.get("offsetX")
-    alignment = detection.get("alignment", "unknown")
+    alignment = detection.get("alignment", "LOST")
+    suggestion = detection.get("commandSuggestion", "none")
     if isinstance(ratio, (int, float)) and isinstance(offset_x, (int, float)):
-        return f"{detection.get('color')}_ratio={ratio:.3f} offset_x={offset_x:+.2f} align={alignment}"
+        return f"{detection.get('color')}_ratio={ratio:.3f} offset_x={offset_x:+.2f} align={alignment} suggest={suggestion}"
     if isinstance(ratio, (int, float)):
-        return f"{detection.get('color')}_ratio={ratio:.3f} align={alignment}"
-    return f"align={alignment}"
+        return f"{detection.get('color')}_ratio={ratio:.3f} align={alignment} suggest={suggestion}"
+    return f"align={alignment} suggest={suggestion}"
 
 
 def run(args: argparse.Namespace) -> int:
@@ -185,7 +203,8 @@ def run(args: argparse.Namespace) -> int:
                     "color": args.detect_color,
                     "reason": "assume_detected",
                     "frameBytes": len(frame),
-                    "alignment": "unknown",
+                    "alignment": "LOST",
+                    "commandSuggestion": "none",
                 }
             else:
                 detection = detect_colored_target(frame, args.detect_color, args.align_deadband)
@@ -217,16 +236,17 @@ def run(args: argparse.Namespace) -> int:
                 detected
                 and align_allowed
                 and args.enable_align_action
-                and alignment in {"left", "right"}
+                and alignment in {"LEFT", "RIGHT"}
                 and now - last_align_action_time >= args.cooldown
             ):
+                direction = alignment.lower()
                 path = (
-                    f"/base?action=angle&direction={alignment}"
+                    f"/base?action=angle&direction={direction}"
                     f"&degrees={args.align_degrees:.1f}&percent={args.align_percent}"
                 )
                 response = post_motionbrain(motion_base, path, args.timeout, args.http_token)
                 print(
-                    f"[{timestamp}] ACTION base.{alignment} "
+                    f"[{timestamp}] ACTION base.{direction} "
                     f"{args.align_degrees:.1f}deg success={response.get('success')} "
                     f"message={response.get('message')}",
                     flush=True,

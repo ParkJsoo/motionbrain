@@ -184,7 +184,7 @@ Build:
 pio run -d firmware/esp32cam
 ```
 
-See [PHASE4_MVP.md](PHASE4_MVP.md) for the current camera-to-host MVP plan.
+See [PHASE4_MVP.md](PHASE4_MVP.md) for the current camera-to-host MVP plan. The dry-run vision loop reports target center, normalized offset, `LEFT|CENTER|RIGHT|LOST` alignment, and a command suggestion before any optional motion command is enabled.
 
 ### STM32
 

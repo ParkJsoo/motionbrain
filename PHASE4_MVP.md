@@ -256,10 +256,12 @@ python3 -m pip install opencv-python numpy
 
 light action 경로가 검증된 뒤의 다음 단계는 `detect -> align`이다. Host는 색상 mask에서 target centroid를 계산하고, frame 중심 대비 normalized horizontal offset을 만든다.
 
-- `alignment=left`: target이 화면 왼쪽에 있어 base를 left 방향으로 보정
-- `alignment=right`: target이 화면 오른쪽에 있어 base를 right 방향으로 보정
-- `alignment=centered`: offset이 deadband 안에 있어 정렬 완료
-- `alignment=not_detected`: target 없음
+- `alignment=LEFT`: target이 화면 왼쪽에 있어 `commandSuggestion=base_left`
+- `alignment=RIGHT`: target이 화면 오른쪽에 있어 `commandSuggestion=base_right`
+- `alignment=CENTER`: offset이 deadband 안에 있어 `commandSuggestion=hold`
+- `alignment=LOST`: target 없음 또는 frame decode 실패, `commandSuggestion=none`
+
+Detection payload는 기존 호환 필드인 `centroidX`, `centroidY`, `ratio`를 유지하면서, dashboard/ROS2/포트폴리오 설명용 필드인 `centerX`, `centerY`, `areaRatio`, `offsetX`, `offsetY`, `alignment`, `commandSuggestion`을 함께 제공한다.
 
 기본 실행은 dry-run이라 base motor를 움직이지 않는다.
 
@@ -270,7 +272,7 @@ python3 tools/vision_host_mvp.py --camera-url http://<esp32-cam-ip> --detect-col
 로그 예:
 
 ```text
-detected=Y red_ratio=0.254 offset_x=+0.32 align=right align_allowed=Y
+detected=Y red_ratio=0.254 offset_x=+0.32 align=RIGHT suggest=base_right align_allowed=Y
 ```
 
 실제 base 상대각 보정은 명시적으로 켠다. `/base?action=angle`은 controller가 `ARMED`, sensor clear, 기존 base angle inactive일 때만 통과한다.
@@ -284,7 +286,7 @@ python3 tools/vision_host_mvp.py \
   --align-percent 35
 ```
 
-대시보드의 `Camera Detection`도 centroid, x offset, alignment 상태를 표시한다. ROS2 bridge의 `/camera/detection` JSON에도 같은 필드가 포함된다.
+대시보드의 `Camera Detection`도 target center, x offset, alignment 상태, command suggestion을 표시한다. ROS2 bridge의 `/camera/detection` JSON에도 같은 필드가 포함된다.
 
 ## 완료 기준
 
@@ -292,7 +294,7 @@ python3 tools/vision_host_mvp.py \
 - Mac script가 MotionBrain `/status`와 ESP32-CAM frame을 같은 루프에서 읽는다.
 - target 감지 결과가 로그에 남는다.
 - `--enable-action`에서 MotionBrain `/light` 명령이 성공한다.
-- target centroid, horizontal offset, alignment 결정이 dashboard와 `/camera/detection`에 노출된다.
+- target center, horizontal offset, alignment 결정, command suggestion이 dashboard와 `/camera/detection`에 노출된다.
 - `--enable-align-action`에서 안전 조건을 만족할 때만 MotionBrain `/base?action=angle` 명령이 전송된다.
 - 이 흐름이 나중에 ROS2 node로 옮길 host-side bridge 경계가 된다.
 

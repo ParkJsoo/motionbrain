@@ -328,7 +328,7 @@ INDEX_HTML = """<!doctype html>
             <div class="metric">
               <div class="label">Alignment</div>
               <div class="value" id="alignmentValue">-</div>
-              <div class="subvalue" id="alignmentDeadband">-</div>
+              <div class="subvalue" id="alignmentSuggestion">-</div>
             </div>
           </div>
           <div class="controls">
@@ -423,21 +423,24 @@ INDEX_HTML = """<!doctype html>
     function updateDetection(payload) {
       const detected = Boolean(payload.detected);
       setText("detectedValue", detected ? "YES" : "NO", detected ? "ok" : "");
-      document.getElementById("detectionRatio").textContent = typeof payload.ratio === "number" ? `ratio ${(payload.ratio * 100).toFixed(2)}%` : "ratio -";
+      const areaRatio = typeof payload.areaRatio === "number" ? payload.areaRatio : payload.ratio;
+      document.getElementById("detectionRatio").textContent = typeof areaRatio === "number" ? `area ${(areaRatio * 100).toFixed(2)}%` : "area -";
       setText("frameValue", payload.frameBytes ? `${payload.frameBytes} B` : "-");
       document.getElementById("detectionReason").textContent = payload.reason || `${payload.width || "-"}x${payload.height || "-"}`;
-      const centroid = typeof payload.centroidX === "number" && typeof payload.centroidY === "number"
-        ? `${payload.centroidX.toFixed(0)}, ${payload.centroidY.toFixed(0)}`
+      const centerX = typeof payload.centerX === "number" ? payload.centerX : payload.centroidX;
+      const centerY = typeof payload.centerY === "number" ? payload.centerY : payload.centroidY;
+      const centroid = typeof centerX === "number" && typeof centerY === "number"
+        ? `${centerX.toFixed(0)}, ${centerY.toFixed(0)}`
         : "-";
       setText("targetValue", centroid);
       document.getElementById("targetOffset").textContent = typeof payload.offsetX === "number"
         ? `x ${payload.offsetX >= 0 ? "+" : ""}${payload.offsetX.toFixed(2)}`
         : "x -";
       const alignment = payload.alignment || "-";
-      setText("alignmentValue", alignment.toUpperCase(), alignment === "centered" ? "ok" : detected ? "warn" : "");
-      document.getElementById("alignmentDeadband").textContent = typeof payload.alignDeadband === "number"
-        ? `deadband ${payload.alignDeadband.toFixed(2)}`
-        : "deadband -";
+      setText("alignmentValue", alignment, alignment === "CENTER" ? "ok" : detected ? "warn" : "");
+      const suggestion = payload.commandSuggestion || "none";
+      const deadband = typeof payload.alignDeadband === "number" ? `db ${payload.alignDeadband.toFixed(2)}` : "db -";
+      document.getElementById("alignmentSuggestion").textContent = `${suggestion} / ${deadband}`;
     }
 
     async function refresh() {
@@ -524,12 +527,22 @@ def post_motionbrain(base_url: str, path: str, timeout: float, token: str = "") 
 
 def classify_alignment(offset_x: float | None, deadband: float = ALIGN_DEADBAND) -> str:
     if offset_x is None:
-        return "unknown"
+        return "LOST"
     if offset_x < -deadband:
-        return "left"
+        return "LEFT"
     if offset_x > deadband:
-        return "right"
-    return "centered"
+        return "RIGHT"
+    return "CENTER"
+
+
+def command_suggestion_for_alignment(alignment: str) -> str:
+    if alignment == "LEFT":
+        return "base_left"
+    if alignment == "RIGHT":
+        return "base_right"
+    if alignment == "CENTER":
+        return "hold"
+    return "none"
 
 
 def detect_colored_target(frame: bytes, color: str) -> dict[str, Any]:
@@ -543,7 +556,8 @@ def detect_colored_target(frame: bytes, color: str) -> dict[str, Any]:
             "color": color,
             "reason": "opencv_unavailable",
             "frameBytes": len(frame),
-            "alignment": "unknown",
+            "alignment": "LOST",
+            "commandSuggestion": "none",
         }
 
     data = np.frombuffer(frame, dtype=np.uint8)
@@ -555,7 +569,8 @@ def detect_colored_target(frame: bytes, color: str) -> dict[str, Any]:
             "color": color,
             "reason": "decode_failed",
             "frameBytes": len(frame),
-            "alignment": "unknown",
+            "alignment": "LOST",
+            "commandSuggestion": "none",
         }
 
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
@@ -574,7 +589,8 @@ def detect_colored_target(frame: bytes, color: str) -> dict[str, Any]:
             "color": color,
             "reason": "unsupported_color",
             "frameBytes": len(frame),
-            "alignment": "unknown",
+            "alignment": "LOST",
+            "commandSuggestion": "none",
         }
 
     pixels = int(cv2.countNonZero(mask))
@@ -597,21 +613,27 @@ def detect_colored_target(frame: bytes, color: str) -> dict[str, Any]:
             offset_x = (centroid_x - center_x) / max(center_x, 1.0)
             offset_y = (centroid_y - center_y) / max(center_y, 1.0)
 
+    alignment = classify_alignment(offset_x) if detected else "LOST"
+    command_suggestion = command_suggestion_for_alignment(alignment)
     return {
         "detected": detected,
         "available": True,
         "color": color,
         "ratio": ratio,
+        "areaRatio": ratio,
         "pixels": pixels,
         "width": width,
         "height": height,
         "frameBytes": len(frame),
+        "centerX": centroid_x,
+        "centerY": centroid_y,
         "centroidX": centroid_x,
         "centroidY": centroid_y,
         "offsetX": offset_x,
         "offsetY": offset_y,
         "alignDeadband": ALIGN_DEADBAND,
-        "alignment": classify_alignment(offset_x) if detected else "not_detected",
+        "alignment": alignment,
+        "commandSuggestion": command_suggestion,
     }
 
 

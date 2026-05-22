@@ -63,12 +63,22 @@ def parse_light_action(payload: str) -> str | None:
 
 def classify_alignment(offset_x: float | None, deadband: float = ALIGN_DEADBAND) -> str:
     if offset_x is None:
-        return "unknown"
+        return "LOST"
     if offset_x < -deadband:
-        return "left"
+        return "LEFT"
     if offset_x > deadband:
-        return "right"
-    return "centered"
+        return "RIGHT"
+    return "CENTER"
+
+
+def command_suggestion_for_alignment(alignment: str) -> str:
+    if alignment == "LEFT":
+        return "base_left"
+    if alignment == "RIGHT":
+        return "base_right"
+    if alignment == "CENTER":
+        return "hold"
+    return "none"
 
 
 def detect_colored_target(frame: bytes, color: str) -> dict[str, Any]:
@@ -81,7 +91,8 @@ def detect_colored_target(frame: bytes, color: str) -> dict[str, Any]:
             "color": color,
             "available": False,
             "reason": "opencv_unavailable",
-            "alignment": "unknown",
+            "alignment": "LOST",
+            "commandSuggestion": "none",
         }
 
     data = np.frombuffer(frame, dtype=np.uint8)
@@ -92,7 +103,8 @@ def detect_colored_target(frame: bytes, color: str) -> dict[str, Any]:
             "color": color,
             "available": True,
             "reason": "decode_failed",
-            "alignment": "unknown",
+            "alignment": "LOST",
+            "commandSuggestion": "none",
         }
 
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
@@ -110,7 +122,8 @@ def detect_colored_target(frame: bytes, color: str) -> dict[str, Any]:
             "color": color,
             "available": True,
             "reason": "unsupported_color",
-            "alignment": "unknown",
+            "alignment": "LOST",
+            "commandSuggestion": "none",
         }
 
     pixels = int(cv2.countNonZero(mask))
@@ -133,21 +146,27 @@ def detect_colored_target(frame: bytes, color: str) -> dict[str, Any]:
             offset_x = (centroid_x - center_x) / max(center_x, 1.0)
             offset_y = (centroid_y - center_y) / max(center_y, 1.0)
 
+    alignment = classify_alignment(offset_x) if detected else "LOST"
+    command_suggestion = command_suggestion_for_alignment(alignment)
     return {
         "detected": detected,
         "color": color,
         "available": True,
         "ratio": ratio,
+        "areaRatio": ratio,
         "pixels": pixels,
         "width": width,
         "height": height,
         "frameBytes": len(frame),
+        "centerX": centroid_x,
+        "centerY": centroid_y,
         "centroidX": centroid_x,
         "centroidY": centroid_y,
         "offsetX": offset_x,
         "offsetY": offset_y,
         "alignDeadband": ALIGN_DEADBAND,
-        "alignment": classify_alignment(offset_x) if detected else "not_detected",
+        "alignment": alignment,
+        "commandSuggestion": command_suggestion,
     }
 
 
