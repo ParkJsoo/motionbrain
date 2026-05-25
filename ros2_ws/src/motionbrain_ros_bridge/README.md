@@ -24,7 +24,7 @@ colcon build --packages-select motionbrain_ros_bridge
 source install/setup.bash
 ```
 
-## Run
+## Run Directly
 
 With the Mac or Raspberry Pi connected to `MotionBrain-AP`:
 
@@ -45,6 +45,25 @@ ros2 run motionbrain_ros_bridge motionbrain_status_node \
   -p camera_url:=http://motionbrain-cam.local
 ```
 
+## Run With Launch
+
+For the Raspberry Pi Home Wi-Fi portfolio path:
+
+```bash
+export MOTIONBRAIN_HTTP_TOKEN="your-local-command-token"
+ros2 launch motionbrain_ros_bridge motionbrain_home_wifi.launch.py
+```
+
+Override hostnames or timing when needed:
+
+```bash
+ros2 launch motionbrain_ros_bridge motionbrain_home_wifi.launch.py \
+  motion_host:=192.168.1.50 \
+  camera_url:=http://192.168.1.51 \
+  poll_interval:=2.0 \
+  http_timeout:=6.0
+```
+
 Watch bridge output:
 
 ```bash
@@ -59,3 +78,6 @@ Toggle the search light through ROS2:
 ros2 topic pub --once /motionbrain/light_cmd std_msgs/msg/String "{data: toggle}"
 ros2 topic echo /motionbrain/light_result
 ```
+
+Full Raspberry Pi setup and verification notes are in
+[docs/RASPBERRY_PI_ROS2_BRINGUP.md](../../../docs/RASPBERRY_PI_ROS2_BRINGUP.md).

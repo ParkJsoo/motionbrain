@@ -144,6 +144,36 @@ Current HTTP routes:
 - `POST /sequence`
 - `POST /light`
 
+### ROS2 Bridge MVP
+
+The Phase 4 host path is exposed through a minimal ROS2 package:
+
+```text
+ros2_ws/src/motionbrain_ros_bridge
+```
+
+The bridge keeps the ESP32 HTTP API unchanged while publishing robot status,
+event logs, and ESP32-CAM detection results into ROS2:
+
+- `/motionbrain/status`
+- `/motionbrain/events`
+- `/camera/detection`
+- `/motionbrain/light_cmd`
+- `/motionbrain/light_result`
+
+Raspberry Pi bring-up is documented in
+[docs/RASPBERRY_PI_ROS2_BRINGUP.md](docs/RASPBERRY_PI_ROS2_BRINGUP.md). The
+portfolio validation target is ROS2 Jazzy on Raspberry Pi 4, Home Wi-Fi access
+to the ESP32 controller and ESP32-CAM, topic echo verification, and one
+ROS2 command-channel test.
+
+```bash
+cd ros2_ws
+colcon build --packages-select motionbrain_ros_bridge
+source install/setup.bash
+ros2 launch motionbrain_ros_bridge motionbrain_home_wifi.launch.py
+```
+
 ## Development Environment
 
 ### ESP32

@@ -182,13 +182,21 @@ It keeps the ESP32 HTTP API unchanged and publishes JSON payloads on:
 
 It also subscribes to `/motionbrain/light_cmd` and forwards `on`, `off`, or `toggle` to `POST /light`.
 
-Build and run:
+Raspberry Pi bring-up is documented in [docs/RASPBERRY_PI_ROS2_BRINGUP.md](docs/RASPBERRY_PI_ROS2_BRINGUP.md). The intended portfolio validation path is ROS2 Jazzy on Raspberry Pi 4, Home Wi-Fi access to the ESP32 controller and ESP32-CAM, topic echo verification, and one ROS2 command-channel test.
+
+Build and run directly:
 
 ```bash
 cd ros2_ws
 colcon build --packages-select motionbrain_ros_bridge
 source install/setup.bash
 ros2 run motionbrain_ros_bridge motionbrain_status_node --ros-args -p motion_host:=192.168.4.1 -p camera_url:=http://192.168.4.2
+```
+
+Run on Home Wi-Fi with the launch file:
+
+```bash
+ros2 launch motionbrain_ros_bridge motionbrain_home_wifi.launch.py
 ```
 
 Package notes are in [ros2_ws/src/motionbrain_ros_bridge/README.md](ros2_ws/src/motionbrain_ros_bridge/README.md).
