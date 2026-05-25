@@ -27,6 +27,8 @@ I designed and implemented the embedded control structure, including:
 - Wired handheld teleop path with deadman and frame freshness timeout
 - ESP32-CAM capture/stream firmware
 - Mac host-side OpenCV red-target detection MVP
+- Trusted Home Wi-Fi workflow for the controller and ESP32-CAM
+- Phone-browser manual control through the ESP32-hosted `MotionBrain Control` page
 - Safe host-triggered `/light` action through the existing MotionBrain command boundary
 - Bench simulation commands for hardware-independent validation
 - Documentation for pin mapping, message boundaries, and Phase 4 host-side integration
@@ -47,6 +49,16 @@ ESP32-CAM Vision Node
   -> Mac host OpenCV target detection
   -> MotionBrain /status safety check
   -> safe /light demo action
+  -> opt-in base nudge alignment action
+
+Phone / Browser Operator
+  -> ESP32-hosted MotionBrain Control
+  -> runtime command token prompt
+  -> manual ARM / STOP / joint commands
+
+Mac Ops Dashboard
+  -> status, events, camera, detection, action log
+  -> token-gated one-shot vision nudge
 ```
 
 ## Technical Highlights
@@ -64,6 +76,8 @@ Motion commands are accepted only when they pass state and safety checks. Fault 
 ### Unified Command Boundary
 
 Serial and HTTP inputs are routed through a common command path instead of separate behavior branches. This reduces drift between local bench operation, web control, and future host/ROS2 control.
+
+State-changing HTTP commands require the MotionBrain command header and can be protected with a provisioned command token. The token is entered at runtime on the ESP32-hosted control page and kept only in the current browser page memory.
 
 Current control routes include:
 
@@ -107,12 +121,21 @@ sensor sim off
 The Phase 4 MVP proves the first camera-to-host-to-controller loop before moving to Raspberry Pi or ROS2:
 
 - ESP32-CAM joins the `MotionBrain-AP` network as a camera node.
+- For normal bench work, the ESP32 controller and ESP32-CAM can also join a trusted Home Wi-Fi LAN to avoid switching the Mac between networks.
 - Mac host fetches ESP32-CAM `/capture` frames and MotionBrain `/status`.
 - OpenCV detects a red target in the camera frame.
 - The host computes target centroid, normalized horizontal offset, and an alignment decision.
 - The host only triggers an action when MotionBrain status allows it.
 - The default demo action uses the safe non-motion `/light?action=toggle` path.
 - Base alignment is opt-in. On the current handheld-teleop hardware it uses a short safety-gated base nudge with an immediate stop; closed-loop `/base?action=angle` is kept for future base-mounted gyro or encoder feedback.
+
+### Operator Interfaces
+
+The project separates manual control from observability:
+
+- `MotionBrain Control`, served directly by the ESP32, is the primary manual control surface and has been verified from a phone browser.
+- The local Mac ops dashboard is used for status, events, camera/detection, action logs, and a gated one-shot vision nudge.
+- Command tokens are provisioned on-device and entered only at runtime; real Wi-Fi credentials and tokens are not committed to the repository.
 
 ## Validation So Far
 
@@ -132,6 +155,8 @@ The Phase 4 MVP proves the first camera-to-host-to-controller loop before moving
 - Vision alignment now exposes centroid, horizontal offset, `LEFT|CENTER|RIGHT|LOST` decisions, and command suggestions in the host loop, dashboard, and ROS2 detection payload.
 - Vision alignment nudge mode was physically validated in both directions: right target -> `base.right`, left target -> `base.left`, each with a 250 ms / 25% base nudge and confirmed stop.
 - The dashboard includes a token-gated one-shot nudge control that revalidates the current camera frame and controller status server-side before motion.
+- Home Wi-Fi operation was verified with the ESP32 controller and ESP32-CAM on the same trusted LAN.
+- Phone-browser control was verified on 2026-05-25: token prompt appeared, the token was accepted, and commands executed.
 - CI now runs synthetic host-side vision alignment tests alongside ESP32 and ESP32-CAM PlatformIO builds.
 
 ## Current Limitations

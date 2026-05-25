@@ -42,15 +42,15 @@ input -> decision -> state -> motion -> feedback
   - embedded teleop safety telemetry clears `SENSOR_STALE`
   - real motor output from deadman + IMU input
   - stop on `DEADMAN_RELEASE`
-- trusted home Wi-Fi station mode with token-aware host commands
+- trusted home Wi-Fi station mode for the ESP32 controller and ESP32-CAM
+- token-aware host commands and a runtime token prompt in the ESP32-hosted `MotionBrain Control` page
+- local ops dashboard for status/events, ESP32-CAM capture, color detection, and token-gated one-shot vision nudge control
 
 ### Current Focus
 
-- Commit and merge the home Wi-Fi + unified teleop/safety branch
-- Tune teleop output caps and angle scaling conservatively
-- Resume Vision-Based Alignment in dry-run mode
-- Finalize the physical layout and wiring table
-- Define the Raspberry Pi + ROS2 + AI high-level control path
+- Capture portfolio demo media for the verified teleop, safety, Home Wi-Fi, phone-control, and vision-alignment flows
+- Keep live motion demos conservative and explicitly opt-in
+- Add the next layer of portfolio depth: kinematics FK/IK, Raspberry Pi deployment, and real ROS2 validation
 
 ## Architecture
 
@@ -186,6 +186,8 @@ pio run -d firmware/esp32cam
 
 See [PHASE4_MVP.md](PHASE4_MVP.md) for the current camera-to-host MVP plan. The dry-run vision loop reports target center, normalized offset, `LEFT|CENTER|RIGHT|LOST` alignment, and a command suggestion before any optional motion command is enabled. On the current handheld-teleop hardware, opt-in physical alignment uses a short safety-gated base nudge; closed-loop base angle mode is reserved for future base-mounted gyro or encoder feedback.
 
+For bench work on a trusted home LAN, see [docs/HOME_WIFI_MODE.md](docs/HOME_WIFI_MODE.md). The ESP32-hosted `MotionBrain Control` page is the primary manual control surface and works from a phone browser on the same Wi-Fi network. If a command token is configured, the page prompts for it at runtime on the first state-changing command and keeps it only in current page memory. The local ops dashboard at `http://127.0.0.1:8765` is used for observability, camera/detection, and the token-gated one-shot vision nudge.
+
 ### STM32
 
 - STM32CubeIDE
@@ -212,6 +214,8 @@ The host watcher polls `GET /status` and `GET /events` and prints state, safety,
 python3 tools/motionbrain_watch.py --host 192.168.4.1 --interval 1.0
 ```
 
+The local ops dashboard combines status/events with ESP32-CAM capture, color detection, light command logging, and the one-shot vision nudge control. Manual driving remains on the ESP32 `MotionBrain Control` page so the phone browser can act as the wireless controller.
+
 ## Why This Project Matters
 
 This repository is structured as an embedded robotics portfolio project. The most important engineering signals are:
@@ -221,6 +225,7 @@ This repository is structured as an embedded robotics portfolio project. The mos
 - Unified command dispatch across serial and HTTP control paths
 - Sensor feedback and simulation hooks for bench validation
 - Teleoperation with deadman and frame freshness handling
+- Home Wi-Fi phone control with runtime token entry that avoids committing secrets
 - Clear path from embedded control to camera input, host-side decision logic, ROS2, and AI integration
 
 ## Related Documents

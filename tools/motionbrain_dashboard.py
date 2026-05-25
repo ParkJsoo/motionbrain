@@ -753,7 +753,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
     server: "DashboardServer"
 
     def log_message(self, fmt: str, *args: object) -> None:
-        sys.stderr.write(f"[dashboard] {self.address_string()} {fmt % args}\n")
+        message = fmt % args
+        if message.startswith('"GET /') and '" 200 ' in message:
+            return
+        sys.stderr.write(f"[dashboard] {self.address_string()} {message}\n")
 
     def do_GET(self) -> None:
         parsed = urllib.parse.urlparse(self.path)

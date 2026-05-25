@@ -89,6 +89,29 @@ python3 tools/motionbrain_dashboard.py \
 If `.local` names do not resolve, use the IP addresses printed in serial logs or
 reserve fixed IP addresses in the router.
 
+## Control Surface Direction
+
+Use the ESP32-hosted `MotionBrain Control` page at `http://motionbrain.local`
+or the controller IP for manual operation. This page works from a phone on the
+same Wi-Fi network and is the intended wireless controller surface.
+
+When a command token is configured, the page prompts for the token on the first
+state-changing command. The token is kept only in the current browser page's
+JavaScript memory; it is not written to firmware, files, URL query strings, or
+browser local storage. Reloading or closing the page clears it.
+
+Bench verification on 2026-05-25 confirmed the phone flow: the token prompt
+appears, the entered token is accepted, and controller commands execute from the
+phone browser.
+
+Use the local ops dashboard at `http://127.0.0.1:8765` for status, events,
+ESP32-CAM, and vision alignment observation. Do not duplicate manual control
+there.
+
+The local ops dashboard and controller firmware suppress routine successful
+status/event polling logs so serial and dashboard terminals stay focused on
+commands, motion, safety transitions, and errors.
+
 ## Notes
 
 - `GET /status`, `GET /events`, and camera capture endpoints remain readable on
@@ -96,7 +119,7 @@ reserve fixed IP addresses in the router.
 - Motion controller POST endpoints still require `X-MotionBrain: 1`.
 - If a command token was provisioned on the motion controller, POST endpoints
   also require `X-MotionBrain-Token`.
-- The built-in controller web page does not expose the token. With a token
-  enabled, use the host dashboard or CLI tools for command actions.
+- The built-in controller web page prompts for the token only at runtime and
+  keeps it in page memory only.
 - If station connection fails, the motion controller falls back to the original
   `MotionBrain-AP` behavior for recovery.

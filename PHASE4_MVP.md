@@ -214,6 +214,12 @@ http://127.0.0.1:8765
 - `Action Log`: 대시보드에서 보낸 light / align nudge command 결과
 - `Nudge Once`: token이 있고, controller가 `ARMED`, safety clear, target이 `LEFT` 또는 `RIGHT`, base가 idle일 때만 활성화된다. 클릭 시 서버가 최신 camera frame을 다시 검증한 뒤 timed base nudge를 보내고 즉시 stop한다.
 
+Home Wi-Fi + command token 구성에서도 실제 수동 조작은 ESP32가 직접 제공하는
+`MotionBrain Control`을 사용한다. Local ops dashboard는 상태, 이벤트,
+ESP32-CAM, vision alignment 관찰용으로 두고, 조작 UI를 중복 구현하지 않는다.
+2026-05-25 bench에서 phone browser로 `MotionBrain Control`에 접속해 token
+prompt 표시, token 입력, command 동작을 확인했다.
+
 ### 6. 실패 시 우선 확인
 
 - `ESP32-CAM IP`가 serial log에 찍혔는지 확인한다.
@@ -321,9 +327,11 @@ python3 tools/vision_host_mvp.py \
   - target 제거 시 `detected=N red_ratio=0.000`
 - 사용자 실기 확인 기준 search light 실제 점등 완료
 
-## 2026-05-22 실기 검증 결과
+## 2026-05-22 / 2026-05-25 실기 검증 결과
 
-- Home Wi-Fi mode에서 controller `192.168.219.105`, ESP32-CAM `192.168.219.106` 조합으로 Mac Wi-Fi 전환 없이 테스트했다.
+- Home Wi-Fi mode에서 controller와 ESP32-CAM을 같은 trusted LAN에 붙여 Mac Wi-Fi 전환 없이 테스트했다.
+- 2026-05-25 기준 관측 IP는 controller `192.168.219.114`, ESP32-CAM `192.168.219.115`였다. IP는 공유기 DHCP 상황에 따라 바뀔 수 있으므로 serial log, `/status`, 또는 router lease를 기준으로 확인한다.
+- ESP32-hosted `MotionBrain Control`은 phone browser에서 token prompt 표시, token 입력, command 동작까지 확인했다.
 - ESP32-CAM capture 안정화를 위해 QVGA/JPEG quality 15 프로파일과 `/status` capture diagnostics를 적용했다.
 - Host vision 기본값은 ESP32-CAM 부담을 줄이도록 timeout 6초, interval 3초, capture retry 2회로 조정했다.
 - Dry-run 기준 red target 위치 판정:
