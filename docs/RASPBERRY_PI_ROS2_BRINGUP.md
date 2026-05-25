@@ -173,10 +173,11 @@ serial log or reserve stable IP addresses in the router.
 
 ## Build ROS2 Bridge
 
-Install Python dependencies used by camera color detection:
+Install package dependencies:
 
 ```bash
-sudo apt install -y python3-opencv python3-numpy
+cd ~/develop/arduino/motionbrain/ros2_ws
+rosdep install --from-paths src --ignore-src -r -y
 ```
 
 Build the ROS2 package:
@@ -342,8 +343,8 @@ source ~/develop/arduino/motionbrain/ros2_ws/install/setup.bash
 Install OpenCV and rebuild if needed:
 
 ```bash
-sudo apt install -y python3-opencv python3-numpy
 cd ~/develop/arduino/motionbrain/ros2_ws
+rosdep install --from-paths src --ignore-src -r -y
 colcon build --packages-select motionbrain_ros_bridge
 source install/setup.bash
 ```
