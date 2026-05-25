@@ -4,7 +4,7 @@
 
 ## Summary
 
-MotionBrain is a multi-MCU robotic arm control project built around an ESP32 motion controller, STM32 sensor/teleop layer, ESP32-CAM vision input, and a Mac host-side perception loop. The project focuses on reliable embedded control, safety state management, sensor feedback, and a clean command boundary that can later be bridged into ROS2 and AI-driven planning.
+MotionBrain is a multi-MCU robotic arm control project built around an ESP32 motion controller, STM32 sensor/teleop layer, ESP32-CAM vision input, Mac host-side perception, and a prepared Raspberry Pi ROS2 bridge path. The project focuses on reliable embedded control, safety state management, sensor feedback, and a clean command boundary that can be exposed to ROS2 without rewriting the embedded firmware.
 
 ## Engineering Problem
 
@@ -30,8 +30,9 @@ I designed and implemented the embedded control structure, including:
 - Trusted Home Wi-Fi workflow for the controller and ESP32-CAM
 - Phone-browser manual control through the ESP32-hosted `MotionBrain Control` page
 - Safe host-triggered `/light` action through the existing MotionBrain command boundary
+- ROS2 bridge package for status, events, ESP32-CAM detection, and light command forwarding
 - Bench simulation commands for hardware-independent validation
-- Documentation for pin mapping, message boundaries, and Phase 4 host-side integration
+- Documentation for pin mapping, message boundaries, Phase 4 host-side integration, and Raspberry Pi ROS2 bring-up
 
 ## System Architecture
 
@@ -59,6 +60,13 @@ Phone / Browser Operator
 Mac Ops Dashboard
   -> status, events, camera, detection, action log
   -> token-gated one-shot vision nudge
+
+Raspberry Pi ROS2 Host
+  -> motionbrain_ros_bridge
+  -> /motionbrain/status, /motionbrain/events
+  -> /camera/detection
+  -> /motionbrain/light_cmd, /motionbrain/light_result
+  -> pending Raspberry Pi hardware validation
 ```
 
 ## Technical Highlights
@@ -118,7 +126,7 @@ sensor sim off
 
 ### ESP32-CAM Host Vision MVP
 
-The Phase 4 MVP proves the first camera-to-host-to-controller loop before moving to Raspberry Pi or ROS2:
+The Phase 4 MVP proves the first camera-to-host-to-controller loop before moving the host role onto Raspberry Pi:
 
 - ESP32-CAM joins the `MotionBrain-AP` network as a camera node.
 - For normal bench work, the ESP32 controller and ESP32-CAM can also join a trusted Home Wi-Fi LAN to avoid switching the Mac between networks.
@@ -128,6 +136,18 @@ The Phase 4 MVP proves the first camera-to-host-to-controller loop before moving
 - The host only triggers an action when MotionBrain status allows it.
 - The default demo action uses the safe non-motion `/light?action=toggle` path.
 - Base alignment is opt-in. On the current handheld-teleop hardware it uses a short safety-gated base nudge with an immediate stop; closed-loop `/base?action=angle` is kept for future base-mounted gyro or encoder feedback.
+
+### ROS2 Bridge Path
+
+The repository includes a ROS2 bridge package intended for Raspberry Pi 4 with ROS2 Jazzy:
+
+- `motionbrain_ros_bridge` polls ESP32 `GET /status` and publishes `/motionbrain/status`.
+- It polls ESP32 `GET /events?limit=N` and publishes `/motionbrain/events`.
+- It fetches ESP32-CAM `/capture`, runs color-target detection, and publishes `/camera/detection`.
+- It subscribes to `/motionbrain/light_cmd` and forwards safe `on`, `off`, or `toggle` commands to the ESP32 `/light` endpoint.
+- A Home Wi-Fi launch file is included for the Raspberry Pi validation path.
+
+This keeps ROS2 integration at the host boundary while preserving the existing embedded command model.
 
 ### Operator Interfaces
 
@@ -157,15 +177,16 @@ The project separates manual control from observability:
 - The dashboard includes a token-gated one-shot nudge control that revalidates the current camera frame and controller status server-side before motion.
 - Home Wi-Fi operation was verified with the ESP32 controller and ESP32-CAM on the same trusted LAN.
 - Phone-browser control was verified on 2026-05-25: token prompt appeared, the token was accepted, and commands executed.
+- ROS2 bridge package, Home Wi-Fi launch file, and Raspberry Pi bring-up checklist are prepared for Pi hardware validation.
 - CI now runs synthetic host-side vision alignment tests alongside ESP32 and ESP32-CAM PlatformIO builds.
 
 ## Current Limitations
 
 - Final hardware enclosure and wiring layout are not locked yet.
 - Public demo images and videos are not included yet.
-- Phase 4 currently uses a Mac host; Raspberry Pi deployment is not complete yet.
+- Phase 4 currently uses a Mac host for verified runs; Raspberry Pi ROS2 deployment is prepared but not yet hardware-validated.
 - Vision-based base alignment is implemented as an explicit opt-in nudge step. It is validated for left/right correction nudges, but not yet for full pick behavior.
-- Raspberry Pi, ROS2, and AI integration are planned but not complete.
+- AI planning integration is planned but not complete.
 - Teleop sign, deadzone, and speed weights need final tuning after mechanical mounting is fixed.
 
 ## Why It Is Relevant
@@ -178,12 +199,13 @@ This project demonstrates practical embedded robotics engineering:
 - HTTP and serial command APIs
 - State and event observability
 - Hardware bench validation
-- Forward-compatible architecture for ROS2 and host-side perception
+- ROS2 host bridge design that preserves embedded command boundaries
 
 ## Next Steps
 
-1. Prepare public demo media showing teleop, safety/status, camera capture, red detection, and host-triggered light action.
-2. Capture demo media showing red target localization and left/right base nudge alignment.
-3. Extend camera or host decisions from alignment nudges toward semi-autonomous pick behavior.
-4. Finalize wiring, obstacle-safety placement, and teleop tuning.
-5. Move the host-side boundary toward Raspberry Pi + ROS2.
+1. Validate Raspberry Pi 4 with Ubuntu 24.04, ROS2 Jazzy, and `motionbrain_ros_bridge`.
+2. Capture ROS2 topic evidence for `/motionbrain/status`, `/motionbrain/events`, `/camera/detection`, and `/motionbrain/light_result`.
+3. Prepare public demo media showing teleop, safety/status, camera capture, red detection, and host-triggered light action.
+4. Capture demo media showing red target localization and left/right base nudge alignment.
+5. Extend camera or host decisions from alignment nudges toward semi-autonomous pick behavior.
+6. Finalize wiring, obstacle-safety placement, and teleop tuning.
