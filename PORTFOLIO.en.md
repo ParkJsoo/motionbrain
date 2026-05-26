@@ -216,3 +216,6 @@ This project demonstrates practical embedded robotics engineering:
 3. Promote stable ROS2 JSON payloads into a typed `motionbrain_msgs` package.
 4. Extend camera or host decisions from alignment nudges toward semi-autonomous pick behavior.
 5. Finalize wiring, obstacle-safety placement, and teleop tuning.
+
+The planned public capture sequence is tracked in
+[docs/DEMO_RUNBOOK.md](docs/DEMO_RUNBOOK.md).

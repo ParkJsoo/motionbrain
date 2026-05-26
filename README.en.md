@@ -301,6 +301,7 @@ This repository is structured as an embedded robotics portfolio project. The mos
 - [MESSAGE_INTERFACE.md](MESSAGE_INTERFACE.md): command, teleop, and status message boundary
 - [PIN_MAP.md](PIN_MAP.md): ESP32 motor pin mapping
 - [docs/TELEOP_BRINGUP.md](docs/TELEOP_BRINGUP.md): wired handheld teleop bring-up notes
+- [docs/DEMO_RUNBOOK.md](docs/DEMO_RUNBOOK.md): portfolio demo capture procedure
 - [로드맵.md](%EB%A1%9C%EB%93%9C%EB%A7%B5.md): Korean project roadmap
 
 ## License

@@ -354,6 +354,7 @@ sensor sim off
 - [MESSAGE_INTERFACE.md](MESSAGE_INTERFACE.md): 시리얼/HTTP/status 메시지 경계
 - [PIN_MAP.md](PIN_MAP.md): ESP32 모터 핀 연결
 - [docs/TELEOP_BRINGUP.md](docs/TELEOP_BRINGUP.md): 유선 handheld teleop bring-up 절차
+- [docs/DEMO_RUNBOOK.md](docs/DEMO_RUNBOOK.md): 포트폴리오 데모 캡처 절차
 
 ## 라이선스
 
