@@ -351,10 +351,12 @@ sensor sim off
 - [PHASE3_PLAN.md](PHASE3_PLAN.md): 센서/브리지 계획
 - [PHASE4_MVP.md](PHASE4_MVP.md): ESP32-CAM + Mac host 비전 MVP
 - [docs/RASPBERRY_PI_ROS2_BRINGUP.md](docs/RASPBERRY_PI_ROS2_BRINGUP.md): Raspberry Pi ROS2 bring-up 및 검증 결과
+- [docs/ARCHITECTURE_DIAGRAMS.md](docs/ARCHITECTURE_DIAGRAMS.md): 포트폴리오 설명용 아키텍처/데모 다이어그램
 - [MESSAGE_INTERFACE.md](MESSAGE_INTERFACE.md): 시리얼/HTTP/status 메시지 경계
 - [PIN_MAP.md](PIN_MAP.md): ESP32 모터 핀 연결
 - [docs/TELEOP_BRINGUP.md](docs/TELEOP_BRINGUP.md): 유선 handheld teleop bring-up 절차
 - [docs/DEMO_RUNBOOK.md](docs/DEMO_RUNBOOK.md): 포트폴리오 데모 캡처 절차
+- [docs/DEMO_RUNBOOK.en.md](docs/DEMO_RUNBOOK.en.md): 영어 데모 캡처 절차
 
 ## 라이선스
 

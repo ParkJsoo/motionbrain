@@ -298,10 +298,12 @@ This repository is structured as an embedded robotics portfolio project. The mos
 - [PORTFOLIO.en.md](PORTFOLIO.en.md): English portfolio one-pager
 - [PHASE4_MVP.md](PHASE4_MVP.md): ESP32-CAM + Mac host MVP
 - [docs/RASPBERRY_PI_ROS2_BRINGUP.md](docs/RASPBERRY_PI_ROS2_BRINGUP.md): Raspberry Pi ROS2 bring-up and validation notes
+- [docs/ARCHITECTURE_DIAGRAMS.en.md](docs/ARCHITECTURE_DIAGRAMS.en.md): architecture and demo diagrams for portfolio explanation
 - [MESSAGE_INTERFACE.md](MESSAGE_INTERFACE.md): command, teleop, and status message boundary
 - [PIN_MAP.md](PIN_MAP.md): ESP32 motor pin mapping
 - [docs/TELEOP_BRINGUP.md](docs/TELEOP_BRINGUP.md): wired handheld teleop bring-up notes
-- [docs/DEMO_RUNBOOK.md](docs/DEMO_RUNBOOK.md): portfolio demo capture procedure
+- [docs/DEMO_RUNBOOK.en.md](docs/DEMO_RUNBOOK.en.md): portfolio demo capture procedure
+- [docs/DEMO_RUNBOOK.md](docs/DEMO_RUNBOOK.md): Korean demo capture procedure
 - [로드맵.md](%EB%A1%9C%EB%93%9C%EB%A7%B5.md): Korean project roadmap
 
 ## License

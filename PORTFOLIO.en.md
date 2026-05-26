@@ -218,4 +218,5 @@ This project demonstrates practical embedded robotics engineering:
 5. Finalize wiring, obstacle-safety placement, and teleop tuning.
 
 The planned public capture sequence is tracked in
-[docs/DEMO_RUNBOOK.md](docs/DEMO_RUNBOOK.md).
+[docs/DEMO_RUNBOOK.en.md](docs/DEMO_RUNBOOK.en.md), with supporting system
+diagrams in [docs/ARCHITECTURE_DIAGRAMS.en.md](docs/ARCHITECTURE_DIAGRAMS.en.md).
