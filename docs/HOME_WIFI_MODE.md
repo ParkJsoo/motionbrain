@@ -89,6 +89,17 @@ python3 tools/motionbrain_dashboard.py \
 If `.local` names do not resolve, use the IP addresses printed in serial logs or
 reserve fixed IP addresses in the router.
 
+On 2026-05-26, the Mac resolved `motionbrain.local` and
+`motionbrain-cam.local`, while Raspberry Pi Ubuntu Server did not. The ROS2
+bridge validation used IP fallback:
+
+```bash
+export MOTIONBRAIN_HTTP_TOKEN="CHANGE_ME_TO_A_LONG_RANDOM_LOCAL_TOKEN"
+ros2 launch motionbrain_ros_bridge motionbrain_home_wifi.launch.py \
+  motion_host:=<controller-ip> \
+  camera_url:=http://<camera-ip>
+```
+
 ## Control Surface Direction
 
 Use the ESP32-hosted `MotionBrain Control` page at `http://motionbrain.local`
@@ -121,5 +132,6 @@ commands, motion, safety transitions, and errors.
   also require `X-MotionBrain-Token`.
 - The built-in controller web page prompts for the token only at runtime and
   keeps it in page memory only.
+- ROS2 bridge commands use the same token through `MOTIONBRAIN_HTTP_TOKEN`.
 - If station connection fails, the motion controller falls back to the original
   `MotionBrain-AP` behavior for recovery.

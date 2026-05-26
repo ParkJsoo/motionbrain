@@ -457,4 +457,11 @@ motionbrain_status_node
 - `sub /motionbrain/light_cmd` -> `on|off|toggle` 또는 `{"action":"toggle"}`
 - `pub /motionbrain/light_result` -> raw `POST /light` command result JSON
 
+2026-05-26 실기 검증:
+
+- Raspberry Pi 4 + Ubuntu 24.04 + ROS2 Jazzy에서 `motionbrain_ros_bridge` build/launch 확인.
+- `/motionbrain/status`와 `/camera/detection`에서 실제 ESP32/ESP32-CAM payload 확인.
+- `/motionbrain/light_cmd` -> token-gated `POST /light?action=toggle` -> 실제 search light 점등 -> `/motionbrain/light_result` publish 확인.
+- token 누락 시 `/motionbrain/light_result`에 `HTTP Error 403: Forbidden`이 publish되어 command boundary가 유지됨을 확인.
+
 초기에는 `String` payload를 유지한다. 후속 단계에서 메시지 필드가 안정화되면 `motionbrain_msgs` 같은 커스텀 message package로 승격한다.

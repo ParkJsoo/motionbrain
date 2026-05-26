@@ -1,7 +1,7 @@
 # Raspberry Pi ROS2 Bring-Up
 
-This document is the Raspberry Pi bring-up checklist for proving MotionBrain as
-a ROS2-backed robot portfolio project.
+This document is the Raspberry Pi bring-up checklist and validation record for
+proving MotionBrain as a ROS2-backed robot portfolio project.
 
 Goal:
 
@@ -23,6 +23,41 @@ controller plus ESP32-CAM into ROS2 topics and command channels.
 
 Use ROS2 Jazzy for this portfolio path because it targets Ubuntu 24.04 and is a
 long-term support ROS2 release.
+
+## 2026-05-26 Validation Result
+
+Raspberry Pi 4 hardware validation was completed with this path:
+
+- Pi: Raspberry Pi 4, 8GB RAM
+- OS: Ubuntu Server 24.04.4 LTS, arm64
+- ROS2: Jazzy
+- Workspace: `~/develop/arduino/motionbrain/ros2_ws`
+- Branch: `feature/raspberry-pi-ros2-bringup`
+- ESP32 controller IP used for validation: `192.168.219.113`
+- ESP32-CAM IP used for validation: `192.168.219.114`
+
+Validated outputs:
+
+- `colcon build --packages-select motionbrain_ros_bridge` finished
+  successfully on the Pi.
+- `ros2 pkg list | grep motionbrain` returned `motionbrain_ros_bridge`.
+- `ros2 launch motionbrain_ros_bridge motionbrain_home_wifi.launch.py`
+  started `motionbrain_status_node`.
+- `/motionbrain/status` published real ESP32 controller JSON.
+- `/camera/detection` published real ESP32-CAM detection JSON.
+- `/motionbrain/light_cmd` with `toggle` reached the ESP32 controller through
+  the token-gated `/light` endpoint.
+- `/motionbrain/light_result` returned a successful command result.
+- The physical search light turned on from a ROS2 command.
+
+Notes from the run:
+
+- The Mac resolved `motionbrain.local` and `motionbrain-cam.local`, but the Pi
+  did not. The validated Pi launch used IP fallback.
+- A missing or wrong `MOTIONBRAIN_HTTP_TOKEN` produced `HTTP Error 403:
+  Forbidden`, which confirms the token gate was active.
+- Do not paste placeholder token text into `MOTIONBRAIN_HTTP_TOKEN`; HTTP
+  headers must be ASCII-safe and must match the token provisioned on the ESP32.
 
 ## Portfolio Evidence Checklist
 
@@ -121,6 +156,14 @@ Install ROS2 and build tools:
 sudo apt install -y ros-jazzy-ros-base python3-colcon-common-extensions python3-rosdep
 ```
 
+If `liblz4-dev`, `libzstd-dev`, or `zlib1g-dev` dependency versions are
+unavailable, make sure `noble-updates` is enabled:
+
+```bash
+sudo add-apt-repository -y "deb http://ports.ubuntu.com/ubuntu-ports noble-updates main restricted universe multiverse"
+sudo apt update
+```
+
 Initialize rosdep:
 
 ```bash
@@ -138,9 +181,18 @@ source ~/.bashrc
 Verify ROS2:
 
 ```bash
-ros2 --version
+printenv ROS_DISTRO
 ros2 topic list
 ```
+
+Expected:
+
+```text
+jazzy
+```
+
+`ros2 --version` is not a valid ROS2 CLI option in this setup; use
+`printenv ROS_DISTRO` and `ros2 --help` for a quick sanity check.
 
 ## Clone MotionBrain
 
@@ -171,6 +223,13 @@ curl -I http://motionbrain-cam.local/capture
 If `.local` names do not resolve, use the IP addresses printed by each ESP32's
 serial log or reserve stable IP addresses in the router.
 
+Example validated IP fallback for network checks:
+
+```bash
+curl -sS http://192.168.219.113/status
+curl -I http://192.168.219.114/capture
+```
+
 ## Build ROS2 Bridge
 
 Install package dependencies:
@@ -179,6 +238,11 @@ Install package dependencies:
 cd ~/develop/arduino/motionbrain/ros2_ws
 rosdep install --from-paths src --ignore-src -r -y
 ```
+
+If rosdep prints `Cannot locate rosdep definition for [ament_python]` but then
+finishes installing resolvable dependencies, continue with the build. The
+validated Pi setup had the required ament Python tooling from the ROS2 apt
+installation.
 
 Build the ROS2 package:
 
@@ -283,8 +347,16 @@ The `/camera/detection` payload should include fields such as `detected`,
 In the second terminal:
 
 ```bash
-ros2 topic pub --once /motionbrain/light_cmd std_msgs/msg/String "{data: toggle}"
 ros2 topic echo /motionbrain/light_result
+```
+
+Open a third SSH terminal and publish the command:
+
+```bash
+cd ~/develop/arduino/motionbrain/ros2_ws
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+ros2 topic pub --once --wait-matching-subscriptions 1 /motionbrain/light_cmd std_msgs/msg/String "{data: toggle}"
 ```
 
 Expected:
@@ -359,6 +431,15 @@ export MOTIONBRAIN_HTTP_TOKEN="CHANGE_ME_TO_LOCAL_TOKEN"
 
 Then restart the ROS2 bridge process.
 
+Observed failure mode:
+
+```text
+{"error":"HTTP Error 403: Forbidden","requestedAction":"toggle","success":false}
+```
+
+That means ROS2 publish/subscribe is working, but the ESP32 rejected the HTTP
+POST because the token was missing or incorrect.
+
 ### HTTP Polling Is Unstable
 
 Use longer timeouts:
@@ -377,7 +458,8 @@ ros2 run motionbrain_ros_bridge motionbrain_status_node \
 The Raspberry Pi ROS2 bring-up is complete when:
 
 - Pi boots Ubuntu 24.04 arm64 and ROS2 Jazzy.
-- Pi reaches `motionbrain.local` and `motionbrain-cam.local` on Home Wi-Fi.
+- Pi reaches the ESP32 controller and ESP32-CAM on Home Wi-Fi by `.local`
+  hostname or IP fallback.
 - `motionbrain_ros_bridge` builds successfully on the Pi.
 - `/motionbrain/status`, `/motionbrain/events`, and `/camera/detection` publish
   real data.

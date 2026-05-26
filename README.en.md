@@ -2,7 +2,7 @@
 
 [한국어 README](README.md) | [English README](README.en.md) | [Portfolio One-Pager](PORTFOLIO.en.md)
 
-MotionBrain is an embedded robotics portfolio project that starts with an ESP32-based 5-axis robotic arm controller and expands toward an STM32 sensor hub, ESP32-CAM vision input, and Raspberry Pi + ROS2 + AI high-level control.
+MotionBrain is an embedded robotics portfolio project that starts with an ESP32-based 5-axis robotic arm controller and expands toward an STM32 sensor hub, ESP32-CAM vision input, and a Raspberry Pi + ROS2 host bridge for higher-level robot orchestration.
 
 The project is designed to show more than basic motor movement. It focuses on layered control, safety state management, sensor feedback, command boundaries, and a clear path from low-level embedded control to host-side robotics orchestration.
 
@@ -45,12 +45,18 @@ input -> decision -> state -> motion -> feedback
 - trusted home Wi-Fi station mode for the ESP32 controller and ESP32-CAM
 - token-aware host commands and a runtime token prompt in the ESP32-hosted `MotionBrain Control` page
 - local ops dashboard for status/events, ESP32-CAM capture, color detection, and token-gated one-shot vision nudge control
+- Raspberry Pi 4 + Ubuntu 24.04 + ROS2 Jazzy bridge validation:
+  - `motionbrain_ros_bridge` builds and launches on the Pi
+  - ESP32 controller status/events publish to ROS2 topics
+  - ESP32-CAM capture publishes `/camera/detection`
+  - `/motionbrain/light_cmd` reaches token-gated ESP32 `/light` and toggles the real search light
 
 ### Current Focus
 
+- Capture Raspberry Pi ROS2 validation logs and demo evidence
 - Capture portfolio demo media for the verified teleop, safety, Home Wi-Fi, phone-control, and vision-alignment flows
 - Keep live motion demos conservative and explicitly opt-in
-- Add the next layer of portfolio depth: kinematics FK/IK, Raspberry Pi deployment, and real ROS2 validation
+- Add the next layer of portfolio depth: kinematics FK/IK, ROS2 message refinement, and AI planning integration
 
 ## Architecture
 
@@ -98,6 +104,28 @@ TB6612FNG x3
   Vision processing
   Message bridge
   Portfolio demo orchestration
+```
+
+### Validated Raspberry Pi ROS2 Layer
+
+As of 2026-05-26, the Raspberry Pi 4 ROS2 host path has been validated on real hardware:
+
+```text
+[Raspberry Pi 4 / Ubuntu 24.04 / ROS2 Jazzy]
+  motionbrain_ros_bridge
+  /motionbrain/status
+  /motionbrain/events
+  /camera/detection
+  /motionbrain/light_cmd
+  /motionbrain/light_result
+        <->
+[ESP32 Motion Controller + ESP32-CAM on Home Wi-Fi]
+  GET /status
+  GET /events
+  GET /capture
+  POST /light?action=toggle
+        ->
+real SearchLight output
 ```
 
 ## Hardware
@@ -163,16 +191,21 @@ event logs, and ESP32-CAM detection results into ROS2:
 
 Raspberry Pi bring-up is documented in
 [docs/RASPBERRY_PI_ROS2_BRINGUP.md](docs/RASPBERRY_PI_ROS2_BRINGUP.md). The
-portfolio validation target is ROS2 Jazzy on Raspberry Pi 4, Home Wi-Fi access
-to the ESP32 controller and ESP32-CAM, topic echo verification, and one
-ROS2 command-channel test.
+portfolio validation path has been run on Raspberry Pi 4 with ROS2 Jazzy:
+Home Wi-Fi access to the ESP32 controller and ESP32-CAM, topic echo
+verification, and a ROS2 command-channel test that toggled the real search
+light through the ESP32 `/light` endpoint.
 
 ```bash
 cd ros2_ws
 colcon build --packages-select motionbrain_ros_bridge
 source install/setup.bash
+export MOTIONBRAIN_HTTP_TOKEN="CHANGE_ME_TO_LOCAL_TOKEN"
 ros2 launch motionbrain_ros_bridge motionbrain_home_wifi.launch.py
 ```
+
+If mDNS is unavailable on the Pi, pass IP addresses with `motion_host:=...` and
+`camera_url:=http://...`.
 
 ## Development Environment
 
@@ -232,9 +265,9 @@ Helper scripts:
 
 ## Message Boundary
 
-The project intentionally keeps serial, HTTP, teleop, and future ROS2-facing semantics aligned.
+The project intentionally keeps serial, HTTP, teleop, and ROS2-facing semantics aligned.
 
-See [MESSAGE_INTERFACE.md](MESSAGE_INTERFACE.md) for the current command and status boundary. This is one of the key design documents because it separates embedded motor execution from host-side planning and future ROS2 integration.
+See [MESSAGE_INTERFACE.md](MESSAGE_INTERFACE.md) for the current command and status boundary. This is one of the key design documents because it separates embedded motor execution from host-side planning and ROS2 integration.
 
 ## Host-Side Monitor
 
@@ -257,12 +290,14 @@ This repository is structured as an embedded robotics portfolio project. The mos
 - Teleoperation with deadman and frame freshness handling
 - Home Wi-Fi phone control with runtime token entry that avoids committing secrets
 - Clear path from embedded control to camera input, host-side decision logic, ROS2, and AI integration
+- Real Raspberry Pi ROS2 bridge validation with a token-gated command reaching physical hardware
 
 ## Related Documents
 
 - [README.md](README.md): Korean project overview and current status
 - [PORTFOLIO.en.md](PORTFOLIO.en.md): English portfolio one-pager
 - [PHASE4_MVP.md](PHASE4_MVP.md): ESP32-CAM + Mac host MVP
+- [docs/RASPBERRY_PI_ROS2_BRINGUP.md](docs/RASPBERRY_PI_ROS2_BRINGUP.md): Raspberry Pi ROS2 bring-up and validation notes
 - [MESSAGE_INTERFACE.md](MESSAGE_INTERFACE.md): command, teleop, and status message boundary
 - [PIN_MAP.md](PIN_MAP.md): ESP32 motor pin mapping
 - [docs/TELEOP_BRINGUP.md](docs/TELEOP_BRINGUP.md): wired handheld teleop bring-up notes

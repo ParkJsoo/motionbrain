@@ -1,6 +1,7 @@
 # MotionBrain ROS2 Bridge
 
-MVP ROS2 bridge for the Phase 4 host path.
+MVP ROS2 bridge for the Phase 4 host path. It has been validated on Raspberry
+Pi 4 with Ubuntu Server 24.04 and ROS2 Jazzy.
 
 It keeps the current ESP32 HTTP boundary intact and exposes it as ROS2 topics:
 
@@ -45,6 +46,9 @@ ros2 run motionbrain_ros_bridge motionbrain_status_node \
   -p camera_url:=http://motionbrain-cam.local
 ```
 
+If `.local` names do not resolve on the Pi, use IP addresses from the router or
+ESP32 serial logs.
+
 ## Run With Launch
 
 For the Raspberry Pi Home Wi-Fi portfolio path:
@@ -75,8 +79,23 @@ ros2 topic echo /camera/detection
 Toggle the search light through ROS2:
 
 ```bash
-ros2 topic pub --once /motionbrain/light_cmd std_msgs/msg/String "{data: toggle}"
 ros2 topic echo /motionbrain/light_result
+```
+
+In another terminal:
+
+```bash
+ros2 topic pub --once --wait-matching-subscriptions 1 /motionbrain/light_cmd std_msgs/msg/String "{data: toggle}"
+```
+
+Validation on 2026-05-26 confirmed this path on real hardware:
+
+```text
+Raspberry Pi ROS2 /motionbrain/light_cmd
+  -> motionbrain_ros_bridge
+  -> token-gated ESP32 POST /light?action=toggle
+  -> real SearchLight output
+  -> /motionbrain/light_result
 ```
 
 Full Raspberry Pi setup and verification notes are in

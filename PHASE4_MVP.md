@@ -1,6 +1,6 @@
 # MotionBrain Phase 4 MVP
 
-Phase 4의 첫 목표는 Raspberry Pi를 바로 사기 전에 Mac을 상위 제어 노드처럼 써서 `camera -> host decision -> MotionBrain command` 경로를 검증하는 것이다.
+Phase 4의 첫 목표는 Mac을 상위 제어 노드처럼 써서 `camera -> host decision -> MotionBrain command` 경로를 먼저 검증하고, 그 다음 Raspberry Pi + ROS2 host bridge로 같은 HTTP/status/command 경계를 옮겨 검증하는 것이다.
 
 ## MVP 구조
 
@@ -310,7 +310,7 @@ python3 tools/vision_host_mvp.py \
 - `--enable-action`에서 MotionBrain `/light` 명령이 성공한다.
 - target center, horizontal offset, alignment 결정, command suggestion이 dashboard와 `/camera/detection`에 노출된다.
 - `--enable-align-action`에서 안전 조건을 만족할 때만 MotionBrain base nudge 또는 base angle 명령이 전송되고, nudge mode는 즉시 stop까지 확인된다.
-- 이 흐름이 나중에 ROS2 node로 옮길 host-side bridge 경계가 된다.
+- Raspberry Pi ROS2 bridge에서 status/events/detection publish와 safe command subscribe가 확인된다.
 
 ## 2026-05-20 실기 검증 결과
 
@@ -344,3 +344,23 @@ python3 tools/vision_host_mvp.py \
   - left target: `align=LEFT`, `ACTION base.left nudge=250ms success=True stopped=True`
 - 테스트 종료 후 controller는 `IDLE`, motor off, fault 없음 상태로 확인했다.
 - 현재 STM32 IMU는 handheld teleop 장치에 있으므로 `/base?action=angle` 폐루프 검증에는 부적합하다. base-mounted IMU/encoder가 추가되기 전까지 실제 vision alignment action은 timed nudge mode를 기준으로 한다.
+
+## 2026-05-26 Raspberry Pi ROS2 실기 검증 결과
+
+- Raspberry Pi 4 8GB에 Ubuntu Server 24.04.4 LTS arm64와 ROS2 Jazzy를 설치했다.
+- `feature/raspberry-pi-ros2-bringup` branch를 Pi에 clone하고 `motionbrain_ros_bridge`를 `colcon`으로 build했다.
+- Pi에서 `motionbrain_home_wifi.launch.py`를 실행해 `motionbrain_status_node`를 띄웠다.
+- Pi의 `.local` name resolution은 불안정했지만, Mac에서 확인한 IP fallback으로 controller `192.168.219.113`, ESP32-CAM `192.168.219.114`에 연결했다.
+- ROS2 topic 확인:
+  - `/motionbrain/status`
+  - `/motionbrain/events`
+  - `/camera/detection`
+  - `/motionbrain/light_cmd`
+  - `/motionbrain/light_result`
+- `/motionbrain/status --once`에서 controller JSON이 publish되는 것을 확인했다.
+- `/camera/detection --once`에서 ESP32-CAM 기반 detection JSON이 publish되는 것을 확인했다.
+- command token 없이 `/motionbrain/light_cmd`를 보내면 `/motionbrain/light_result`에 `HTTP Error 403: Forbidden`이 publish되어 token gate가 동작함을 확인했다.
+- `MOTIONBRAIN_HTTP_TOKEN`을 실제 controller token으로 설정한 뒤 `/motionbrain/light_cmd` `toggle`을 publish했고, `/motionbrain/light_result`에 ESP32 command result가 publish됐다.
+- 사용자 육안 확인 기준 실제 search light가 켜졌다.
+
+결론: Phase 4 host boundary는 Mac host MVP뿐 아니라 Raspberry Pi + ROS2 graph에서도 실제 ESP32 controller와 ESP32-CAM에 연결되어 동작했다.
