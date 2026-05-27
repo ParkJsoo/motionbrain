@@ -82,20 +82,29 @@ validated on the real Pi host:
 The bridge still publishes JSON string topics for compatibility and debugging,
 but portfolio-facing ROS2 integration should prefer the typed topics.
 
-## 2026-05-27 URDF / TF / Joint State Path
+## 2026-05-27 URDF / TF / Joint State Validation Result
 
-The ROS2 workspace now includes a first-pass robot description path:
+The ROS2 workspace now includes a first-pass robot description path, and it was
+validated on the Raspberry Pi:
 
 - `motionbrain_description` provides a lightweight URDF for the current 5-axis
   arm, a `robot_state_publisher` launch file, and an RViz config.
 - `motionbrain_joint_state_node` converts `/motionbrain/status_typed` into
   `/joint_states`.
+- `colcon build --packages-select motionbrain_msgs motionbrain_ros_bridge motionbrain_description`
+  finished successfully on the Pi.
+- `ros2 pkg list | grep motionbrain` returned `motionbrain_description`,
+  `motionbrain_msgs`, and `motionbrain_ros_bridge`.
+- `/joint_states` published `base_yaw_joint`, `shoulder_pitch_joint`,
+  `elbow_pitch_joint`, `wrist_pitch_joint`, and `gripper_joint`.
+- `ros2 launch motionbrain_description display.launch.py` published `/tf` and
+  `/tf_static`.
 - The current hardware does not provide full encoder feedback yet. The bridge
   publishes the real base angle when available and keeps the remaining joint
   angles at stable default values until joint feedback is added.
 
-This is enough to demonstrate ROS2 kinematic modeling, TF publication, and RViz
-readiness without pretending the robot has sensors it does not currently have.
+This demonstrates ROS2 kinematic modeling, TF publication, and RViz readiness
+without pretending the robot has sensors it does not currently have.
 
 ## Portfolio Evidence Checklist
 

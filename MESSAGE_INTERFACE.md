@@ -479,7 +479,7 @@ motionbrain_status_node
 
 JSON topic은 디버깅과 호환성을 위해 유지하고, stable field는 typed topic으로 병행 publish한다.
 
-2026-05-27 URDF / joint state 추가:
+2026-05-27 URDF / joint state 추가 및 Pi 검증:
 
 - `motionbrain_joint_state_node`가 `/motionbrain/status_typed`를 구독하고 `/joint_states`를 publish한다.
 - joint name은 `motionbrain_description/urdf/motionbrain.urdf`와 맞춘다:
@@ -489,3 +489,4 @@ JSON topic은 디버깅과 호환성을 위해 유지하고, stable field는 typ
   - `wrist_pitch_joint`
   - `gripper_joint`
 - 현재 하드웨어는 전체 관절 encoder feedback이 없으므로 base angle은 실제 값이 있을 때 반영하고, 나머지는 stable default pose로 둔다.
+- Pi에서 `/joint_states`, `/tf`, `/tf_static` publish를 확인했다.

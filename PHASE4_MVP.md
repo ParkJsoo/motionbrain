@@ -385,3 +385,26 @@ python3 tools/vision_host_mvp.py \
 - `/camera/detection_typed --once`에서 실제 ESP32-CAM detection 결과가 typed message로 publish되는 것을 확인했다.
 
 결론: ROS2 bridge는 더 이상 `std_msgs/String` JSON만 사용하는 MVP가 아니라, 디버깅용 JSON topic과 포트폴리오용 typed custom message topic을 병행 제공한다.
+
+## 2026-05-27 ROS2 URDF / TF / joint_states 검증 결과
+
+- `motionbrain_description` package를 추가했다.
+- 구성:
+  - `urdf/motionbrain.urdf`
+  - `launch/display.launch.py`
+  - `rviz/motionbrain.rviz`
+- `motionbrain_joint_state_node`를 추가해 `/motionbrain/status_typed`를 `/joint_states`로 변환한다.
+- Pi에서 `colcon build --packages-select motionbrain_msgs motionbrain_ros_bridge motionbrain_description`가 성공했다.
+- Pi에서 `ros2 pkg list | grep motionbrain`이 세 package를 모두 반환했다:
+  - `motionbrain_description`
+  - `motionbrain_msgs`
+  - `motionbrain_ros_bridge`
+- `/joint_states --once`에서 아래 joint name을 확인했다:
+  - `base_yaw_joint`
+  - `shoulder_pitch_joint`
+  - `elbow_pitch_joint`
+  - `wrist_pitch_joint`
+  - `gripper_joint`
+- `ros2 launch motionbrain_description display.launch.py`가 `/tf`, `/tf_static`을 publish하는 것을 확인했다.
+
+결론: MotionBrain은 이제 ESP32 HTTP bridge를 ROS2 topic으로 노출하는 수준을 넘어, 최소 URDF/TF/joint state layer까지 갖춘 ROS2 로봇 모델 경로를 가진다.
