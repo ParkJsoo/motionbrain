@@ -78,9 +78,13 @@ OK service active: motionbrain-ros-bridge.service
 OK topic: /motionbrain/status_typed
 OK topic: /camera/detection_typed
 OK topic: /joint_states
+OK topic: /motionbrain/end_effector_pose
+OK topic: /motionbrain/kinematics
 OK status typed sample
 OK camera detection typed sample
 OK joint state sample
+OK end-effector pose sample
+OK kinematics sample
 ```
 
 ## 2026-05-27 Pi 검증 결과
@@ -101,9 +105,13 @@ OK service active: motionbrain-ros-bridge.service
 OK topic: /motionbrain/status_typed
 OK topic: /camera/detection_typed
 OK topic: /joint_states
+OK topic: /motionbrain/end_effector_pose
+OK topic: /motionbrain/kinematics
 OK status typed sample
 OK camera detection typed sample
 OK joint state sample
+OK end-effector pose sample
+OK kinematics sample
 ```
 
 검증 중 `set -u`가 ROS2 setup 파일의 선택적 환경 변수 참조와 충돌하는 문제가

@@ -120,6 +120,9 @@ As of 2026-05-26, the Raspberry Pi 4 ROS2 host path has been validated on real h
   /motionbrain/events_typed
   /camera/detection
   /camera/detection_typed
+  /joint_states
+  /motionbrain/end_effector_pose
+  /motionbrain/kinematics
   /motionbrain/light_cmd
   /motionbrain/light_cmd_typed
   /motionbrain/light_result
@@ -196,6 +199,8 @@ event logs, and ESP32-CAM detection results into ROS2:
 - `/motionbrain/events_typed`
 - `/camera/detection`
 - `/camera/detection_typed`
+- `/motionbrain/end_effector_pose`
+- `/motionbrain/kinematics`
 - `/motionbrain/light_cmd`
 - `/motionbrain/light_cmd_typed`
 - `/motionbrain/light_result`
@@ -204,6 +209,12 @@ event logs, and ESP32-CAM detection results into ROS2:
 The workspace also includes `motionbrain_description`, a lightweight URDF,
 `robot_state_publisher` launch path, and RViz config for TF/joint-state
 visualization.
+
+`motionbrain_kinematics_node` subscribes to `/joint_states`, publishes an FK
+end-effector pose on `/motionbrain/end_effector_pose`, and publishes kinematics
+diagnostics on `/motionbrain/kinematics`. The pure Python kinematics module also
+includes a tested IK suggestion path for reachable target points and joint-limit
+checks.
 
 Raspberry Pi bring-up is documented in
 [docs/RASPBERRY_PI_ROS2_BRINGUP.md](docs/RASPBERRY_PI_ROS2_BRINGUP.md). The

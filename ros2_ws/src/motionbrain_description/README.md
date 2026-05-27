@@ -41,5 +41,11 @@ Useful checks:
 
 ```bash
 ros2 topic echo /joint_states --once
+ros2 topic echo /motionbrain/end_effector_pose --once
+ros2 topic echo /motionbrain/kinematics --once
 ros2 run tf2_tools view_frames
 ```
+
+The FK pose and kinematics JSON come from `motionbrain_kinematics_node` in the
+bridge package. The display launch remains focused on URDF/TF/RViz; the home
+Wi-Fi bridge launch starts the kinematics node by default.

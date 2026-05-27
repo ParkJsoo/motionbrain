@@ -125,6 +125,9 @@ TB6612FNG x3
   /motionbrain/events_typed
   /camera/detection
   /camera/detection_typed
+  /joint_states
+  /motionbrain/end_effector_pose
+  /motionbrain/kinematics
   /motionbrain/light_cmd
   /motionbrain/light_cmd_typed
   /motionbrain/light_result
@@ -218,6 +221,8 @@ messages on:
 - `/motionbrain/events_typed`
 - `/camera/detection`
 - `/camera/detection_typed`
+- `/motionbrain/end_effector_pose`
+- `/motionbrain/kinematics`
 
 It also subscribes to `/motionbrain/light_cmd` and
 `/motionbrain/light_cmd_typed`, then forwards `on`, `off`, or `toggle` to
@@ -226,6 +231,12 @@ token-gated `POST /light`.
 The ROS2 workspace also includes `motionbrain_description`, a lightweight URDF,
 `robot_state_publisher` launch path, and RViz config for TF/joint-state
 visualization.
+
+`motionbrain_kinematics_node` subscribes to `/joint_states`, publishes an FK
+end-effector pose on `/motionbrain/end_effector_pose`, and publishes kinematics
+diagnostics on `/motionbrain/kinematics`. The pure Python kinematics module also
+includes a tested IK suggestion path for reachable target points and joint-limit
+checks.
 
 Raspberry Pi bring-up is documented in [docs/RASPBERRY_PI_ROS2_BRINGUP.md](docs/RASPBERRY_PI_ROS2_BRINGUP.md). The portfolio validation path has been run on Raspberry Pi 4 with ROS2 Jazzy: Home Wi-Fi access to the ESP32 controller and ESP32-CAM, JSON and typed topic echo verification, and a ROS2 command-channel test that toggled the real search light.
 For service-style operation on the Pi, see [docs/RASPBERRY_PI_DEPLOYMENT.md](docs/RASPBERRY_PI_DEPLOYMENT.md).

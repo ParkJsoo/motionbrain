@@ -1,5 +1,6 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
@@ -12,6 +13,7 @@ def generate_launch_description() -> LaunchDescription:
     poll_interval = LaunchConfiguration("poll_interval")
     http_timeout = LaunchConfiguration("http_timeout")
     events_limit = LaunchConfiguration("events_limit")
+    enable_kinematics = LaunchConfiguration("enable_kinematics")
 
     return LaunchDescription(
         [
@@ -45,6 +47,11 @@ def generate_launch_description() -> LaunchDescription:
                 default_value="8",
                 description="Number of recent ESP32 events to publish per poll.",
             ),
+            DeclareLaunchArgument(
+                "enable_kinematics",
+                default_value="true",
+                description="Publish FK end-effector pose and kinematics diagnostics.",
+            ),
             Node(
                 package="motionbrain_ros_bridge",
                 executable="motionbrain_status_node",
@@ -66,6 +73,13 @@ def generate_launch_description() -> LaunchDescription:
                 executable="motionbrain_joint_state_node",
                 name="motionbrain_joint_state_node",
                 output="screen",
+            ),
+            Node(
+                package="motionbrain_ros_bridge",
+                executable="motionbrain_kinematics_node",
+                name="motionbrain_kinematics_node",
+                output="screen",
+                condition=IfCondition(enable_kinematics),
             ),
         ]
     )

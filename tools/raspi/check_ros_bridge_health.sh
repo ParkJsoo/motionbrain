@@ -10,6 +10,8 @@ required_topics=(
   "/motionbrain/status_typed"
   "/camera/detection_typed"
   "/joint_states"
+  "/motionbrain/end_effector_pose"
+  "/motionbrain/kinematics"
 )
 
 if [[ "${CHECK_SERVICE}" == "1" ]]; then
@@ -44,3 +46,9 @@ echo "OK camera detection typed sample"
 
 timeout 10 ros2 topic echo /joint_states --once >/dev/null
 echo "OK joint state sample"
+
+timeout 10 ros2 topic echo /motionbrain/end_effector_pose --once >/dev/null
+echo "OK end-effector pose sample"
+
+timeout 10 ros2 topic echo /motionbrain/kinematics --once >/dev/null
+echo "OK kinematics sample"

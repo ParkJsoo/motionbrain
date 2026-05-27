@@ -10,6 +10,8 @@ The original JSON topics remain available for debugging, while typed
 | ROS2 name | Direction | Type | Payload |
 | --- | --- | --- | --- |
 | `/joint_states` | publish | `sensor_msgs/msg/JointState` | MotionStatus joint fields mapped to URDF joints |
+| `/motionbrain/end_effector_pose` | publish | `geometry_msgs/msg/PoseStamped` | FK end-effector pose from current joint state |
+| `/motionbrain/kinematics` | publish | `std_msgs/String` | FK diagnostics and optional IK target suggestion JSON |
 | `/motionbrain/status` | publish | `std_msgs/String` | Raw `GET /status` JSON |
 | `/motionbrain/status_typed` | publish | `motionbrain_msgs/msg/MotionStatus` | Stable status fields plus raw JSON |
 | `/motionbrain/events` | publish | `std_msgs/String` | Raw `GET /events?limit=N` JSON |
@@ -22,6 +24,20 @@ The original JSON topics remain available for debugging, while typed
 | `/motionbrain/light_result_typed` | publish | `motionbrain_msgs/msg/LightResult` | Stable command result fields plus raw JSON |
 
 `/camera/detection` includes color ratio plus vision-alignment fields: `centerX`, `centerY`, `centroidX`, `centroidY`, `areaRatio`, `offsetX`, `offsetY`, `alignDeadband`, `alignment` (`LEFT`, `CENTER`, `RIGHT`, or `LOST`), and `commandSuggestion` (`base_left`, `hold`, `base_right`, or `none`).
+
+`motionbrain_kinematics_node` subscribes to `/joint_states`, applies a simple
+arm model that matches the current URDF dimensions, and publishes FK pose plus
+joint-limit diagnostics. It also has an opt-in IK suggestion mode through ROS2
+parameters:
+
+```bash
+ros2 run motionbrain_ros_bridge motionbrain_kinematics_node \
+  --ros-args \
+  -p enable_ik_suggestion:=true \
+  -p target_x_m:=0.70 \
+  -p target_y_m:=0.0 \
+  -p target_z_m:=0.09
+```
 
 ## Build
 
@@ -82,6 +98,8 @@ Watch bridge output:
 ros2 topic echo /motionbrain/status
 ros2 topic echo /motionbrain/status_typed
 ros2 topic echo /joint_states
+ros2 topic echo /motionbrain/end_effector_pose
+ros2 topic echo /motionbrain/kinematics
 ros2 topic echo /motionbrain/events
 ros2 topic echo /motionbrain/events_typed
 ros2 topic echo /camera/detection

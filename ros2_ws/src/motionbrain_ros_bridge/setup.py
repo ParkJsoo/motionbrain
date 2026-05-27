@@ -23,6 +23,7 @@ setup(
     entry_points={
         "console_scripts": [
             "motionbrain_joint_state_node = motionbrain_ros_bridge.motionbrain_joint_state_node:main",
+            "motionbrain_kinematics_node = motionbrain_ros_bridge.motionbrain_kinematics_node:main",
             "motionbrain_status_node = motionbrain_ros_bridge.motionbrain_status_node:main",
         ],
     },
