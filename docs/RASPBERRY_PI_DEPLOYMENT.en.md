@@ -146,6 +146,38 @@ path.
 - `CHECK_SERVICE=1 tools/raspi/check_ros_bridge_health.sh` passed the
   `/motionbrain/control_guard` topic and sample checks.
 
+## 2026-05-28 Mission Supervisor Validation Result
+
+The lightweight mission supervisor was validated through the Raspberry Pi 4
+systemd path.
+
+- `colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_mission motionbrain_ros_bridge motionbrain_description`
+  succeeded.
+- After restarting `motionbrain-ros-bridge.service`, the service was
+  `active (running)`.
+- The service cgroup contained:
+  - `motionbrain_status_node`
+  - `motionbrain_joint_state_node`
+  - `motionbrain_kinematics_node`
+  - `motionbrain_control_guard_node`
+  - `motionbrain_mission_supervisor`
+- `/motionbrain/mission_state` sample:
+  - `state=IDLE`
+  - `reason=idle`
+  - guard/status/detection freshness fields
+- `CHECK_SERVICE=1 tools/raspi/check_ros_bridge_health.sh` passed the
+  `/motionbrain/mission_state` topic and sample checks.
+- Only safe command boundaries were checked:
+  - publishing `start` to `/motionbrain/mission_cmd` moved the mission to
+    `WAIT_DETECTION`
+  - publishing `reset` to `/motionbrain/mission_cmd` returned the mission to
+    `IDLE`
+
+The `confirm` command was intentionally not run during this validation because
+it can publish a real `/motionbrain/light_cmd_typed` command. The current
+mission supervisor is a structured ROS2 mission layer for detection, alignment
+decision, and operator confirmation, not an autonomous motion controller.
+
 ## Operations
 
 ```bash

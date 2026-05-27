@@ -212,6 +212,47 @@ Validated on the Pi:
 This adds concrete C++/ROS2 evidence without moving live motion decisions into
 an unverified host-side autonomous controller.
 
+## 2026-05-28 Mission Supervisor Validation Result
+
+The ROS2 workspace now includes `motionbrain_mission`, a lightweight
+Nav2-style mission supervisor for the current arm hardware.
+
+- `motionbrain_mission_supervisor` models a bounded
+  `detect -> align -> operator confirm -> act` flow.
+- The node subscribes to:
+  - `/motionbrain/control_guard`
+  - `/camera/detection_typed`
+  - `/motionbrain/status_typed`
+  - `/motionbrain/mission_cmd`
+- The node publishes:
+  - `/motionbrain/mission_state`
+  - `/motionbrain/light_cmd_typed` only after an explicit operator `confirm`
+- It does not command arm/base motion directly.
+
+Validated on the Pi:
+
+- `colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_mission motionbrain_ros_bridge motionbrain_description`
+  finished successfully with 5 packages.
+- `motionbrain_home_wifi.launch.py` starts
+  `motionbrain_mission_supervisor` by default.
+- `systemctl status motionbrain-ros-bridge.service --no-pager -l` showed the
+  mission supervisor under the service cgroup:
+  - `install/motionbrain_mission/lib/motionbrain_mission/motionbrain_mission_supervisor`
+- Launch logs showed:
+  - `Mission supervisor ready: /camera/detection_typed -> /motionbrain/mission_state -> confirm -> /motionbrain/light_cmd_typed`
+- `CHECK_SERVICE=1 tools/raspi/check_ros_bridge_health.sh` passed:
+  - `/motionbrain/mission_state`
+  - one mission state sample
+- `ros2 topic echo /motionbrain/mission_state --once` returned a real `IDLE`
+  sample.
+- A safe command-boundary test was run:
+  - publishing `start` moved the mission state to `WAIT_DETECTION`
+  - publishing `reset` returned the mission state to `IDLE`
+
+The `confirm` command was intentionally not run during this validation because
+it can publish a typed light command to the physical hardware. This keeps the
+mission layer proven without triggering an unnecessary actuator action.
+
 ## Portfolio Evidence Checklist
 
 Capture these artifacts after bring-up:
