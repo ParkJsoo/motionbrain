@@ -108,7 +108,7 @@ TB6612FNG x3
 
 ### Validated Raspberry Pi ROS2 Layer
 
-As of 2026-05-26, the Raspberry Pi 4 ROS2 host path has been validated on real hardware:
+As of 2026-05-28, the Raspberry Pi 4 ROS2 host path has been validated on real hardware:
 
 ```text
 [Raspberry Pi 4 / Ubuntu 24.04 / ROS2 Jazzy]

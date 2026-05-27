@@ -120,6 +120,27 @@ OK kinematics sample
 발견되어 `start_ros_bridge.sh`와 `check_ros_bridge_health.sh`는 ROS setup을
 source한 뒤에 `set -u`를 적용하도록 수정했다.
 
+## 2026-05-28 C++ Control Guard 검증 결과
+
+Raspberry Pi 4에서 C++ ROS2 control guard까지 systemd 경로로 검증했다.
+
+- `colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_ros_bridge motionbrain_description`
+  성공
+- `systemctl daemon-reload` 후 `motionbrain-ros-bridge.service` 재시작
+- 서비스 상태: `active (running)`
+- service cgroup에 아래 프로세스가 함께 실행됨:
+  - `motionbrain_status_node`
+  - `motionbrain_joint_state_node`
+  - `motionbrain_kinematics_node`
+  - `motionbrain_control_guard_node`
+- `/motionbrain/control_guard` 샘플:
+  - `ready=true`
+  - `reason=ready`
+  - `statusFresh=true`
+  - `detectionFresh=true`
+- `CHECK_SERVICE=1 tools/raspi/check_ros_bridge_health.sh`가
+  `/motionbrain/control_guard` topic과 sample까지 통과
+
 ## 운영 명령
 
 ```bash

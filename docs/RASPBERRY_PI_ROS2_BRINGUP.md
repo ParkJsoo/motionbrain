@@ -176,6 +176,42 @@ This adds a concrete kinematics layer on top of the previously validated URDF,
 TF, and `joint_states` path. The IK output is a suggestion/calculation layer,
 not a live autonomous motion command.
 
+## 2026-05-28 C++ ROS2 Control Guard Validation Result
+
+The ROS2 workspace now includes `motionbrain_control`, a small C++ package that
+adds `motionbrain_control_guard_node`.
+
+- The node subscribes to:
+  - `/motionbrain/status_typed`
+  - `/camera/detection_typed`
+- The node publishes:
+  - `/motionbrain/control_guard`
+- The output is a readiness/suggested-action JSON state. It checks stale status
+  and detection inputs, controller availability, fault state, moving state, and
+  optional armed/detection requirements.
+- It does not command hardware directly.
+
+Validated on the Pi:
+
+- `colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_ros_bridge motionbrain_description`
+  finished successfully with 4 packages.
+- `motionbrain_home_wifi.launch.py` starts `motionbrain_control_guard_node` by
+  default.
+- `systemctl status motionbrain-ros-bridge.service --no-pager -l` showed the
+  C++ executable under the service cgroup:
+  - `install/motionbrain_control/lib/motionbrain_control/motionbrain_control_guard_node`
+- Launch logs showed:
+  - `Publishing C++ control guard on /motionbrain/control_guard from /motionbrain/status_typed and /camera/detection_typed`
+- `CHECK_SERVICE=1 tools/raspi/check_ros_bridge_health.sh` passed:
+  - `/motionbrain/control_guard`
+  - one control guard sample
+- `ros2 topic echo /motionbrain/control_guard --once` returned a real sample
+  with `ready=true`, `reason=ready`, `statusFresh=true`, and
+  `detectionFresh=true`.
+
+This adds concrete C++/ROS2 evidence without moving live motion decisions into
+an unverified host-side autonomous controller.
+
 ## Portfolio Evidence Checklist
 
 Capture these artifacts after bring-up:

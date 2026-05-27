@@ -113,7 +113,7 @@ TB6612FNG x3
 
 ### Raspberry Pi ROS2 검증 완료 계층
 
-2026-05-26 기준 Raspberry Pi 4에서 ROS2 Jazzy bridge 경로를 실제로 검증했다.
+2026-05-28 기준 Raspberry Pi 4에서 ROS2 Jazzy bridge 경로를 실제로 검증했다.
 
 ```text
 [Raspberry Pi 4 / Ubuntu 24.04 / ROS2 Jazzy]

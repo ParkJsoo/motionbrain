@@ -121,6 +121,29 @@ references inside the ROS2 setup files. `start_ros_bridge.sh` and
 `check_ros_bridge_health.sh` now enable `set -u` only after sourcing the ROS
 environment.
 
+## 2026-05-28 C++ Control Guard Validation Result
+
+The C++ ROS2 control guard was validated through the Raspberry Pi 4 systemd
+path.
+
+- `colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_ros_bridge motionbrain_description`
+  succeeded.
+- Ran `systemctl daemon-reload`, then restarted
+  `motionbrain-ros-bridge.service`.
+- Service state: `active (running)`.
+- The service cgroup contained:
+  - `motionbrain_status_node`
+  - `motionbrain_joint_state_node`
+  - `motionbrain_kinematics_node`
+  - `motionbrain_control_guard_node`
+- `/motionbrain/control_guard` sample:
+  - `ready=true`
+  - `reason=ready`
+  - `statusFresh=true`
+  - `detectionFresh=true`
+- `CHECK_SERVICE=1 tools/raspi/check_ros_bridge_health.sh` passed the
+  `/motionbrain/control_guard` topic and sample checks.
+
 ## Operations
 
 ```bash
