@@ -9,6 +9,11 @@ import urllib.request
 from typing import Any
 
 import rclpy
+from motionbrain_msgs.msg import CameraDetection
+from motionbrain_msgs.msg import LightCommand
+from motionbrain_msgs.msg import LightResult
+from motionbrain_msgs.msg import MotionEvent
+from motionbrain_msgs.msg import MotionStatus
 from rclpy.node import Node
 from std_msgs.msg import String
 
@@ -59,6 +64,48 @@ def parse_light_action(payload: str) -> str | None:
     if action in {"on", "off", "toggle"}:
         return action
     return None
+
+
+def compact_json(payload: dict[str, Any]) -> str:
+    return json.dumps(payload, separators=(",", ":"), sort_keys=True)
+
+
+def as_bool(value: Any, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if text in {"1", "true", "yes", "on", "armed", "active"}:
+            return True
+        if text in {"0", "false", "no", "off", "idle", "stopped"}:
+            return False
+    return default
+
+
+def as_float(value: Any, default: float = 0.0) -> float:
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def as_uint(value: Any, default: int = 0) -> int:
+    if value is None:
+        return default
+    try:
+        return max(int(value), 0)
+    except (TypeError, ValueError):
+        return default
+
+
+def as_str(value: Any, default: str = "") -> str:
+    if value is None:
+        return default
+    return str(value)
 
 
 def classify_alignment(offset_x: float | None, deadband: float = ALIGN_DEADBAND) -> str:
@@ -188,10 +235,28 @@ class MotionBrainStatusNode(Node):
         self.events_pub = self.create_publisher(String, "/motionbrain/events", 10)
         self.detection_pub = self.create_publisher(String, "/camera/detection", 10)
         self.light_result_pub = self.create_publisher(String, "/motionbrain/light_result", 10)
+        self.status_typed_pub = self.create_publisher(MotionStatus, "/motionbrain/status_typed", 10)
+        self.events_typed_pub = self.create_publisher(MotionEvent, "/motionbrain/events_typed", 10)
+        self.detection_typed_pub = self.create_publisher(
+            CameraDetection,
+            "/camera/detection_typed",
+            10,
+        )
+        self.light_result_typed_pub = self.create_publisher(
+            LightResult,
+            "/motionbrain/light_result_typed",
+            10,
+        )
         self.light_sub = self.create_subscription(
             String,
             "/motionbrain/light_cmd",
             self.handle_light_cmd,
+            10,
+        )
+        self.light_typed_sub = self.create_subscription(
+            LightCommand,
+            "/motionbrain/light_cmd_typed",
+            self.handle_light_cmd_typed,
             10,
         )
 
@@ -199,7 +264,10 @@ class MotionBrainStatusNode(Node):
         self.timer = self.create_timer(max(interval, 0.1), self.poll_once)
         self.get_logger().info(
             f"MotionBrain ROS2 bridge polling {self.motion_base_url}; "
-            "topics: /motionbrain/status /motionbrain/events /camera/detection /motionbrain/light_cmd"
+            "topics: /motionbrain/status /motionbrain/status_typed "
+            "/motionbrain/events /motionbrain/events_typed "
+            "/camera/detection /camera/detection_typed "
+            "/motionbrain/light_cmd /motionbrain/light_cmd_typed"
         )
 
     def _motion_base_url(self) -> str:
@@ -212,8 +280,90 @@ class MotionBrainStatusNode(Node):
 
     def publish_json(self, publisher: Any, payload: dict[str, Any]) -> None:
         message = String()
-        message.data = json.dumps(payload, separators=(",", ":"), sort_keys=True)
+        message.data = compact_json(payload)
         publisher.publish(message)
+
+    def publish_status_typed(self, payload: dict[str, Any]) -> None:
+        message = MotionStatus()
+        message.stamp = self.get_clock().now().to_msg()
+        message.available = True
+        message.state = as_str(payload.get("state"), "UNKNOWN")
+        message.armed = message.state.upper() in {"ARMED", "RUNNING", "MOVING"}
+        message.moving = as_bool(payload.get("motorEnabled"))
+        message.faulted = message.state.upper() == "FAULT"
+
+        sensor = payload.get("sensor")
+        if isinstance(sensor, dict):
+            message.faulted = message.faulted or as_bool(sensor.get("faultLatched"))
+
+        base_angle = payload.get("baseAngle")
+        if isinstance(base_angle, dict):
+            message.base_angle_deg = as_float(base_angle.get("currentDeg"))
+            message.moving = message.moving or as_bool(base_angle.get("active"))
+            message.stop_reason = as_str(base_angle.get("lastStopReason"))
+
+        teleop = payload.get("teleop")
+        if isinstance(teleop, dict):
+            message.moving = message.moving or as_bool(teleop.get("controlActive"))
+            if not message.stop_reason:
+                message.stop_reason = as_str(teleop.get("lastStopReason"))
+
+        message.raw_json = compact_json(payload)
+        self.status_typed_pub.publish(message)
+
+    def publish_events_typed(self, payload: dict[str, Any]) -> None:
+        events = payload.get("events")
+        if not isinstance(events, list):
+            return
+
+        for index, event in enumerate(events):
+            if not isinstance(event, dict):
+                continue
+            message = MotionEvent()
+            message.stamp = self.get_clock().now().to_msg()
+            message.index = as_uint(event.get("id"), index)
+            message.event_type = as_str(event.get("code") or event.get("severity"))
+            message.message = as_str(event.get("detail"))
+            message.source = as_str(event.get("category"))
+            message.raw_json = compact_json(event)
+            self.events_typed_pub.publish(message)
+
+    def publish_detection_typed(self, payload: dict[str, Any]) -> None:
+        message = CameraDetection()
+        message.stamp = self.get_clock().now().to_msg()
+        message.available = as_bool(payload.get("available"))
+        message.detected = as_bool(payload.get("detected"))
+        message.color = as_str(payload.get("color"))
+        message.alignment = as_str(payload.get("alignment"), "LOST")
+        message.command_suggestion = as_str(payload.get("commandSuggestion"), "none")
+        message.area_ratio = as_float(payload.get("areaRatio", payload.get("ratio")))
+        message.pixels = as_uint(payload.get("pixels"))
+        message.width = as_uint(payload.get("width"))
+        message.height = as_uint(payload.get("height"))
+        message.frame_bytes = as_uint(payload.get("frameBytes"))
+        message.center_x = as_float(payload.get("centerX", payload.get("centroidX")))
+        message.center_y = as_float(payload.get("centerY", payload.get("centroidY")))
+        message.offset_x = as_float(payload.get("offsetX"))
+        message.offset_y = as_float(payload.get("offsetY"))
+        message.align_deadband = as_float(payload.get("alignDeadband"), ALIGN_DEADBAND)
+        message.camera_url = as_str(payload.get("cameraUrl"))
+        message.reason = as_str(payload.get("reason"))
+        message.raw_json = compact_json(payload)
+        self.detection_typed_pub.publish(message)
+
+    def publish_light_result_typed(self, payload: dict[str, Any]) -> None:
+        message = LightResult()
+        message.stamp = self.get_clock().now().to_msg()
+        message.success = as_bool(payload.get("success"))
+        message.requested_action = as_str(payload.get("requestedAction"))
+        message.state = as_str(payload.get("state"))
+        message.error = as_str(payload.get("error") or payload.get("message"))
+        message.raw_json = compact_json(payload)
+        self.light_result_typed_pub.publish(message)
+
+    def publish_light_result(self, payload: dict[str, Any]) -> None:
+        self.publish_json(self.light_result_pub, payload)
+        self.publish_light_result_typed(payload)
 
     def poll_once(self) -> None:
         self.motion_base_url = self._motion_base_url()
@@ -222,6 +372,7 @@ class MotionBrainStatusNode(Node):
         try:
             status = fetch_json(f"{self.motion_base_url}/status", timeout)
             self.publish_json(self.status_pub, status)
+            self.publish_status_typed(status)
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
             self.get_logger().warning(f"status poll failed: {exc}")
 
@@ -230,6 +381,7 @@ class MotionBrainStatusNode(Node):
             if limit > 0:
                 events = fetch_json(f"{self.motion_base_url}/events?limit={limit}", timeout)
                 self.publish_json(self.events_pub, events)
+                self.publish_events_typed(events)
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
             self.get_logger().warning(f"events poll failed: {exc}")
 
@@ -245,28 +397,35 @@ class MotionBrainStatusNode(Node):
             detection["ts"] = time.time()
             detection["cameraUrl"] = camera_url
             self.publish_json(self.detection_pub, detection)
+            self.publish_detection_typed(detection)
         except (urllib.error.URLError, TimeoutError) as exc:
-            self.publish_json(
-                self.detection_pub,
-                {
-                    "detected": False,
-                    "available": False,
-                    "cameraUrl": camera_url,
-                    "reason": str(exc),
-                    "ts": time.time(),
-                },
-            )
+            detection = {
+                "detected": False,
+                "available": False,
+                "cameraUrl": camera_url,
+                "reason": str(exc),
+                "ts": time.time(),
+            }
+            self.publish_json(self.detection_pub, detection)
+            self.publish_detection_typed(detection)
 
     def handle_light_cmd(self, message: String) -> None:
         action = parse_light_action(message.data)
+        self.handle_light_action(action, message.data)
+
+    def handle_light_cmd_typed(self, message: LightCommand) -> None:
+        raw_payload = message.raw_json or message.action
+        action = parse_light_action(message.action or raw_payload)
+        self.handle_light_action(action, raw_payload)
+
+    def handle_light_action(self, action: str | None, raw_payload: str) -> None:
         if action is None:
-            self.publish_json(
-                self.light_result_pub,
+            self.publish_light_result(
                 {
                     "success": False,
                     "error": "invalid_light_action",
                     "accepted": ["on", "off", "toggle"],
-                    "payload": message.data,
+                    "payload": raw_payload,
                 },
             )
             return
@@ -276,10 +435,9 @@ class MotionBrainStatusNode(Node):
             token = str(self.get_parameter("http_token").value)
             result = post_motionbrain(self.motion_base_url, path, self._timeout(), token)
             result["requestedAction"] = action
-            self.publish_json(self.light_result_pub, result)
+            self.publish_light_result(result)
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
-            self.publish_json(
-                self.light_result_pub,
+            self.publish_light_result(
                 {
                     "success": False,
                     "requestedAction": action,

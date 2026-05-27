@@ -1,0 +1,13 @@
+builtin_interfaces/Time stamp
+bool available
+bool armed
+bool moving
+bool faulted
+string state
+string stop_reason
+float32 base_angle_deg
+float32 tilt_angle_deg
+float32 pan_angle_deg
+float32 wrist_angle_deg
+float32 gripper_angle_deg
+string raw_json

@@ -3,15 +3,22 @@
 MVP ROS2 bridge for the Phase 4 host path. It has been validated on Raspberry
 Pi 4 with Ubuntu Server 24.04 and ROS2 Jazzy.
 
-It keeps the current ESP32 HTTP boundary intact and exposes it as ROS2 topics:
+It keeps the current ESP32 HTTP boundary intact and exposes it as ROS2 topics.
+The original JSON topics remain available for debugging, while typed
+`motionbrain_msgs` topics provide portfolio-grade ROS2 interfaces.
 
 | ROS2 name | Direction | Type | Payload |
 | --- | --- | --- | --- |
 | `/motionbrain/status` | publish | `std_msgs/String` | Raw `GET /status` JSON |
+| `/motionbrain/status_typed` | publish | `motionbrain_msgs/msg/MotionStatus` | Stable status fields plus raw JSON |
 | `/motionbrain/events` | publish | `std_msgs/String` | Raw `GET /events?limit=N` JSON |
+| `/motionbrain/events_typed` | publish | `motionbrain_msgs/msg/MotionEvent` | One typed message per ESP32 event |
 | `/camera/detection` | publish | `std_msgs/String` | Color detection JSON from ESP32-CAM `/capture` |
+| `/camera/detection_typed` | publish | `motionbrain_msgs/msg/CameraDetection` | Stable detection/alignment fields plus raw JSON |
 | `/motionbrain/light_cmd` | subscribe | `std_msgs/String` | `on`, `off`, `toggle`, or `{"action":"toggle"}` |
+| `/motionbrain/light_cmd_typed` | subscribe | `motionbrain_msgs/msg/LightCommand` | Typed search-light command |
 | `/motionbrain/light_result` | publish | `std_msgs/String` | Raw `/light` command result JSON |
+| `/motionbrain/light_result_typed` | publish | `motionbrain_msgs/msg/LightResult` | Stable command result fields plus raw JSON |
 
 `/camera/detection` includes color ratio plus vision-alignment fields: `centerX`, `centerY`, `centroidX`, `centroidY`, `areaRatio`, `offsetX`, `offsetY`, `alignDeadband`, `alignment` (`LEFT`, `CENTER`, `RIGHT`, or `LOST`), and `commandSuggestion` (`base_left`, `hold`, `base_right`, or `none`).
 
@@ -21,7 +28,7 @@ From this repository root:
 
 ```bash
 cd ros2_ws
-colcon build --packages-select motionbrain_ros_bridge
+colcon build --packages-select motionbrain_msgs motionbrain_ros_bridge
 source install/setup.bash
 ```
 
@@ -72,8 +79,11 @@ Watch bridge output:
 
 ```bash
 ros2 topic echo /motionbrain/status
+ros2 topic echo /motionbrain/status_typed
 ros2 topic echo /motionbrain/events
+ros2 topic echo /motionbrain/events_typed
 ros2 topic echo /camera/detection
+ros2 topic echo /camera/detection_typed
 ```
 
 Toggle the search light through ROS2:
@@ -86,6 +96,19 @@ In another terminal:
 
 ```bash
 ros2 topic pub --once --wait-matching-subscriptions 1 /motionbrain/light_cmd std_msgs/msg/String "{data: toggle}"
+```
+
+Typed command path:
+
+```bash
+ros2 topic echo /motionbrain/light_result_typed
+```
+
+In another terminal:
+
+```bash
+ros2 topic pub --once --wait-matching-subscriptions 1 /motionbrain/light_cmd_typed \
+  motionbrain_msgs/msg/LightCommand "{action: toggle}"
 ```
 
 Validation on 2026-05-26 confirmed this path on real hardware:
