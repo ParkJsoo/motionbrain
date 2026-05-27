@@ -58,7 +58,14 @@ jobs:
               motionbrain_mission \
               motionbrain_ros_bridge \
               motionbrain_description \
-            --event-handlers console_direct+
+            --event-handlers console_direct+ || {
+              code="$?"
+              if [ "${code}" -eq 5 ]; then
+                echo "No package-level colcon test suites were produced yet."
+              else
+                exit "${code}"
+              fi
+            }
           colcon test-result --verbose || {
             code="$?"
             if [ "${code}" -eq 5 ]; then
