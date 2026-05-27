@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -eo pipefail
 
 SERVICE_NAME="${MOTIONBRAIN_SERVICE_NAME:-motionbrain-ros-bridge.service}"
 ROS_DISTRO="${ROS_DISTRO:-jazzy}"
@@ -23,6 +23,8 @@ fi
 
 source "/opt/ros/${ROS_DISTRO}/setup.bash"
 source "${WORKSPACE}/install/setup.bash"
+
+set -u
 
 topics="$(timeout 8 ros2 topic list)"
 for topic in "${required_topics[@]}"; do
