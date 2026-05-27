@@ -58,10 +58,8 @@ class MotionBrainMissionSupervisor(Node):
         self.timer = self.create_timer(1.0 / publish_rate_hz, self.publish_state)
 
         self.get_logger().info(
-            "Mission supervisor ready: %s -> %s -> confirm -> %s",
-            self.detection_topic,
-            self.mission_state_topic,
-            self.light_cmd_topic,
+            f"Mission supervisor ready: {self.detection_topic} -> "
+            f"{self.mission_state_topic} -> confirm -> {self.light_cmd_topic}"
         )
 
     def on_guard(self, msg: String) -> None:
@@ -99,7 +97,7 @@ class MotionBrainMissionSupervisor(Node):
             separators=(",", ":"),
         )
         self.light_cmd_pub.publish(cmd)
-        self.get_logger().info("Published operator-confirmed light command: %s", cmd.action)
+        self.get_logger().info(f"Published operator-confirmed light command: {cmd.action}")
 
     def publish_state(self) -> None:
         msg = String()
