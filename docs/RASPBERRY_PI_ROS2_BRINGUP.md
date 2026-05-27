@@ -135,6 +135,47 @@ This adds a practical deployment boundary for logs, restart behavior, local
 configuration, and health checks instead of relying on a hand-run terminal
 process.
 
+## 2026-05-28 FK / IK Kinematics Validation Result
+
+The ROS2 bridge now includes a kinematics MVP:
+
+- `motionbrain_kinematics.py` provides a pure Python arm model with:
+  - forward kinematics
+  - joint-limit checks
+  - approximate IK target suggestion
+- `motionbrain_kinematics_node` subscribes to `/joint_states`.
+- The node publishes:
+  - `/motionbrain/end_effector_pose`
+  - `/motionbrain/kinematics`
+- `motionbrain_home_wifi.launch.py` starts the kinematics node by default.
+
+Validated on the Pi:
+
+- `colcon build --packages-select motionbrain_msgs motionbrain_ros_bridge motionbrain_description`
+  finished successfully.
+- `systemctl restart motionbrain-ros-bridge.service` restarted the service.
+- `systemctl status motionbrain-ros-bridge.service --no-pager` showed
+  `active (running)`.
+- The service cgroup contained:
+  - `motionbrain_status_node`
+  - `motionbrain_joint_state_node`
+  - `motionbrain_kinematics_node`
+- `CHECK_SERVICE=1 tools/raspi/check_ros_bridge_health.sh` passed:
+  - `/motionbrain/status_typed`
+  - `/camera/detection_typed`
+  - `/joint_states`
+  - `/motionbrain/end_effector_pose`
+  - `/motionbrain/kinematics`
+  - one status sample
+  - one camera detection sample
+  - one joint state sample
+  - one end-effector pose sample
+  - one kinematics sample
+
+This adds a concrete kinematics layer on top of the previously validated URDF,
+TF, and `joint_states` path. The IK output is a suggestion/calculation layer,
+not a live autonomous motion command.
+
 ## Portfolio Evidence Checklist
 
 Capture these artifacts after bring-up:
@@ -145,6 +186,8 @@ Capture these artifacts after bring-up:
 - `ros2 topic echo /motionbrain/status` output
 - `ros2 topic echo /motionbrain/status_typed` output
 - `ros2 topic echo /joint_states` output
+- `ros2 topic echo /motionbrain/end_effector_pose` output
+- `ros2 topic echo /motionbrain/kinematics` output
 - `ros2 topic echo /motionbrain/events` output
 - `ros2 topic echo /camera/detection` output
 - `ros2 topic echo /camera/detection_typed` output
