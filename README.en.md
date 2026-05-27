@@ -211,6 +211,8 @@ portfolio validation path has been run on Raspberry Pi 4 with ROS2 Jazzy:
 Home Wi-Fi access to the ESP32 controller and ESP32-CAM, JSON and typed topic
 echo verification, and a ROS2 command-channel test that toggled the real search
 light through the ESP32 `/light` endpoint.
+For service-style operation on the Pi, see
+[docs/RASPBERRY_PI_DEPLOYMENT.en.md](docs/RASPBERRY_PI_DEPLOYMENT.en.md).
 
 ```bash
 cd ros2_ws

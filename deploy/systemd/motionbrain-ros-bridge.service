@@ -1,0 +1,18 @@
+[Unit]
+Description=MotionBrain ROS2 bridge
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=motionbrain
+WorkingDirectory=/home/motionbrain/develop/arduino/motionbrain/ros2_ws
+EnvironmentFile=/etc/motionbrain/ros-bridge.env
+ExecStart=/home/motionbrain/develop/arduino/motionbrain/tools/raspi/start_ros_bridge.sh
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+KillSignal=SIGINT
+
+[Install]
+WantedBy=multi-user.target

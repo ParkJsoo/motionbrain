@@ -584,3 +584,8 @@ The Raspberry Pi ROS2 bring-up is complete when:
 - `/motionbrain/light_cmd` controls the ESP32 through the ROS2 bridge.
 - Logs, screenshots, and at least one photo or video are saved for README and
   portfolio use.
+
+After bring-up is complete, use
+[docs/RASPBERRY_PI_DEPLOYMENT.md](RASPBERRY_PI_DEPLOYMENT.md) to run the bridge
+as a systemd service with an environment file, restart policy, journal logs, and
+health check.
