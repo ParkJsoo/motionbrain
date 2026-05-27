@@ -100,13 +100,14 @@ ros2 pkg list | grep motionbrain
 jazzy
 motionbrain_msgs
 motionbrain_control
+motionbrain_mission
 motionbrain_ros_bridge
 ```
 
 패키지가 없으면 빌드한다.
 
 ```bash
-colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_ros_bridge motionbrain_description
+colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_mission motionbrain_ros_bridge motionbrain_description
 source install/setup.bash
 ```
 
@@ -136,6 +137,7 @@ source install/setup.bash
    - `/motionbrain/end_effector_pose`
    - `/motionbrain/kinematics`
    - `/motionbrain/control_guard`
+   - `/motionbrain/mission_state`
    - 선택: RViz RobotModel/TF 화면
    - 실제 SearchLight 점등
 
@@ -204,6 +206,8 @@ ros2 topic list
 /motionbrain/events
 /motionbrain/events_typed
 /motionbrain/kinematics
+/motionbrain/mission_cmd
+/motionbrain/mission_state
 /motionbrain/light_cmd
 /motionbrain/light_cmd_typed
 /motionbrain/light_result

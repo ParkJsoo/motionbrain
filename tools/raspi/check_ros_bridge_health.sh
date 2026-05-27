@@ -13,6 +13,7 @@ required_topics=(
   "/motionbrain/end_effector_pose"
   "/motionbrain/kinematics"
   "/motionbrain/control_guard"
+  "/motionbrain/mission_state"
 )
 
 if [[ "${CHECK_SERVICE}" == "1" ]]; then
@@ -56,3 +57,6 @@ echo "OK kinematics sample"
 
 timeout 10 ros2 topic echo /motionbrain/control_guard --once >/dev/null
 echo "OK control guard sample"
+
+timeout 10 ros2 topic echo /motionbrain/mission_state --once >/dev/null
+echo "OK mission state sample"

@@ -15,7 +15,7 @@ systemd
   -> /etc/motionbrain/ros-bridge.env
   -> tools/raspi/start_ros_bridge.sh
   -> ros2 launch motionbrain_ros_bridge motionbrain_home_wifi.launch.py
-  -> JSON/typed topics + /joint_states + TF + kinematics + C++ control guard
+  -> JSON/typed topics + /joint_states + TF + kinematics + C++ guard + mission state
 ```
 
 ## 사전 조건
@@ -25,7 +25,7 @@ Pi에서 ROS2 workspace가 build되어 있어야 한다.
 ```bash
 cd ~/develop/arduino/motionbrain/ros2_ws
 source /opt/ros/jazzy/setup.bash
-colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_ros_bridge motionbrain_description
+colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_mission motionbrain_ros_bridge motionbrain_description
 source install/setup.bash
 ```
 
@@ -81,12 +81,14 @@ OK topic: /joint_states
 OK topic: /motionbrain/end_effector_pose
 OK topic: /motionbrain/kinematics
 OK topic: /motionbrain/control_guard
+OK topic: /motionbrain/mission_state
 OK status typed sample
 OK camera detection typed sample
 OK joint state sample
 OK end-effector pose sample
 OK kinematics sample
 OK control guard sample
+OK mission state sample
 ```
 
 ## 2026-05-27 Pi 검증 결과

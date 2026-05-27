@@ -13,12 +13,14 @@ The original JSON topics remain available for debugging, while typed
 | `/motionbrain/end_effector_pose` | publish | `geometry_msgs/msg/PoseStamped` | FK end-effector pose from current joint state |
 | `/motionbrain/kinematics` | publish | `std_msgs/String` | FK diagnostics and optional IK target suggestion JSON |
 | `/motionbrain/control_guard` | publish | `std_msgs/String` | C++ guard node readiness and suggested-action JSON |
+| `/motionbrain/mission_state` | publish | `std_msgs/String` | Mission supervisor state for detect-align-confirm-act flow |
 | `/motionbrain/status` | publish | `std_msgs/String` | Raw `GET /status` JSON |
 | `/motionbrain/status_typed` | publish | `motionbrain_msgs/msg/MotionStatus` | Stable status fields plus raw JSON |
 | `/motionbrain/events` | publish | `std_msgs/String` | Raw `GET /events?limit=N` JSON |
 | `/motionbrain/events_typed` | publish | `motionbrain_msgs/msg/MotionEvent` | One typed message per ESP32 event |
 | `/camera/detection` | publish | `std_msgs/String` | Color detection JSON from ESP32-CAM `/capture` |
 | `/camera/detection_typed` | publish | `motionbrain_msgs/msg/CameraDetection` | Stable detection/alignment fields plus raw JSON |
+| `/motionbrain/mission_cmd` | subscribe | `std_msgs/String` | `start`, `confirm`, `cancel`, `reset` mission commands |
 | `/motionbrain/light_cmd` | subscribe | `std_msgs/String` | `on`, `off`, `toggle`, or `{"action":"toggle"}` |
 | `/motionbrain/light_cmd_typed` | subscribe | `motionbrain_msgs/msg/LightCommand` | Typed search-light command |
 | `/motionbrain/light_result` | publish | `std_msgs/String` | Raw `/light` command result JSON |
@@ -46,13 +48,19 @@ It consumes `/motionbrain/status_typed` and `/camera/detection_typed`, then
 publishes `/motionbrain/control_guard` with readiness, stale-data checks,
 motion/fault checks, and a camera-derived suggested action.
 
+`motionbrain_mission_supervisor` is implemented in the `motionbrain_mission`
+package. The default launch file starts it automatically. It implements a
+bounded `detect -> align -> operator confirm -> act` flow, publishes
+`/motionbrain/mission_state`, and only publishes `/motionbrain/light_cmd_typed`
+after an explicit operator `confirm`.
+
 ## Build
 
 From this repository root:
 
 ```bash
 cd ros2_ws
-colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_ros_bridge
+colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_mission motionbrain_ros_bridge
 source install/setup.bash
 ```
 
@@ -108,6 +116,7 @@ ros2 topic echo /joint_states
 ros2 topic echo /motionbrain/end_effector_pose
 ros2 topic echo /motionbrain/kinematics
 ros2 topic echo /motionbrain/control_guard
+ros2 topic echo /motionbrain/mission_state
 ros2 topic echo /motionbrain/events
 ros2 topic echo /motionbrain/events_typed
 ros2 topic echo /camera/detection

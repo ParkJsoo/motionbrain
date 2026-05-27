@@ -129,6 +129,8 @@ TB6612FNG x3
   /motionbrain/end_effector_pose
   /motionbrain/kinematics
   /motionbrain/control_guard
+  /motionbrain/mission_state
+  /motionbrain/mission_cmd
   /motionbrain/light_cmd
   /motionbrain/light_cmd_typed
   /motionbrain/light_result
@@ -225,10 +227,12 @@ messages on:
 - `/motionbrain/end_effector_pose`
 - `/motionbrain/kinematics`
 - `/motionbrain/control_guard`
+- `/motionbrain/mission_state`
 
 It also subscribes to `/motionbrain/light_cmd` and
 `/motionbrain/light_cmd_typed`, then forwards `on`, `off`, or `toggle` to
-token-gated `POST /light`.
+token-gated `POST /light`. `motionbrain_mission` subscribes to
+`/motionbrain/mission_cmd` for `start`, `confirm`, `cancel`, and `reset`.
 
 The ROS2 workspace also includes `motionbrain_description`, a lightweight URDF,
 `robot_state_publisher` launch path, and RViz config for TF/joint-state
@@ -238,6 +242,11 @@ visualization.
 status and camera-detection topics, then publishes `/motionbrain/control_guard`
 as a readiness/suggested-action JSON state. This gives the portfolio a real C++
 ROS2 component without moving unsafe motion decisions into an unverified layer.
+
+`motionbrain_mission` adds a lightweight Nav2-style mission supervisor for the
+bounded portfolio flow `detect -> align -> operator confirm -> act`. It
+publishes mission state continuously and only emits a typed light command after
+an explicit operator `confirm`.
 
 `motionbrain_kinematics_node` subscribes to `/joint_states`, publishes an FK
 end-effector pose on `/motionbrain/end_effector_pose`, and publishes kinematics
@@ -252,7 +261,7 @@ Build and run directly:
 
 ```bash
 cd ros2_ws
-colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_ros_bridge motionbrain_description
+colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_mission motionbrain_ros_bridge motionbrain_description
 source install/setup.bash
 ros2 run motionbrain_ros_bridge motionbrain_status_node --ros-args -p motion_host:=192.168.4.1 -p camera_url:=http://192.168.4.2
 ```

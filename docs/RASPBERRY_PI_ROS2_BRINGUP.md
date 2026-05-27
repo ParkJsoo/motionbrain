@@ -217,7 +217,7 @@ an unverified host-side autonomous controller.
 Capture these artifacts after bring-up:
 
 - Raspberry Pi terminal showing Ubuntu version and ROS2 Jazzy environment
-- `colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_ros_bridge motionbrain_description`
+- `colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_mission motionbrain_ros_bridge motionbrain_description`
   success log
 - `ros2 topic echo /motionbrain/status` output
 - `ros2 topic echo /motionbrain/status_typed` output
@@ -225,6 +225,7 @@ Capture these artifacts after bring-up:
 - `ros2 topic echo /motionbrain/end_effector_pose` output
 - `ros2 topic echo /motionbrain/kinematics` output
 - `ros2 topic echo /motionbrain/control_guard` output
+- `ros2 topic echo /motionbrain/mission_state` output
 - `ros2 topic echo /motionbrain/events` output
 - `ros2 topic echo /camera/detection` output
 - `ros2 topic echo /camera/detection_typed` output
@@ -409,7 +410,7 @@ Build the ROS2 packages:
 ```bash
 cd ~/develop/arduino/motionbrain/ros2_ws
 source /opt/ros/jazzy/setup.bash
-colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_ros_bridge motionbrain_description
+colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_mission motionbrain_ros_bridge motionbrain_description
 source install/setup.bash
 ```
 
@@ -418,14 +419,14 @@ toolchain and rebuild:
 
 ```bash
 sudo apt install -y g++
-colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_ros_bridge motionbrain_description
+colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_mission motionbrain_ros_bridge motionbrain_description
 source install/setup.bash
 ```
 
 Expected result:
 
 ```text
-Summary: 4 packages finished
+Summary: 5 packages finished
 ```
 
 ## Run Bridge
@@ -495,6 +496,8 @@ Expected topics:
 /motionbrain/light_cmd_typed
 /motionbrain/light_result
 /motionbrain/light_result_typed
+/motionbrain/mission_cmd
+/motionbrain/mission_state
 /motionbrain/status
 /motionbrain/status_typed
 ```
@@ -645,7 +648,7 @@ Install OpenCV and rebuild if needed:
 ```bash
 cd ~/develop/arduino/motionbrain/ros2_ws
 rosdep install --from-paths src --ignore-src -r -y
-colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_ros_bridge motionbrain_description
+colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_mission motionbrain_ros_bridge motionbrain_description
 source install/setup.bash
 ```
 

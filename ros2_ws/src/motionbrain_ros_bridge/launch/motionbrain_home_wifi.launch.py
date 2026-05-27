@@ -15,6 +15,7 @@ def generate_launch_description() -> LaunchDescription:
     events_limit = LaunchConfiguration("events_limit")
     enable_kinematics = LaunchConfiguration("enable_kinematics")
     enable_control_guard = LaunchConfiguration("enable_control_guard")
+    enable_mission_supervisor = LaunchConfiguration("enable_mission_supervisor")
 
     return LaunchDescription(
         [
@@ -58,6 +59,11 @@ def generate_launch_description() -> LaunchDescription:
                 default_value="true",
                 description="Publish C++ control readiness guard from typed status and camera detection.",
             ),
+            DeclareLaunchArgument(
+                "enable_mission_supervisor",
+                default_value="true",
+                description="Publish lightweight mission state for detect-align-confirm-act demos.",
+            ),
             Node(
                 package="motionbrain_ros_bridge",
                 executable="motionbrain_status_node",
@@ -93,6 +99,13 @@ def generate_launch_description() -> LaunchDescription:
                 name="motionbrain_control_guard_node",
                 output="screen",
                 condition=IfCondition(enable_control_guard),
+            ),
+            Node(
+                package="motionbrain_mission",
+                executable="motionbrain_mission_supervisor",
+                name="motionbrain_mission_supervisor",
+                output="screen",
+                condition=IfCondition(enable_mission_supervisor),
             ),
         ]
     )

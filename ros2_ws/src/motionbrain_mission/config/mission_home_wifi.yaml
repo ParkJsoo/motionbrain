@@ -1,0 +1,12 @@
+motionbrain_mission_supervisor:
+  ros__parameters:
+    control_guard_topic: /motionbrain/control_guard
+    detection_topic: /camera/detection_typed
+    status_topic: /motionbrain/status_typed
+    mission_cmd_topic: /motionbrain/mission_cmd
+    mission_state_topic: /motionbrain/mission_state
+    light_cmd_topic: /motionbrain/light_cmd_typed
+    require_center_alignment: true
+    require_guard_ready: true
+    act_action: toggle
+    publish_rate_hz: 2.0
