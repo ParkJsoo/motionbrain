@@ -1,0 +1,62 @@
+name: ROS2 Workspace
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-24.04
+    container:
+      image: ros:jazzy-ros-base
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install ROS2 build dependencies
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            build-essential \
+            python3-colcon-common-extensions \
+            python3-opencv \
+            python3-pytest \
+            ros-jazzy-rosidl-default-generators
+
+      - name: Run host and ROS2 contract tests
+        run: python3 -m unittest discover -s tests
+
+      - name: Build ROS2 workspace
+        shell: bash
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          cd ros2_ws
+          colcon build \
+            --packages-select \
+              motionbrain_msgs \
+              motionbrain_control \
+              motionbrain_mission \
+              motionbrain_ros_bridge \
+              motionbrain_description \
+            --event-handlers console_direct+
+
+      - name: Test ROS2 workspace
+        shell: bash
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          source ros2_ws/install/setup.bash
+          cd ros2_ws
+          colcon test \
+            --packages-select \
+              motionbrain_msgs \
+              motionbrain_control \
+              motionbrain_mission \
+              motionbrain_ros_bridge \
+              motionbrain_description \
+            --event-handlers console_direct+
+          colcon test-result --verbose

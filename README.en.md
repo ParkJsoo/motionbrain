@@ -45,6 +45,8 @@ input -> decision -> state -> motion -> feedback
 - trusted home Wi-Fi station mode for the ESP32 controller and ESP32-CAM
 - token-aware host commands and a runtime token prompt in the ESP32-hosted `MotionBrain Control` page
 - local ops dashboard for status/events, ESP32-CAM capture, color detection, and token-gated one-shot vision nudge control
+- GitHub Actions quality gates for host Python tests, PlatformIO firmware
+  builds, and ROS2 `colcon build/test`
 - Raspberry Pi 4 + Ubuntu 24.04 + ROS2 Jazzy bridge validation:
   - `motionbrain_ros_bridge` builds and launches on the Pi
   - ESP32 controller status/events publish to ROS2 topics
@@ -253,6 +255,24 @@ If mDNS is unavailable on the Pi, pass IP addresses with `motion_host:=...` and
 `camera_url:=http://...`.
 
 ## Development Environment
+
+### Quality Gates
+
+GitHub Actions validates two paths:
+
+- `PlatformIO`: host Python tests, ESP32 controller build, ESP32-CAM build
+- `ROS2 Workspace`: ROS2 package contract tests, `colcon build`, and
+  `colcon test` in a `ros:jazzy-ros-base` container
+
+Fast local checks:
+
+```bash
+python3 -m unittest discover -s tests
+python3 -m py_compile ros2_ws/src/motionbrain_ros_bridge/launch/motionbrain_home_wifi.launch.py \
+  ros2_ws/src/motionbrain_mission/motionbrain_mission/mission_flow.py \
+  ros2_ws/src/motionbrain_mission/motionbrain_mission/mission_supervisor_node.py
+bash -n tools/raspi/start_ros_bridge.sh tools/raspi/check_ros_bridge_health.sh
+```
 
 ### ESP32
 

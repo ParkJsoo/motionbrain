@@ -39,7 +39,8 @@ ESP32 기반 5축 로봇팔 제어 시스템에서 출발해, STM32 센서 허�
 - `TB6612FNG x3` + `M1~M5` 실물 연결 및 모터 출력 확인
 - 유선 teleop deadman + IMU 입력으로 실제 모터 출력 및 release 정지 확인
 - trusted home Wi-Fi station mode와 token-aware host command path
-- GitHub Actions 기반 PlatformIO 빌드와 host vision alignment synthetic test
+- GitHub Actions 기반 PlatformIO 빌드, host vision alignment synthetic test,
+  ROS2 workspace `colcon build/test` 품질 게이트
 - Raspberry Pi 4 + Ubuntu 24.04 + ROS2 Jazzy 기반 `motionbrain_ros_bridge` 실기 검증
   - Pi에서 ROS2 package build 및 launch 확인
   - ESP32 controller `/status`, `/events`를 ROS2 topic으로 publish 확인
@@ -296,6 +297,24 @@ ros2 launch motionbrain_description display.launch.py use_rviz:=true
 Package notes are in [ros2_ws/src/motionbrain_ros_bridge/README.md](ros2_ws/src/motionbrain_ros_bridge/README.md).
 
 ## 개발 환경
+
+### 품질 게이트
+
+GitHub Actions는 두 경로를 분리해서 검증한다.
+
+- `PlatformIO`: host Python tests, ESP32 controller build, ESP32-CAM build
+- `ROS2 Workspace`: `ros:jazzy-ros-base` 컨테이너에서 ROS2 package contract
+  tests, `colcon build`, `colcon test`
+
+로컬에서 빠르게 확인:
+
+```bash
+python3 -m unittest discover -s tests
+python3 -m py_compile ros2_ws/src/motionbrain_ros_bridge/launch/motionbrain_home_wifi.launch.py \
+  ros2_ws/src/motionbrain_mission/motionbrain_mission/mission_flow.py \
+  ros2_ws/src/motionbrain_mission/motionbrain_mission/mission_supervisor_node.py
+bash -n tools/raspi/start_ros_bridge.sh tools/raspi/check_ros_bridge_health.sh
+```
 
 ### ESP32 Motion Controller
 
