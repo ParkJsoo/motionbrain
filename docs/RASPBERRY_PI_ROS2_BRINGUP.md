@@ -181,13 +181,14 @@ not a live autonomous motion command.
 Capture these artifacts after bring-up:
 
 - Raspberry Pi terminal showing Ubuntu version and ROS2 Jazzy environment
-- `colcon build --packages-select motionbrain_msgs motionbrain_ros_bridge motionbrain_description`
+- `colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_ros_bridge motionbrain_description`
   success log
 - `ros2 topic echo /motionbrain/status` output
 - `ros2 topic echo /motionbrain/status_typed` output
 - `ros2 topic echo /joint_states` output
 - `ros2 topic echo /motionbrain/end_effector_pose` output
 - `ros2 topic echo /motionbrain/kinematics` output
+- `ros2 topic echo /motionbrain/control_guard` output
 - `ros2 topic echo /motionbrain/events` output
 - `ros2 topic echo /camera/detection` output
 - `ros2 topic echo /camera/detection_typed` output
@@ -372,7 +373,7 @@ Build the ROS2 packages:
 ```bash
 cd ~/develop/arduino/motionbrain/ros2_ws
 source /opt/ros/jazzy/setup.bash
-colcon build --packages-select motionbrain_msgs motionbrain_ros_bridge motionbrain_description
+colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_ros_bridge motionbrain_description
 source install/setup.bash
 ```
 
@@ -381,14 +382,14 @@ toolchain and rebuild:
 
 ```bash
 sudo apt install -y g++
-colcon build --packages-select motionbrain_msgs motionbrain_ros_bridge motionbrain_description
+colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_ros_bridge motionbrain_description
 source install/setup.bash
 ```
 
 Expected result:
 
 ```text
-Summary: 3 packages finished
+Summary: 4 packages finished
 ```
 
 ## Run Bridge
@@ -449,8 +450,11 @@ Expected topics:
 /camera/detection
 /camera/detection_typed
 /joint_states
+/motionbrain/control_guard
 /motionbrain/events
 /motionbrain/events_typed
+/motionbrain/end_effector_pose
+/motionbrain/kinematics
 /motionbrain/light_cmd
 /motionbrain/light_cmd_typed
 /motionbrain/light_result
@@ -605,7 +609,7 @@ Install OpenCV and rebuild if needed:
 ```bash
 cd ~/develop/arduino/motionbrain/ros2_ws
 rosdep install --from-paths src --ignore-src -r -y
-colcon build --packages-select motionbrain_msgs motionbrain_ros_bridge motionbrain_description
+colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_ros_bridge motionbrain_description
 source install/setup.bash
 ```
 

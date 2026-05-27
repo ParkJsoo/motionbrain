@@ -14,6 +14,7 @@ def generate_launch_description() -> LaunchDescription:
     http_timeout = LaunchConfiguration("http_timeout")
     events_limit = LaunchConfiguration("events_limit")
     enable_kinematics = LaunchConfiguration("enable_kinematics")
+    enable_control_guard = LaunchConfiguration("enable_control_guard")
 
     return LaunchDescription(
         [
@@ -52,6 +53,11 @@ def generate_launch_description() -> LaunchDescription:
                 default_value="true",
                 description="Publish FK end-effector pose and kinematics diagnostics.",
             ),
+            DeclareLaunchArgument(
+                "enable_control_guard",
+                default_value="true",
+                description="Publish C++ control readiness guard from typed status and camera detection.",
+            ),
             Node(
                 package="motionbrain_ros_bridge",
                 executable="motionbrain_status_node",
@@ -80,6 +86,13 @@ def generate_launch_description() -> LaunchDescription:
                 name="motionbrain_kinematics_node",
                 output="screen",
                 condition=IfCondition(enable_kinematics),
+            ),
+            Node(
+                package="motionbrain_control",
+                executable="motionbrain_control_guard_node",
+                name="motionbrain_control_guard_node",
+                output="screen",
+                condition=IfCondition(enable_control_guard),
             ),
         ]
     )

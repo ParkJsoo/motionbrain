@@ -12,6 +12,7 @@ The original JSON topics remain available for debugging, while typed
 | `/joint_states` | publish | `sensor_msgs/msg/JointState` | MotionStatus joint fields mapped to URDF joints |
 | `/motionbrain/end_effector_pose` | publish | `geometry_msgs/msg/PoseStamped` | FK end-effector pose from current joint state |
 | `/motionbrain/kinematics` | publish | `std_msgs/String` | FK diagnostics and optional IK target suggestion JSON |
+| `/motionbrain/control_guard` | publish | `std_msgs/String` | C++ guard node readiness and suggested-action JSON |
 | `/motionbrain/status` | publish | `std_msgs/String` | Raw `GET /status` JSON |
 | `/motionbrain/status_typed` | publish | `motionbrain_msgs/msg/MotionStatus` | Stable status fields plus raw JSON |
 | `/motionbrain/events` | publish | `std_msgs/String` | Raw `GET /events?limit=N` JSON |
@@ -39,13 +40,19 @@ ros2 run motionbrain_ros_bridge motionbrain_kinematics_node \
   -p target_z_m:=0.09
 ```
 
+`motionbrain_control_guard_node` is implemented in C++ under the
+`motionbrain_control` package. The default launch file starts it automatically.
+It consumes `/motionbrain/status_typed` and `/camera/detection_typed`, then
+publishes `/motionbrain/control_guard` with readiness, stale-data checks,
+motion/fault checks, and a camera-derived suggested action.
+
 ## Build
 
 From this repository root:
 
 ```bash
 cd ros2_ws
-colcon build --packages-select motionbrain_msgs motionbrain_ros_bridge
+colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_ros_bridge
 source install/setup.bash
 ```
 
@@ -100,6 +107,7 @@ ros2 topic echo /motionbrain/status_typed
 ros2 topic echo /joint_states
 ros2 topic echo /motionbrain/end_effector_pose
 ros2 topic echo /motionbrain/kinematics
+ros2 topic echo /motionbrain/control_guard
 ros2 topic echo /motionbrain/events
 ros2 topic echo /motionbrain/events_typed
 ros2 topic echo /camera/detection

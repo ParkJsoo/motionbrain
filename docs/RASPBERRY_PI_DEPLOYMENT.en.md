@@ -15,7 +15,7 @@ systemd
   -> /etc/motionbrain/ros-bridge.env
   -> tools/raspi/start_ros_bridge.sh
   -> ros2 launch motionbrain_ros_bridge motionbrain_home_wifi.launch.py
-  -> JSON/typed topics + /joint_states + TF display path
+  -> JSON/typed topics + /joint_states + TF + kinematics + C++ control guard
 ```
 
 ## Prerequisites
@@ -25,7 +25,7 @@ Build the ROS2 workspace on the Pi:
 ```bash
 cd ~/develop/arduino/motionbrain/ros2_ws
 source /opt/ros/jazzy/setup.bash
-colcon build --packages-select motionbrain_msgs motionbrain_ros_bridge motionbrain_description
+colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_ros_bridge motionbrain_description
 source install/setup.bash
 ```
 
@@ -80,11 +80,13 @@ OK topic: /camera/detection_typed
 OK topic: /joint_states
 OK topic: /motionbrain/end_effector_pose
 OK topic: /motionbrain/kinematics
+OK topic: /motionbrain/control_guard
 OK status typed sample
 OK camera detection typed sample
 OK joint state sample
 OK end-effector pose sample
 OK kinematics sample
+OK control guard sample
 ```
 
 ## 2026-05-27 Pi Validation Result

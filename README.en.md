@@ -123,6 +123,7 @@ As of 2026-05-26, the Raspberry Pi 4 ROS2 host path has been validated on real h
   /joint_states
   /motionbrain/end_effector_pose
   /motionbrain/kinematics
+  /motionbrain/control_guard
   /motionbrain/light_cmd
   /motionbrain/light_cmd_typed
   /motionbrain/light_result
@@ -201,6 +202,7 @@ event logs, and ESP32-CAM detection results into ROS2:
 - `/camera/detection_typed`
 - `/motionbrain/end_effector_pose`
 - `/motionbrain/kinematics`
+- `/motionbrain/control_guard`
 - `/motionbrain/light_cmd`
 - `/motionbrain/light_cmd_typed`
 - `/motionbrain/light_result`
@@ -209,6 +211,11 @@ event logs, and ESP32-CAM detection results into ROS2:
 The workspace also includes `motionbrain_description`, a lightweight URDF,
 `robot_state_publisher` launch path, and RViz config for TF/joint-state
 visualization.
+
+`motionbrain_control` adds a small C++ ROS2 guard node that subscribes to typed
+status and camera-detection topics, then publishes `/motionbrain/control_guard`
+as a readiness/suggested-action JSON state. This adds a real C++ ROS2 component
+while keeping unsafe motion decisions outside the unverified host layer.
 
 `motionbrain_kinematics_node` subscribes to `/joint_states`, publishes an FK
 end-effector pose on `/motionbrain/end_effector_pose`, and publishes kinematics
@@ -227,7 +234,7 @@ For service-style operation on the Pi, see
 
 ```bash
 cd ros2_ws
-colcon build --packages-select motionbrain_msgs motionbrain_ros_bridge motionbrain_description
+colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_ros_bridge motionbrain_description
 source install/setup.bash
 export MOTIONBRAIN_HTTP_TOKEN="CHANGE_ME_TO_LOCAL_TOKEN"
 ros2 launch motionbrain_ros_bridge motionbrain_home_wifi.launch.py

@@ -100,13 +100,14 @@ Expected:
 ```text
 jazzy
 motionbrain_msgs
+motionbrain_control
 motionbrain_ros_bridge
 ```
 
 If the package is missing:
 
 ```bash
-colcon build --packages-select motionbrain_msgs motionbrain_ros_bridge motionbrain_description
+colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_ros_bridge motionbrain_description
 source install/setup.bash
 ```
 
@@ -131,6 +132,9 @@ Capture these short clips or screenshots:
    - `/motionbrain/light_cmd` and `/motionbrain/light_result`
    - `/motionbrain/light_cmd_typed` and `/motionbrain/light_result_typed`
    - `/joint_states`
+   - `/motionbrain/end_effector_pose`
+   - `/motionbrain/kinematics`
+   - `/motionbrain/control_guard`
    - optional RViz RobotModel/TF view
    - real search light turning on
 
@@ -193,8 +197,12 @@ Expected topics:
 ```text
 /camera/detection
 /camera/detection_typed
+/joint_states
+/motionbrain/control_guard
+/motionbrain/end_effector_pose
 /motionbrain/events
 /motionbrain/events_typed
+/motionbrain/kinematics
 /motionbrain/light_cmd
 /motionbrain/light_cmd_typed
 /motionbrain/light_result

@@ -128,6 +128,7 @@ TB6612FNG x3
   /joint_states
   /motionbrain/end_effector_pose
   /motionbrain/kinematics
+  /motionbrain/control_guard
   /motionbrain/light_cmd
   /motionbrain/light_cmd_typed
   /motionbrain/light_result
@@ -223,6 +224,7 @@ messages on:
 - `/camera/detection_typed`
 - `/motionbrain/end_effector_pose`
 - `/motionbrain/kinematics`
+- `/motionbrain/control_guard`
 
 It also subscribes to `/motionbrain/light_cmd` and
 `/motionbrain/light_cmd_typed`, then forwards `on`, `off`, or `toggle` to
@@ -231,6 +233,11 @@ token-gated `POST /light`.
 The ROS2 workspace also includes `motionbrain_description`, a lightweight URDF,
 `robot_state_publisher` launch path, and RViz config for TF/joint-state
 visualization.
+
+`motionbrain_control` adds a small C++ ROS2 guard node that subscribes to typed
+status and camera-detection topics, then publishes `/motionbrain/control_guard`
+as a readiness/suggested-action JSON state. This gives the portfolio a real C++
+ROS2 component without moving unsafe motion decisions into an unverified layer.
 
 `motionbrain_kinematics_node` subscribes to `/joint_states`, publishes an FK
 end-effector pose on `/motionbrain/end_effector_pose`, and publishes kinematics
@@ -245,7 +252,7 @@ Build and run directly:
 
 ```bash
 cd ros2_ws
-colcon build --packages-select motionbrain_msgs motionbrain_ros_bridge motionbrain_description
+colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_ros_bridge motionbrain_description
 source install/setup.bash
 ros2 run motionbrain_ros_bridge motionbrain_status_node --ros-args -p motion_host:=192.168.4.1 -p camera_url:=http://192.168.4.2
 ```
