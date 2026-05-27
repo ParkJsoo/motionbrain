@@ -194,13 +194,17 @@ The project separates manual control from observability:
   - `ros2 interface show` and `ros2 interface list` confirmed all five custom messages
   - `/motionbrain/status_typed` returned real controller status
   - `/camera/detection_typed` returned real ESP32-CAM detection data
+- A first-pass URDF/TF/joint-state path is implemented:
+  - `motionbrain_description` provides a 5-axis arm URDF, display launch file, and RViz config
+  - `motionbrain_joint_state_node` maps `/motionbrain/status_typed` into `/joint_states`
+  - `robot_state_publisher` can publish the MotionBrain TF tree from the URDF
 - CI now runs synthetic host-side vision alignment tests alongside ESP32 and ESP32-CAM PlatformIO builds.
 
 ## Current Limitations
 
 - Final hardware enclosure and wiring layout are not locked yet.
 - Public demo images and videos are not included yet.
-- ROS2 currently has typed status/detection/event/light messages, but URDF, TF, `joint_states`, and RViz visualization are still pending.
+- The URDF/TF/joint-state path is implemented but still needs Raspberry Pi runtime validation and public RViz evidence capture.
 - Vision-based base alignment is implemented as an explicit opt-in nudge step. It is validated for left/right correction nudges, but not yet for full pick behavior.
 - AI planning integration is planned but not complete.
 - Teleop sign, deadzone, and speed weights need final tuning after mechanical mounting is fixed.
@@ -221,7 +225,7 @@ This project demonstrates practical embedded robotics engineering:
 
 1. Capture public demo media showing teleop, safety/status, camera capture, red detection, ROS2 topic output, and ROS2-triggered light action.
 2. Capture demo media showing red target localization and left/right base nudge alignment.
-3. Add URDF, TF, `joint_states`, and RViz visualization on top of the typed ROS2 bridge.
+3. Validate the URDF, TF, `joint_states`, and RViz visualization path on the Raspberry Pi.
 4. Extend camera or host decisions from alignment nudges toward semi-autonomous pick behavior.
 5. Finalize wiring, obstacle-safety placement, and teleop tuning.
 

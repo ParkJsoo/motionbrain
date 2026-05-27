@@ -211,6 +211,7 @@ ros2_ws/src/motionbrain_ros_bridge
 It keeps the ESP32 HTTP API unchanged and publishes JSON plus typed ROS2
 messages on:
 
+- `/joint_states`
 - `/motionbrain/status`
 - `/motionbrain/status_typed`
 - `/motionbrain/events`
@@ -222,13 +223,17 @@ It also subscribes to `/motionbrain/light_cmd` and
 `/motionbrain/light_cmd_typed`, then forwards `on`, `off`, or `toggle` to
 token-gated `POST /light`.
 
+The ROS2 workspace also includes `motionbrain_description`, a lightweight URDF,
+`robot_state_publisher` launch path, and RViz config for TF/joint-state
+visualization.
+
 Raspberry Pi bring-up is documented in [docs/RASPBERRY_PI_ROS2_BRINGUP.md](docs/RASPBERRY_PI_ROS2_BRINGUP.md). The portfolio validation path has been run on Raspberry Pi 4 with ROS2 Jazzy: Home Wi-Fi access to the ESP32 controller and ESP32-CAM, JSON and typed topic echo verification, and a ROS2 command-channel test that toggled the real search light.
 
 Build and run directly:
 
 ```bash
 cd ros2_ws
-colcon build --packages-select motionbrain_msgs motionbrain_ros_bridge
+colcon build --packages-select motionbrain_msgs motionbrain_ros_bridge motionbrain_description
 source install/setup.bash
 ros2 run motionbrain_ros_bridge motionbrain_status_node --ros-args -p motion_host:=192.168.4.1 -p camera_url:=http://192.168.4.2
 ```
@@ -246,6 +251,18 @@ If mDNS is unavailable on the Pi, pass the controller and camera IP addresses:
 ros2 launch motionbrain_ros_bridge motionbrain_home_wifi.launch.py \
   motion_host:=<controller-ip> \
   camera_url:=http://<camera-ip>
+```
+
+Start the URDF/TF visualization path:
+
+```bash
+ros2 launch motionbrain_description display.launch.py
+```
+
+On a desktop with RViz2 installed:
+
+```bash
+ros2 launch motionbrain_description display.launch.py use_rviz:=true
 ```
 
 Package notes are in [ros2_ws/src/motionbrain_ros_bridge/README.md](ros2_ws/src/motionbrain_ros_bridge/README.md).

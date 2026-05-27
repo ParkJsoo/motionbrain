@@ -189,6 +189,7 @@ ros2_ws/src/motionbrain_ros_bridge
 The bridge keeps the ESP32 HTTP API unchanged while publishing robot status,
 event logs, and ESP32-CAM detection results into ROS2:
 
+- `/joint_states`
 - `/motionbrain/status`
 - `/motionbrain/status_typed`
 - `/motionbrain/events`
@@ -200,6 +201,10 @@ event logs, and ESP32-CAM detection results into ROS2:
 - `/motionbrain/light_result`
 - `/motionbrain/light_result_typed`
 
+The workspace also includes `motionbrain_description`, a lightweight URDF,
+`robot_state_publisher` launch path, and RViz config for TF/joint-state
+visualization.
+
 Raspberry Pi bring-up is documented in
 [docs/RASPBERRY_PI_ROS2_BRINGUP.md](docs/RASPBERRY_PI_ROS2_BRINGUP.md). The
 portfolio validation path has been run on Raspberry Pi 4 with ROS2 Jazzy:
@@ -209,10 +214,11 @@ light through the ESP32 `/light` endpoint.
 
 ```bash
 cd ros2_ws
-colcon build --packages-select motionbrain_msgs motionbrain_ros_bridge
+colcon build --packages-select motionbrain_msgs motionbrain_ros_bridge motionbrain_description
 source install/setup.bash
 export MOTIONBRAIN_HTTP_TOKEN="CHANGE_ME_TO_LOCAL_TOKEN"
 ros2 launch motionbrain_ros_bridge motionbrain_home_wifi.launch.py
+ros2 launch motionbrain_description display.launch.py
 ```
 
 If mDNS is unavailable on the Pi, pass IP addresses with `motion_host:=...` and

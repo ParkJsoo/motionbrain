@@ -105,7 +105,7 @@ motionbrain_ros_bridge
 패키지가 없으면 빌드한다.
 
 ```bash
-colcon build --packages-select motionbrain_msgs motionbrain_ros_bridge
+colcon build --packages-select motionbrain_msgs motionbrain_ros_bridge motionbrain_description
 source install/setup.bash
 ```
 
@@ -131,6 +131,8 @@ source install/setup.bash
    - `/motionbrain/light_cmd_typed`
    - `/motionbrain/light_result`
    - `/motionbrain/light_result_typed`
+   - `/joint_states`
+   - 선택: RViz RobotModel/TF 화면
    - 실제 SearchLight 점등
 
 3. 안전/권한 증거
@@ -269,6 +271,37 @@ HTTP Error 403: Forbidden
 
 이 결과는 ROS2 graph와 bridge는 동작하지만, ESP32의 state-changing command
 경계가 token으로 보호되고 있음을 의미한다.
+
+## Segment 2-B: URDF / TF / Joint State 확인
+
+ROS2 bridge가 실행 중인 상태에서 다른 terminal에서 robot description launch를
+실행한다.
+
+```bash
+cd ~/develop/arduino/motionbrain/ros2_ws
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+ros2 launch motionbrain_description display.launch.py
+```
+
+확인:
+
+```bash
+ros2 topic echo /joint_states --once
+```
+
+desktop 환경에서 RViz2가 있으면:
+
+```bash
+ros2 launch motionbrain_description display.launch.py use_rviz:=true
+```
+
+캡처 포인트:
+
+- `base_yaw_joint`, `shoulder_pitch_joint`, `elbow_pitch_joint`,
+  `wrist_pitch_joint`, `gripper_joint`가 `/joint_states`에 보인다.
+- RViz RobotModel이 표시된다.
+- TF tree가 `world -> base_link -> ... -> gripper_link` 구조로 보인다.
 
 ## Segment 3: ESP32-CAM Vision 증거
 

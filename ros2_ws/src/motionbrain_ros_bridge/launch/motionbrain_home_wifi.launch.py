@@ -61,5 +61,11 @@ def generate_launch_description() -> LaunchDescription:
                     }
                 ],
             ),
+            Node(
+                package="motionbrain_ros_bridge",
+                executable="motionbrain_joint_state_node",
+                name="motionbrain_joint_state_node",
+                output="screen",
+            ),
         ]
     )

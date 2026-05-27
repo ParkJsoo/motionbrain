@@ -106,7 +106,7 @@ motionbrain_ros_bridge
 If the package is missing:
 
 ```bash
-colcon build --packages-select motionbrain_msgs motionbrain_ros_bridge
+colcon build --packages-select motionbrain_msgs motionbrain_ros_bridge motionbrain_description
 source install/setup.bash
 ```
 
@@ -130,6 +130,8 @@ Capture these short clips or screenshots:
    - `/camera/detection_typed`
    - `/motionbrain/light_cmd` and `/motionbrain/light_result`
    - `/motionbrain/light_cmd_typed` and `/motionbrain/light_result_typed`
+   - `/joint_states`
+   - optional RViz RobotModel/TF view
    - real search light turning on
 
 3. Safety/authorization evidence
@@ -265,6 +267,37 @@ HTTP Error 403: Forbidden
 
 This means the ROS2 graph and bridge are working, but the ESP32 correctly
 rejected the state-changing HTTP command.
+
+## Segment 2-B: URDF / TF / Joint State Check
+
+With the ROS2 bridge running, start the robot description launch in another
+terminal:
+
+```bash
+cd ~/develop/arduino/motionbrain/ros2_ws
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+ros2 launch motionbrain_description display.launch.py
+```
+
+Check:
+
+```bash
+ros2 topic echo /joint_states --once
+```
+
+On a desktop with RViz2 installed:
+
+```bash
+ros2 launch motionbrain_description display.launch.py use_rviz:=true
+```
+
+Capture points:
+
+- `/joint_states` includes `base_yaw_joint`, `shoulder_pitch_joint`,
+  `elbow_pitch_joint`, `wrist_pitch_joint`, and `gripper_joint`.
+- RViz shows the RobotModel.
+- The TF tree follows `world -> base_link -> ... -> gripper_link`.
 
 ## Segment 3: ESP32-CAM Vision Evidence
 

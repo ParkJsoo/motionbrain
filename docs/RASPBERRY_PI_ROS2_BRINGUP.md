@@ -82,15 +82,31 @@ validated on the real Pi host:
 The bridge still publishes JSON string topics for compatibility and debugging,
 but portfolio-facing ROS2 integration should prefer the typed topics.
 
+## 2026-05-27 URDF / TF / Joint State Path
+
+The ROS2 workspace now includes a first-pass robot description path:
+
+- `motionbrain_description` provides a lightweight URDF for the current 5-axis
+  arm, a `robot_state_publisher` launch file, and an RViz config.
+- `motionbrain_joint_state_node` converts `/motionbrain/status_typed` into
+  `/joint_states`.
+- The current hardware does not provide full encoder feedback yet. The bridge
+  publishes the real base angle when available and keeps the remaining joint
+  angles at stable default values until joint feedback is added.
+
+This is enough to demonstrate ROS2 kinematic modeling, TF publication, and RViz
+readiness without pretending the robot has sensors it does not currently have.
+
 ## Portfolio Evidence Checklist
 
 Capture these artifacts after bring-up:
 
 - Raspberry Pi terminal showing Ubuntu version and ROS2 Jazzy environment
-- `colcon build --packages-select motionbrain_msgs motionbrain_ros_bridge`
+- `colcon build --packages-select motionbrain_msgs motionbrain_ros_bridge motionbrain_description`
   success log
 - `ros2 topic echo /motionbrain/status` output
 - `ros2 topic echo /motionbrain/status_typed` output
+- `ros2 topic echo /joint_states` output
 - `ros2 topic echo /motionbrain/events` output
 - `ros2 topic echo /camera/detection` output
 - `ros2 topic echo /camera/detection_typed` output
@@ -275,7 +291,7 @@ Build the ROS2 packages:
 ```bash
 cd ~/develop/arduino/motionbrain/ros2_ws
 source /opt/ros/jazzy/setup.bash
-colcon build --packages-select motionbrain_msgs motionbrain_ros_bridge
+colcon build --packages-select motionbrain_msgs motionbrain_ros_bridge motionbrain_description
 source install/setup.bash
 ```
 
@@ -284,14 +300,14 @@ toolchain and rebuild:
 
 ```bash
 sudo apt install -y g++
-colcon build --packages-select motionbrain_msgs motionbrain_ros_bridge
+colcon build --packages-select motionbrain_msgs motionbrain_ros_bridge motionbrain_description
 source install/setup.bash
 ```
 
 Expected result:
 
 ```text
-Summary: 2 packages finished
+Summary: 3 packages finished
 ```
 
 ## Run Bridge
@@ -351,6 +367,7 @@ Expected topics:
 ```text
 /camera/detection
 /camera/detection_typed
+/joint_states
 /motionbrain/events
 /motionbrain/events_typed
 /motionbrain/light_cmd
@@ -373,6 +390,12 @@ Check robot status:
 ```bash
 ros2 topic echo /motionbrain/status
 ros2 topic echo /motionbrain/status_typed --once
+```
+
+Check joint states:
+
+```bash
+ros2 topic echo /joint_states --once
 ```
 
 Check event stream:
@@ -426,6 +449,29 @@ Expected:
 This is important because it proves the bridge is not publish-only. It has a
 ROS2 command path back into the embedded controller.
 
+## Verify Robot Description And TF
+
+The display launch starts `robot_state_publisher` with the MotionBrain URDF and,
+by default, also starts the joint-state bridge:
+
+```bash
+ros2 launch motionbrain_description display.launch.py
+```
+
+On a desktop machine with RViz2 installed:
+
+```bash
+ros2 launch motionbrain_description display.launch.py use_rviz:=true
+```
+
+Expected:
+
+- `/robot_description` is available as a parameter on `robot_state_publisher`.
+- `/joint_states` publishes `base_yaw_joint`, `shoulder_pitch_joint`,
+  `elbow_pitch_joint`, `wrist_pitch_joint`, and `gripper_joint`.
+- TF frames include `world`, `base_link`, arm links, `gripper_link`, and
+  `camera_link`.
+
 ## Raspberry Pi Host Role
 
 For the portfolio demo, the Raspberry Pi host is responsible for:
@@ -435,6 +481,7 @@ For the portfolio demo, the Raspberry Pi host is responsible for:
 - Polling ESP32-CAM capture frames over HTTP
 - Publishing robot status, events, and camera detection as JSON and typed ROS2
   topics
+- Publishing `/joint_states` for the URDF/TF visualization path
 - Accepting JSON and typed ROS2 command messages and forwarding safe HTTP
   commands to ESP32
 
@@ -477,7 +524,7 @@ Install OpenCV and rebuild if needed:
 ```bash
 cd ~/develop/arduino/motionbrain/ros2_ws
 rosdep install --from-paths src --ignore-src -r -y
-colcon build --packages-select motionbrain_msgs motionbrain_ros_bridge
+colcon build --packages-select motionbrain_msgs motionbrain_ros_bridge motionbrain_description
 source install/setup.bash
 ```
 
@@ -520,9 +567,11 @@ The Raspberry Pi ROS2 bring-up is complete when:
 - Pi boots Ubuntu 24.04 arm64 and ROS2 Jazzy.
 - Pi reaches the ESP32 controller and ESP32-CAM on Home Wi-Fi by `.local`
   hostname or IP fallback.
-- `motionbrain_msgs` and `motionbrain_ros_bridge` build successfully on the Pi.
+- `motionbrain_msgs`, `motionbrain_ros_bridge`, and `motionbrain_description`
+  build successfully on the Pi.
 - `/motionbrain/status`, `/motionbrain/events`, `/camera/detection`, and their
   typed equivalents publish real data.
+- `/joint_states` and TF publish a first-pass MotionBrain robot model.
 - `/motionbrain/light_cmd` controls the ESP32 through the ROS2 bridge.
 - Logs, screenshots, and at least one photo or video are saved for README and
   portfolio use.

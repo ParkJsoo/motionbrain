@@ -461,6 +461,7 @@ motionbrain_status_node
 - `sub /motionbrain/light_cmd_typed` -> `motionbrain_msgs/msg/LightCommand`
 - `pub /motionbrain/light_result` -> raw `POST /light` command result JSON
 - `pub /motionbrain/light_result_typed` -> `motionbrain_msgs/msg/LightResult`
+- `pub /joint_states` -> `sensor_msgs/msg/JointState`
 
 2026-05-26 실기 검증:
 
@@ -477,3 +478,14 @@ motionbrain_status_node
 - controller `192.168.219.109`, ESP32-CAM `192.168.219.110` 기준 `/motionbrain/status_typed --once`와 `/camera/detection_typed --once`에서 실제 payload를 확인했다.
 
 JSON topic은 디버깅과 호환성을 위해 유지하고, stable field는 typed topic으로 병행 publish한다.
+
+2026-05-27 URDF / joint state 추가:
+
+- `motionbrain_joint_state_node`가 `/motionbrain/status_typed`를 구독하고 `/joint_states`를 publish한다.
+- joint name은 `motionbrain_description/urdf/motionbrain.urdf`와 맞춘다:
+  - `base_yaw_joint`
+  - `shoulder_pitch_joint`
+  - `elbow_pitch_joint`
+  - `wrist_pitch_joint`
+  - `gripper_joint`
+- 현재 하드웨어는 전체 관절 encoder feedback이 없으므로 base angle은 실제 값이 있을 때 반영하고, 나머지는 stable default pose로 둔다.

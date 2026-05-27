@@ -9,6 +9,7 @@ The original JSON topics remain available for debugging, while typed
 
 | ROS2 name | Direction | Type | Payload |
 | --- | --- | --- | --- |
+| `/joint_states` | publish | `sensor_msgs/msg/JointState` | MotionStatus joint fields mapped to URDF joints |
 | `/motionbrain/status` | publish | `std_msgs/String` | Raw `GET /status` JSON |
 | `/motionbrain/status_typed` | publish | `motionbrain_msgs/msg/MotionStatus` | Stable status fields plus raw JSON |
 | `/motionbrain/events` | publish | `std_msgs/String` | Raw `GET /events?limit=N` JSON |
@@ -80,6 +81,7 @@ Watch bridge output:
 ```bash
 ros2 topic echo /motionbrain/status
 ros2 topic echo /motionbrain/status_typed
+ros2 topic echo /joint_states
 ros2 topic echo /motionbrain/events
 ros2 topic echo /motionbrain/events_typed
 ros2 topic echo /camera/detection
