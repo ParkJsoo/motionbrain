@@ -128,6 +128,7 @@ Validated on the Pi:
   - `/camera/detection_typed`
   - `/joint_states`
   - one status sample
+  - one camera detection sample
   - one joint state sample
 
 This adds a practical deployment boundary for logs, restart behavior, local

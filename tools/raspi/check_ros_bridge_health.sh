@@ -39,5 +39,8 @@ done
 timeout 10 ros2 topic echo /motionbrain/status_typed --once >/dev/null
 echo "OK status typed sample"
 
+timeout 10 ros2 topic echo /camera/detection_typed --once >/dev/null
+echo "OK camera detection typed sample"
+
 timeout 10 ros2 topic echo /joint_states --once >/dev/null
 echo "OK joint state sample"

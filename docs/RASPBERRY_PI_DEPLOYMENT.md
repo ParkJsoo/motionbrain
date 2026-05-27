@@ -79,6 +79,7 @@ OK topic: /motionbrain/status_typed
 OK topic: /camera/detection_typed
 OK topic: /joint_states
 OK status typed sample
+OK camera detection typed sample
 OK joint state sample
 ```
 
@@ -101,6 +102,7 @@ OK topic: /motionbrain/status_typed
 OK topic: /camera/detection_typed
 OK topic: /joint_states
 OK status typed sample
+OK camera detection typed sample
 OK joint state sample
 ```
 
