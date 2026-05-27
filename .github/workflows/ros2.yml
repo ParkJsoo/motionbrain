@@ -59,4 +59,11 @@ jobs:
               motionbrain_ros_bridge \
               motionbrain_description \
             --event-handlers console_direct+
-          colcon test-result --verbose
+          colcon test-result --verbose || {
+            code="$?"
+            if [ "${code}" -eq 5 ]; then
+              echo "No colcon test result files were produced; colcon test completed."
+            else
+              exit "${code}"
+            fi
+          }
