@@ -59,6 +59,14 @@ ESP32 controller: 192.168.219.113
 ESP32-CAM: 192.168.219.114
 ```
 
+Observed during 2026-05-27 typed ROS2 message validation after reboot:
+
+```text
+Raspberry Pi: 192.168.219.111
+ESP32 controller: 192.168.219.109
+ESP32-CAM: 192.168.219.110
+```
+
 These are DHCP observations and may change.
 
 ## Preflight
@@ -91,13 +99,14 @@ Expected:
 
 ```text
 jazzy
+motionbrain_msgs
 motionbrain_ros_bridge
 ```
 
 If the package is missing:
 
 ```bash
-colcon build --packages-select motionbrain_ros_bridge
+colcon build --packages-select motionbrain_msgs motionbrain_ros_bridge
 source install/setup.bash
 ```
 
@@ -116,8 +125,11 @@ Capture these short clips or screenshots:
    - `printenv ROS_DISTRO`
    - `ros2 topic list`
    - `/motionbrain/status`
+   - `/motionbrain/status_typed`
    - `/camera/detection`
+   - `/camera/detection_typed`
    - `/motionbrain/light_cmd` and `/motionbrain/light_result`
+   - `/motionbrain/light_cmd_typed` and `/motionbrain/light_result_typed`
    - real search light turning on
 
 3. Safety/authorization evidence
@@ -178,22 +190,29 @@ Expected topics:
 
 ```text
 /camera/detection
+/camera/detection_typed
 /motionbrain/events
+/motionbrain/events_typed
 /motionbrain/light_cmd
+/motionbrain/light_cmd_typed
 /motionbrain/light_result
+/motionbrain/light_result_typed
 /motionbrain/status
+/motionbrain/status_typed
 ```
 
 Capture status:
 
 ```bash
 ros2 topic echo /motionbrain/status --once
+ros2 topic echo /motionbrain/status_typed --once
 ```
 
 Capture camera detection:
 
 ```bash
 ros2 topic echo /camera/detection --once
+ros2 topic echo /camera/detection_typed --once
 ```
 
 Start result listener before publishing the command:
@@ -209,6 +228,12 @@ cd ~/develop/arduino/motionbrain/ros2_ws
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 ros2 topic pub --once --wait-matching-subscriptions 1 /motionbrain/light_cmd std_msgs/msg/String "{data: toggle}"
+```
+
+Typed command alternative:
+
+```bash
+ros2 topic pub --once --wait-matching-subscriptions 1 /motionbrain/light_cmd_typed motionbrain_msgs/msg/LightCommand "{action: toggle}"
 ```
 
 Expected:
@@ -420,8 +445,10 @@ Use short captions like:
 
 - Raspberry Pi 4 running ROS2 Jazzy as MotionBrain host bridge.
 - ESP32 motion controller remains the real-time motor and safety boundary.
-- ESP32-CAM publishes color-target detection into ROS2 through the bridge.
-- ROS2 `/motionbrain/light_cmd` reaches the token-gated ESP32 command path.
+- ESP32-CAM publishes color-target detection into JSON and typed ROS2 topics
+  through the bridge.
+- ROS2 `/motionbrain/light_cmd_typed` reaches the token-gated ESP32 command
+  path.
 - Real search light output confirms end-to-end command execution.
 - Deadman release and token rejection demonstrate safety and authorization
   boundaries.

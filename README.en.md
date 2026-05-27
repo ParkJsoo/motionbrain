@@ -112,12 +112,18 @@ As of 2026-05-26, the Raspberry Pi 4 ROS2 host path has been validated on real h
 
 ```text
 [Raspberry Pi 4 / Ubuntu 24.04 / ROS2 Jazzy]
+  motionbrain_msgs
   motionbrain_ros_bridge
   /motionbrain/status
+  /motionbrain/status_typed
   /motionbrain/events
+  /motionbrain/events_typed
   /camera/detection
+  /camera/detection_typed
   /motionbrain/light_cmd
+  /motionbrain/light_cmd_typed
   /motionbrain/light_result
+  /motionbrain/light_result_typed
         <->
 [ESP32 Motion Controller + ESP32-CAM on Home Wi-Fi]
   GET /status
@@ -184,21 +190,26 @@ The bridge keeps the ESP32 HTTP API unchanged while publishing robot status,
 event logs, and ESP32-CAM detection results into ROS2:
 
 - `/motionbrain/status`
+- `/motionbrain/status_typed`
 - `/motionbrain/events`
+- `/motionbrain/events_typed`
 - `/camera/detection`
+- `/camera/detection_typed`
 - `/motionbrain/light_cmd`
+- `/motionbrain/light_cmd_typed`
 - `/motionbrain/light_result`
+- `/motionbrain/light_result_typed`
 
 Raspberry Pi bring-up is documented in
 [docs/RASPBERRY_PI_ROS2_BRINGUP.md](docs/RASPBERRY_PI_ROS2_BRINGUP.md). The
 portfolio validation path has been run on Raspberry Pi 4 with ROS2 Jazzy:
-Home Wi-Fi access to the ESP32 controller and ESP32-CAM, topic echo
-verification, and a ROS2 command-channel test that toggled the real search
+Home Wi-Fi access to the ESP32 controller and ESP32-CAM, JSON and typed topic
+echo verification, and a ROS2 command-channel test that toggled the real search
 light through the ESP32 `/light` endpoint.
 
 ```bash
 cd ros2_ws
-colcon build --packages-select motionbrain_ros_bridge
+colcon build --packages-select motionbrain_msgs motionbrain_ros_bridge
 source install/setup.bash
 export MOTIONBRAIN_HTTP_TOKEN="CHANGE_ME_TO_LOCAL_TOKEN"
 ros2 launch motionbrain_ros_bridge motionbrain_home_wifi.launch.py

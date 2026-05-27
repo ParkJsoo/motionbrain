@@ -59,15 +59,41 @@ Notes from the run:
 - Do not paste placeholder token text into `MOTIONBRAIN_HTTP_TOKEN`; HTTP
   headers must be ASCII-safe and must match the token provisioned on the ESP32.
 
+## 2026-05-27 Typed Message Validation Result
+
+After rebooting the Raspberry Pi, the custom ROS2 message package was built and
+validated on the real Pi host:
+
+- Pi IP observed after reboot: `192.168.219.111`
+- ESP32 controller IP used for validation: `192.168.219.109`
+- ESP32-CAM IP used for validation: `192.168.219.110`
+- Added missing C++ toolchain dependency with `sudo apt install -y g++`.
+- `colcon build --packages-select motionbrain_msgs motionbrain_ros_bridge`
+  finished successfully on the Pi.
+- `ros2 pkg list | grep motionbrain` returned both `motionbrain_msgs` and
+  `motionbrain_ros_bridge`.
+- `ros2 interface list | grep motionbrain_msgs` returned all custom message
+  types.
+- `/motionbrain/status_typed` published real
+  `motionbrain_msgs/msg/MotionStatus` data from the ESP32 controller.
+- `/camera/detection_typed` published real
+  `motionbrain_msgs/msg/CameraDetection` data from the ESP32-CAM bridge.
+
+The bridge still publishes JSON string topics for compatibility and debugging,
+but portfolio-facing ROS2 integration should prefer the typed topics.
+
 ## Portfolio Evidence Checklist
 
 Capture these artifacts after bring-up:
 
 - Raspberry Pi terminal showing Ubuntu version and ROS2 Jazzy environment
-- `colcon build --packages-select motionbrain_ros_bridge` success log
+- `colcon build --packages-select motionbrain_msgs motionbrain_ros_bridge`
+  success log
 - `ros2 topic echo /motionbrain/status` output
+- `ros2 topic echo /motionbrain/status_typed` output
 - `ros2 topic echo /motionbrain/events` output
 - `ros2 topic echo /camera/detection` output
+- `ros2 topic echo /camera/detection_typed` output
 - `ros2 topic pub --once /motionbrain/light_cmd ...` plus
   `/motionbrain/light_result` output
 - Photo or short video showing Raspberry Pi, ESP32 controller, ESP32-CAM, and
@@ -226,8 +252,8 @@ serial log or reserve stable IP addresses in the router.
 Example validated IP fallback for network checks:
 
 ```bash
-curl -sS http://192.168.219.113/status
-curl -I http://192.168.219.114/capture
+curl -sS http://192.168.219.109/status
+curl -I http://192.168.219.110/capture
 ```
 
 ## Build ROS2 Bridge
@@ -244,19 +270,28 @@ finishes installing resolvable dependencies, continue with the build. The
 validated Pi setup had the required ament Python tooling from the ROS2 apt
 installation.
 
-Build the ROS2 package:
+Build the ROS2 packages:
 
 ```bash
 cd ~/develop/arduino/motionbrain/ros2_ws
 source /opt/ros/jazzy/setup.bash
-colcon build --packages-select motionbrain_ros_bridge
+colcon build --packages-select motionbrain_msgs motionbrain_ros_bridge
+source install/setup.bash
+```
+
+If CMake reports `No CMAKE_CXX_COMPILER could be found`, install the C++
+toolchain and rebuild:
+
+```bash
+sudo apt install -y g++
+colcon build --packages-select motionbrain_msgs motionbrain_ros_bridge
 source install/setup.bash
 ```
 
 Expected result:
 
 ```text
-Summary: 1 package finished
+Summary: 2 packages finished
 ```
 
 ## Run Bridge
@@ -315,16 +350,29 @@ Expected topics:
 
 ```text
 /camera/detection
+/camera/detection_typed
 /motionbrain/events
+/motionbrain/events_typed
 /motionbrain/light_cmd
+/motionbrain/light_cmd_typed
 /motionbrain/light_result
+/motionbrain/light_result_typed
 /motionbrain/status
+/motionbrain/status_typed
+```
+
+Confirm custom message interfaces:
+
+```bash
+ros2 interface show motionbrain_msgs/msg/MotionStatus
+ros2 interface show motionbrain_msgs/msg/CameraDetection
 ```
 
 Check robot status:
 
 ```bash
 ros2 topic echo /motionbrain/status
+ros2 topic echo /motionbrain/status_typed --once
 ```
 
 Check event stream:
@@ -337,10 +385,14 @@ Check camera detection:
 
 ```bash
 ros2 topic echo /camera/detection
+ros2 topic echo /camera/detection_typed --once
 ```
 
 The `/camera/detection` payload should include fields such as `detected`,
 `color`, `areaRatio`, `offsetX`, `alignment`, and `commandSuggestion`.
+The typed topic carries the same detection state in
+`motionbrain_msgs/msg/CameraDetection` and keeps the raw JSON payload in
+`raw_json`.
 
 ## Verify Command Channel
 
@@ -359,6 +411,12 @@ source install/setup.bash
 ros2 topic pub --once --wait-matching-subscriptions 1 /motionbrain/light_cmd std_msgs/msg/String "{data: toggle}"
 ```
 
+Typed command alternative:
+
+```bash
+ros2 topic pub --once --wait-matching-subscriptions 1 /motionbrain/light_cmd_typed motionbrain_msgs/msg/LightCommand "{action: toggle}"
+```
+
 Expected:
 
 - The ESP32 search light toggles.
@@ -375,8 +433,10 @@ For the portfolio demo, the Raspberry Pi host is responsible for:
 - Running ROS2 Jazzy
 - Polling the ESP32 motion controller over HTTP
 - Polling ESP32-CAM capture frames over HTTP
-- Publishing robot status, events, and camera detection as ROS2 topics
-- Accepting ROS2 command messages and forwarding safe HTTP commands to ESP32
+- Publishing robot status, events, and camera detection as JSON and typed ROS2
+  topics
+- Accepting JSON and typed ROS2 command messages and forwarding safe HTTP
+  commands to ESP32
 
 Keep the Mac as the development/dashboard machine during early validation. Move
 dashboard or additional vision loops to the Pi only after the bridge path is
@@ -417,7 +477,7 @@ Install OpenCV and rebuild if needed:
 ```bash
 cd ~/develop/arduino/motionbrain/ros2_ws
 rosdep install --from-paths src --ignore-src -r -y
-colcon build --packages-select motionbrain_ros_bridge
+colcon build --packages-select motionbrain_msgs motionbrain_ros_bridge
 source install/setup.bash
 ```
 
@@ -460,9 +520,9 @@ The Raspberry Pi ROS2 bring-up is complete when:
 - Pi boots Ubuntu 24.04 arm64 and ROS2 Jazzy.
 - Pi reaches the ESP32 controller and ESP32-CAM on Home Wi-Fi by `.local`
   hostname or IP fallback.
-- `motionbrain_ros_bridge` builds successfully on the Pi.
-- `/motionbrain/status`, `/motionbrain/events`, and `/camera/detection` publish
-  real data.
+- `motionbrain_msgs` and `motionbrain_ros_bridge` build successfully on the Pi.
+- `/motionbrain/status`, `/motionbrain/events`, `/camera/detection`, and their
+  typed equivalents publish real data.
 - `/motionbrain/light_cmd` controls the ESP32 through the ROS2 bridge.
 - Logs, screenshots, and at least one photo or video are saved for README and
   portfolio use.

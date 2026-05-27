@@ -117,12 +117,18 @@ TB6612FNG x3
 
 ```text
 [Raspberry Pi 4 / Ubuntu 24.04 / ROS2 Jazzy]
+  motionbrain_msgs
   motionbrain_ros_bridge
   /motionbrain/status
+  /motionbrain/status_typed
   /motionbrain/events
+  /motionbrain/events_typed
   /camera/detection
+  /camera/detection_typed
   /motionbrain/light_cmd
+  /motionbrain/light_cmd_typed
   /motionbrain/light_result
+  /motionbrain/light_result_typed
         <->
 [ESP32 Motion Controller + ESP32-CAM on Home Wi-Fi]
   GET /status
@@ -202,21 +208,27 @@ Phase 4 host path is also exposed through a minimal ROS2 package:
 ros2_ws/src/motionbrain_ros_bridge
 ```
 
-It keeps the ESP32 HTTP API unchanged and publishes JSON payloads on:
+It keeps the ESP32 HTTP API unchanged and publishes JSON plus typed ROS2
+messages on:
 
 - `/motionbrain/status`
+- `/motionbrain/status_typed`
 - `/motionbrain/events`
+- `/motionbrain/events_typed`
 - `/camera/detection`
+- `/camera/detection_typed`
 
-It also subscribes to `/motionbrain/light_cmd` and forwards `on`, `off`, or `toggle` to token-gated `POST /light`.
+It also subscribes to `/motionbrain/light_cmd` and
+`/motionbrain/light_cmd_typed`, then forwards `on`, `off`, or `toggle` to
+token-gated `POST /light`.
 
-Raspberry Pi bring-up is documented in [docs/RASPBERRY_PI_ROS2_BRINGUP.md](docs/RASPBERRY_PI_ROS2_BRINGUP.md). The portfolio validation path has been run on Raspberry Pi 4 with ROS2 Jazzy: Home Wi-Fi access to the ESP32 controller and ESP32-CAM, topic echo verification, and a ROS2 command-channel test that toggled the real search light.
+Raspberry Pi bring-up is documented in [docs/RASPBERRY_PI_ROS2_BRINGUP.md](docs/RASPBERRY_PI_ROS2_BRINGUP.md). The portfolio validation path has been run on Raspberry Pi 4 with ROS2 Jazzy: Home Wi-Fi access to the ESP32 controller and ESP32-CAM, JSON and typed topic echo verification, and a ROS2 command-channel test that toggled the real search light.
 
 Build and run directly:
 
 ```bash
 cd ros2_ws
-colcon build --packages-select motionbrain_ros_bridge
+colcon build --packages-select motionbrain_msgs motionbrain_ros_bridge
 source install/setup.bash
 ros2 run motionbrain_ros_bridge motionbrain_status_node --ros-args -p motion_host:=192.168.4.1 -p camera_url:=http://192.168.4.2
 ```

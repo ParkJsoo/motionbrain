@@ -452,10 +452,15 @@ motionbrain_status_node
 토픽:
 
 - `pub /motionbrain/status` -> raw `GET /status` JSON
+- `pub /motionbrain/status_typed` -> `motionbrain_msgs/msg/MotionStatus`
 - `pub /motionbrain/events` -> raw `GET /events?limit=N` JSON
+- `pub /motionbrain/events_typed` -> `motionbrain_msgs/msg/MotionEvent`
 - `pub /camera/detection` -> ESP32-CAM `/capture` 기반 색상 감지 JSON
+- `pub /camera/detection_typed` -> `motionbrain_msgs/msg/CameraDetection`
 - `sub /motionbrain/light_cmd` -> `on|off|toggle` 또는 `{"action":"toggle"}`
+- `sub /motionbrain/light_cmd_typed` -> `motionbrain_msgs/msg/LightCommand`
 - `pub /motionbrain/light_result` -> raw `POST /light` command result JSON
+- `pub /motionbrain/light_result_typed` -> `motionbrain_msgs/msg/LightResult`
 
 2026-05-26 실기 검증:
 
@@ -464,4 +469,11 @@ motionbrain_status_node
 - `/motionbrain/light_cmd` -> token-gated `POST /light?action=toggle` -> 실제 search light 점등 -> `/motionbrain/light_result` publish 확인.
 - token 누락 시 `/motionbrain/light_result`에 `HTTP Error 403: Forbidden`이 publish되어 command boundary가 유지됨을 확인.
 
-초기에는 `String` payload를 유지한다. 후속 단계에서 메시지 필드가 안정화되면 `motionbrain_msgs` 같은 커스텀 message package로 승격한다.
+2026-05-27 typed message 검증:
+
+- `motionbrain_msgs` custom message package를 추가했다.
+- Raspberry Pi에서 `motionbrain_msgs`와 `motionbrain_ros_bridge`를 함께 build했다.
+- `ros2 interface show motionbrain_msgs/msg/MotionStatus`와 `ros2 interface list | grep motionbrain_msgs`로 custom interface 등록을 확인했다.
+- controller `192.168.219.109`, ESP32-CAM `192.168.219.110` 기준 `/motionbrain/status_typed --once`와 `/camera/detection_typed --once`에서 실제 payload를 확인했다.
+
+JSON topic은 디버깅과 호환성을 위해 유지하고, stable field는 typed topic으로 병행 publish한다.

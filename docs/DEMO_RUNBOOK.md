@@ -58,6 +58,14 @@ ESP32 controller: 192.168.219.113
 ESP32-CAM: 192.168.219.114
 ```
 
+2026-05-27 재부팅 후 typed ROS2 message 검증 때 관측한 DHCP IP:
+
+```text
+Raspberry Pi: 192.168.219.111
+ESP32 controller: 192.168.219.109
+ESP32-CAM: 192.168.219.110
+```
+
 위 IP는 예시 관측값이며 네트워크 상황에 따라 바뀔 수 있다.
 
 ## 사전 점검
@@ -90,13 +98,14 @@ ros2 pkg list | grep motionbrain
 
 ```text
 jazzy
+motionbrain_msgs
 motionbrain_ros_bridge
 ```
 
 패키지가 없으면 빌드한다.
 
 ```bash
-colcon build --packages-select motionbrain_ros_bridge
+colcon build --packages-select motionbrain_msgs motionbrain_ros_bridge
 source install/setup.bash
 ```
 
@@ -115,9 +124,13 @@ source install/setup.bash
    - `printenv ROS_DISTRO`
    - `ros2 topic list`
    - `/motionbrain/status`
+   - `/motionbrain/status_typed`
    - `/camera/detection`
+   - `/camera/detection_typed`
    - `/motionbrain/light_cmd`
+   - `/motionbrain/light_cmd_typed`
    - `/motionbrain/light_result`
+   - `/motionbrain/light_result_typed`
    - 실제 SearchLight 점등
 
 3. 안전/권한 증거
@@ -178,22 +191,29 @@ ros2 topic list
 
 ```text
 /camera/detection
+/camera/detection_typed
 /motionbrain/events
+/motionbrain/events_typed
 /motionbrain/light_cmd
+/motionbrain/light_cmd_typed
 /motionbrain/light_result
+/motionbrain/light_result_typed
 /motionbrain/status
+/motionbrain/status_typed
 ```
 
 status 캡처:
 
 ```bash
 ros2 topic echo /motionbrain/status --once
+ros2 topic echo /motionbrain/status_typed --once
 ```
 
 camera detection 캡처:
 
 ```bash
 ros2 topic echo /camera/detection --once
+ros2 topic echo /camera/detection_typed --once
 ```
 
 `light_result`는 latched topic이 아니다. command를 보내기 전에 먼저 echo를
@@ -210,6 +230,12 @@ cd ~/develop/arduino/motionbrain/ros2_ws
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 ros2 topic pub --once --wait-matching-subscriptions 1 /motionbrain/light_cmd std_msgs/msg/String "{data: toggle}"
+```
+
+typed command 캡처가 필요하면 아래 명령을 사용한다.
+
+```bash
+ros2 topic pub --once --wait-matching-subscriptions 1 /motionbrain/light_cmd_typed motionbrain_msgs/msg/LightCommand "{action: toggle}"
 ```
 
 기대 결과:
@@ -420,8 +446,9 @@ curl -sS http://<controller-ip>/status
 
 - Raspberry Pi 4가 ROS2 Jazzy host bridge 역할을 수행한다.
 - ESP32 motion controller는 real-time motor와 safety boundary를 유지한다.
-- ESP32-CAM detection 결과가 ROS2 topic으로 publish된다.
-- ROS2 `/motionbrain/light_cmd`가 token-gated ESP32 command path를 통과한다.
+- ESP32-CAM detection 결과가 JSON/typed ROS2 topic으로 publish된다.
+- ROS2 `/motionbrain/light_cmd_typed`가 token-gated ESP32 command path를
+  통과한다.
 - 실제 SearchLight 점등으로 end-to-end command execution을 증명한다.
 - Deadman release와 token rejection으로 safety/authorization boundary를
   보여준다.

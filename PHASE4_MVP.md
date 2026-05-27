@@ -364,3 +364,24 @@ python3 tools/vision_host_mvp.py \
 - 사용자 육안 확인 기준 실제 search light가 켜졌다.
 
 결론: Phase 4 host boundary는 Mac host MVP뿐 아니라 Raspberry Pi + ROS2 graph에서도 실제 ESP32 controller와 ESP32-CAM에 연결되어 동작했다.
+
+## 2026-05-27 ROS2 typed message 검증 결과
+
+- `motionbrain_msgs` custom message package를 추가했다.
+- 메시지 타입:
+  - `motionbrain_msgs/msg/MotionStatus`
+  - `motionbrain_msgs/msg/MotionEvent`
+  - `motionbrain_msgs/msg/CameraDetection`
+  - `motionbrain_msgs/msg/LightCommand`
+  - `motionbrain_msgs/msg/LightResult`
+- Pi에 `g++`를 설치했다. ROS2 interface package는 CMake가 C++ compiler를 필요로 한다.
+- Pi에서 `colcon build --packages-select motionbrain_msgs motionbrain_ros_bridge`가 성공했다.
+- `ros2 interface show`와 `ros2 interface list`로 custom message 등록을 확인했다.
+- 현재 Home Wi-Fi IP:
+  - controller: `192.168.219.109`
+  - ESP32-CAM: `192.168.219.110`
+  - Raspberry Pi: `192.168.219.111`
+- `/motionbrain/status_typed --once`에서 실제 controller 상태가 typed message로 publish되는 것을 확인했다.
+- `/camera/detection_typed --once`에서 실제 ESP32-CAM detection 결과가 typed message로 publish되는 것을 확인했다.
+
+결론: ROS2 bridge는 더 이상 `std_msgs/String` JSON만 사용하는 MVP가 아니라, 디버깅용 JSON topic과 포트폴리오용 typed custom message topic을 병행 제공한다.

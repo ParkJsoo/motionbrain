@@ -143,9 +143,12 @@ The Phase 4 MVP proves the first camera-to-host-to-controller loop before moving
 The repository includes a ROS2 bridge package validated on Raspberry Pi 4 with Ubuntu 24.04 and ROS2 Jazzy:
 
 - `motionbrain_ros_bridge` polls ESP32 `GET /status` and publishes `/motionbrain/status`.
+- `motionbrain_msgs` promotes stable status, event, detection, and light command/result fields into typed ROS2 messages.
+- The bridge also publishes typed topics such as `/motionbrain/status_typed`, `/motionbrain/events_typed`, `/camera/detection_typed`, and `/motionbrain/light_result_typed`.
 - It polls ESP32 `GET /events?limit=N` and publishes `/motionbrain/events`.
 - It fetches ESP32-CAM `/capture`, runs color-target detection, and publishes `/camera/detection`.
 - It subscribes to `/motionbrain/light_cmd` and forwards safe `on`, `off`, or `toggle` commands to the token-gated ESP32 `/light` endpoint.
+- It also accepts `/motionbrain/light_cmd_typed` for typed command-path validation.
 - The Home Wi-Fi launch path was run with IP fallback when `.local` name resolution was unavailable on the Pi.
 - The command-channel test toggled the real search light and published `/motionbrain/light_result`.
 
@@ -186,13 +189,18 @@ The project separates manual control from observability:
   - `/motionbrain/light_cmd` forwarded through the token-gated ESP32 `/light` endpoint
   - `/motionbrain/light_result` returned the ESP32 command result
   - the real search light turned on from a ROS2 command
+- Typed ROS2 message validation was completed on 2026-05-27:
+  - `motionbrain_msgs` and `motionbrain_ros_bridge` built successfully on the Pi
+  - `ros2 interface show` and `ros2 interface list` confirmed all five custom messages
+  - `/motionbrain/status_typed` returned real controller status
+  - `/camera/detection_typed` returned real ESP32-CAM detection data
 - CI now runs synthetic host-side vision alignment tests alongside ESP32 and ESP32-CAM PlatformIO builds.
 
 ## Current Limitations
 
 - Final hardware enclosure and wiring layout are not locked yet.
 - Public demo images and videos are not included yet.
-- ROS2 bridge validation currently uses `std_msgs/String` JSON payloads. A custom `motionbrain_msgs` package is still future work.
+- ROS2 currently has typed status/detection/event/light messages, but URDF, TF, `joint_states`, and RViz visualization are still pending.
 - Vision-based base alignment is implemented as an explicit opt-in nudge step. It is validated for left/right correction nudges, but not yet for full pick behavior.
 - AI planning integration is planned but not complete.
 - Teleop sign, deadzone, and speed weights need final tuning after mechanical mounting is fixed.
@@ -213,7 +221,7 @@ This project demonstrates practical embedded robotics engineering:
 
 1. Capture public demo media showing teleop, safety/status, camera capture, red detection, ROS2 topic output, and ROS2-triggered light action.
 2. Capture demo media showing red target localization and left/right base nudge alignment.
-3. Promote stable ROS2 JSON payloads into a typed `motionbrain_msgs` package.
+3. Add URDF, TF, `joint_states`, and RViz visualization on top of the typed ROS2 bridge.
 4. Extend camera or host decisions from alignment nudges toward semi-autonomous pick behavior.
 5. Finalize wiring, obstacle-safety placement, and teleop tuning.
 
