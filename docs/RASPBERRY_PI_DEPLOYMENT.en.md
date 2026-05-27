@@ -82,6 +82,33 @@ OK status typed sample
 OK joint state sample
 ```
 
+## 2026-05-27 Pi Validation Result
+
+The systemd deployment path was installed and validated on the Raspberry Pi 4.
+
+- Installed `/etc/motionbrain/ros-bridge.env` with mode `600`.
+- Installed `/etc/systemd/system/motionbrain-ros-bridge.service`.
+- `systemctl enable motionbrain-ros-bridge.service` succeeded.
+- After `systemctl restart motionbrain-ros-bridge.service`, the service was
+  `active (running)`.
+- `motionbrain_status_node` and `motionbrain_joint_state_node` ran under the
+  systemd service cgroup.
+- `CHECK_SERVICE=1 tools/raspi/check_ros_bridge_health.sh` returned:
+
+```text
+OK service active: motionbrain-ros-bridge.service
+OK topic: /motionbrain/status_typed
+OK topic: /camera/detection_typed
+OK topic: /joint_states
+OK status typed sample
+OK joint state sample
+```
+
+During validation, `set -u` conflicted with optional environment variable
+references inside the ROS2 setup files. `start_ros_bridge.sh` and
+`check_ros_bridge_health.sh` now enable `set -u` only after sourcing the ROS
+environment.
+
 ## Operations
 
 ```bash

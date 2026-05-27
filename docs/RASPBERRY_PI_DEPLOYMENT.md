@@ -82,6 +82,32 @@ OK status typed sample
 OK joint state sample
 ```
 
+## 2026-05-27 Pi 검증 결과
+
+Raspberry Pi 4에서 systemd 배포 경로를 실제로 설치하고 검증했다.
+
+- `/etc/motionbrain/ros-bridge.env` 설치 및 권한 `600` 적용
+- `/etc/systemd/system/motionbrain-ros-bridge.service` 설치
+- `systemctl enable motionbrain-ros-bridge.service` 성공
+- `systemctl restart motionbrain-ros-bridge.service` 후 서비스 상태:
+  `active (running)`
+- `motionbrain_status_node`와 `motionbrain_joint_state_node`가 systemd
+  service cgroup 아래에서 실행됨
+- `CHECK_SERVICE=1 tools/raspi/check_ros_bridge_health.sh` 결과:
+
+```text
+OK service active: motionbrain-ros-bridge.service
+OK topic: /motionbrain/status_typed
+OK topic: /camera/detection_typed
+OK topic: /joint_states
+OK status typed sample
+OK joint state sample
+```
+
+검증 중 `set -u`가 ROS2 setup 파일의 선택적 환경 변수 참조와 충돌하는 문제가
+발견되어 `start_ros_bridge.sh`와 `check_ros_bridge_health.sh`는 ROS setup을
+source한 뒤에 `set -u`를 적용하도록 수정했다.
+
 ## 운영 명령
 
 ```bash

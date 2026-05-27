@@ -106,6 +106,34 @@ validated on the Raspberry Pi:
 This demonstrates ROS2 kinematic modeling, TF publication, and RViz readiness
 without pretending the robot has sensors it does not currently have.
 
+## 2026-05-27 systemd Deployment Validation Result
+
+The Raspberry Pi bridge is now deployable as a boot-started systemd service:
+
+- Service: `motionbrain-ros-bridge.service`
+- Environment file: `/etc/motionbrain/ros-bridge.env`
+- Start script: `tools/raspi/start_ros_bridge.sh`
+- Health check: `tools/raspi/check_ros_bridge_health.sh`
+
+Validated on the Pi:
+
+- `systemctl enable motionbrain-ros-bridge.service` created the boot symlink.
+- `systemctl restart motionbrain-ros-bridge.service` started the bridge.
+- `systemctl status motionbrain-ros-bridge.service --no-pager` showed
+  `active (running)`.
+- The service cgroup contained the ROS2 launch process plus
+  `motionbrain_status_node` and `motionbrain_joint_state_node`.
+- `CHECK_SERVICE=1 tools/raspi/check_ros_bridge_health.sh` passed:
+  - `/motionbrain/status_typed`
+  - `/camera/detection_typed`
+  - `/joint_states`
+  - one status sample
+  - one joint state sample
+
+This adds a practical deployment boundary for logs, restart behavior, local
+configuration, and health checks instead of relying on a hand-run terminal
+process.
+
 ## Portfolio Evidence Checklist
 
 Capture these artifacts after bring-up:
