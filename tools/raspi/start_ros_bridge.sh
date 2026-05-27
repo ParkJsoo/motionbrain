@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -eo pipefail
 
 ROS_DISTRO="${ROS_DISTRO:-jazzy}"
 WORKSPACE="${MOTIONBRAIN_ROS_WS:-/home/motionbrain/develop/arduino/motionbrain/ros2_ws}"
@@ -23,6 +23,8 @@ fi
 
 source "/opt/ros/${ROS_DISTRO}/setup.bash"
 source "${WORKSPACE}/install/setup.bash"
+
+set -u
 
 exec ros2 launch motionbrain_ros_bridge motionbrain_home_wifi.launch.py \
   motion_host:="${MOTION_HOST}" \
