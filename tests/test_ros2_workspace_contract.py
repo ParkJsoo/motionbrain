@@ -25,6 +25,12 @@ EXPECTED_RUNTIME_TOPICS = {
     "/motionbrain/mission_state",
 }
 
+EXPECTED_PACKAGE_TEST_FILES = {
+    "motionbrain_control/test/test_control_guard_logic.cpp",
+    "motionbrain_mission/test/test_mission_flow.py",
+    "motionbrain_ros_bridge/test/test_payload_utils.py",
+}
+
 
 def package_xml(package_name):
     return ET.parse(ROS2_SRC / package_name / "package.xml").getroot()
@@ -135,6 +141,18 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         for key, value in expected_pairs.items():
             with self.subTest(key=key):
                 self.assertRegex(config_text, rf"\b{key}:\s+{re.escape(value)}\b")
+
+    def test_ros2_workspace_has_real_package_level_tests(self):
+        for relative_path in EXPECTED_PACKAGE_TEST_FILES:
+            with self.subTest(path=relative_path):
+                self.assertTrue((ROS2_SRC / relative_path).exists())
+
+        control_cmake = (ROS2_SRC / "motionbrain_control" / "CMakeLists.txt").read_text()
+        self.assertIn("ament_add_gtest(test_control_guard_logic", control_cmake)
+
+        workflow_text = (REPO_ROOT / ".github" / "workflows" / "ros2.yml").read_text()
+        self.assertNotIn("No package-level colcon test suites were produced yet", workflow_text)
+        self.assertIn("colcon test-result --verbose", workflow_text)
 
 
 if __name__ == "__main__":

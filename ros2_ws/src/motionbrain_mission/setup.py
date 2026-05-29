@@ -17,6 +17,7 @@ setup(
     maintainer_email="jeongsoopark@example.com",
     description="Lightweight mission supervisor for MotionBrain ROS2 demos.",
     license="MIT",
+    tests_require=["pytest"],
     entry_points={
         "console_scripts": [
             "motionbrain_mission_supervisor = motionbrain_mission.mission_supervisor_node:main",

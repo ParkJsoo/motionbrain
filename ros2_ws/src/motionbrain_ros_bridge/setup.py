@@ -20,6 +20,7 @@ setup(
     maintainer_email="jeongsoopark@example.com",
     description="ROS2 bridge for MotionBrain HTTP status, events, camera detection, and light commands.",
     license="MIT",
+    tests_require=["pytest"],
     entry_points={
         "console_scripts": [
             "motionbrain_joint_state_node = motionbrain_ros_bridge.motionbrain_joint_state_node:main",

@@ -5,6 +5,7 @@
 #include <sstream>
 #include <string>
 
+#include "motionbrain_control/control_guard_logic.hpp"
 #include "motionbrain_msgs/msg/camera_detection.hpp"
 #include "motionbrain_msgs/msg/motion_status.hpp"
 #include "rclcpp/rclcpp.hpp"
@@ -102,26 +103,6 @@ private:
     return std::max((now() - stamp).seconds(), 0.0);
   }
 
-  std::string detection_suggestion() const
-  {
-    if (!latest_detection_ || !latest_detection_->available || !latest_detection_->detected) {
-      return "none";
-    }
-    if (!latest_detection_->command_suggestion.empty()) {
-      return latest_detection_->command_suggestion;
-    }
-    if (latest_detection_->alignment == "LEFT") {
-      return "base_left";
-    }
-    if (latest_detection_->alignment == "RIGHT") {
-      return "base_right";
-    }
-    if (latest_detection_->alignment == "CENTER") {
-      return "hold";
-    }
-    return "none";
-  }
-
   void publish_guard_state()
   {
     const double status_age = age_seconds(last_status_time_);
@@ -129,53 +110,50 @@ private:
     const bool status_fresh = latest_status_ && status_age <= stale_timeout_sec_;
     const bool detection_fresh = latest_detection_ && detection_age <= stale_timeout_sec_;
 
-    bool ready = true;
-    std::string reason = "ready";
-
-    if (!status_fresh) {
-      ready = false;
-      reason = "status_stale";
-    } else if (!latest_status_->available) {
-      ready = false;
-      reason = "status_unavailable";
-    } else if (latest_status_->faulted) {
-      ready = false;
-      reason = "faulted";
-    } else if (latest_status_->moving) {
-      ready = false;
-      reason = "already_moving";
-    } else if (require_armed_ && !latest_status_->armed) {
-      ready = false;
-      reason = "not_armed";
-    } else if (require_detection_ && !detection_fresh) {
-      ready = false;
-      reason = "detection_stale";
-    } else if (require_detection_ && (!latest_detection_->available || !latest_detection_->detected)) {
-      ready = false;
-      reason = "target_not_detected";
+    motionbrain_control::MotionStatusSnapshot status;
+    if (latest_status_) {
+      status.available = latest_status_->available;
+      status.armed = latest_status_->armed;
+      status.moving = latest_status_->moving;
+      status.faulted = latest_status_->faulted;
+      status.state = latest_status_->state;
     }
 
-    const std::string state = latest_status_ ? latest_status_->state : "UNKNOWN";
-    const std::string alignment = latest_detection_ ? latest_detection_->alignment : "LOST";
-    const std::string suggestion = detection_suggestion();
+    motionbrain_control::CameraDetectionSnapshot detection;
+    if (latest_detection_) {
+      detection.available = latest_detection_->available;
+      detection.detected = latest_detection_->detected;
+      detection.alignment = latest_detection_->alignment;
+      detection.command_suggestion = latest_detection_->command_suggestion;
+    }
+
+    motionbrain_control::ControlGuardConfig config;
+    config.require_armed = require_armed_;
+    config.require_detection = require_detection_;
+    const auto decision = motionbrain_control::evaluate_control_guard(
+      status,
+      detection,
+      status_fresh,
+      detection_fresh,
+      config);
 
     std::ostringstream out;
     out << std::fixed << std::setprecision(3);
     out << "{"
-        << "\"ready\":" << json_bool(ready) << ","
-        << "\"reason\":\"" << escape_json(reason) << "\","
-        << "\"suggestedAction\":\"" << escape_json(suggestion) << "\","
+        << "\"ready\":" << json_bool(decision.ready) << ","
+        << "\"reason\":\"" << escape_json(decision.reason) << "\","
+        << "\"suggestedAction\":\"" << escape_json(decision.suggested_action) << "\","
         << "\"statusFresh\":" << json_bool(status_fresh) << ","
         << "\"detectionFresh\":" << json_bool(detection_fresh) << ","
         << "\"statusAgeSec\":" << status_age << ","
         << "\"detectionAgeSec\":" << detection_age << ","
-        << "\"state\":\"" << escape_json(state) << "\","
+        << "\"state\":\"" << escape_json(status.state) << "\","
         << "\"armed\":" << json_bool(latest_status_ && latest_status_->armed) << ","
         << "\"moving\":" << json_bool(latest_status_ && latest_status_->moving) << ","
         << "\"faulted\":" << json_bool(latest_status_ && latest_status_->faulted) << ","
         << "\"cameraAvailable\":" << json_bool(latest_detection_ && latest_detection_->available) << ","
         << "\"targetDetected\":" << json_bool(latest_detection_ && latest_detection_->detected) << ","
-        << "\"alignment\":\"" << escape_json(alignment) << "\""
+        << "\"alignment\":\"" << escape_json(detection.alignment) << "\""
         << "}";
 
     std_msgs::msg::String message;
