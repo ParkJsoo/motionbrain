@@ -112,6 +112,30 @@ colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_
 source install/setup.bash
 ```
 
+If the systemd bridge is already running, capture public-safe text evidence in
+one pass. By default, this records the health check, topic list, typed topic
+samples, and JSON compatibility samples without publishing any actuator
+command.
+
+```bash
+cd ~/develop/arduino/motionbrain
+tools/raspi/capture_ros2_evidence.sh
+```
+
+To include the mission command boundary, use the opt-in mode. This publishes
+only `start` and `reset`; it does not publish `confirm`.
+
+```bash
+cd ~/develop/arduino/motionbrain
+CAPTURE_MISSION_BOUNDARY=1 tools/raspi/capture_ros2_evidence.sh
+```
+
+Default output path:
+
+```text
+/tmp/motionbrain_ros2_evidence_<timestamp>.txt
+```
+
 ## Recording Plan
 
 Capture these short clips or screenshots:

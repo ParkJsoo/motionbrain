@@ -111,6 +111,29 @@ colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_
 source install/setup.bash
 ```
 
+systemd bridge가 이미 실행 중이면 공개용 텍스트 증거를 한 번에 캡처할 수 있다.
+이 스크립트는 기본값으로 health check, topic list, typed topic sample, JSON
+compatibility sample만 기록하고 실제 actuator command는 publish하지 않는다.
+
+```bash
+cd ~/develop/arduino/motionbrain
+tools/raspi/capture_ros2_evidence.sh
+```
+
+mission command boundary까지 남기려면 `confirm` 없이 `start`와 `reset`만
+publish하는 opt-in 모드를 사용한다.
+
+```bash
+cd ~/develop/arduino/motionbrain
+CAPTURE_MISSION_BOUNDARY=1 tools/raspi/capture_ros2_evidence.sh
+```
+
+출력 파일 기본 위치:
+
+```text
+/tmp/motionbrain_ros2_evidence_<timestamp>.txt
+```
+
 ## 캡처 목록
 
 주말 데모에서는 아래 증거를 짧게 캡처한다.
