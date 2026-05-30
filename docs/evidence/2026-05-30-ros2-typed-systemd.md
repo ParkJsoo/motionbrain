@@ -179,3 +179,56 @@ The raw TF capture was kept on the Pi at:
 ```text
 /tmp/motionbrain_tf_evidence_20260530.txt
 ```
+
+## Typed Mission Command Boundary
+
+The typed mission command path was checked without publishing `confirm`, so no
+physical actuator command was triggered.
+
+Command topic:
+
+```text
+/motionbrain/mission_cmd_typed
+```
+
+Published `start`:
+
+```text
+motionbrain_msgs.msg.MissionCommand(command='start')
+```
+
+Observed `/motionbrain/mission_state_typed`:
+
+```text
+state: WAIT_DETECTION
+reason: target_not_detected
+next_step: wait_for_detection
+guard_ready: true
+status_fresh: true
+detection_fresh: true
+alignment: LOST
+```
+
+Published `reset`:
+
+```text
+motionbrain_msgs.msg.MissionCommand(command='reset')
+```
+
+Observed `/motionbrain/mission_state_typed`:
+
+```text
+state: IDLE
+reason: reset
+next_step: none
+guard_ready: true
+status_fresh: true
+detection_fresh: true
+alignment: LOST
+```
+
+The raw mission command capture was kept on the Pi at:
+
+```text
+/tmp/motionbrain_mission_cmd_evidence_20260530.txt
+```
