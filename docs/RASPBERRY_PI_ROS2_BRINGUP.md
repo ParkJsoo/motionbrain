@@ -253,6 +253,37 @@ The `confirm` command was intentionally not run during this validation because
 it can publish a typed light command to the physical hardware. This keeps the
 mission layer proven without triggering an unnecessary actuator action.
 
+## 2026-05-30 Typed Interface Cleanup Validation Result
+
+The guard, kinematics, and mission supervisor paths now publish typed ROS2
+messages by default while keeping JSON compatibility topics.
+
+- Commit: `2874df7 Use typed ROS2 guard and mission topics`
+- Added custom messages:
+  - `motionbrain_msgs/msg/ControlGuard`
+  - `motionbrain_msgs/msg/KinematicsState`
+  - `motionbrain_msgs/msg/MissionCommand`
+  - `motionbrain_msgs/msg/MissionState`
+- Pi `colcon build` and `colcon test` passed for:
+  `motionbrain_msgs`, `motionbrain_control`, `motionbrain_mission`,
+  `motionbrain_ros_bridge`, and `motionbrain_description`.
+- `motionbrain-ros-bridge.service` ran under systemd with:
+  - `motionbrain_status_node`
+  - `motionbrain_joint_state_node`
+  - `motionbrain_kinematics_node`
+  - `motionbrain_control_guard_node`
+  - `motionbrain_mission_supervisor`
+- `CHECK_SERVICE=1 tools/raspi/check_ros_bridge_health.sh` passed for:
+  - `/motionbrain/status_typed`
+  - `/camera/detection_typed`
+  - `/joint_states`
+  - `/motionbrain/end_effector_pose`
+  - `/motionbrain/kinematics_typed`
+  - `/motionbrain/control_guard_typed`
+  - `/motionbrain/mission_state_typed`
+- Text evidence:
+  [docs/evidence/2026-05-30-ros2-typed-systemd.md](evidence/2026-05-30-ros2-typed-systemd.md)
+
 ## Portfolio Evidence Checklist
 
 Capture these artifacts after bring-up:
@@ -264,9 +295,9 @@ Capture these artifacts after bring-up:
 - `ros2 topic echo /motionbrain/status_typed` output
 - `ros2 topic echo /joint_states` output
 - `ros2 topic echo /motionbrain/end_effector_pose` output
-- `ros2 topic echo /motionbrain/kinematics` output
-- `ros2 topic echo /motionbrain/control_guard` output
-- `ros2 topic echo /motionbrain/mission_state` output
+- `ros2 topic echo /motionbrain/kinematics_typed` output
+- `ros2 topic echo /motionbrain/control_guard_typed` output
+- `ros2 topic echo /motionbrain/mission_state_typed` output
 - `ros2 topic echo /motionbrain/events` output
 - `ros2 topic echo /camera/detection` output
 - `ros2 topic echo /camera/detection_typed` output
@@ -732,11 +763,14 @@ The Raspberry Pi ROS2 bring-up is complete when:
 - Pi boots Ubuntu 24.04 arm64 and ROS2 Jazzy.
 - Pi reaches the ESP32 controller and ESP32-CAM on Home Wi-Fi by `.local`
   hostname or IP fallback.
-- `motionbrain_msgs`, `motionbrain_ros_bridge`, and `motionbrain_description`
-  build successfully on the Pi.
+- `motionbrain_msgs`, `motionbrain_control`, `motionbrain_mission`,
+  `motionbrain_ros_bridge`, and `motionbrain_description` build successfully on
+  the Pi.
 - `/motionbrain/status`, `/motionbrain/events`, `/camera/detection`, and their
   typed equivalents publish real data.
 - `/joint_states` and TF publish a first-pass MotionBrain robot model.
+- `/motionbrain/kinematics_typed`, `/motionbrain/control_guard_typed`, and
+  `/motionbrain/mission_state_typed` publish typed ROS2 state.
 - `/motionbrain/light_cmd` controls the ESP32 through the ROS2 bridge.
 - Logs, screenshots, and at least one photo or video are saved for README and
   portfolio use.

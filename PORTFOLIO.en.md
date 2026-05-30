@@ -145,6 +145,9 @@ The repository includes a ROS2 bridge package validated on Raspberry Pi 4 with U
 - `motionbrain_ros_bridge` polls ESP32 `GET /status` and publishes `/motionbrain/status`.
 - `motionbrain_msgs` promotes stable status, event, detection, and light command/result fields into typed ROS2 messages.
 - The bridge also publishes typed topics such as `/motionbrain/status_typed`, `/motionbrain/events_typed`, `/camera/detection_typed`, and `/motionbrain/light_result_typed`.
+- The ROS2 workspace includes typed guard, kinematics, and mission topics:
+  `/motionbrain/control_guard_typed`, `/motionbrain/kinematics_typed`, and
+  `/motionbrain/mission_state_typed`, while keeping JSON compatibility topics.
 - It polls ESP32 `GET /events?limit=N` and publishes `/motionbrain/events`.
 - It fetches ESP32-CAM `/capture`, runs color-target detection, and publishes `/camera/detection`.
 - It subscribes to `/motionbrain/light_cmd` and forwards safe `on`, `off`, or `toggle` commands to the token-gated ESP32 `/light` endpoint.
@@ -198,7 +201,15 @@ The project separates manual control from observability:
   - `motionbrain_description` provides a 5-axis arm URDF, display launch file, and RViz config
   - `motionbrain_joint_state_node` maps `/motionbrain/status_typed` into `/joint_states`
   - `robot_state_publisher` publishes `/tf` and `/tf_static` from the MotionBrain URDF
-- CI now runs synthetic host-side vision alignment tests alongside ESP32 and ESP32-CAM PlatformIO builds.
+- C++ guard, kinematics, and mission topics were promoted to typed ROS2 interfaces on 2026-05-30:
+  - `ControlGuard`, `KinematicsState`, `MissionCommand`, and `MissionState`
+    custom messages were added.
+  - Raspberry Pi `colcon build` and `colcon test` passed.
+  - `motionbrain-ros-bridge.service` ran the status, joint-state, kinematics,
+    C++ guard, and mission supervisor nodes under systemd.
+  - Health checks passed for all typed topics and one sample from each.
+- CI now runs synthetic host-side vision alignment tests, PlatformIO firmware
+  builds, ROS2 contract tests, `colcon build`, and `colcon test`.
 
 ## Current Limitations
 

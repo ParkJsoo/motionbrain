@@ -135,9 +135,9 @@ source install/setup.bash
    - `/motionbrain/light_result_typed`
    - `/joint_states`
    - `/motionbrain/end_effector_pose`
-   - `/motionbrain/kinematics`
-   - `/motionbrain/control_guard`
-   - `/motionbrain/mission_state`
+   - `/motionbrain/kinematics_typed`
+   - `/motionbrain/control_guard_typed`
+   - `/motionbrain/mission_state_typed`
    - 선택: RViz RobotModel/TF 화면
    - 실제 SearchLight 점등
 
@@ -206,8 +206,13 @@ ros2 topic list
 /motionbrain/events
 /motionbrain/events_typed
 /motionbrain/kinematics
+/motionbrain/kinematics_typed
 /motionbrain/mission_cmd
+/motionbrain/mission_cmd_typed
 /motionbrain/mission_state
+/motionbrain/mission_state_typed
+/motionbrain/control_guard
+/motionbrain/control_guard_typed
 /motionbrain/light_cmd
 /motionbrain/light_cmd_typed
 /motionbrain/light_result
@@ -221,6 +226,9 @@ status 캡처:
 ```bash
 ros2 topic echo /motionbrain/status --once
 ros2 topic echo /motionbrain/status_typed --once
+ros2 topic echo /motionbrain/kinematics_typed --once
+ros2 topic echo /motionbrain/control_guard_typed --once
+ros2 topic echo /motionbrain/mission_state_typed --once
 ```
 
 camera detection 캡처:

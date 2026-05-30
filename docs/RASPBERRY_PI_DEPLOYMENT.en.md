@@ -79,16 +79,16 @@ OK topic: /motionbrain/status_typed
 OK topic: /camera/detection_typed
 OK topic: /joint_states
 OK topic: /motionbrain/end_effector_pose
-OK topic: /motionbrain/kinematics
-OK topic: /motionbrain/control_guard
-OK topic: /motionbrain/mission_state
+OK topic: /motionbrain/kinematics_typed
+OK topic: /motionbrain/control_guard_typed
+OK topic: /motionbrain/mission_state_typed
 OK status typed sample
 OK camera detection typed sample
 OK joint state sample
 OK end-effector pose sample
-OK kinematics sample
-OK control guard sample
-OK mission state sample
+OK kinematics typed sample
+OK control guard typed sample
+OK mission state typed sample
 ```
 
 ## 2026-05-27 Pi Validation Result
@@ -177,6 +177,35 @@ The `confirm` command was intentionally not run during this validation because
 it can publish a real `/motionbrain/light_cmd_typed` command. The current
 mission supervisor is a structured ROS2 mission layer for detection, alignment
 decision, and operator confirmation, not an autonomous motion controller.
+
+## 2026-05-30 Typed Interface Cleanup Validation Result
+
+The typed guard, mission, and kinematics topic path was validated through the
+Raspberry Pi 4 systemd service.
+
+- Commit: `2874df7 Use typed ROS2 guard and mission topics`
+- Updated `/etc/motionbrain/ros-bridge.env` to the current Home Wi-Fi IPs:
+  - `MOTIONBRAIN_HOST=192.168.219.110`
+  - `MOTIONBRAIN_CAMERA_URL=http://192.168.219.113`
+- After restarting `motionbrain-ros-bridge.service`, the service was
+  `active (running)`.
+- The service cgroup contained:
+  - `motionbrain_status_node`
+  - `motionbrain_joint_state_node`
+  - `motionbrain_kinematics_node`
+  - `motionbrain_control_guard_node`
+  - `motionbrain_mission_supervisor`
+- `CHECK_SERVICE=1 tools/raspi/check_ros_bridge_health.sh` passed typed topic
+  and sample checks for:
+  - `/motionbrain/status_typed`
+  - `/camera/detection_typed`
+  - `/joint_states`
+  - `/motionbrain/end_effector_pose`
+  - `/motionbrain/kinematics_typed`
+  - `/motionbrain/control_guard_typed`
+  - `/motionbrain/mission_state_typed`
+- Public-safe text evidence:
+  [docs/evidence/2026-05-30-ros2-typed-systemd.md](evidence/2026-05-30-ros2-typed-systemd.md)
 
 ## Operations
 

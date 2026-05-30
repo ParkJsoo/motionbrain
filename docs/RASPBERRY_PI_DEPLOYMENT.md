@@ -79,16 +79,16 @@ OK topic: /motionbrain/status_typed
 OK topic: /camera/detection_typed
 OK topic: /joint_states
 OK topic: /motionbrain/end_effector_pose
-OK topic: /motionbrain/kinematics
-OK topic: /motionbrain/control_guard
-OK topic: /motionbrain/mission_state
+OK topic: /motionbrain/kinematics_typed
+OK topic: /motionbrain/control_guard_typed
+OK topic: /motionbrain/mission_state_typed
 OK status typed sample
 OK camera detection typed sample
 OK joint state sample
 OK end-effector pose sample
-OK kinematics sample
-OK control guard sample
-OK mission state sample
+OK kinematics typed sample
+OK control guard typed sample
+OK mission state typed sample
 ```
 
 ## 2026-05-27 Pi 검증 결과
@@ -170,6 +170,35 @@ Raspberry Pi 4에서 lightweight mission supervisor까지 systemd 경로로 검�
 `confirm`은 실제 `/motionbrain/light_cmd_typed`를 publish할 수 있어서 이번 검증에서는
 실행하지 않았다. 현재 mission supervisor는 자동 주행이 아니라, 감지/정렬 판단과
 작업자 확인 단계를 ROS2 topic으로 구조화하는 포트폴리오용 mission layer다.
+
+## 2026-05-30 Typed Interface Cleanup 검증 결과
+
+Raspberry Pi 4에서 typed guard/mission/kinematics topic 전환을 systemd
+경로로 검증했다.
+
+- 커밋: `2874df7 Use typed ROS2 guard and mission topics`
+- `/etc/motionbrain/ros-bridge.env`를 현재 Home Wi-Fi IP로 갱신:
+  - `MOTIONBRAIN_HOST=192.168.219.110`
+  - `MOTIONBRAIN_CAMERA_URL=http://192.168.219.113`
+- `motionbrain-ros-bridge.service` 재시작 후 서비스 상태:
+  `active (running)`
+- service cgroup에 아래 프로세스가 함께 실행됨:
+  - `motionbrain_status_node`
+  - `motionbrain_joint_state_node`
+  - `motionbrain_kinematics_node`
+  - `motionbrain_control_guard_node`
+  - `motionbrain_mission_supervisor`
+- `CHECK_SERVICE=1 tools/raspi/check_ros_bridge_health.sh`가 typed topic과
+  sample까지 통과:
+  - `/motionbrain/status_typed`
+  - `/camera/detection_typed`
+  - `/joint_states`
+  - `/motionbrain/end_effector_pose`
+  - `/motionbrain/kinematics_typed`
+  - `/motionbrain/control_guard_typed`
+  - `/motionbrain/mission_state_typed`
+- Public-safe text evidence:
+  [docs/evidence/2026-05-30-ros2-typed-systemd.md](evidence/2026-05-30-ros2-typed-systemd.md)
 
 ## 운영 명령
 

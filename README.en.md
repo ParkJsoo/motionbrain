@@ -110,7 +110,7 @@ TB6612FNG x3
 
 ### Validated Raspberry Pi ROS2 Layer
 
-As of 2026-05-28, the Raspberry Pi 4 ROS2 host path has been validated on real hardware:
+As of 2026-05-30, the Raspberry Pi 4 ROS2 host path has been validated on real hardware:
 
 ```text
 [Raspberry Pi 4 / Ubuntu 24.04 / ROS2 Jazzy]
@@ -125,9 +125,13 @@ As of 2026-05-28, the Raspberry Pi 4 ROS2 host path has been validated on real h
   /joint_states
   /motionbrain/end_effector_pose
   /motionbrain/kinematics
+  /motionbrain/kinematics_typed
   /motionbrain/control_guard
+  /motionbrain/control_guard_typed
   /motionbrain/mission_state
+  /motionbrain/mission_state_typed
   /motionbrain/mission_cmd
+  /motionbrain/mission_cmd_typed
   /motionbrain/light_cmd
   /motionbrain/light_cmd_typed
   /motionbrain/light_result
@@ -206,8 +210,13 @@ event logs, and ESP32-CAM detection results into ROS2:
 - `/camera/detection_typed`
 - `/motionbrain/end_effector_pose`
 - `/motionbrain/kinematics`
+- `/motionbrain/kinematics_typed`
 - `/motionbrain/control_guard`
+- `/motionbrain/control_guard_typed`
 - `/motionbrain/mission_state`
+- `/motionbrain/mission_state_typed`
+- `/motionbrain/mission_cmd`
+- `/motionbrain/mission_cmd_typed`
 - `/motionbrain/light_cmd`
 - `/motionbrain/light_cmd_typed`
 - `/motionbrain/light_result`
@@ -218,19 +227,22 @@ The workspace also includes `motionbrain_description`, a lightweight URDF,
 visualization.
 
 `motionbrain_control` adds a small C++ ROS2 guard node that subscribes to typed
-status and camera-detection topics, then publishes `/motionbrain/control_guard`
-as a readiness/suggested-action JSON state. This adds a real C++ ROS2 component
-while keeping unsafe motion decisions outside the unverified host layer.
+status and camera-detection topics, then publishes
+`/motionbrain/control_guard_typed` plus compatibility JSON on
+`/motionbrain/control_guard`. This adds a real C++ ROS2 component while keeping
+unsafe motion decisions outside the unverified host layer.
 
 `motionbrain_mission` adds a lightweight Nav2-style mission supervisor for the
 bounded portfolio flow `detect -> align -> operator confirm -> act`. It
-publishes mission state continuously and only emits a typed light command after
-an explicit operator `confirm`.
+publishes `/motionbrain/mission_state_typed`, accepts
+`/motionbrain/mission_cmd_typed`, keeps JSON compatibility topics, and only
+emits a typed light command after an explicit operator `confirm`.
 
 `motionbrain_kinematics_node` subscribes to `/joint_states`, publishes an FK
 end-effector pose on `/motionbrain/end_effector_pose`, and publishes kinematics
-diagnostics on `/motionbrain/kinematics`. The pure Python kinematics module also
-includes a tested IK suggestion path for reachable target points and joint-limit
+diagnostics on `/motionbrain/kinematics_typed` plus compatibility JSON on
+`/motionbrain/kinematics`. The pure Python kinematics module also includes a
+tested IK suggestion path for reachable target points and joint-limit
 checks.
 
 Raspberry Pi bring-up is documented in
