@@ -24,7 +24,7 @@ Motion controller prompts:
 ```text
 Wi-Fi SSID:
 Wi-Fi password:
-Command token (optional):
+Command token:
 ```
 
 ESP32-CAM prompts:
@@ -106,10 +106,11 @@ Use the ESP32-hosted `MotionBrain Control` page at `http://motionbrain.local`
 or the controller IP for manual operation. This page works from a phone on the
 same Wi-Fi network and is the intended wireless controller surface.
 
-When a command token is configured, the page prompts for the token on the first
-state-changing command. The token is kept only in the current browser page's
-JavaScript memory; it is not written to firmware, files, URL query strings, or
-browser local storage. Reloading or closing the page clears it.
+The page prompts for the token on the first state-changing command. The token is
+kept only in the current browser page's JavaScript memory; it is not written to
+firmware, files, URL query strings, or browser local storage. Reloading or
+closing the page clears it. If no token is provisioned, controller POST
+endpoints are rejected until provisioning is repeated.
 
 Bench verification on 2026-05-25 confirmed the phone flow: the token prompt
 appears, the entered token is accepted, and controller commands execute from the
@@ -128,10 +129,9 @@ commands, motion, safety transitions, and errors.
 - `GET /status`, `GET /events`, and camera capture endpoints remain readable on
   the local network.
 - Motion controller POST endpoints still require `X-MotionBrain: 1`.
-- If a command token was provisioned on the motion controller, POST endpoints
-  also require `X-MotionBrain-Token`.
+- Motion controller POST endpoints also require `X-MotionBrain-Token`.
 - The built-in controller web page prompts for the token only at runtime and
   keeps it in page memory only.
 - ROS2 bridge commands use the same token through `MOTIONBRAIN_HTTP_TOKEN`.
-- If station connection fails, the motion controller falls back to the original
-  `MotionBrain-AP` behavior for recovery.
+- If station connection fails, the motion controller starts a fallback AP named
+  `MotionBrain-XXXX` with a device-specific password printed to serial logs.

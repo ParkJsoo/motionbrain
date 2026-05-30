@@ -78,11 +78,32 @@ class MissionFlowPackageTest(unittest.TestCase):
         self.assertEqual("guard_faulted", decision.reason)
         self.assertEqual("operator_check", decision.next_step)
 
+    def test_guard_json_rejects_non_object_payload(self):
+        flow = MissionFlow()
+
+        decision = flow.update_guard_json("[]")
+
+        self.assertEqual(MissionState.IDLE, decision.state)
+        self.assertFalse(flow.guard.ready)
+        self.assertEqual("invalid_guard_json", flow.guard.reason)
+
+    def test_guard_json_coerces_string_booleans(self):
+        flow = MissionFlow()
+
+        flow.update_guard_json(
+            '{"ready":"false","reason":"ready","statusFresh":"true","detectionFresh":"false"}'
+        )
+
+        self.assertFalse(flow.guard.ready)
+        self.assertTrue(flow.guard.status_fresh)
+        self.assertFalse(flow.guard.detection_fresh)
+
     def test_parse_command_supports_raw_and_json_commands(self):
         self.assertEqual("start", parse_command("start"))
         self.assertEqual("confirm", parse_command('{"command":"confirm"}'))
         self.assertEqual("reset", parse_command('{"action":"reset"}'))
         self.assertEqual("", parse_command('{"command":'))
+        self.assertEqual("", parse_command('["start"]'))
 
 
 if __name__ == "__main__":

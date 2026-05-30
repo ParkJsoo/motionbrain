@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import secrets
 import sys
 import threading
 import time
@@ -357,6 +358,16 @@ INDEX_HTML = """<!doctype html>
     let lastDetection = null;
     let dashboardConfig = null;
 
+    function dashboardHeaders() {
+      if (!dashboardConfig || !dashboardConfig.dashboardToken) {
+        throw new Error("dashboard token unavailable");
+      }
+      return {
+        "Content-Type": "application/json",
+        "X-Dashboard-Token": dashboardConfig.dashboardToken,
+      };
+    }
+
     function setText(id, value, className) {
       const el = document.getElementById(id);
       el.textContent = value;
@@ -383,6 +394,19 @@ INDEX_HTML = """<!doctype html>
       const data = await response.json();
       if (!response.ok || data.ok === false) {
         throw new Error(data.error || response.statusText);
+      }
+      return data;
+    }
+
+    async function postJson(url, payload) {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: dashboardHeaders(),
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json();
+      if (!response.ok || data.ok === false || data.success === false) {
+        throw new Error(data.error || data.message || response.statusText);
       }
       return data;
     }
@@ -425,7 +449,18 @@ INDEX_HTML = """<!doctype html>
         const tr = document.createElement("tr");
         const severity = event.severity || "INFO";
         const cls = severity === "ERROR" ? "bad" : severity === "WARN" ? "warn" : "";
-        tr.innerHTML = `<td>${event.id || ""}</td><td class="${cls}">${severity}</td><td>${event.category || ""}</td><td>${event.code || ""}</td><td>${event.detail || ""}</td>`;
+        for (const [value, className] of [
+          [event.id || "", ""],
+          [severity, cls],
+          [event.category || "", ""],
+          [event.code || "", ""],
+          [event.detail || "", ""],
+        ]) {
+          const td = document.createElement("td");
+          if (className) td.className = className;
+          td.textContent = value;
+          tr.appendChild(td);
+        }
         body.appendChild(tr);
       }
     }
@@ -527,15 +562,7 @@ INDEX_HTML = """<!doctype html>
 
     async function sendLight(action) {
       try {
-        const response = await fetch("/api/light", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action }),
-        });
-        const data = await response.json();
-        if (!response.ok || data.ok === false || data.success === false) {
-          throw new Error(data.error || data.message || response.statusText);
-        }
+        const data = await postJson("/api/light", { action });
         pushLog(`light ${action}: ${data.message || "ok"}`);
         refresh();
       } catch (err) {
@@ -552,13 +579,8 @@ INDEX_HTML = """<!doctype html>
 
       const alignment = lastDetection.alignment;
       try {
-        const response = await fetch("/api/align_nudge", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ alignment }),
-        });
-        const data = await response.json();
-        if (!response.ok || data.ok === false || data.success === false || data.stopped === false) {
+        const data = await postJson("/api/align_nudge", { alignment });
+        if (data.stopped === false) {
           throw new Error(data.error || data.message || "nudge failed");
         }
         pushLog(`align ${alignment}: ${data.message || "ok"} stopped=${data.stopped}`);
@@ -771,6 +793,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                         "cameraUrl": self.server.camera_url,
                         "detectColor": self.server.detect_color,
                         "hasHttpToken": bool(self.server.http_token),
+                        "dashboardToken": self.server.dashboard_token,
                         "alignMode": "nudge",
                         "alignNudgeMs": self.server.align_nudge_ms,
                         "alignPercent": self.server.align_percent,
@@ -792,6 +815,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.send_error_json(HTTPStatus.BAD_GATEWAY, str(exc))
 
     def do_POST(self) -> None:
+        if not self.require_dashboard_auth():
+            return
+
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path == "/api/light":
             self.handle_light()
@@ -801,10 +827,19 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.send_error_json(HTTPStatus.NOT_FOUND, "not_found")
             return
 
+    def require_dashboard_auth(self) -> bool:
+        if self.headers.get("X-Dashboard-Token", "") != self.server.dashboard_token:
+            self.send_error_json(HTTPStatus.FORBIDDEN, "dashboard_token_required")
+            return False
+        return True
+
     def read_json_body(self) -> dict[str, Any]:
         length = int(self.headers.get("Content-Length", "0"))
         raw = self.rfile.read(length).decode("utf-8")
-        return json.loads(raw) if raw else {}
+        payload = json.loads(raw) if raw else {}
+        if not isinstance(payload, dict):
+            raise ValueError("json_object_required")
+        return payload
 
     def handle_light(self) -> None:
         try:
@@ -921,6 +956,7 @@ class DashboardServer(ThreadingHTTPServer):
         timeout: float,
         events_limit: int,
         http_token: str,
+        dashboard_token: str,
         align_nudge_ms: int,
         align_percent: int,
     ) -> None:
@@ -931,6 +967,7 @@ class DashboardServer(ThreadingHTTPServer):
         self.timeout = timeout
         self.events_limit = events_limit
         self.http_token = http_token
+        self.dashboard_token = dashboard_token
         self.align_nudge_ms = align_nudge_ms
         self.align_percent = align_percent
         self.camera_cache_lock = threading.Lock()
@@ -977,12 +1014,14 @@ def run(args: argparse.Namespace) -> int:
         args.timeout,
         args.events_limit,
         args.http_token,
+        args.dashboard_token,
         args.align_nudge_ms,
         args.align_percent,
     )
     print(f"MotionBrain ops dashboard: http://{args.host}:{args.port}")
     print(f"motion={motion_base_url}")
     print(f"camera={args.camera_url or 'disabled'}")
+    print(f"dashboard_token={args.dashboard_token}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -1005,9 +1044,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--timeout", type=float, default=2.0, help="HTTP timeout in seconds")
     parser.add_argument("--events-limit", type=int, default=12, help="Default event query limit")
     parser.add_argument("--http-token", default=os.environ.get("MOTIONBRAIN_HTTP_TOKEN", ""), help="Optional X-MotionBrain-Token for controller POST endpoints")
+    parser.add_argument(
+        "--dashboard-token",
+        default=os.environ.get("MOTIONBRAIN_DASHBOARD_TOKEN", ""),
+        help="Local dashboard POST token; generated on startup when omitted",
+    )
     parser.add_argument("--align-nudge-ms", type=int, default=250, help="Dashboard vision nudge duration in milliseconds")
     parser.add_argument("--align-percent", type=int, default=25, help="Dashboard vision nudge base speed percent")
     args = parser.parse_args()
+    if not args.dashboard_token:
+        args.dashboard_token = secrets.token_urlsafe(24)
     if args.align_nudge_ms < 50 or args.align_nudge_ms > 2000:
         parser.error("--align-nudge-ms must be between 50 and 2000")
     if args.align_percent < 1 or args.align_percent > 100:

@@ -128,6 +128,18 @@ public:
    * @return 성공 여부 (상태 체크 실패 시 false)
    */
   bool stopAll();
+
+  /**
+   * 개별 모터 즉시 정지 (상태 무시, PWM=0, 방향 핀=LOW)
+   * @param motorId 모터 번호 (1 ~ 5, M1 ~ M5)
+   * @return 성공 여부
+   */
+  bool hardStop(uint8_t motorId);
+
+  /**
+   * 모든 모터 즉시 정지 (상태 무시, PWM=0, 방향 핀=LOW)
+   */
+  void hardStopAll();
   
   /**
    * 비상 정지 (상태 무시하고 즉시 정지)
@@ -259,6 +271,12 @@ private:
    * @return 성공 여부
    */
   bool setMotorSpeedInternal(uint8_t motorId, int16_t speed);
+
+  /**
+   * 개별 모터 출력을 즉시 차단 (내부 헬퍼)
+   * @param motorId 모터 번호 (1 ~ 5)
+   */
+  void forceMotorOutputOff(uint8_t motorId);
   
   /**
    * 모터 번호로 드라이버 번호 가져오기
@@ -283,4 +301,3 @@ private:
 };
 
 #endif // MOTOR_DRIVER_H
-

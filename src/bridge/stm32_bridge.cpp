@@ -301,13 +301,6 @@ bool Stm32Bridge::parseSensorLine(const char* line, SensorSnapshot& parsedSnapsh
   bool hasVibe = extractFloat(json, "vibe", candidate.vibe);
   bool hasDistance = extractFloat(json, "dist_cm", candidate.distanceCm);
 
-  if (!hasImuOk) {
-    candidate.imuOk = true;
-  }
-  if (!hasRangeOk) {
-    candidate.rangeOk = true;
-  }
-
   if (!hasTimestamp && !hasRoll && !hasPitch && !hasGyroX && !hasGyroY && !hasGyroZ && !hasVibe && !hasDistance) {
     return false;
   }

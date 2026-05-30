@@ -300,16 +300,17 @@ def run(args: argparse.Namespace) -> int:
                 else:
                     start_path = f"/joint?joint=base&action={direction}&percent={args.align_percent}"
                     stop_path = "/joint?joint=base&action=stop"
-                    response = post_motionbrain_with_retries(
-                        motion_base,
-                        start_path,
-                        args.timeout,
-                        args.http_token,
-                        args.command_retries,
-                        args.command_retry_delay,
-                    )
+                    response: dict[str, object] = {}
                     stopped = False
                     try:
+                        response = post_motionbrain_with_retries(
+                            motion_base,
+                            start_path,
+                            args.timeout,
+                            args.http_token,
+                            args.command_retries,
+                            args.command_retry_delay,
+                        )
                         if response.get("success"):
                             time.sleep(args.align_nudge_ms / 1000.0)
                         stop_response = post_motionbrain_with_retries(

@@ -392,7 +392,7 @@ Host watcher는 `GET /status`, `GET /events`를 주기적으로 읽어 state, sa
 python3 tools/motionbrain_watch.py --host 192.168.4.1 --interval 1.0
 ```
 
-Local ops dashboard는 같은 상태/이벤트 경계에 ESP32-CAM capture, 색상 감지, light command log, token-gated one-shot vision nudge control을 더해 브라우저에서 보여준다. 수동 조작은 ESP32가 직접 제공하는 `MotionBrain Control`을 사용한다. Command token이 설정된 경우 `MotionBrain Control`은 첫 state-changing command에서 token을 물어보고, 입력값은 현재 브라우저 페이지 메모리에만 유지한다. 2026-05-25 bench에서는 phone browser에서 token prompt와 command 동작을 확인했다.
+Local ops dashboard는 같은 상태/이벤트 경계에 ESP32-CAM capture, 색상 감지, light command log, token-gated one-shot vision nudge control을 더해 브라우저에서 보여준다. Dashboard POST는 로컬 dashboard token 헤더가 있어야 처리된다. 수동 조작은 ESP32가 직접 제공하는 `MotionBrain Control`을 사용한다. `MotionBrain Control`은 모든 state-changing command에서 provisioned command token을 요구하며, 입력값은 현재 브라우저 페이지 메모리에만 유지한다. 2026-05-25 bench에서는 phone browser에서 token prompt와 command 동작을 확인했다.
 
 ```bash
 python3 tools/motionbrain_dashboard.py --camera-url http://192.168.4.2
@@ -417,7 +417,7 @@ sensor sim off
 기본 사용 흐름:
 
 1. ESP32 부팅
-2. Wi-Fi AP `MotionBrain-AP` 접속 또는 USB 시리얼 연결
+2. Serial log에 출력된 fallback Wi-Fi AP `MotionBrain-XXXX` 접속 또는 USB 시리얼 연결
 3. `arm`
 4. `joint`, `motor`, `sequence`, `light` 명령 사용
 5. 필요 시 `stop` 또는 `disarm`

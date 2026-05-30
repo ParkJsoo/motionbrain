@@ -17,7 +17,7 @@ fi
 
 if [[ ! -f "${WORKSPACE}/install/setup.bash" ]]; then
   echo "Workspace setup not found: ${WORKSPACE}/install/setup.bash" >&2
-  echo "Build first: colcon build --packages-select motionbrain_msgs motionbrain_ros_bridge motionbrain_description" >&2
+  echo "Build first: colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_mission motionbrain_ros_bridge motionbrain_description" >&2
   exit 2
 fi
 

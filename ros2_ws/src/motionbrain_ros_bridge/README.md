@@ -72,7 +72,8 @@ source install/setup.bash
 
 ## Run Directly
 
-With the Mac or Raspberry Pi connected to `MotionBrain-AP`:
+With the Mac or Raspberry Pi connected to the fallback AP printed by the
+controller serial log, for example `MotionBrain-XXXX`:
 
 ```bash
 ros2 run motionbrain_ros_bridge motionbrain_status_node \

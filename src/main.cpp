@@ -44,6 +44,13 @@ bool homeWifiMode = false;
 
 namespace {
 
+void buildFallbackApCredentials(char* ssid, size_t ssidSize, char* password, size_t passwordSize) {
+  const uint64_t mac = ESP.getEfuseMac();
+  const uint16_t suffix = static_cast<uint16_t>(mac & 0xFFFFU);
+  snprintf(ssid, ssidSize, "MotionBrain-%04X", suffix);
+  snprintf(password, passwordSize, "mb%012llX", static_cast<unsigned long long>(mac));
+}
+
 const SensorSnapshot& getActiveSafetySnapshot() {
   if (stm32Bridge.isSimulationEnabled() || stm32Bridge.isConnected()) {
     return stm32Bridge.getSnapshot();
@@ -128,22 +135,28 @@ void setup() {
   } else {
     homeWifiMode = false;
     DebugLog::warn("Wi-Fi STA unavailable; falling back to MotionBrain-AP");
-    const char* apSSID = "MotionBrain-AP";
-    const char* apPassword = "motionbrain";
+    char apSSID[33] = {0};
+    char apPassword[32] = {0};
+    buildFallbackApCredentials(apSSID, sizeof(apSSID), apPassword, sizeof(apPassword));
     if (!wifiAP.init(apSSID, apPassword)) {
       DebugLog::error("Wi-Fi AP initialization failed");
       // Wi-Fi AP 실패는 치명적 오류는 아니므로 계속 진행
     } else {
       DebugLog::info("Wi-Fi AP: Ready for connections");
       DebugLog::info("Connect to SSID: %s", apSSID);
+      DebugLog::info("AP password: %s", apPassword);
       DebugLog::info("AP IP: %s", wifiAP.getIP().toString().c_str());
     }
+  }
+
+  if (wifiConfig.commandToken[0] == '\0') {
+    DebugLog::warn("Command token not provisioned; web POST commands will be rejected");
   }
 
   // 12. 웹 서버 초기화 (Wi-Fi AP 이후에 초기화)
   if (!webServer.init(&systemState, &motorControl, &robotArm, &motionSequence, &searchLight,
                       &commandBus, &dispatcher, 80,
-                      homeWifiMode ? wifiConfig.commandToken : nullptr)) {
+                      wifiConfig.commandToken)) {
     DebugLog::error("Web server initialization failed");
     // 웹 서버 실패는 치명적 오류는 아니므로 계속 진행
   } else {

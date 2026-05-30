@@ -140,7 +140,7 @@ environment.
 The C++ ROS2 control guard was validated through the Raspberry Pi 4 systemd
 path.
 
-- `colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_ros_bridge motionbrain_description`
+- `colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_mission motionbrain_ros_bridge motionbrain_description`
   succeeded.
 - Ran `systemctl daemon-reload`, then restarted
   `motionbrain-ros-bridge.service`.
@@ -156,7 +156,9 @@ path.
   - `statusFresh=true`
   - `detectionFresh=true`
 - `CHECK_SERVICE=1 tools/raspi/check_ros_bridge_health.sh` passed the
-  `/motionbrain/control_guard` topic and sample checks.
+  `/motionbrain/control_guard` topic and sample checks. Add
+  `STRICT_CAMERA_AVAILABLE=1` when the check must fail unless
+  `/camera/detection_typed.available` is `true`.
 
 ## 2026-05-28 Mission Supervisor Validation Result
 

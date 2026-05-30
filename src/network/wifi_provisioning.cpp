@@ -43,7 +43,11 @@ bool WifiProvisioning::load(WifiProvisioningConfig& config) {
   prefs.end();
 
   ssid.trim();
+  token.trim();
   if (ssid.length() == 0 || ssid.length() >= sizeof(config.ssid)) {
+    return false;
+  }
+  if (token.length() >= sizeof(config.commandToken)) {
     return false;
   }
 
@@ -135,7 +139,7 @@ bool WifiProvisioning::promptIfMissing(WifiProvisioningConfig& config) {
   Serial.println("=== MotionBrain Wi-Fi Provisioning ===");
   Serial.println("No stored home Wi-Fi config found.");
   Serial.println("Enter values here; they will be saved to ESP32 NVS flash, not to project files.");
-  Serial.println("Leave command token empty only for trusted bench testing.");
+  Serial.println("Command token is required for all web POST commands.");
 
   if (!readLine("Wi-Fi SSID: ", config.ssid, sizeof(config.ssid), false)) {
     return false;
@@ -143,7 +147,7 @@ bool WifiProvisioning::promptIfMissing(WifiProvisioningConfig& config) {
   if (!readLine("Wi-Fi password: ", config.password, sizeof(config.password), true)) {
     return false;
   }
-  if (!readLine("Command token (optional): ", config.commandToken, sizeof(config.commandToken), true)) {
+  if (!readLine("Command token: ", config.commandToken, sizeof(config.commandToken), false)) {
     return false;
   }
 

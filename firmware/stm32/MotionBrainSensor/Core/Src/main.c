@@ -348,6 +348,17 @@ static void FormatFixedValue(char *buffer, size_t size, float value, uint32_t sc
     }
 }
 
+static void TransmitFormattedPacket(char *buffer, size_t size, int length)
+{
+    if (length <= 0 || size == 0U) {
+        return;
+    }
+    if ((size_t)length >= size) {
+        return;
+    }
+    HAL_UART_Transmit(&huart2, (uint8_t *)buffer, (uint16_t)length, 50U);
+}
+
 #if SAFETY_TELEMETRY_ENABLED
 static void TriggerHcsr04(void)
 {
@@ -673,9 +684,7 @@ static void SendTeleopPacket(void)
                       HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_10) == GPIO_PIN_SET ? "true" : "false",
                       HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_12) == GPIO_PIN_SET ? "true" : "false");
 
-    if (length > 0) {
-        HAL_UART_Transmit(&huart2, (uint8_t *)tx_buffer, (uint16_t)length, 50U);
-    }
+    TransmitFormattedPacket(tx_buffer, sizeof(tx_buffer), length);
 }
 
 static void PrintTeleopToSwv(void)
@@ -755,9 +764,7 @@ static void SendSensorPacket(void)
                       vibe_str,
                       dist_str);
 
-    if (length > 0) {
-        HAL_UART_Transmit(&huart2, (uint8_t *)tx_buffer, (uint16_t)length, 50U);
-    }
+    TransmitFormattedPacket(tx_buffer, sizeof(tx_buffer), length);
 }
 
 static void PrintTelemetryToSwv(void)

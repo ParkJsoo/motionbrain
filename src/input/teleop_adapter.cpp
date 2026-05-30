@@ -501,7 +501,14 @@ void TeleopAdapter::handleFreshFrame(uint32_t now) {
 }
 
 void TeleopAdapter::stopControlledOutputs(TeleopStopReason reason, const char* detail, bool updateReason) {
-  applyJointOutputs(0, 0, 0, 0, 0);
+  if (motorControl_ != nullptr) {
+    motorControl_->hardStopAll();
+  }
+  appliedGripPercent_ = 0;
+  appliedWristPercent_ = 0;
+  appliedElbowPercent_ = 0;
+  appliedShoulderPercent_ = 0;
+  appliedBasePercent_ = 0;
 
   if (controlActive_) {
     DebugLog::info("Teleop stop: %s%s%s",

@@ -5,6 +5,7 @@ SERVICE_NAME="${MOTIONBRAIN_SERVICE_NAME:-motionbrain-ros-bridge.service}"
 ROS_DISTRO="${ROS_DISTRO:-jazzy}"
 WORKSPACE="${MOTIONBRAIN_ROS_WS:-/home/motionbrain/develop/arduino/motionbrain/ros2_ws}"
 CHECK_SERVICE="${CHECK_SERVICE:-1}"
+STRICT_CAMERA_AVAILABLE="${STRICT_CAMERA_AVAILABLE:-0}"
 TOPIC_WAIT_SECONDS="${TOPIC_WAIT_SECONDS:-20}"
 TOPIC_POLL_SECONDS="${TOPIC_POLL_SECONDS:-1}"
 
@@ -53,7 +54,12 @@ done
 timeout 10 ros2 topic echo /motionbrain/status_typed --once >/dev/null
 echo "OK status typed sample"
 
-timeout 10 ros2 topic echo /camera/detection_typed --once >/dev/null
+camera_detection_sample="$(timeout 10 ros2 topic echo /camera/detection_typed --once)"
+if [[ "${STRICT_CAMERA_AVAILABLE}" == "1" ]] && ! grep -Eq '^available: true$' <<< "${camera_detection_sample}"; then
+  echo "FAIL camera detection typed sample is not available=true" >&2
+  echo "${camera_detection_sample}" >&2
+  exit 1
+fi
 echo "OK camera detection typed sample"
 
 timeout 10 ros2 topic echo /joint_states --once >/dev/null

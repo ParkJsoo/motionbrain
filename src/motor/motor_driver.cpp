@@ -321,48 +321,34 @@ bool MotorControl::stopAll() {
 }
 
 /**
+ * 개별 모터 즉시 정지
+ */
+bool MotorControl::hardStop(uint8_t motorId) {
+  if (!isValidMotorId(motorId)) {
+    DebugLog::error("Invalid motor ID: %d (valid range: 1-%d for M1~M5)", motorId, NUM_MOTORS);
+    return false;
+  }
+
+  forceMotorOutputOff(motorId);
+  DebugLog::motor("hardStop", "M%d: forced stop - PWM=0, direction pins=LOW", motorId);
+  return true;
+}
+
+/**
+ * 모든 모터 즉시 정지
+ */
+void MotorControl::hardStopAll() {
+  for (uint8_t i = 0; i < NUM_MOTORS; i++) {
+    forceMotorOutputOff(indexToMotorId(i));
+  }
+  DebugLog::motor("hardStopAll", "FORCED STOP - all %d motors", NUM_MOTORS);
+}
+
+/**
  * 비상 정지 (상태 무시하고 즉시 정지)
  */
 void MotorControl::emergencyStop() {
-  // 모든 모터 즉시 정지
-  for (uint8_t i = 0; i < NUM_MOTORS; i++) {
-    uint8_t motorId = indexToMotorId(i);
-
-    // 목표 속도와 현재 속도를 모두 0으로 설정 (즉시 정지)
-    targetSpeed_[i] = 0;
-    currentSpeed_[i] = 0;
-    enabled_[i] = false;
-    lastUpdateTime_[i] = 0;  // 0 = "한 번도 업데이트 안 됨" — 다음 update() 즉시 실행
-
-    // PWM 출력 0 (명시적 채널 배열 사용 — 산술 의존 없음)
-    ledcWrite(PWM_CHANNELS[i], 0);
-    
-    // 방향 핀 LOW
-    uint8_t driverId = getDriverId(motorId);
-    uint8_t motorIndex = getMotorIndexInDriver(motorId);
-    
-    if (driverId == 0) {
-      if (motorIndex == 0) {
-        digitalWrite(PIN_AIN1_1, LOW);
-        digitalWrite(PIN_AIN2_1, LOW);
-      } else {
-        digitalWrite(PIN_BIN1_1, LOW);
-        digitalWrite(PIN_BIN2_1, LOW);
-      }
-    } else if (driverId == 1) {
-      if (motorIndex == 0) {
-        digitalWrite(PIN_AIN1_2, LOW);
-        digitalWrite(PIN_AIN2_2, LOW);
-      } else {
-        digitalWrite(PIN_BIN1_2, LOW);
-        digitalWrite(PIN_BIN2_2, LOW);
-      }
-    } else {
-      // TB6612FNG #3: 모터 A(M5)만 사용
-      digitalWrite(PIN_AIN1_3, LOW);
-      digitalWrite(PIN_AIN2_3, LOW);
-    }
-  }
+  hardStopAll();
   
   DebugLog::safety("EMERGENCY_STOP", "All motors emergency stopped - PWM=0, direction pins=LOW");
   DebugLog::motor("emergencyStop", "FORCED STOP - all %d motors", NUM_MOTORS);
@@ -425,11 +411,8 @@ void MotorControl::update() {
   if (currentState != SystemState::ARMED) {
     // ARMED 상태가 아니면 Ramp 없이 모든 모터 즉시 정지 (안전 최우선)
     for (uint8_t i = 0; i < NUM_MOTORS; i++) {
-      if (currentSpeed_[i] != 0 || targetSpeed_[i] != 0) {
-        targetSpeed_[i] = 0;
-        currentSpeed_[i] = 0;
-        enabled_[i] = false;
-        ledcWrite(PWM_CHANNELS[i], 0);
+      if (enabled_[i] || currentSpeed_[i] != 0 || targetSpeed_[i] != 0) {
+        forceMotorOutputOff(indexToMotorId(i));
       }
     }
     return;
@@ -617,6 +600,44 @@ bool MotorControl::setMotorSpeedInternal(uint8_t motorId, int16_t speed) {
   }
   
   return true;
+}
+
+/**
+ * 개별 모터 출력을 즉시 차단
+ */
+void MotorControl::forceMotorOutputOff(uint8_t motorId) {
+  uint8_t index = motorIdToIndex(motorId);
+
+  targetSpeed_[index] = 0;
+  currentSpeed_[index] = 0;
+  enabled_[index] = false;
+  lastUpdateTime_[index] = 0;
+
+  ledcWrite(PWM_CHANNELS[index], 0);
+
+  uint8_t driverId = getDriverId(motorId);
+  uint8_t motorIndex = getMotorIndexInDriver(motorId);
+
+  if (driverId == 0) {
+    if (motorIndex == 0) {
+      digitalWrite(PIN_AIN1_1, LOW);
+      digitalWrite(PIN_AIN2_1, LOW);
+    } else {
+      digitalWrite(PIN_BIN1_1, LOW);
+      digitalWrite(PIN_BIN2_1, LOW);
+    }
+  } else if (driverId == 1) {
+    if (motorIndex == 0) {
+      digitalWrite(PIN_AIN1_2, LOW);
+      digitalWrite(PIN_AIN2_2, LOW);
+    } else {
+      digitalWrite(PIN_BIN1_2, LOW);
+      digitalWrite(PIN_BIN2_2, LOW);
+    }
+  } else {
+    digitalWrite(PIN_AIN1_3, LOW);
+    digitalWrite(PIN_AIN2_3, LOW);
+  }
 }
 
 /**

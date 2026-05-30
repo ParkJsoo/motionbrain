@@ -138,7 +138,7 @@ source한 뒤에 `set -u`를 적용하도록 수정했다.
 
 Raspberry Pi 4에서 C++ ROS2 control guard까지 systemd 경로로 검증했다.
 
-- `colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_ros_bridge motionbrain_description`
+- `colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_mission motionbrain_ros_bridge motionbrain_description`
   성공
 - `systemctl daemon-reload` 후 `motionbrain-ros-bridge.service` 재시작
 - 서비스 상태: `active (running)`
@@ -153,7 +153,9 @@ Raspberry Pi 4에서 C++ ROS2 control guard까지 systemd 경로로 검증했다
   - `statusFresh=true`
   - `detectionFresh=true`
 - `CHECK_SERVICE=1 tools/raspi/check_ros_bridge_health.sh`가
-  `/motionbrain/control_guard` topic과 sample까지 통과
+  `/motionbrain/control_guard` topic과 sample까지 통과. 카메라가 실제로
+  사용 가능한 상태인지까지 실패 조건으로 보려면 `STRICT_CAMERA_AVAILABLE=1`을
+  추가한다.
 
 ## 2026-05-28 Mission Supervisor 검증 결과
 

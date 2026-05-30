@@ -23,6 +23,7 @@ extern TeleopAdapter teleopAdapter;
 namespace {
 
 constexpr const char* MESSAGE_SCHEMA_VERSION = "phase3.v1";
+constexpr uint32_t MANUAL_COMMAND_LEASE_MS = 750;
 
 String jsonEscape(const String& raw) {
   String escaped;
@@ -62,6 +63,7 @@ MotionBrainWebServer::MotionBrainWebServer()
 {
   // 생성자에서는 초기화만 수행
   // 실제 서버 시작은 init()에서 수행
+  clearAllManualLeases();
 }
 
 /**
@@ -152,7 +154,12 @@ bool MotionBrainWebServer::requireCommandAuth() {
     return false;
   }
 
-  if (commandToken_[0] != '\0' && server_.header("X-MotionBrain-Token") != commandToken_) {
+  if (commandToken_[0] == '\0') {
+    sendErrorJson(403, "Forbidden: command token is not provisioned");
+    return false;
+  }
+
+  if (server_.header("X-MotionBrain-Token") != commandToken_) {
     sendErrorJson(403, "Forbidden: invalid X-MotionBrain-Token");
     return false;
   }
@@ -225,9 +232,13 @@ void MotionBrainWebServer::update() {
     return;
   }
 
+  expireManualLeases();
+
   // ESP32 WebServer의 handleClient() 호출
   // 이 메서드는 수신된 HTTP 요청을 처리합니다
   server_.handleClient();
+
+  expireManualLeases();
 }
 
 /**
@@ -235,6 +246,65 @@ void MotionBrainWebServer::update() {
  */
 bool MotionBrainWebServer::isActive() const {
   return active_;
+}
+
+void MotionBrainWebServer::expireManualLeases() {
+  if (motorControl_ == nullptr) {
+    return;
+  }
+
+  const uint32_t now = millis();
+  for (uint8_t i = 0; i < MANUAL_LEASE_MOTOR_COUNT; i++) {
+    if (!manualLeaseActive_[i]) {
+      continue;
+    }
+    if (static_cast<int32_t>(now - manualLeaseUntilMs_[i]) < 0) {
+      continue;
+    }
+
+    const uint8_t motorId = i + 1;
+    manualLeaseActive_[i] = false;
+    manualLeaseUntilMs_[i] = 0;
+    motorControl_->hardStop(motorId);
+    DebugLog::warn("Web Server: manual lease expired for M%d", motorId);
+    eventLog.push("web", "MANUAL_LEASE_EXPIRED", EventSeverity::WARN, "manual command refresh missed");
+  }
+}
+
+void MotionBrainWebServer::extendManualLease(uint8_t motorId) {
+  if (motorId < 1 || motorId > MANUAL_LEASE_MOTOR_COUNT) {
+    return;
+  }
+  const uint8_t index = motorId - 1;
+  manualLeaseActive_[index] = true;
+  manualLeaseUntilMs_[index] = millis() + MANUAL_COMMAND_LEASE_MS;
+}
+
+void MotionBrainWebServer::clearManualLease(uint8_t motorId) {
+  if (motorId < 1 || motorId > MANUAL_LEASE_MOTOR_COUNT) {
+    return;
+  }
+  const uint8_t index = motorId - 1;
+  manualLeaseActive_[index] = false;
+  manualLeaseUntilMs_[index] = 0;
+}
+
+void MotionBrainWebServer::clearAllManualLeases() {
+  for (uint8_t i = 0; i < MANUAL_LEASE_MOTOR_COUNT; i++) {
+    manualLeaseActive_[i] = false;
+    manualLeaseUntilMs_[i] = 0;
+  }
+}
+
+uint8_t MotionBrainWebServer::motorIdForJoint(MotionJoint joint) const {
+  switch (joint) {
+    case MotionJoint::GRIPPER:  return MotorControl::MOTOR_1;
+    case MotionJoint::WRIST:    return MotorControl::MOTOR_2;
+    case MotionJoint::ELBOW:    return MotorControl::MOTOR_3;
+    case MotionJoint::SHOULDER: return MotorControl::MOTOR_4;
+    case MotionJoint::BASE:     return MotorControl::MOTOR_5;
+    default:                    return 0;
+  }
 }
 
 /**
@@ -440,10 +510,11 @@ void MotionBrainWebServer::handleRoot() {
   // JavaScript 전송
   server_.sendContent("<script>");
   server_.sendContent("const stateColors = { \"BOOT\": \"state-BOOT\", \"IDLE\": \"state-IDLE\", \"ARMED\": \"state-ARMED\", \"FAULT\": \"state-FAULT\" };");
-  server_.sendContent(String("const COMMAND_TOKEN_REQUIRED = ") + (commandToken_[0] != '\0' ? "true" : "false") + ";");
+  server_.sendContent(String("const COMMAND_TOKEN_CONFIGURED = ") + (commandToken_[0] != '\0' ? "true" : "false") + ";");
+  server_.sendContent("const COMMAND_TOKEN_REQUIRED = true;");
   server_.sendContent("let commandToken = '';");
-  server_.sendContent("function updateTokenStatus() { const el = document.getElementById('token-status'); if (!el) return; if (!COMMAND_TOKEN_REQUIRED) { el.textContent = 'not required'; return; } el.textContent = commandToken ? 'entered for this page' : 'required'; }");
-  server_.sendContent("function commandHeaders(promptForToken = true) { if (COMMAND_TOKEN_REQUIRED && !commandToken && promptForToken) { const value = window.prompt('MotionBrain command token'); if (value === null || value.trim() === '') { throw new Error('Command token required'); } commandToken = value.trim(); updateTokenStatus(); } if (COMMAND_TOKEN_REQUIRED && !commandToken) return null; const headers = {'X-MotionBrain': '1'}; if (commandToken) headers['X-MotionBrain-Token'] = commandToken; return headers; }");
+  server_.sendContent("function updateTokenStatus() { const el = document.getElementById('token-status'); if (!el) return; if (!COMMAND_TOKEN_CONFIGURED) { el.textContent = 'not provisioned'; return; } el.textContent = commandToken ? 'entered for this page' : 'required'; }");
+  server_.sendContent("function commandHeaders(promptForToken = true) { if (!COMMAND_TOKEN_CONFIGURED) { throw new Error('Command token not provisioned'); } if (!commandToken && promptForToken) { const value = window.prompt('MotionBrain command token'); if (value === null || value.trim() === '') { throw new Error('Command token required'); } commandToken = value.trim(); updateTokenStatus(); } if (!commandToken) return null; return {'X-MotionBrain': '1', 'X-MotionBrain-Token': commandToken}; }");
   server_.sendContent("function commandFetch(url, options = {}, promptForToken = true) { let headers; try { headers = commandHeaders(promptForToken); } catch (err) { return Promise.reject(err); } if (!headers) return Promise.reject(new Error('Command token required')); return fetch(url, Object.assign({}, options, { headers })).then(r => r.json().catch(() => ({ success: false, message: 'HTTP ' + r.status }))).then(data => { const errText = String((data && (data.error || data.message)) || ''); if (errText.indexOf('invalid X-MotionBrain-Token') >= 0) { commandToken = ''; updateTokenStatus(); } return data; }); }");
   server_.sendContent("function showMessage(text, isError) { const msg = document.getElementById(\"message\"); msg.textContent = text; msg.className = \"message \" + (isError ? \"error\" : \"success\"); msg.style.display = \"block\"; setTimeout(() => { msg.style.display = \"none\"; }, 3000); }");
   server_.sendContent("function sendCommand(cmd) { const btn = document.getElementById(\"btn-\" + cmd); btn.disabled = true; commandFetch(\"/command?cmd=\" + cmd, { method: \"POST\" }).then(data => { btn.disabled = false; showMessage(data.message || data.error || \"Command sent\", !data.success); updateStatus(); }).catch(err => { btn.disabled = false; showMessage(\"Error: \" + err.message, true); }); }");
@@ -458,15 +529,18 @@ void MotionBrainWebServer::handleRoot() {
   server_.sendContent("let joystickActive = {};");
   server_.sendContent("let joystickLastUpdate = {};");
   server_.sendContent("const JOYSTICK_UPDATE_INTERVAL = 100;");
+  server_.sendContent("const MANUAL_LEASE_REFRESH_MS = 250;");
   server_.sendContent("let currentMode = 'button';");
   server_.sendContent("let activeJoysticks = {};");
   server_.sendContent("function switchMode(mode) { currentMode = mode; const btnMode = document.getElementById('mode-button'); const joyMode = document.getElementById('mode-joystick'); const btnContainer = document.getElementById('button-container'); const joyContainer = document.getElementById('joystick-container'); if (mode === 'button') { btnMode.classList.add('active'); joyMode.classList.remove('active'); btnContainer.classList.add('active'); joyContainer.classList.remove('active'); stopAllMotors(); for (let motorId in joystickActive) { const handle = document.getElementById('handle-' + motorId); if (handle) { handle.style.transform = 'translate(-50%, -50%)'; handle.classList.remove('active'); } document.getElementById('joy-speed-' + motorId).textContent = '0%'; document.getElementById('joy-direction-' + motorId).textContent = 'STOPPED'; commandFetch('/motor?action=stop&id=' + motorId, { method: 'POST' }, false).catch(() => {}); } joystickActive = {}; for (let motorId in activeJoysticks) { const handle = activeJoysticks[motorId].handle; if (handle) { handle.style.transform = 'translate(-50%, -50%)'; handle.classList.remove('active'); } document.getElementById('joy-speed-' + motorId).textContent = '0%'; document.getElementById('joy-direction-' + motorId).textContent = 'STOPPED'; commandFetch('/motor?action=stop&id=' + motorId, { method: 'POST' }, false).catch(() => {}); } activeJoysticks = {}; } else { btnMode.classList.remove('active'); joyMode.classList.add('active'); btnContainer.classList.remove('active'); joyContainer.classList.add('active'); stopAllMotors(); } }");
-  server_.sendContent("function motorStart(motorId, direction, e) { if (currentMode !== 'button') return; if (e && e.preventDefault) e.preventDefault(); const speed = document.getElementById('speed-' + motorId).value; const btnId = direction === 'forward' ? 'btn-forward-' + motorId : 'btn-reverse-' + motorId; const btn = document.getElementById(btnId); if (btn) btn.classList.add('btn-pressed'); activeMotors[motorId] = direction; const action = direction === 'forward' ? 'forward' : 'reverse'; commandFetch('/motor?action=' + action + '&id=' + motorId + '&percent=' + speed, { method: 'POST' }).then(data => { if (!data.success) { showMessage(data.message || data.error || 'Motor control failed', true); motorStop(motorId); } }).catch(err => { showMessage('Error: ' + err.message, true); motorStop(motorId); }); }");
-  server_.sendContent("function motorStop(motorId, e) { if (currentMode !== 'button') return; if (e && e.preventDefault) e.preventDefault(); if (activeMotors[motorId]) { const direction = activeMotors[motorId]; const btnId = direction === 'forward' ? 'btn-forward-' + motorId : 'btn-reverse-' + motorId; const btn = document.getElementById(btnId); if (btn) btn.classList.remove('btn-pressed'); delete activeMotors[motorId]; commandFetch('/motor?action=stop&id=' + motorId, { method: 'POST' }, false).then(data => { updateStatus(); }).catch(err => { console.error('Stop error:', err); }); } }");
+  server_.sendContent("function refreshMotorLease(motorId) { const entry = activeMotors[motorId]; if (!entry) return; const speed = document.getElementById('speed-' + motorId).value; const action = entry.direction === 'forward' ? 'forward' : 'reverse'; commandFetch('/motor?action=' + action + '&id=' + motorId + '&percent=' + speed, { method: 'POST' }, false).then(data => { if (!data.success) { showMessage(data.message || data.error || 'Motor lease refresh failed', true); motorStop(motorId); } }).catch(err => { console.error('Motor lease refresh error:', err); motorStop(motorId); }); }");
+  server_.sendContent("function motorStart(motorId, direction, e) { if (currentMode !== 'button') return; if (e && e.preventDefault) e.preventDefault(); if (activeMotors[motorId]) return; const speed = document.getElementById('speed-' + motorId).value; const btnId = direction === 'forward' ? 'btn-forward-' + motorId : 'btn-reverse-' + motorId; const btn = document.getElementById(btnId); if (btn) btn.classList.add('btn-pressed'); activeMotors[motorId] = { direction: direction, timer: null }; const action = direction === 'forward' ? 'forward' : 'reverse'; commandFetch('/motor?action=' + action + '&id=' + motorId + '&percent=' + speed, { method: 'POST' }).then(data => { if (!data.success) { showMessage(data.message || data.error || 'Motor control failed', true); motorStop(motorId); return; } const entry = activeMotors[motorId]; if (entry && !entry.timer) entry.timer = setInterval(() => refreshMotorLease(motorId), MANUAL_LEASE_REFRESH_MS); }).catch(err => { showMessage('Error: ' + err.message, true); motorStop(motorId); }); }");
+  server_.sendContent("function motorStop(motorId, e) { if (e && e.preventDefault) e.preventDefault(); const entry = activeMotors[motorId]; if (entry) { const direction = entry.direction; if (entry.timer) clearInterval(entry.timer); const btnId = direction === 'forward' ? 'btn-forward-' + motorId : 'btn-reverse-' + motorId; const btn = document.getElementById(btnId); if (btn) btn.classList.remove('btn-pressed'); delete activeMotors[motorId]; commandFetch('/motor?action=stop&id=' + motorId, { method: 'POST' }, false).then(data => { updateStatus(); }).catch(err => { console.error('Stop error:', err); }); } }");
   server_.sendContent("function stopAllMotors() { for (let motorId in activeMotors) { motorStop(parseInt(motorId)); } }");
   // motorForward/motorReverse 제거됨 — motorStart/motorStop으로 대체 (CSRF 헤더 포함)
   server_.sendContent("function updateMotorStatus(data) { if (data.motors) { for (let i = 1; i <= MOTOR_COUNT; i++) { const motor = data.motors[\"M\" + i]; if (motor) { const statusEl = document.getElementById(\"motor-status-\" + i); const joySpeedEl = document.getElementById(\"joy-speed-\" + i); const joyDirectionEl = document.getElementById(\"joy-direction-\" + i); if (motor.enabled) { const statusText = motor.direction.toUpperCase() + \" (\" + motor.speed + \")\"; if (statusEl) { statusEl.textContent = statusText; statusEl.className = \"motor-status active\"; } if (joySpeedEl) joySpeedEl.textContent = Math.abs(motor.speed) + '%'; if (joyDirectionEl) joyDirectionEl.textContent = motor.direction.toUpperCase(); } else { if (statusEl) { statusEl.textContent = \"STOPPED\"; statusEl.className = \"motor-status\"; } if (joySpeedEl) joySpeedEl.textContent = '0%'; if (joyDirectionEl) joyDirectionEl.textContent = 'STOPPED'; } } } } }");
   server_.sendContent("function initJoystick(motorId) { const area = document.getElementById('joystick-' + motorId); const handle = document.getElementById('handle-' + motorId); if (!area || !handle) return; const isVertical = motorId >= 1 && motorId <= 4; const isHorizontal = motorId === 5; let centerX = 0; let centerY = 0; let radius = 0; function updateCenter() { const rect = area.getBoundingClientRect(); centerX = rect.left + rect.width / 2; centerY = rect.top + rect.height / 2; radius = rect.width / 2 - 10; } function updateJoystick(clientX, clientY) { if (area.classList.contains('disabled')) return; const dx = clientX - centerX; const dy = clientY - centerY; let x = 0; let y = 0; let speedPercent = 0; let isForward = false; if (isVertical) { const distance = Math.abs(dy); const limitedDistance = Math.min(distance, radius); y = dy < 0 ? -limitedDistance : limitedDistance; speedPercent = Math.round((limitedDistance / radius) * 100); isForward = dy < 0; } else if (isHorizontal) { const distance = Math.abs(dx); const limitedDistance = Math.min(distance, radius); x = dx < 0 ? -limitedDistance : limitedDistance; speedPercent = Math.round((limitedDistance / radius) * 100); isForward = dx < 0; } handle.style.transform = 'translate(calc(-50% + ' + x + 'px), calc(-50% + ' + y + 'px))'; const direction = isForward ? 'FORWARD' : (speedPercent < 5 ? 'STOPPED' : 'REVERSE'); document.getElementById('joy-speed-' + motorId).textContent = speedPercent + '%'; document.getElementById('joy-direction-' + motorId).textContent = direction; if (speedPercent > 5) { const action = isForward ? 'forward' : 'reverse'; const now = Date.now(); if (!joystickLastUpdate[motorId] || now - joystickLastUpdate[motorId] >= JOYSTICK_UPDATE_INTERVAL) { joystickLastUpdate[motorId] = now; commandFetch('/motor?action=' + action + '&id=' + motorId + '&percent=' + speedPercent, { method: 'POST' }).then(data => { if (!data.success) { console.error('Joystick control failed:', data); } }).catch(err => { console.error('Joystick error:', err); }); } joystickActive[motorId] = { action: action, percent: speedPercent }; } else { if (joystickActive[motorId]) { commandFetch('/motor?action=stop&id=' + motorId, { method: 'POST' }, false).catch(err => console.error('Stop error:', err)); delete joystickActive[motorId]; } } } function getTouchPoint(e, storedTouchId, joystickArea) { if (e.touches && storedTouchId !== null) { for (let i = 0; i < e.touches.length; i++) { if (e.touches[i].identifier === storedTouchId) { return { x: e.touches[i].clientX, y: e.touches[i].clientY }; } } return null; } if (e.clientX !== undefined && e.clientY !== undefined) { const rect = joystickArea.getBoundingClientRect(); if (e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom) { return { x: e.clientX, y: e.clientY }; } } return null; } function findTouchInArea(e, joystickArea) { if (e.touches && e.touches.length > 0) { const rect = joystickArea.getBoundingClientRect(); const usedTouchIds = new Set(); for (let id in activeJoysticks) { if (activeJoysticks[id] && activeJoysticks[id].touchId !== null) { usedTouchIds.add(activeJoysticks[id].touchId); } } for (let i = 0; i < e.touches.length; i++) { const touch = e.touches[i]; if (touch.clientX >= rect.left && touch.clientX <= rect.right && touch.clientY >= rect.top && touch.clientY <= rect.bottom) { if (!usedTouchIds.has(touch.identifier)) { return touch.identifier; } } } } return null; } function startDrag(e) { if (currentMode !== 'joystick' || area.classList.contains('disabled')) return; e.preventDefault(); updateCenter(); let currentTouchId = null; if (e.touches && e.touches.length > 0) { currentTouchId = findTouchInArea(e, area); if (currentTouchId === null) return; } const joyObj = { area: area, handle: handle, updateCenter: updateCenter, updateJoystick: updateJoystick, motorId: motorId, touchId: currentTouchId }; joyObj.getTouchPoint = function(e) { return getTouchPoint(e, joyObj.touchId, joyObj.area); }; activeJoysticks[motorId] = joyObj; handle.classList.add('active'); const point = getTouchPoint(e, currentTouchId, area); if (point) updateJoystick(point.x, point.y); } area.addEventListener('mousedown', startDrag); area.addEventListener('touchstart', startDrag, { passive: false }); }");
+  server_.sendContent("function refreshJoystickLeases() { if (currentMode !== 'joystick') return; for (let motorId in joystickActive) { const entry = joystickActive[motorId]; if (!entry || !entry.action || !entry.percent) continue; commandFetch('/motor?action=' + entry.action + '&id=' + motorId + '&percent=' + entry.percent, { method: 'POST' }, false).then(data => { if (!data.success) { console.error('Joystick lease refresh failed:', data); commandFetch('/motor?action=stop&id=' + motorId, { method: 'POST' }, false).catch(() => {}); delete joystickActive[motorId]; } }).catch(err => { console.error('Joystick lease refresh error:', err); commandFetch('/motor?action=stop&id=' + motorId, { method: 'POST' }, false).catch(() => {}); delete joystickActive[motorId]; }); } }");
   server_.sendContent("function handleGlobalDrag(e) { let shouldPreventDefault = false; const isMouseEvent = e.type === 'mousemove'; let mouseHandled = false; for (let motorId in activeJoysticks) { const joy = activeJoysticks[motorId]; if (joy && joy.area && !joy.area.classList.contains('disabled')) { if (isMouseEvent && joy.touchId !== null) continue; if (isMouseEvent && mouseHandled) continue; joy.updateCenter(); const point = joy.getTouchPoint(e); if (point) { shouldPreventDefault = true; if (isMouseEvent) mouseHandled = true; joy.updateJoystick(point.x, point.y); } } } if (shouldPreventDefault && e.touches && e.touches.length > 0) { e.preventDefault(); } } function handleGlobalEndDrag(e) { const endedTouchIds = new Set(); if (e.changedTouches) { for (let i = 0; i < e.changedTouches.length; i++) { endedTouchIds.add(e.changedTouches[i].identifier); } } let shouldPreventDefault = false; const isMouseEvent = e.type === 'mouseup'; for (let motorId in activeJoysticks) { const joy = activeJoysticks[motorId]; if (joy && joy.area) { let shouldEnd = false; if (isMouseEvent) { if (joy.touchId === null) { shouldEnd = true; } } else if (e.type === 'touchend' || e.type === 'touchcancel') { if (joy.touchId !== null && endedTouchIds.has(joy.touchId)) { shouldEnd = true; shouldPreventDefault = true; } } if (shouldEnd) { const handle = joy.handle; delete activeJoysticks[motorId]; handle.classList.remove('active'); handle.style.transform = 'translate(-50%, -50%)'; document.getElementById('joy-speed-' + joy.motorId).textContent = '0%'; document.getElementById('joy-direction-' + joy.motorId).textContent = 'STOPPED'; if (joystickActive[joy.motorId]) { commandFetch('/motor?action=stop&id=' + joy.motorId, { method: 'POST' }, false).catch(err => console.error('Stop error:', err)); delete joystickActive[joy.motorId]; } } } } if (shouldPreventDefault && e.changedTouches && e.changedTouches.length > 0) { e.preventDefault(); } } document.addEventListener('mousemove', handleGlobalDrag); document.addEventListener('touchmove', handleGlobalDrag, { passive: false }); document.addEventListener('mouseup', handleGlobalEndDrag); document.addEventListener('touchend', handleGlobalEndDrag, { passive: false }); document.addEventListener('touchcancel', handleGlobalEndDrag, { passive: false });");
   server_.sendContent("window.addEventListener(\"load\", function() { updateTokenStatus(); validateDefaultSpeed(); for (let i = 1; i <= MOTOR_COUNT; i++) { initJoystick(i); } });");
   server_.sendContent("window.addEventListener(\"beforeunload\", function() { stopAllMotors(); for (let motorId in joystickActive) { commandFetch('/motor?action=stop&id=' + motorId, { method: 'POST' }, false).catch(() => {}); } for (let motorId in activeJoysticks) { commandFetch('/motor?action=stop&id=' + motorId, { method: 'POST' }, false).catch(() => {}); } });");
@@ -474,10 +548,11 @@ void MotionBrainWebServer::handleRoot() {
   server_.sendContent("document.addEventListener(\"keyup\", function(e) { if (currentMode !== 'button') return; const keyMap = { 'KeyQ': 1, 'KeyA': 1, 'KeyW': 2, 'KeyS': 2, 'KeyE': 3, 'KeyD': 3, 'KeyR': 4, 'KeyF': 4, 'KeyT': 5, 'KeyG': 5 }; const motorId = keyMap[e.code]; if (motorId && activeMotors[motorId]) { e.preventDefault(); motorStop(motorId); } });");
   server_.sendContent("let activeJointButtons = {};");
   server_.sendContent("function updateJointSpeed() { const v = document.getElementById('joint-speed').value; document.getElementById('joint-speed-value').textContent = v + '%'; }");
-  server_.sendContent("function jointStart(joint, action, e) { if (e && e.preventDefault) e.preventDefault(); const speed = document.getElementById('joint-speed').value; const btn = e ? e.currentTarget : null; if (btn) btn.classList.add('btn-pressed'); activeJointButtons[joint] = {action: action, btn: btn}; commandFetch('/joint?joint=' + joint + '&action=' + action + '&percent=' + speed, {method: 'POST'}).then(data => { if (!data.success) { showMessage(data.message || data.error || 'Joint control failed', true); jointStopNow(joint); } }).catch(err => { showMessage('Error: ' + err.message, true); jointStopNow(joint); }); }");
-  server_.sendContent("function jointStop(joint, e) { if (e && e.preventDefault) e.preventDefault(); if (activeJointButtons[joint]) { const entry = activeJointButtons[joint]; if (entry.btn) entry.btn.classList.remove('btn-pressed'); delete activeJointButtons[joint]; commandFetch('/joint?joint=' + joint + '&action=stop', {method: 'POST'}, false).catch(() => {}); } }");
-  server_.sendContent("function jointStopNow(joint) { const entry = activeJointButtons[joint]; if (entry && entry.btn) entry.btn.classList.remove('btn-pressed'); delete activeJointButtons[joint]; commandFetch('/joint?joint=' + joint + '&action=stop', {method: 'POST'}, false).catch(() => {}); }");
-  server_.sendContent("setInterval(updateStatus, 1000); updateStatus();");
+  server_.sendContent("function refreshJointLease(joint) { const entry = activeJointButtons[joint]; if (!entry) return; const speed = document.getElementById('joint-speed').value; commandFetch('/joint?joint=' + joint + '&action=' + entry.action + '&percent=' + speed, {method: 'POST'}, false).then(data => { if (!data.success) { showMessage(data.message || data.error || 'Joint lease refresh failed', true); jointStopNow(joint); } }).catch(err => { console.error('Joint lease refresh error:', err); jointStopNow(joint); }); }");
+  server_.sendContent("function jointStart(joint, action, e) { if (e && e.preventDefault) e.preventDefault(); if (activeJointButtons[joint]) return; const speed = document.getElementById('joint-speed').value; const btn = e ? e.currentTarget : null; if (btn) btn.classList.add('btn-pressed'); activeJointButtons[joint] = {action: action, btn: btn, timer: null}; commandFetch('/joint?joint=' + joint + '&action=' + action + '&percent=' + speed, {method: 'POST'}).then(data => { if (!data.success) { showMessage(data.message || data.error || 'Joint control failed', true); jointStopNow(joint); return; } const entry = activeJointButtons[joint]; if (entry && !entry.timer) entry.timer = setInterval(() => refreshJointLease(joint), MANUAL_LEASE_REFRESH_MS); }).catch(err => { showMessage('Error: ' + err.message, true); jointStopNow(joint); }); }");
+  server_.sendContent("function jointStop(joint, e) { if (e && e.preventDefault) e.preventDefault(); if (activeJointButtons[joint]) { const entry = activeJointButtons[joint]; if (entry.timer) clearInterval(entry.timer); if (entry.btn) entry.btn.classList.remove('btn-pressed'); delete activeJointButtons[joint]; commandFetch('/joint?joint=' + joint + '&action=stop', {method: 'POST'}, false).catch(() => {}); } }");
+  server_.sendContent("function jointStopNow(joint) { const entry = activeJointButtons[joint]; if (entry && entry.timer) clearInterval(entry.timer); if (entry && entry.btn) entry.btn.classList.remove('btn-pressed'); delete activeJointButtons[joint]; commandFetch('/joint?joint=' + joint + '&action=stop', {method: 'POST'}, false).catch(() => {}); }");
+  server_.sendContent("setInterval(refreshJoystickLeases, MANUAL_LEASE_REFRESH_MS); setInterval(updateStatus, 1000); updateStatus();");
   server_.sendContent("</script></body></html>");
   
   DebugLog::info("Web Server: HTML sent successfully (streaming mode)");
@@ -801,6 +876,9 @@ void MotionBrainWebServer::handleCommand() {
 
   CommandResult result;
   submitCommand(command, result);
+  if (result.success && (command.type == CommandType::STOP || command.type == CommandType::DISARM)) {
+    clearAllManualLeases();
+  }
   sendCommandResult(result, String("\"state\":\"") + systemState_->getStateString() + "\"");
 }
 
@@ -939,6 +1017,17 @@ void MotionBrainWebServer::handleMotor() {
 
   CommandResult result;
   submitCommand(command, result);
+  if (result.success) {
+    if (action == "forward" || action == "reverse") {
+      extendManualLease(command.motorId);
+      sendCommandResult(result, String("\"manualLeaseMs\":") + String(MANUAL_COMMAND_LEASE_MS));
+      return;
+    }
+    if (action == "stop") {
+      clearManualLease(command.motorId);
+    }
+  }
+
   sendCommandResult(result);
 }
 
@@ -1036,6 +1125,19 @@ void MotionBrainWebServer::handleJoint() {
 
   CommandResult result;
   submitCommand(command, result);
+  if (result.success) {
+    if (command.type == CommandType::JOINT_RUN) {
+      extendManualLease(motorIdForJoint(command.joint));
+      sendCommandResult(result, String("\"manualLeaseMs\":") + String(MANUAL_COMMAND_LEASE_MS));
+      return;
+    }
+    if (command.type == CommandType::JOINT_STOP) {
+      clearManualLease(motorIdForJoint(command.joint));
+    } else if (command.type == CommandType::JOINT_STOP_ALL) {
+      clearAllManualLeases();
+    }
+  }
+
   sendCommandResult(result);
 }
 

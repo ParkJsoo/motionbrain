@@ -1,7 +1,7 @@
 import json
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 
 class MissionState(str, Enum):
@@ -76,17 +76,21 @@ class MissionFlow:
 
     def update_guard_json(self, data: str) -> MissionDecision:
         try:
-            payload: Dict[str, Any] = json.loads(data)
+            payload = json.loads(data)
         except json.JSONDecodeError:
             self.guard = GuardSnapshot(reason="invalid_guard_json")
             return self.evaluate()
 
+        if not isinstance(payload, dict):
+            self.guard = GuardSnapshot(reason="invalid_guard_json")
+            return self.evaluate()
+
         return self.update_guard(
-            ready=bool(payload.get("ready", False)),
+            ready=as_bool(payload.get("ready"), False),
             reason=str(payload.get("reason", "unknown")),
             suggested_action=str(payload.get("suggestedAction", "none")),
-            status_fresh=bool(payload.get("statusFresh", False)),
-            detection_fresh=bool(payload.get("detectionFresh", False)),
+            status_fresh=as_bool(payload.get("statusFresh"), False),
+            detection_fresh=as_bool(payload.get("detectionFresh"), False),
         )
 
     def update_guard(
@@ -206,10 +210,28 @@ def parse_command(data: str) -> str:
     stripped = (data or "").strip()
     if not stripped:
         return ""
-    if stripped.startswith("{"):
+    if stripped[0] in "{[":
         try:
             payload = json.loads(stripped)
         except json.JSONDecodeError:
             return ""
+        if not isinstance(payload, dict):
+            return ""
         return str(payload.get("command", payload.get("action", ""))).strip().lower()
     return stripped.lower()
+
+
+def as_bool(value: Any, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "y", "on", "ready", "ok"}:
+            return True
+        if normalized in {"false", "0", "no", "n", "off", "blocked", "stale", "unavailable", ""}:
+            return False
+    return default

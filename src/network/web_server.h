@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include <WebServer.h>  // ESP32 WebServer 라이브러리
 #include <stdint.h>      // uint16_t를 위해 추가
+#include "motion/motion_sequence.h"
 
 // 전방 선언 (순환 참조 방지)
 class SystemStateManager;
@@ -85,6 +86,9 @@ private:
 
   bool active_;         // 웹 서버 활성화 여부
   uint16_t port_;       // HTTP 서버 포트
+  static const uint8_t MANUAL_LEASE_MOTOR_COUNT = 5;
+  bool manualLeaseActive_[MANUAL_LEASE_MOTOR_COUNT];
+  uint32_t manualLeaseUntilMs_[MANUAL_LEASE_MOTOR_COUNT];
 
   // 외부 객체 참조 (상태 조회 및 명령 처리용)
   SystemStateManager* systemState_;
@@ -101,6 +105,11 @@ private:
   void appendStateSummaryJson(String& json) const;
   void sendErrorJson(int statusCode, const char* error, const String& details = "");
   void sendCommandResult(const CommandResult& result, const String& extraJson = "");
+  void expireManualLeases();
+  void extendManualLease(uint8_t motorId);
+  void clearManualLease(uint8_t motorId);
+  void clearAllManualLeases();
+  uint8_t motorIdForJoint(MotionJoint joint) const;
 
   // ===== HTTP 라우트 핸들러 (private) =====
   // Step 2에서 구현 예정
