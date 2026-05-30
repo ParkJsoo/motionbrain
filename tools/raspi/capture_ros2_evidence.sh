@@ -89,7 +89,7 @@ run_step "Bridge health check" env \
   "${REPO_DIR}/tools/raspi/check_ros_bridge_health.sh"
 
 run_step "MotionBrain ROS2 packages" bash -lc "ros2 pkg list | grep '^motionbrain'"
-run_step "MotionBrain ROS2 interfaces" bash -lc "ros2 interface list | grep '^motionbrain_msgs/msg'"
+run_step "MotionBrain ROS2 interfaces" bash -lc "ros2 interface list | grep 'motionbrain_msgs/msg'"
 run_step "ROS2 topic list" ros2 topic list
 
 capture_topic "/motionbrain/status_typed"
