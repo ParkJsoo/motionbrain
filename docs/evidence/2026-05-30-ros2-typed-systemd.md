@@ -132,3 +132,50 @@ The raw capture file was kept on the Pi at:
 ```text
 /tmp/motionbrain_ros2_typed_evidence_20260530.txt
 ```
+
+## TF Text Evidence
+
+`motionbrain_description` was launched without RViz to verify the URDF/TF path
+in text form:
+
+```bash
+ros2 launch motionbrain_description display.launch.py \
+  start_joint_state_bridge:=false \
+  use_rviz:=false
+```
+
+Captured topics:
+
+```text
+/tf
+/tf_static
+```
+
+Representative `/tf_static` frames:
+
+```text
+world -> base_link
+base_link -> camera_link
+```
+
+Representative `/tf` frames:
+
+```text
+base_link -> shoulder_link
+shoulder_link -> upper_arm_link
+upper_arm_link -> forearm_link
+forearm_link -> wrist_link
+wrist_link -> gripper_link
+```
+
+Launch log:
+
+```text
+robot_state_publisher: Robot initialized
+```
+
+The raw TF capture was kept on the Pi at:
+
+```text
+/tmp/motionbrain_tf_evidence_20260530.txt
+```
