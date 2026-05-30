@@ -120,6 +120,10 @@ cd ~/develop/arduino/motionbrain
 tools/raspi/capture_ros2_evidence.sh
 ```
 
+2026-05-30 Pi 검증에서는 `99154d2` 기준
+`/tmp/motionbrain_ros2_evidence_helper_99154d2.txt`가 `Result: OK`로
+생성되었다.
+
 mission command boundary까지 남기려면 `confirm` 없이 `start`와 `reset`만
 publish하는 opt-in 모드를 사용한다.
 
@@ -225,6 +229,7 @@ ros2 topic list
 /camera/detection_typed
 /joint_states
 /motionbrain/control_guard
+/motionbrain/control_guard_typed
 /motionbrain/end_effector_pose
 /motionbrain/events
 /motionbrain/events_typed
@@ -234,8 +239,6 @@ ros2 topic list
 /motionbrain/mission_cmd_typed
 /motionbrain/mission_state
 /motionbrain/mission_state_typed
-/motionbrain/control_guard
-/motionbrain/control_guard_typed
 /motionbrain/light_cmd
 /motionbrain/light_cmd_typed
 /motionbrain/light_result

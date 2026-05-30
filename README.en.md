@@ -253,6 +253,10 @@ echo verification, and a ROS2 command-channel test that toggled the real search
 light through the ESP32 `/light` endpoint.
 For service-style operation on the Pi, see
 [docs/RASPBERRY_PI_DEPLOYMENT.en.md](docs/RASPBERRY_PI_DEPLOYMENT.en.md).
+For public-safe terminal evidence capture from the running Pi service, use
+`tools/raspi/capture_ros2_evidence.sh`; its default mode records service,
+health, interface, topic, and sample evidence without publishing actuator
+commands.
 
 ```bash
 cd ros2_ws

@@ -122,6 +122,9 @@ cd ~/develop/arduino/motionbrain
 tools/raspi/capture_ros2_evidence.sh
 ```
 
+The 2026-05-30 Pi validation on `99154d2` produced
+`/tmp/motionbrain_ros2_evidence_helper_99154d2.txt` with `Result: OK`.
+
 To include the mission command boundary, use the opt-in mode. This publishes
 only `start` and `reset`; it does not publish `confirm`.
 

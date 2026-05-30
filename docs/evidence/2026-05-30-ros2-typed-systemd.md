@@ -232,3 +232,29 @@ The raw mission command capture was kept on the Pi at:
 ```text
 /tmp/motionbrain_mission_cmd_evidence_20260530.txt
 ```
+
+## Automated Evidence Helper Follow-Up
+
+After the manual typed evidence was documented, a reusable Pi-side helper was
+added for future public-safe terminal capture:
+
+```text
+tools/raspi/capture_ros2_evidence.sh
+```
+
+Validation on the Raspberry Pi:
+
+- Commit: `99154d2 Fix ROS2 evidence interface listing`
+- Service state: `active`
+- Pi repository state: clean
+- Default helper mode did not publish actuator commands.
+- Captured service state, health check, package/interface/topic inventory,
+  typed topic samples, and JSON compatibility samples.
+- Output file:
+  `/tmp/motionbrain_ros2_evidence_helper_99154d2.txt`
+- Final result: `Result: OK`
+
+The first helper run exposed a public-evidence bug in the interface listing
+check: `ros2 interface list` prefixes interface names with spaces, so anchoring
+the grep at the beginning of the line missed the MotionBrain messages. The
+check was corrected in `99154d2`.

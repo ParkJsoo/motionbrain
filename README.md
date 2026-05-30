@@ -269,6 +269,10 @@ checks.
 
 Raspberry Pi bring-up is documented in [docs/RASPBERRY_PI_ROS2_BRINGUP.md](docs/RASPBERRY_PI_ROS2_BRINGUP.md). The portfolio validation path has been run on Raspberry Pi 4 with ROS2 Jazzy: Home Wi-Fi access to the ESP32 controller and ESP32-CAM, JSON and typed topic echo verification, and a ROS2 command-channel test that toggled the real search light.
 For service-style operation on the Pi, see [docs/RASPBERRY_PI_DEPLOYMENT.md](docs/RASPBERRY_PI_DEPLOYMENT.md).
+For public-safe terminal evidence capture from the running Pi service, use
+`tools/raspi/capture_ros2_evidence.sh`; its default mode records service,
+health, interface, topic, and sample evidence without publishing actuator
+commands.
 
 Build and run directly:
 

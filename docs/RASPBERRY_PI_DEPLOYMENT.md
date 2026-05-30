@@ -71,6 +71,18 @@ Health check:
 ~/develop/arduino/motionbrain/tools/raspi/check_ros_bridge_health.sh
 ```
 
+공개용 terminal evidence를 한 번에 남기려면:
+
+```bash
+cd ~/develop/arduino/motionbrain
+tools/raspi/capture_ros2_evidence.sh
+```
+
+기본 모드는 service, health, package/interface/topic inventory, typed topic
+sample, JSON compatibility sample만 기록하고 actuator command는 publish하지
+않는다. Mission command boundary가 필요할 때만
+`CAPTURE_MISSION_BOUNDARY=1`을 사용한다.
+
 기대 결과:
 
 ```text
@@ -199,6 +211,22 @@ Raspberry Pi 4에서 typed guard/mission/kinematics topic 전환을 systemd
   - `/motionbrain/mission_state_typed`
 - Public-safe text evidence:
   [docs/evidence/2026-05-30-ros2-typed-systemd.md](evidence/2026-05-30-ros2-typed-systemd.md)
+
+## 2026-05-30 Evidence Helper 검증 결과
+
+Raspberry Pi 4에서 public-safe ROS2 evidence helper를 systemd 서비스가 실행
+중인 상태로 검증했다.
+
+- 커밋: `99154d2 Fix ROS2 evidence interface listing`
+- 스크립트: `tools/raspi/capture_ros2_evidence.sh`
+- 기본 모드에서 actuator command는 publish하지 않음
+- `ros2 interface list` 출력의 leading space 때문에 첫 검증에서 interface
+  grep이 실패했고, `99154d2`에서 `motionbrain_msgs/msg` 포함 검색으로 수정
+- 수정 후 출력 파일:
+  `/tmp/motionbrain_ros2_evidence_helper_99154d2.txt`
+- 최종 결과: `Result: OK`
+- Pi repo 상태: `99154d2`, clean
+- `motionbrain-ros-bridge.service`: `active`
 
 ## 운영 명령
 

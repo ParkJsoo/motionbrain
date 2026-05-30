@@ -71,6 +71,18 @@ Health check:
 ~/develop/arduino/motionbrain/tools/raspi/check_ros_bridge_health.sh
 ```
 
+To capture public-safe terminal evidence in one pass:
+
+```bash
+cd ~/develop/arduino/motionbrain
+tools/raspi/capture_ros2_evidence.sh
+```
+
+The default mode records service, health, package/interface/topic inventory,
+typed topic samples, and JSON compatibility samples without publishing actuator
+commands. Use `CAPTURE_MISSION_BOUNDARY=1` only when the safe mission
+`start`/`reset` boundary should be included.
+
 Expected:
 
 ```text
@@ -206,6 +218,23 @@ Raspberry Pi 4 systemd service.
   - `/motionbrain/mission_state_typed`
 - Public-safe text evidence:
   [docs/evidence/2026-05-30-ros2-typed-systemd.md](evidence/2026-05-30-ros2-typed-systemd.md)
+
+## 2026-05-30 Evidence Helper Validation Result
+
+The public-safe ROS2 evidence helper was validated on the Raspberry Pi 4 while
+the systemd service was running.
+
+- Commit: `99154d2 Fix ROS2 evidence interface listing`
+- Script: `tools/raspi/capture_ros2_evidence.sh`
+- Default mode does not publish actuator commands.
+- The first validation exposed a grep issue because `ros2 interface list`
+  prefixes interface names with spaces; `99154d2` fixed the check by matching
+  `motionbrain_msgs/msg` anywhere on the line.
+- Corrected output file:
+  `/tmp/motionbrain_ros2_evidence_helper_99154d2.txt`
+- Final result: `Result: OK`
+- Pi repo state: clean at `99154d2`
+- `motionbrain-ros-bridge.service`: `active`
 
 ## Operations
 
