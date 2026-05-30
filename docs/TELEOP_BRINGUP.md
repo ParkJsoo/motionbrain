@@ -39,19 +39,75 @@ STM32는 MPU가 감지되지 않아도 UART heartbeat를 계속 보내며, 이�
 ```json
 {
   "type": "teleop",
+  "ts_ms": 123456,
+  "seq": 42,
+  "session": 3,
   "deadman": true,
   "reach": 0.0,
   "lift": 0.0,
   "twist": 0.0,
+  "grip_open": false,
+  "grip_close": false,
+  "led_toggle_seq": 7,
   "imu_ok": true,
   "range_ok": true,
+  "roll": 1.25,
+  "pitch": -0.75,
+  "gyro_x": 0.0,
+  "gyro_y": 0.0,
+  "gyro_z": 0.0,
   "dist_cm": 50.0,
   "vibe": 0.0,
   "imu_status": 1,
   "imu_addr": 104,
-  "imu_error": 0
+  "imu_error": 0,
+  "i2c_scl": true,
+  "i2c_sda": true
 }
 ```
+
+## UART Protocol Contract
+
+현재 teleop protocol의 source of truth는 STM32 `SendTeleopPacket()`과 ESP32 `TeleopAdapter::parseTeleopLine()`이다. 문서 기준은 아래와 같다.
+
+- physical: `STM32 PD5 / D1 / USART2_TX -> ESP32 GPIO34 / Serial1 RX`, 공통 `GND`
+- link: `115200` baud, `8N1`, newline-delimited JSON, STM32 TX-only
+- rate: STM32 약 `25Hz`, ESP32 recommended period `40ms`
+- timeout: ESP32 frame freshness 약 `200ms`, embedded safety stale 약 `1000ms`
+- framing: `\r`은 무시, `\n`에서 frame 확정, 중간에 `{`가 새로 들어오면 최신 JSON 시작점으로 resync
+
+필수 control field:
+
+| 필드 | 타입 | 의미 |
+| --- | --- | --- |
+| `type` | string | 항상 `teleop` |
+| `ts_ms` | uint32 | STM32 `HAL_GetTick()` 기준 송신 시각 |
+| `seq` | uint32 | frame sequence |
+| `session` | uint32 | deadman 새 hold session 식별자 |
+| `deadman` | bool | hold-to-enable 입력 |
+| `reach` | float | 전후/팔 뻗기 축, `[-1.0, 1.0]`로 clamp |
+| `lift` | float | 상하 축, `[-1.0, 1.0]`로 clamp |
+| `twist` | float | base 회전 축, `[-1.0, 1.0]`로 clamp |
+| `grip_open` | bool | gripper open button |
+| `grip_close` | bool | gripper close button |
+| `led_toggle_seq` | uint32 | LED toggle edge counter |
+
+embedded safety field:
+
+| 필드 | 타입 | 의미 |
+| --- | --- | --- |
+| `imu_ok` | bool | MPU sample path 정상 여부 |
+| `range_ok` | bool | HC-SR04 range path 정상 여부 |
+| `roll`, `pitch` | float | STM32 attitude estimate |
+| `gyro_x`, `gyro_y`, `gyro_z` | float | gyro dps |
+| `vibe` | float | vibration metric |
+| `dist_cm` | float | ultrasonic distance |
+| `imu_status` | uint32 | MPU diagnostic status |
+| `imu_addr` | uint32 | detected MPU address, `0x68` 또는 `0x69` |
+| `imu_error` | uint32 | STM32 HAL I2C error bitmask |
+| `i2c_scl`, `i2c_sda` | bool | I2C2 line idle sanity |
+
+ESP32 parser는 safety field가 하나라도 있으면 `imu_ok`, `range_ok`, `vibe`, `dist_cm`를 모두 요구한다. control field가 빠지거나 타입이 틀린 frame은 drop하고, 마지막 정상 frame 기준 timeout이 지나면 controlled output을 0으로 내린다.
 
 `status`의 `IMU diag` 값:
 

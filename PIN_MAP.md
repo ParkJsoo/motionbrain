@@ -211,8 +211,10 @@ STM32 GND                   ->  ESP32 GND
 - `GPIO34`는 입력 전용이므로 teleop RX에 적합하다.
 - 기존 STM32 sensor bridge가 쓰던 `Serial2 RX=GPIO35`와 별도 채널이다.
 - 현재 STM32 펌웨어는 `APP_MODE_TELEOP_REMOTE`와 `APP_MODE_SENSOR_BRIDGE` 중 하나로 빌드된다.
-- 한 개 STM32를 teleop remote로 쓰는 bench에서는 ESP32 sensor bridge가 비므로 `sensor sim healthy`로 safety gate를 열어야 한다.
+- 한 개 STM32를 teleop remote로 쓰는 bench에서도 teleop frame에 embedded safety telemetry가 포함되므로 `sensor sim healthy` 없이 safety freshness, `imu_ok`, `range_ok`를 확인할 수 있다.
 - 최종 실장에서는 센서 허브와 teleop remote를 별도 보드로 운용하거나, 동등한 본체 safety 입력 채널을 따로 확보해야 한다.
+
+멀티미터 기반 bench 확인 항목은 [docs/EMBEDDED_FIRMWARE_EVIDENCE.md](docs/EMBEDDED_FIRMWARE_EVIDENCE.md)의 `멀티미터 기반 Bench Check`를 기준으로 관리한다. 오실로스코프 없이 확인한 항목은 전원 rail, 공통 GND, active-low 버튼, 출력 voltage sanity까지로 제한한다.
 
 ---
 

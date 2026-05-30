@@ -379,6 +379,7 @@ This repository is structured as an embedded robotics portfolio project. The mos
 - [PORTFOLIO.en.md](PORTFOLIO.en.md): English portfolio one-pager
 - [PHASE4_MVP.md](PHASE4_MVP.md): ESP32-CAM + Mac host MVP
 - [docs/RASPBERRY_PI_ROS2_BRINGUP.md](docs/RASPBERRY_PI_ROS2_BRINGUP.md): Raspberry Pi ROS2 bring-up and validation notes
+- [docs/EMBEDDED_FIRMWARE_EVIDENCE.md](docs/EMBEDDED_FIRMWARE_EVIDENCE.md): MCU firmware/interface/multimeter evidence and remaining gaps
 - [docs/ARCHITECTURE_DIAGRAMS.en.md](docs/ARCHITECTURE_DIAGRAMS.en.md): architecture and demo diagrams for portfolio explanation
 - [MESSAGE_INTERFACE.md](MESSAGE_INTERFACE.md): command, teleop, and status message boundary
 - [PIN_MAP.md](PIN_MAP.md): ESP32 motor pin mapping

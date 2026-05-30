@@ -443,6 +443,7 @@ sensor sim off
 - [PHASE3_PLAN.md](PHASE3_PLAN.md): 센서/브리지 계획
 - [PHASE4_MVP.md](PHASE4_MVP.md): ESP32-CAM + Mac host 비전 MVP
 - [docs/RASPBERRY_PI_ROS2_BRINGUP.md](docs/RASPBERRY_PI_ROS2_BRINGUP.md): Raspberry Pi ROS2 bring-up 및 검증 결과
+- [docs/EMBEDDED_FIRMWARE_EVIDENCE.md](docs/EMBEDDED_FIRMWARE_EVIDENCE.md): MCU 펌웨어/인터페이스/멀티미터 검증 evidence와 남은 gap
 - [docs/ARCHITECTURE_DIAGRAMS.md](docs/ARCHITECTURE_DIAGRAMS.md): 포트폴리오 설명용 아키텍처/데모 다이어그램
 - [MESSAGE_INTERFACE.md](MESSAGE_INTERFACE.md): 시리얼/HTTP/status 메시지 경계
 - [PIN_MAP.md](PIN_MAP.md): ESP32 모터 핀 연결
