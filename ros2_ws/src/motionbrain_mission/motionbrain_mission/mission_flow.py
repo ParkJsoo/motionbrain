@@ -81,12 +81,29 @@ class MissionFlow:
             self.guard = GuardSnapshot(reason="invalid_guard_json")
             return self.evaluate()
 
-        self.guard = GuardSnapshot(
+        return self.update_guard(
             ready=bool(payload.get("ready", False)),
             reason=str(payload.get("reason", "unknown")),
             suggested_action=str(payload.get("suggestedAction", "none")),
             status_fresh=bool(payload.get("statusFresh", False)),
             detection_fresh=bool(payload.get("detectionFresh", False)),
+        )
+
+    def update_guard(
+        self,
+        *,
+        ready: bool,
+        reason: str,
+        suggested_action: str,
+        status_fresh: bool,
+        detection_fresh: bool,
+    ) -> MissionDecision:
+        self.guard = GuardSnapshot(
+            ready=ready,
+            reason=reason or "unknown",
+            suggested_action=suggested_action or "none",
+            status_fresh=status_fresh,
+            detection_fresh=detection_fresh,
         )
         return self.evaluate()
 
@@ -162,22 +179,25 @@ class MissionFlow:
             act_request=act_request,
         )
 
-    def to_json(self, decision: Optional[MissionDecision] = None) -> str:
+    def to_dict(self, decision: Optional[MissionDecision] = None) -> dict[str, Any]:
         current = decision or self.decision("none")
+        return {
+            "state": current.state.value,
+            "reason": current.reason,
+            "nextStep": current.next_step,
+            "suggestedAction": current.suggested_action,
+            "guardReady": self.guard.ready,
+            "guardReason": self.guard.reason,
+            "statusFresh": self.guard.status_fresh,
+            "detectionFresh": self.guard.detection_fresh,
+            "targetDetected": self.detection.detected,
+            "alignment": self.detection.alignment,
+            "areaRatio": round(self.detection.area_ratio, 6),
+        }
+
+    def to_json(self, decision: Optional[MissionDecision] = None) -> str:
         return json.dumps(
-            {
-                "state": current.state.value,
-                "reason": current.reason,
-                "nextStep": current.next_step,
-                "suggestedAction": current.suggested_action,
-                "guardReady": self.guard.ready,
-                "guardReason": self.guard.reason,
-                "statusFresh": self.guard.status_fresh,
-                "detectionFresh": self.guard.detection_fresh,
-                "targetDetected": self.detection.detected,
-                "alignment": self.detection.alignment,
-                "areaRatio": round(self.detection.area_ratio, 6),
-            },
+            self.to_dict(decision),
             separators=(",", ":"),
         )
 

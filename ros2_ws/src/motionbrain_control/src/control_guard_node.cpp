@@ -7,6 +7,7 @@
 
 #include "motionbrain_control/control_guard_logic.hpp"
 #include "motionbrain_msgs/msg/camera_detection.hpp"
+#include "motionbrain_msgs/msg/control_guard.hpp"
 #include "motionbrain_msgs/msg/motion_status.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/string.hpp"
@@ -57,7 +58,10 @@ public:
   {
     status_topic_ = declare_parameter<std::string>("status_topic", "/motionbrain/status_typed");
     detection_topic_ = declare_parameter<std::string>("detection_topic", "/camera/detection_typed");
-    output_topic_ = declare_parameter<std::string>("output_topic", "/motionbrain/control_guard");
+    output_topic_ = declare_parameter<std::string>("output_topic", "/motionbrain/control_guard_typed");
+    json_output_topic_ = declare_parameter<std::string>(
+      "json_output_topic",
+      "/motionbrain/control_guard");
     stale_timeout_sec_ = declare_parameter<double>("stale_timeout_sec", 3.0);
     require_armed_ = declare_parameter<bool>("require_armed", false);
     require_detection_ = declare_parameter<bool>("require_detection", false);
@@ -79,7 +83,8 @@ public:
         last_detection_time_ = now();
       });
 
-    guard_pub_ = create_publisher<std_msgs::msg::String>(output_topic_, 10);
+    guard_pub_ = create_publisher<motionbrain_msgs::msg::ControlGuard>(output_topic_, 10);
+    guard_json_pub_ = create_publisher<std_msgs::msg::String>(json_output_topic_, 10);
     const auto publish_period = std::chrono::duration_cast<std::chrono::milliseconds>(
       std::chrono::duration<double>(1.0 / publish_rate_hz));
     timer_ = create_wall_timer(
@@ -88,8 +93,9 @@ public:
 
     RCLCPP_INFO(
       get_logger(),
-      "Publishing C++ control guard on %s from %s and %s",
+      "Publishing C++ control guard on %s and compatibility JSON on %s from %s and %s",
       output_topic_.c_str(),
+      json_output_topic_.c_str(),
       status_topic_.c_str(),
       detection_topic_.c_str());
   }
@@ -137,6 +143,12 @@ private:
       detection_fresh,
       config);
 
+    const bool armed = latest_status_ && latest_status_->armed;
+    const bool moving = latest_status_ && latest_status_->moving;
+    const bool faulted = latest_status_ && latest_status_->faulted;
+    const bool camera_available = latest_detection_ && latest_detection_->available;
+    const bool target_detected = latest_detection_ && latest_detection_->detected;
+
     std::ostringstream out;
     out << std::fixed << std::setprecision(3);
     out << "{"
@@ -148,22 +160,43 @@ private:
         << "\"statusAgeSec\":" << status_age << ","
         << "\"detectionAgeSec\":" << detection_age << ","
         << "\"state\":\"" << escape_json(status.state) << "\","
-        << "\"armed\":" << json_bool(latest_status_ && latest_status_->armed) << ","
-        << "\"moving\":" << json_bool(latest_status_ && latest_status_->moving) << ","
-        << "\"faulted\":" << json_bool(latest_status_ && latest_status_->faulted) << ","
-        << "\"cameraAvailable\":" << json_bool(latest_detection_ && latest_detection_->available) << ","
-        << "\"targetDetected\":" << json_bool(latest_detection_ && latest_detection_->detected) << ","
+        << "\"armed\":" << json_bool(armed) << ","
+        << "\"moving\":" << json_bool(moving) << ","
+        << "\"faulted\":" << json_bool(faulted) << ","
+        << "\"cameraAvailable\":" << json_bool(camera_available) << ","
+        << "\"targetDetected\":" << json_bool(target_detected) << ","
         << "\"alignment\":\"" << escape_json(detection.alignment) << "\""
         << "}";
+    const std::string raw_json = out.str();
+
+    motionbrain_msgs::msg::ControlGuard typed_message;
+    typed_message.stamp = now();
+    typed_message.ready = decision.ready;
+    typed_message.reason = decision.reason;
+    typed_message.suggested_action = decision.suggested_action;
+    typed_message.status_fresh = status_fresh;
+    typed_message.detection_fresh = detection_fresh;
+    typed_message.status_age_sec = static_cast<float>(status_age);
+    typed_message.detection_age_sec = static_cast<float>(detection_age);
+    typed_message.state = status.state;
+    typed_message.armed = armed;
+    typed_message.moving = moving;
+    typed_message.faulted = faulted;
+    typed_message.camera_available = camera_available;
+    typed_message.target_detected = target_detected;
+    typed_message.alignment = detection.alignment;
+    typed_message.raw_json = raw_json;
+    guard_pub_->publish(typed_message);
 
     std_msgs::msg::String message;
-    message.data = out.str();
-    guard_pub_->publish(message);
+    message.data = raw_json;
+    guard_json_pub_->publish(message);
   }
 
   std::string status_topic_;
   std::string detection_topic_;
   std::string output_topic_;
+  std::string json_output_topic_;
   double stale_timeout_sec_{3.0};
   bool require_armed_{false};
   bool require_detection_{false};
@@ -173,7 +206,8 @@ private:
   motionbrain_msgs::msg::CameraDetection::SharedPtr latest_detection_;
   rclcpp::Subscription<motionbrain_msgs::msg::MotionStatus>::SharedPtr status_sub_;
   rclcpp::Subscription<motionbrain_msgs::msg::CameraDetection>::SharedPtr detection_sub_;
-  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr guard_pub_;
+  rclcpp::Publisher<motionbrain_msgs::msg::ControlGuard>::SharedPtr guard_pub_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr guard_json_pub_;
   rclcpp::TimerBase::SharedPtr timer_;
 };
 

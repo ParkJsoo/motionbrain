@@ -13,6 +13,10 @@ debugging and schema evolution.
 | `motionbrain_msgs/msg/MotionStatus` | Robot state, motion flags, base angle estimate, and raw `/status` JSON |
 | `motionbrain_msgs/msg/MotionEvent` | One typed event from `/events?limit=N` |
 | `motionbrain_msgs/msg/CameraDetection` | ESP32-CAM color detection and alignment result |
+| `motionbrain_msgs/msg/KinematicsState` | FK diagnostics and optional IK suggestion fields |
+| `motionbrain_msgs/msg/ControlGuard` | Control readiness guard output from typed status and detection |
+| `motionbrain_msgs/msg/MissionCommand` | Operator mission command request |
+| `motionbrain_msgs/msg/MissionState` | Detect-align-confirm-act mission supervisor state |
 | `motionbrain_msgs/msg/LightCommand` | Search-light command request |
 | `motionbrain_msgs/msg/LightResult` | Search-light command result |
 

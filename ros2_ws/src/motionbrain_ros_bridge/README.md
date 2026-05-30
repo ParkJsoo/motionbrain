@@ -11,16 +11,20 @@ The original JSON topics remain available for debugging, while typed
 | --- | --- | --- | --- |
 | `/joint_states` | publish | `sensor_msgs/msg/JointState` | MotionStatus joint fields mapped to URDF joints |
 | `/motionbrain/end_effector_pose` | publish | `geometry_msgs/msg/PoseStamped` | FK end-effector pose from current joint state |
-| `/motionbrain/kinematics` | publish | `std_msgs/String` | FK diagnostics and optional IK target suggestion JSON |
-| `/motionbrain/control_guard` | publish | `std_msgs/String` | C++ guard node readiness and suggested-action JSON |
-| `/motionbrain/mission_state` | publish | `std_msgs/String` | Mission supervisor state for detect-align-confirm-act flow |
+| `/motionbrain/kinematics_typed` | publish | `motionbrain_msgs/msg/KinematicsState` | FK diagnostics and optional IK target suggestion fields |
+| `/motionbrain/kinematics` | publish | `std_msgs/String` | Compatibility FK diagnostics JSON |
+| `/motionbrain/control_guard_typed` | publish | `motionbrain_msgs/msg/ControlGuard` | C++ guard node readiness and suggested action |
+| `/motionbrain/control_guard` | publish | `std_msgs/String` | Compatibility guard decision JSON |
+| `/motionbrain/mission_state_typed` | publish | `motionbrain_msgs/msg/MissionState` | Mission supervisor state for detect-align-confirm-act flow |
+| `/motionbrain/mission_state` | publish | `std_msgs/String` | Compatibility mission state JSON |
 | `/motionbrain/status` | publish | `std_msgs/String` | Raw `GET /status` JSON |
 | `/motionbrain/status_typed` | publish | `motionbrain_msgs/msg/MotionStatus` | Stable status fields plus raw JSON |
 | `/motionbrain/events` | publish | `std_msgs/String` | Raw `GET /events?limit=N` JSON |
 | `/motionbrain/events_typed` | publish | `motionbrain_msgs/msg/MotionEvent` | One typed message per ESP32 event |
 | `/camera/detection` | publish | `std_msgs/String` | Color detection JSON from ESP32-CAM `/capture` |
 | `/camera/detection_typed` | publish | `motionbrain_msgs/msg/CameraDetection` | Stable detection/alignment fields plus raw JSON |
-| `/motionbrain/mission_cmd` | subscribe | `std_msgs/String` | `start`, `confirm`, `cancel`, `reset` mission commands |
+| `/motionbrain/mission_cmd_typed` | subscribe | `motionbrain_msgs/msg/MissionCommand` | Typed `start`, `confirm`, `cancel`, `reset` mission commands |
+| `/motionbrain/mission_cmd` | subscribe | `std_msgs/String` | Compatibility mission command input |
 | `/motionbrain/light_cmd` | subscribe | `std_msgs/String` | `on`, `off`, `toggle`, or `{"action":"toggle"}` |
 | `/motionbrain/light_cmd_typed` | subscribe | `motionbrain_msgs/msg/LightCommand` | Typed search-light command |
 | `/motionbrain/light_result` | publish | `std_msgs/String` | Raw `/light` command result JSON |
@@ -45,14 +49,16 @@ ros2 run motionbrain_ros_bridge motionbrain_kinematics_node \
 `motionbrain_control_guard_node` is implemented in C++ under the
 `motionbrain_control` package. The default launch file starts it automatically.
 It consumes `/motionbrain/status_typed` and `/camera/detection_typed`, then
-publishes `/motionbrain/control_guard` with readiness, stale-data checks,
-motion/fault checks, and a camera-derived suggested action.
+publishes `/motionbrain/control_guard_typed` with readiness, stale-data checks,
+motion/fault checks, and a camera-derived suggested action. The JSON
+`/motionbrain/control_guard` topic remains available for compatibility.
 
 `motionbrain_mission_supervisor` is implemented in the `motionbrain_mission`
 package. The default launch file starts it automatically. It implements a
 bounded `detect -> align -> operator confirm -> act` flow, publishes
-`/motionbrain/mission_state`, and only publishes `/motionbrain/light_cmd_typed`
-after an explicit operator `confirm`.
+`/motionbrain/mission_state_typed`, accepts `/motionbrain/mission_cmd_typed`,
+and only publishes `/motionbrain/light_cmd_typed` after an explicit operator
+`confirm`. JSON mission command/state topics remain available for compatibility.
 
 ## Build
 
@@ -114,8 +120,11 @@ ros2 topic echo /motionbrain/status
 ros2 topic echo /motionbrain/status_typed
 ros2 topic echo /joint_states
 ros2 topic echo /motionbrain/end_effector_pose
+ros2 topic echo /motionbrain/kinematics_typed
 ros2 topic echo /motionbrain/kinematics
+ros2 topic echo /motionbrain/control_guard_typed
 ros2 topic echo /motionbrain/control_guard
+ros2 topic echo /motionbrain/mission_state_typed
 ros2 topic echo /motionbrain/mission_state
 ros2 topic echo /motionbrain/events
 ros2 topic echo /motionbrain/events_typed

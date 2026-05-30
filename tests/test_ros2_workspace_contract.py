@@ -20,9 +20,21 @@ EXPECTED_RUNTIME_TOPICS = {
     "/camera/detection_typed",
     "/joint_states",
     "/motionbrain/end_effector_pose",
-    "/motionbrain/kinematics",
-    "/motionbrain/control_guard",
-    "/motionbrain/mission_state",
+    "/motionbrain/kinematics_typed",
+    "/motionbrain/control_guard_typed",
+    "/motionbrain/mission_state_typed",
+}
+
+EXPECTED_MESSAGE_FILES = {
+    "CameraDetection.msg",
+    "ControlGuard.msg",
+    "KinematicsState.msg",
+    "LightCommand.msg",
+    "LightResult.msg",
+    "MissionCommand.msg",
+    "MissionState.msg",
+    "MotionEvent.msg",
+    "MotionStatus.msg",
 }
 
 EXPECTED_PACKAGE_TEST_FILES = {
@@ -109,6 +121,14 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         self.assertIn("motionbrain_ros_bridge", description_deps)
         self.assertIn("robot_state_publisher", description_deps)
 
+    def test_motionbrain_message_inventory_is_explicit(self):
+        message_files = {
+            path.name
+            for path in (ROS2_SRC / "motionbrain_msgs" / "msg").iterdir()
+            if path.suffix == ".msg"
+        }
+        self.assertEqual(EXPECTED_MESSAGE_FILES, message_files)
+
     def test_health_check_covers_runtime_topics(self):
         script_text = (REPO_ROOT / "tools" / "raspi" / "check_ros_bridge_health.sh").read_text()
         required_block = re.search(r"required_topics=\(\n(?P<body>.*?)\n\)", script_text, re.S)
@@ -130,11 +150,14 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         ).read_text()
 
         expected_pairs = {
-            "control_guard_topic": "/motionbrain/control_guard",
+            "control_guard_topic": "/motionbrain/control_guard_typed",
+            "control_guard_json_topic": "/motionbrain/control_guard",
             "detection_topic": "/camera/detection_typed",
             "status_topic": "/motionbrain/status_typed",
-            "mission_cmd_topic": "/motionbrain/mission_cmd",
-            "mission_state_topic": "/motionbrain/mission_state",
+            "mission_cmd_topic": "/motionbrain/mission_cmd_typed",
+            "mission_cmd_json_topic": "/motionbrain/mission_cmd",
+            "mission_state_topic": "/motionbrain/mission_state_typed",
+            "mission_state_json_topic": "/motionbrain/mission_state",
             "light_cmd_topic": "/motionbrain/light_cmd_typed",
             "act_action": "toggle",
         }

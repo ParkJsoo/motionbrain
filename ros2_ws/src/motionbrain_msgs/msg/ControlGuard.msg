@@ -1,0 +1,16 @@
+builtin_interfaces/Time stamp
+bool ready
+string reason
+string suggested_action
+bool status_fresh
+bool detection_fresh
+float32 status_age_sec
+float32 detection_age_sec
+string state
+bool armed
+bool moving
+bool faulted
+bool camera_available
+bool target_detected
+string alignment
+string raw_json

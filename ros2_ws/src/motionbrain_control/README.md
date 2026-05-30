@@ -3,7 +3,8 @@
 C++ ROS2 control guard package for MotionBrain.
 
 The first node, `motionbrain_control_guard_node`, subscribes to typed robot
-status and camera detection topics, then publishes a JSON readiness decision on
+status and camera detection topics, then publishes a typed readiness decision on
+`/motionbrain/control_guard_typed` plus compatibility JSON on
 `/motionbrain/control_guard`.
 
 This node does not command hardware directly. It is a C++ control boundary for
@@ -17,6 +18,7 @@ whether the robot is armed and a target is detected.
 | --- | --- | --- |
 | `/motionbrain/status_typed` | subscribe | `motionbrain_msgs/msg/MotionStatus` |
 | `/camera/detection_typed` | subscribe | `motionbrain_msgs/msg/CameraDetection` |
+| `/motionbrain/control_guard_typed` | publish | `motionbrain_msgs/msg/ControlGuard` |
 | `/motionbrain/control_guard` | publish | `std_msgs/msg/String` JSON |
 
 ## Parameters
@@ -25,7 +27,8 @@ whether the robot is armed and a target is detected.
 | --- | --- | --- |
 | `status_topic` | `/motionbrain/status_typed` | Typed status input |
 | `detection_topic` | `/camera/detection_typed` | Typed camera detection input |
-| `output_topic` | `/motionbrain/control_guard` | Guard decision output |
+| `output_topic` | `/motionbrain/control_guard_typed` | Typed guard decision output |
+| `json_output_topic` | `/motionbrain/control_guard` | Compatibility JSON output |
 | `stale_timeout_sec` | `3.0` | Maximum allowed age for required inputs |
 | `require_armed` | `false` | Require the ESP32 controller state to be armed |
 | `require_detection` | `false` | Require a fresh detected camera target |
@@ -58,4 +61,5 @@ Watch the guard output:
 
 ```bash
 ros2 topic echo /motionbrain/control_guard --once
+ros2 topic echo /motionbrain/control_guard_typed --once
 ```

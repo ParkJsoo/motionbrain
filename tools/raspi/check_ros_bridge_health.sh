@@ -5,15 +5,17 @@ SERVICE_NAME="${MOTIONBRAIN_SERVICE_NAME:-motionbrain-ros-bridge.service}"
 ROS_DISTRO="${ROS_DISTRO:-jazzy}"
 WORKSPACE="${MOTIONBRAIN_ROS_WS:-/home/motionbrain/develop/arduino/motionbrain/ros2_ws}"
 CHECK_SERVICE="${CHECK_SERVICE:-1}"
+TOPIC_WAIT_SECONDS="${TOPIC_WAIT_SECONDS:-20}"
+TOPIC_POLL_SECONDS="${TOPIC_POLL_SECONDS:-1}"
 
 required_topics=(
   "/motionbrain/status_typed"
   "/camera/detection_typed"
   "/joint_states"
   "/motionbrain/end_effector_pose"
-  "/motionbrain/kinematics"
-  "/motionbrain/control_guard"
-  "/motionbrain/mission_state"
+  "/motionbrain/kinematics_typed"
+  "/motionbrain/control_guard_typed"
+  "/motionbrain/mission_state_typed"
 )
 
 if [[ "${CHECK_SERVICE}" == "1" ]]; then
@@ -30,8 +32,16 @@ source "${WORKSPACE}/install/setup.bash"
 
 set -u
 
-topics="$(timeout 8 ros2 topic list)"
 for topic in "${required_topics[@]}"; do
+  topic_deadline=$((SECONDS + TOPIC_WAIT_SECONDS))
+  topics=""
+  while (( SECONDS <= topic_deadline )); do
+    topics="$(timeout 8 ros2 topic list || true)"
+    if grep -qx "${topic}" <<< "${topics}"; then
+      break
+    fi
+    sleep "${TOPIC_POLL_SECONDS}"
+  done
   if ! grep -qx "${topic}" <<< "${topics}"; then
     echo "FAIL missing topic: ${topic}" >&2
     echo "${topics}" >&2
@@ -52,11 +62,11 @@ echo "OK joint state sample"
 timeout 10 ros2 topic echo /motionbrain/end_effector_pose --once >/dev/null
 echo "OK end-effector pose sample"
 
-timeout 10 ros2 topic echo /motionbrain/kinematics --once >/dev/null
-echo "OK kinematics sample"
+timeout 10 ros2 topic echo /motionbrain/kinematics_typed --once >/dev/null
+echo "OK kinematics typed sample"
 
-timeout 10 ros2 topic echo /motionbrain/control_guard --once >/dev/null
-echo "OK control guard sample"
+timeout 10 ros2 topic echo /motionbrain/control_guard_typed --once >/dev/null
+echo "OK control guard typed sample"
 
-timeout 10 ros2 topic echo /motionbrain/mission_state --once >/dev/null
-echo "OK mission state sample"
+timeout 10 ros2 topic echo /motionbrain/mission_state_typed --once >/dev/null
+echo "OK mission state typed sample"

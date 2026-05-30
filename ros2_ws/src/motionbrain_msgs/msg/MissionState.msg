@@ -1,0 +1,13 @@
+builtin_interfaces/Time stamp
+string state
+string reason
+string next_step
+string suggested_action
+bool guard_ready
+string guard_reason
+bool status_fresh
+bool detection_fresh
+bool target_detected
+string alignment
+float32 area_ratio
+string raw_json

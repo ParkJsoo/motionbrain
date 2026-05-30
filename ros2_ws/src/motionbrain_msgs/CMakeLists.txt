@@ -11,8 +11,12 @@ find_package(rosidl_default_generators REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/CameraDetection.msg"
+  "msg/ControlGuard.msg"
+  "msg/KinematicsState.msg"
   "msg/LightCommand.msg"
   "msg/LightResult.msg"
+  "msg/MissionCommand.msg"
+  "msg/MissionState.msg"
   "msg/MotionEvent.msg"
   "msg/MotionStatus.msg"
   DEPENDENCIES builtin_interfaces
