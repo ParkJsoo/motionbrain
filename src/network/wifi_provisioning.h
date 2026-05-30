@@ -19,6 +19,7 @@ class WifiProvisioning {
 public:
   static bool load(WifiProvisioningConfig& config);
   static bool save(const WifiProvisioningConfig& config);
+  static bool saveCommandToken(const char* token);
   static void clear();
   static bool promptIfMissing(WifiProvisioningConfig& config);
   static bool clearRequestedOnBoot(uint32_t timeoutMs = 3000);

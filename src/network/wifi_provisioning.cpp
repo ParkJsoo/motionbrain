@@ -79,6 +79,33 @@ bool WifiProvisioning::save(const WifiProvisioningConfig& config) {
   return ok;
 }
 
+bool WifiProvisioning::saveCommandToken(const char* token) {
+  if (token == nullptr) {
+    DebugLog::warn("Wi-Fi provisioning: command token cannot be null");
+    return false;
+  }
+
+  String value(token);
+  value.trim();
+  if (value.length() == 0) {
+    DebugLog::warn("Wi-Fi provisioning: command token cannot be empty");
+    return false;
+  }
+
+  WifiProvisioningConfig config;
+  if (value.length() >= sizeof(config.commandToken)) {
+    DebugLog::warn("Wi-Fi provisioning: command token too long");
+    return false;
+  }
+  if (!load(config)) {
+    DebugLog::warn("Wi-Fi provisioning: no stored Wi-Fi config to update");
+    return false;
+  }
+
+  strlcpy(config.commandToken, value.c_str(), sizeof(config.commandToken));
+  return save(config);
+}
+
 void WifiProvisioning::clear() {
   Preferences prefs;
   if (!prefs.begin(WIFI_PREF_NAMESPACE, false)) {

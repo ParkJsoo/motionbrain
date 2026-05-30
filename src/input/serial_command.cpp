@@ -11,12 +11,30 @@
 #include "motor/motor_driver.h"
 #include "motion/robot_arm.h"
 #include "motion/motion_sequence.h"
+#include "network/wifi_provisioning.h"
 #include "peripheral/search_light.h"
 
 extern Stm32Bridge stm32Bridge;
 extern SafetyMonitor safetyMonitor;
 extern AngleController angleController;
 extern TeleopAdapter teleopAdapter;
+
+namespace {
+
+constexpr size_t COMMAND_TOKEN_MAX_LEN = 64;
+
+bool isSensitiveSerialCommand(const char* command) {
+  if (command == nullptr) {
+    return false;
+  }
+
+  while (*command == ' ' || *command == '\t') {
+    command++;
+  }
+  return strncasecmp(command, "wifi token", 10) == 0;
+}
+
+} // namespace
 
 /**
  * SerialCommand 생성자
@@ -229,8 +247,11 @@ void SerialCommand::processSerialInput() {
         commandReady_ = true;
         bufferIndex_ = 0;  // 다음 명령어를 위해 인덱스 리셋
 
-        // 디버그 로그 (나중에 제거 가능)
-        DebugLog::debug("Command received: %s", commandBuffer_);
+        if (isSensitiveSerialCommand(commandBuffer_)) {
+          DebugLog::debug("Command received: wifi token [redacted]");
+        } else {
+          DebugLog::debug("Command received: %s", commandBuffer_);
+        }
         return;
       }
     }
@@ -298,6 +319,9 @@ void SerialCommand::processCommand(const char* cmdName, const char* args) {
   else if (strcasecmp(cmdName, "sensor") == 0) {
     handleSensor(args);
   }
+  else if (strcasecmp(cmdName, "wifi") == 0) {
+    handleWifi(args);
+  }
   else {
     // 알 수 없는 명령어
     DebugLog::warn("Unknown command: %s", cmdName);
@@ -316,6 +340,7 @@ void SerialCommand::handleHelp() {
   DebugLog::info("  disarm    - Disarm the system (ARMED -> IDLE)");
   DebugLog::info("  stop      - Emergency stop / FAULT 상태 복구");
   DebugLog::info("  sensor    - Show sensor status / simulation control");
+  DebugLog::info("  wifi      - Show/update Wi-Fi provisioning state");
   DebugLog::info("");
   DebugLog::info("=== Motor Control Commands ===");
   DebugLog::info("  motor forward <id> [percent]  - Motor forward (default: 100%%)");
@@ -382,6 +407,10 @@ void SerialCommand::handleHelp() {
   DebugLog::info("  sensor sim rotate <dir> <dps> - Continuous gyro packets for base angle");
   DebugLog::info("  sensor sim stale              - Emit once, then freeze for stale");
   DebugLog::info("  sensor sim off                - Disable simulation and clear snapshot");
+  DebugLog::info("");
+  DebugLog::info("=== Wi-Fi Provisioning Commands ===");
+  DebugLog::info("  wifi status                  - Show Wi-Fi/token provisioning state");
+  DebugLog::info("  wifi token <value>           - Update command token and reboot");
   DebugLog::info("");
   DebugLog::info("=== Teleop Bring-Up Note ===");
   DebugLog::info("  Single-STM32 remote bench: teleop frames can carry embedded safety telemetry");
@@ -628,6 +657,67 @@ void SerialCommand::handleSensor(const char* args) {
   }
 
   DebugLog::warn("sensor sim: unknown mode '%s'", mode);
+}
+
+void SerialCommand::handleWifi(const char* args) {
+  if (args == nullptr || args[0] == '\0') {
+    DebugLog::info("Wi-Fi commands:");
+    DebugLog::info("  wifi status");
+    DebugLog::info("  wifi token <value>");
+    return;
+  }
+
+  while (*args == ' ' || *args == '\t') {
+    args++;
+  }
+
+  char action[16];
+  size_t i = 0;
+  while (args[i] != '\0' && args[i] != ' ' && args[i] != '\t' && i < sizeof(action) - 1) {
+    action[i] = args[i];
+    i++;
+  }
+  action[i] = '\0';
+
+  const char* rest = args + i;
+  while (*rest == ' ' || *rest == '\t') {
+    rest++;
+  }
+
+  if (strcasecmp(action, "status") == 0) {
+    WifiProvisioningConfig config;
+    if (!WifiProvisioning::load(config)) {
+      DebugLog::warn("Wi-Fi provisioning: no stored home Wi-Fi config");
+      return;
+    }
+    DebugLog::info("Wi-Fi provisioning: SSID configured");
+    DebugLog::info("Wi-Fi provisioning: command token %s",
+                   config.commandToken[0] != '\0' ? "configured" : "missing");
+    return;
+  }
+
+  if (strcasecmp(action, "token") == 0) {
+    String token(rest);
+    token.trim();
+    if (token.length() == 0) {
+      DebugLog::warn("Usage: wifi token <value>");
+      return;
+    }
+    if (token.length() > COMMAND_TOKEN_MAX_LEN) {
+      DebugLog::warn("Wi-Fi provisioning: command token too long");
+      return;
+    }
+    if (!WifiProvisioning::saveCommandToken(token.c_str())) {
+      DebugLog::warn("Wi-Fi provisioning: command token update failed");
+      return;
+    }
+    DebugLog::info("Wi-Fi provisioning: command token updated; restarting controller");
+    delay(200);
+    ESP.restart();
+    return;
+  }
+
+  DebugLog::warn("Unknown wifi command: %s", action);
 }
 
 /**

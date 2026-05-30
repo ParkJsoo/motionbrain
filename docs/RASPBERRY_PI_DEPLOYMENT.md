@@ -255,3 +255,6 @@ journalctl -u motionbrain-ros-bridge.service -n 120 --no-pager
 토큰 오류는 `/motionbrain/light_result`에서 `HTTP Error 403: Forbidden`으로
 보인다. 이 경우 `/etc/motionbrain/ros-bridge.env`의
 `MOTIONBRAIN_HTTP_TOKEN`이 ESP32에 provision된 token과 같은지 확인한다.
+ESP32 쪽 token만 바꿔 Pi env와 맞추려면 controller serial monitor에서
+`wifi token <new-command-token>`을 실행한다. 이 명령은 Wi-Fi SSID/password를
+지우지 않고 NVS token만 갱신한 뒤 controller를 재부팅한다.

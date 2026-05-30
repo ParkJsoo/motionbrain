@@ -40,6 +40,17 @@ device. Rebooting uses the stored values automatically.
 To erase stored values, type `CLEAR` during the short boot prompt in the serial
 monitor. Then reboot or wait for the provisioning prompt.
 
+To rotate only the motion controller command token while preserving the stored
+Wi-Fi SSID/password, open the controller serial monitor and run:
+
+```text
+wifi token <new-command-token>
+```
+
+The firmware redacts this command in serial debug logs, writes only the token
+field to ESP32 NVS, and restarts the controller so the web server reloads the
+new token.
+
 ## Build And Upload
 
 Motion controller:

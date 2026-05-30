@@ -91,10 +91,10 @@ public:
 
 private:
   // 시리얼 입력 버퍼
-  // ARGS_SIZE=48: "sequence add shoulder up 100 10000" 같은 긴 인자 수용
-  static const size_t BUFFER_SIZE = 96;   // 최대 명령어 길이
+  // Long enough for operational commands such as `wifi token <64 chars>`.
+  static const size_t BUFFER_SIZE = 128;  // 최대 명령어 길이
   static const size_t CMD_NAME_SIZE = 32; // 최대 명령어 이름 길이
-  static const size_t ARGS_SIZE = 48;     // 최대 인자 길이
+  static const size_t ARGS_SIZE = 96;     // 최대 인자 길이
   char commandBuffer_[BUFFER_SIZE];      // 명령어 버퍼
   bool commandReady_;                    // 명령어 수신 완료 플래그
   size_t bufferIndex_;                   // 현재 버퍼 인덱스
@@ -188,6 +188,12 @@ private:
    * 센서 상태 조회 및 simulation 주입
    */
   void handleSensor(const char* args);
+
+  /**
+   * wifi 명령어 처리
+   * Wi-Fi/NVS 운영 상태 조회 및 command token 갱신
+   */
+  void handleWifi(const char* args);
 
   // 외부 객체 참조 (명령어 처리용)
   SystemStateManager* systemState_;
