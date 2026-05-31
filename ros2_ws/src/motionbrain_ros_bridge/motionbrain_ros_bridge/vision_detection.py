@@ -26,6 +26,7 @@ class DetectionConfig:
     object_input_size: int = 320
     object_backend: str = "fake"
     object_model: str = ""
+    object_labels: str = ""
     target_policy: str = "largest"
 
 

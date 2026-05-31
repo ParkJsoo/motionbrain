@@ -917,6 +917,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                         "ok": True,
                         "motionBaseUrl": self.server.motion_base_url,
                         "cameraUrl": self.server.camera_url,
+                        "perceptionUrl": self.server.perception_url,
                         "detectColor": self.server.detect_color,
                         "hasHttpToken": bool(self.server.http_token),
                         "dashboardToken": self.server.dashboard_token,
@@ -995,12 +996,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if alignment not in {"LEFT", "RIGHT"}:
                 self.send_error_json(HTTPStatus.BAD_REQUEST, "alignment_must_be_LEFT_or_RIGHT")
                 return
-            if not self.server.camera_url:
+            if not self.server.camera_url and not self.server.perception_url:
                 self.send_error_json(HTTPStatus.BAD_REQUEST, "camera_url_not_configured")
                 return
 
-            frame, _ = self.server.get_camera_frame()
-            detection = detect_colored_target(frame, self.server.detect_color)
+            detection = self.server.get_detection()
             if not detection.get("detected") or detection.get("alignment") != alignment:
                 detected_alignment = str(detection.get("alignment", "LOST"))
                 self.send_error_json(HTTPStatus.CONFLICT, f"alignment_changed:{detected_alignment}")
@@ -1043,14 +1043,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.wfile.write(frame)
 
     def handle_detection(self) -> None:
-        if not self.server.camera_url:
+        if not self.server.camera_url and not self.server.perception_url:
             self.send_error_json(HTTPStatus.BAD_REQUEST, "camera_url_not_configured")
             return
 
-        frame, _ = self.server.get_camera_frame()
-        payload = detect_colored_target(frame, self.server.detect_color)
-        payload["cameraUrl"] = self.server.camera_url
-        payload["ts"] = time.time()
+        payload = self.server.get_detection()
         self.send_json(payload, allow_cross_origin=True)
 
     def send_html(self, html: str) -> None:
@@ -1098,6 +1095,7 @@ class DashboardServer(ThreadingHTTPServer):
         handler_class: type[BaseHTTPRequestHandler],
         motion_base_url: str,
         camera_url: str,
+        perception_url: str,
         detect_color: str,
         timeout: float,
         events_limit: int,
@@ -1109,6 +1107,7 @@ class DashboardServer(ThreadingHTTPServer):
         super().__init__(server_address, handler_class)
         self.motion_base_url = motion_base_url
         self.camera_url = camera_url.rstrip("/")
+        self.perception_url = perception_url.rstrip("/")
         self.detect_color = detect_color
         self.timeout = timeout
         self.events_limit = events_limit
@@ -1134,6 +1133,8 @@ class DashboardServer(ThreadingHTTPServer):
         return True, "ok"
 
     def get_camera_frame(self) -> tuple[bytes, str]:
+        if self.perception_url:
+            return fetch_bytes(f"{self.perception_url}/api/vision_frame", self.timeout)
         if not self.camera_url:
             raise ValueError("camera_url_not_configured")
 
@@ -1148,6 +1149,19 @@ class DashboardServer(ThreadingHTTPServer):
             self.camera_cache = (time.monotonic(), frame, content_type)
             return frame, content_type
 
+    def get_detection(self) -> dict[str, Any]:
+        if self.perception_url:
+            payload = fetch_json(f"{self.perception_url}/api/detection", self.timeout)
+            if not isinstance(payload, dict):
+                raise ValueError("perception_detection_not_object")
+            return payload
+
+        frame, _ = self.get_camera_frame()
+        payload = detect_colored_target(frame, self.detect_color)
+        payload["cameraUrl"] = self.camera_url
+        payload["ts"] = time.time()
+        return payload
+
 
 def run(args: argparse.Namespace) -> int:
     motion_base_url = f"http://{args.motion_host}:{args.motion_port}"
@@ -1156,6 +1170,7 @@ def run(args: argparse.Namespace) -> int:
         DashboardHandler,
         motion_base_url,
         args.camera_url,
+        args.perception_url,
         args.detect_color,
         args.timeout,
         args.events_limit,
@@ -1167,6 +1182,7 @@ def run(args: argparse.Namespace) -> int:
     print(f"MotionBrain ops dashboard: http://{args.host}:{args.port}")
     print(f"motion={motion_base_url}")
     print(f"camera={args.camera_url or 'disabled'}")
+    print(f"perception={args.perception_url or 'local'}")
     print(f"dashboard_token={args.dashboard_token}")
     try:
         server.serve_forever()
@@ -1186,6 +1202,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--motion-host", default="192.168.4.1", help="MotionBrain controller IP")
     parser.add_argument("--motion-port", type=int, default=80, help="MotionBrain HTTP port")
     parser.add_argument("--camera-url", default="", help="ESP32-CAM base URL, for example http://192.168.4.2")
+    parser.add_argument("--perception-url", default="", help="Optional MotionBrain perception service base URL")
     parser.add_argument("--detect-color", choices=("red", "green", "blue"), default="red")
     parser.add_argument("--timeout", type=float, default=2.0, help="HTTP timeout in seconds")
     parser.add_argument("--events-limit", type=int, default=12, help="Default event query limit")
