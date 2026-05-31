@@ -392,7 +392,7 @@ Host watcher는 `GET /status`, `GET /events`를 주기적으로 읽어 state, sa
 python3 tools/motionbrain_watch.py --host 192.168.4.1 --interval 1.0
 ```
 
-Local ops dashboard는 같은 상태/이벤트 경계에 ESP32-CAM capture, 색상 감지, light command log, token-gated one-shot vision nudge control을 더해 브라우저에서 보여준다. Dashboard POST는 로컬 dashboard token 헤더가 있어야 처리된다. 수동 조작은 ESP32가 직접 제공하는 `MotionBrain Control`을 사용한다. `MotionBrain Control`은 모든 state-changing command에서 provisioned command token을 요구하며, 입력값은 현재 브라우저 페이지 메모리에만 유지한다. 2026-05-25 bench에서는 phone browser에서 token prompt와 command 동작을 확인했다.
+Local ops dashboard는 같은 상태/이벤트 경계에 ESP32-CAM capture, 색상 감지, target overlay, light command log, token-gated one-shot vision nudge control을 더해 브라우저에서 보여준다. Dashboard POST는 로컬 dashboard token 헤더가 있어야 처리되고, controller로 전달되는 light/nudge POST는 `MOTIONBRAIN_HTTP_TOKEN`이 provisioned command token과 맞아야 처리된다. 수동 조작은 ESP32가 직접 제공하는 `MotionBrain Control`을 사용한다. `MotionBrain Control`은 모든 state-changing command에서 provisioned command token을 요구하며, 입력값은 현재 브라우저 페이지 메모리에만 유지한다. 2026-05-25 bench에서는 phone browser에서 token prompt와 command 동작을 확인했다.
 
 ```bash
 python3 tools/motionbrain_dashboard.py --camera-url http://192.168.4.2
@@ -403,6 +403,20 @@ python3 tools/motionbrain_dashboard.py --camera-url http://192.168.4.2
 ```text
 http://127.0.0.1:8765
 ```
+
+Raspberry Pi에서 dashboard를 LAN에 공개해 demo view로 쓸 때는 신뢰된 네트워크에서만 `--host 0.0.0.0`로 bind한다.
+
+```bash
+export MOTIONBRAIN_HTTP_TOKEN="<local-controller-token>"
+python3 tools/motionbrain_dashboard.py \
+  --host 0.0.0.0 \
+  --motion-host <controller-ip> \
+  --camera-url http://<camera-ip> \
+  --detect-color red \
+  --timeout 6
+```
+
+기본 Nudge Once는 `250ms`/`25%`로 보수적이다. 실제 움직임을 영상에서 더 잘 보이게 할 때는 주변 clearance와 stop 동작을 확인한 뒤 `--align-nudge-ms 600 --align-percent 40` 정도로 올려 실행한다.
 
 STM32 teleop remote가 연결된 bench 구성에서는 teleop frame 안의 embedded safety telemetry로 `SENSOR_STALE`을 해제한다. 하드웨어 없이 safety 상태를 재현하거나 fault case를 강제로 만들 때는 simulation 명령을 사용할 수 있다.
 

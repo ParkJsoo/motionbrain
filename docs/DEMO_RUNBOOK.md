@@ -376,6 +376,7 @@ dashboard view가 필요하면:
 ```bash
 export MOTIONBRAIN_HTTP_TOKEN="<local-controller-token>"
 python3 tools/motionbrain_dashboard.py \
+  --host 0.0.0.0 \
   --motion-host <controller-ip> \
   --camera-url http://<camera-ip> \
   --detect-color red \
@@ -386,6 +387,7 @@ python3 tools/motionbrain_dashboard.py \
 
 ```text
 http://127.0.0.1:8765
+http://<pi-ip>:8765
 ```
 
 ## Segment 4: Timed Vision Nudge
@@ -398,6 +400,8 @@ http://127.0.0.1:8765
 - test 직전에 arm 한다.
 - red target을 camera view 안에 둔다.
 - 낮은 percent와 짧은 nudge duration을 사용한다.
+- 기본값은 보수적인 `250ms`/`25%`다. 영상에서 움직임이 너무 약하면
+  clearance와 stop 동작을 확인한 뒤 `600ms`/`40%` 정도로만 올린다.
 
 명령:
 

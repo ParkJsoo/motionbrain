@@ -372,6 +372,7 @@ Optional dashboard view:
 ```bash
 export MOTIONBRAIN_HTTP_TOKEN="<local-controller-token>"
 python3 tools/motionbrain_dashboard.py \
+  --host 0.0.0.0 \
   --motion-host <controller-ip> \
   --camera-url http://<camera-ip> \
   --detect-color red \
@@ -382,6 +383,7 @@ Open:
 
 ```text
 http://127.0.0.1:8765
+http://<pi-ip>:8765
 ```
 
 ## Segment 4: Timed Vision Nudge
@@ -395,6 +397,8 @@ Start with:
 - arm immediately before the test
 - keep the red target visible
 - use conservative settings
+- the default `250ms`/`25%` setting is conservative; if movement is too subtle
+  on video, after checking clearance and stop behavior, use about `600ms`/`40%`
 
 Command:
 

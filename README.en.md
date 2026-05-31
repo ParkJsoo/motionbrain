@@ -330,7 +330,7 @@ pio run -d firmware/esp32cam
 
 See [PHASE4_MVP.md](PHASE4_MVP.md) for the current camera-to-host MVP plan. The dry-run vision loop reports target center, normalized offset, `LEFT|CENTER|RIGHT|LOST` alignment, and a command suggestion before any optional motion command is enabled. On the current handheld-teleop hardware, opt-in physical alignment uses a short safety-gated base nudge; closed-loop base angle mode is reserved for future base-mounted gyro or encoder feedback.
 
-For bench work on a trusted home LAN, see [docs/HOME_WIFI_MODE.md](docs/HOME_WIFI_MODE.md). The ESP32-hosted `MotionBrain Control` page is the primary manual control surface and works from a phone browser on the same Wi-Fi network. If a command token is configured, the page prompts for it at runtime on the first state-changing command and keeps it only in current page memory. The local ops dashboard at `http://127.0.0.1:8765` is used for observability, camera/detection, and the token-gated one-shot vision nudge.
+For bench work on a trusted home LAN, see [docs/HOME_WIFI_MODE.md](docs/HOME_WIFI_MODE.md). The ESP32-hosted `MotionBrain Control` page is the primary manual control surface and works from a phone browser on the same Wi-Fi network. If a command token is configured, the page prompts for it at runtime on the first state-changing command and keeps it only in current page memory. The local ops dashboard at `http://127.0.0.1:8765` is used for observability, camera/detection with target overlay, and the token-gated one-shot vision nudge.
 
 ### STM32
 
@@ -358,7 +358,21 @@ The host watcher polls `GET /status` and `GET /events` and prints state, safety,
 python3 tools/motionbrain_watch.py --host 192.168.4.1 --interval 1.0
 ```
 
-The local ops dashboard combines status/events with ESP32-CAM capture, color detection, light command logging, and the one-shot vision nudge control. Manual driving remains on the ESP32 `MotionBrain Control` page so the phone browser can act as the wireless controller.
+The local ops dashboard combines status/events with ESP32-CAM capture, color detection, target overlay, light command logging, and the one-shot vision nudge control. Dashboard POSTs require the local dashboard token, and light/nudge POSTs forwarded to the controller also require `MOTIONBRAIN_HTTP_TOKEN` to match the provisioned command token. Manual driving remains on the ESP32 `MotionBrain Control` page so the phone browser can act as the wireless controller.
+
+For a Raspberry Pi-hosted demo dashboard on a trusted LAN:
+
+```bash
+export MOTIONBRAIN_HTTP_TOKEN="<local-controller-token>"
+python3 tools/motionbrain_dashboard.py \
+  --host 0.0.0.0 \
+  --motion-host <controller-ip> \
+  --camera-url http://<camera-ip> \
+  --detect-color red \
+  --timeout 6
+```
+
+The default Nudge Once setting is conservative at `250ms`/`25%`. For a more visible demo movement, after checking clearance and stop behavior, use about `--align-nudge-ms 600 --align-percent 40`.
 
 ## Why This Project Matters
 

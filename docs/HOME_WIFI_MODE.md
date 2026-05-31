@@ -97,6 +97,24 @@ python3 tools/motionbrain_dashboard.py \
   --camera-url http://motionbrain-cam.local
 ```
 
+For a Raspberry Pi-hosted dashboard that is reachable from another browser on
+the same trusted LAN, bind the dashboard to the Pi's LAN interface:
+
+```bash
+export MOTIONBRAIN_HTTP_TOKEN="CHANGE_ME_TO_A_LONG_RANDOM_LOCAL_TOKEN"
+python3 tools/motionbrain_dashboard.py \
+  --host 0.0.0.0 \
+  --motion-host <controller-ip> \
+  --camera-url http://<camera-ip> \
+  --detect-color red \
+  --timeout 6
+```
+
+Then open `http://<pi-ip>:8765`. Keep this on a trusted local network only.
+The default dashboard Nudge Once setting is conservative (`250ms`/`25%`). For a
+visible demo nudge after confirming clearance and stop behavior, restart with
+`--align-nudge-ms 600 --align-percent 40`.
+
 If `.local` names do not resolve, use the IP addresses printed in serial logs or
 reserve fixed IP addresses in the router.
 
@@ -127,9 +145,10 @@ Bench verification on 2026-05-25 confirmed the phone flow: the token prompt
 appears, the entered token is accepted, and controller commands execute from the
 phone browser.
 
-Use the local ops dashboard at `http://127.0.0.1:8765` for status, events,
-ESP32-CAM, and vision alignment observation. Do not duplicate manual control
-there.
+Use the local ops dashboard at `http://127.0.0.1:8765` locally, or
+`http://<pi-ip>:8765` when hosted on the Pi, for status, events, ESP32-CAM,
+target overlay, and vision alignment observation. Do not duplicate manual
+control there.
 
 The local ops dashboard and controller firmware suppress routine successful
 status/event polling logs so serial and dashboard terminals stay focused on
