@@ -9,6 +9,7 @@ from launch_ros.parameter_descriptions import ParameterValue
 def generate_launch_description() -> LaunchDescription:
     motion_host = LaunchConfiguration("motion_host")
     camera_url = LaunchConfiguration("camera_url")
+    perception_url = LaunchConfiguration("perception_url")
     detect_color = LaunchConfiguration("detect_color")
     poll_interval = LaunchConfiguration("poll_interval")
     http_timeout = LaunchConfiguration("http_timeout")
@@ -28,6 +29,11 @@ def generate_launch_description() -> LaunchDescription:
                 "camera_url",
                 default_value="http://motionbrain-cam.local",
                 description="ESP32-CAM base URL.",
+            ),
+            DeclareLaunchArgument(
+                "perception_url",
+                default_value="",
+                description="Optional Pi perception service base URL. When set, /camera/detection comes from /api/detection instead of direct camera polling.",
             ),
             DeclareLaunchArgument(
                 "detect_color",
@@ -73,6 +79,7 @@ def generate_launch_description() -> LaunchDescription:
                     {
                         "motion_host": motion_host,
                         "camera_url": camera_url,
+                        "perception_url": perception_url,
                         "detect_color": detect_color,
                         "poll_interval": ParameterValue(poll_interval, value_type=float),
                         "http_timeout": ParameterValue(http_timeout, value_type=float),

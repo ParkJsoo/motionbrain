@@ -52,7 +52,7 @@ Do not describe this as a general-purpose autonomous grasping system.
 
 ## Current Branch Status
 
-As of 2026-05-31 on `feature/pi-object-detection-mvp`:
+As of 2026-06-01 on `feature/pi-object-detection-mvp`:
 
 - Milestone 1 is implemented: shared detection contract, selected-target JSON,
   fake object backend contract tests, and color compatibility.
@@ -64,9 +64,16 @@ As of 2026-05-31 on `feature/pi-object-detection-mvp`:
   YOLO raw-output decoding, confidence filtering, NMS, and detector injection
   into the Pi perception service. Model weights are intentionally not
   committed.
-- Live hardware validation is currently color-mode only. Real object-mode
-  validation still requires selecting/downloading a small Pi-suitable model and
-  labels file outside the repository.
+- Live hardware validation confirms the Pi perception service and dashboard can
+  track red color targets reliably with the ESP32-CAM QVGA feed.
+- Live object-mode validation on the same QVGA feed loaded YOLOv5n, YOLOv5s,
+  and a YOLOv8n ONNX candidate through the Pi OpenCV DNN path, but a white cup
+  target was not detected reliably. Keep this as a runtime-capable MVP path,
+  not a guaranteed arbitrary-object demo.
+- ROS2 can consume the Pi perception service through `perception_url`, so
+  `/camera/detection` and `/camera/detection_typed` can publish the same
+  selected target used by the dashboard without opening an additional
+  ESP32-CAM connection.
 
 ## Perception Design
 
@@ -103,11 +110,24 @@ Current object-backend step:
   `--detector-mode color`; if object mode is explicitly requested without a
   usable model, fail fast instead of silently changing the requested mode.
 
-Recommended first live model:
+Current ROS2 compatibility step:
 
-- Current tested Pi path: `YOLOv5n` detect ONNX with the Pi cache venv OpenCV
-  runtime. The official `YOLO11n` ONNX asset is a better modern target, but it
-  did not load through OpenCV DNN on the current Pi due ONNX shape handling.
+- Add optional `perception_url` plumbing to the ROS2 status bridge launch and
+  systemd startup path.
+- When `perception_url` is set, publish the Pi perception service
+  `/api/detection` payload to `/camera/detection` and `/camera/detection_typed`
+  instead of directly fetching ESP32-CAM frames in the ROS2 node.
+- Promote selected target fields (`target_type`, `label`, `class_id`,
+  `confidence`) into `CameraDetection.msg`; keep the full payload in
+  `raw_json`.
+
+Recommended first live model path:
+
+- Current tested Pi path: small YOLO ONNX models through the Pi cache venv
+  OpenCV runtime. `YOLOv5n`, `YOLOv5s`, and one `YOLOv8n` ONNX candidate load
+  and return candidates, but did not reliably classify the live white cup at
+  QVGA. The official `YOLO11n` ONNX asset is a better modern target, but it did
+  not load through OpenCV DNN on the current Pi due ONNX shape handling.
 - Use `config/coco80.labels` for COCO class names.
 - Start with `--object-input-size 640` for correctness, then benchmark 416/320
   if Pi CPU load is too high.

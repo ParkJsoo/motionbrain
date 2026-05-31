@@ -44,9 +44,16 @@ sudo nano /etc/motionbrain/ros-bridge.env
 - `MOTIONBRAIN_HOST`
 - `MOTIONBRAIN_CAMERA_URL`
 - `MOTIONBRAIN_HTTP_TOKEN`
+- `MOTIONBRAIN_PERCEPTION_URL` if the Pi perception service should provide
+  `/camera/detection` instead of direct ESP32-CAM polling
 
 DHCP IP가 바뀌면 `.local`이 되는 환경에서는 hostname을 쓰고, Pi에서 `.local`이
 불안정하면 router DHCP reservation을 잡은 IP를 쓴다.
+
+객체 인식 또는 tracked camera overlay를 Pi perception service로 운영할 때는
+예를 들어 `MOTIONBRAIN_PERCEPTION_URL=http://192.168.219.114:8766`을 설정한다.
+이 값을 비워두면 ROS2 bridge가 기존처럼 `MOTIONBRAIN_CAMERA_URL/capture`를 직접
+폴링해서 색상 감지를 수행한다.
 
 ## 서비스 설치
 

@@ -44,9 +44,17 @@ Set:
 - `MOTIONBRAIN_HOST`
 - `MOTIONBRAIN_CAMERA_URL`
 - `MOTIONBRAIN_HTTP_TOKEN`
+- `MOTIONBRAIN_PERCEPTION_URL` if the Pi perception service should provide
+  `/camera/detection` instead of direct ESP32-CAM polling
 
 Use hostnames when `.local` works. If mDNS is unstable on the Pi, reserve stable
 DHCP addresses in the router and use those IPs.
+
+For object detection or tracked camera overlay through the Pi perception
+service, set a value such as
+`MOTIONBRAIN_PERCEPTION_URL=http://192.168.219.114:8766`. Leave it empty to keep
+the original bridge behavior, where ROS2 polls `MOTIONBRAIN_CAMERA_URL/capture`
+directly and runs color detection.
 
 ## Install Service
 

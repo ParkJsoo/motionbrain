@@ -1,6 +1,10 @@
 builtin_interfaces/Time stamp
 bool available
 bool detected
+string target_type
+string label
+int32 class_id
+float32 confidence
 string color
 string alignment
 string command_suggestion

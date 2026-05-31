@@ -5,6 +5,7 @@ ROS_DISTRO="${ROS_DISTRO:-jazzy}"
 WORKSPACE="${MOTIONBRAIN_ROS_WS:-/home/motionbrain/develop/arduino/motionbrain/ros2_ws}"
 MOTION_HOST="${MOTIONBRAIN_HOST:-motionbrain.local}"
 CAMERA_URL="${MOTIONBRAIN_CAMERA_URL:-http://motionbrain-cam.local}"
+PERCEPTION_URL="${MOTIONBRAIN_PERCEPTION_URL:-}"
 DETECT_COLOR="${MOTIONBRAIN_DETECT_COLOR:-red}"
 POLL_INTERVAL="${MOTIONBRAIN_POLL_INTERVAL:-1.0}"
 HTTP_TIMEOUT="${MOTIONBRAIN_HTTP_TIMEOUT:-4.0}"
@@ -29,6 +30,7 @@ set -u
 exec ros2 launch motionbrain_ros_bridge motionbrain_home_wifi.launch.py \
   motion_host:="${MOTION_HOST}" \
   camera_url:="${CAMERA_URL}" \
+  perception_url:="${PERCEPTION_URL}" \
   detect_color:="${DETECT_COLOR}" \
   poll_interval:="${POLL_INTERVAL}" \
   http_timeout:="${HTTP_TIMEOUT}" \

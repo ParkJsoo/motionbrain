@@ -1,4 +1,5 @@
 import json
+import urllib.parse
 from typing import Any
 
 
@@ -26,6 +27,22 @@ def parse_light_action(payload: str) -> str | None:
 
 def compact_json(payload: dict[str, Any]) -> str:
     return json.dumps(payload, separators=(",", ":"), sort_keys=True)
+
+
+def perception_detection_url(perception_url: str) -> str:
+    text = perception_url.strip().rstrip("/")
+    if not text:
+        return ""
+
+    parsed = urllib.parse.urlparse(text)
+    path = parsed.path.rstrip("/")
+    if path.endswith("/api/detection"):
+        return text
+    if path.endswith("/api"):
+        path = f"{path}/detection"
+    else:
+        path = f"{path}/api/detection"
+    return urllib.parse.urlunparse(parsed._replace(path=path))
 
 
 def as_bool(value: Any, default: bool = False) -> bool:
@@ -84,4 +101,3 @@ def command_suggestion_for_alignment(alignment: str) -> str:
     if alignment == "CENTER":
         return "hold"
     return "none"
-

@@ -84,6 +84,7 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
             '"enable_kinematics"',
             '"enable_control_guard"',
             '"enable_mission_supervisor"',
+            '"perception_url"',
         ]
         for fragment in required_fragments:
             with self.subTest(fragment=fragment):

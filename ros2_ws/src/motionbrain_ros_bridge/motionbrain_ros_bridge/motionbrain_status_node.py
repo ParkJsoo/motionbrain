@@ -20,6 +20,7 @@ from motionbrain_ros_bridge.payload_utils import as_float
 from motionbrain_ros_bridge.payload_utils import as_str
 from motionbrain_ros_bridge.payload_utils import as_uint
 from motionbrain_ros_bridge.payload_utils import compact_json
+from motionbrain_ros_bridge.payload_utils import perception_detection_url
 from motionbrain_ros_bridge.payload_utils import parse_light_action
 from motionbrain_ros_bridge.vision_detection import detect_colored_target
 from rclpy.node import Node
@@ -58,6 +59,7 @@ class MotionBrainStatusNode(Node):
         self.declare_parameter("motion_host", "192.168.4.1")
         self.declare_parameter("motion_port", 80)
         self.declare_parameter("camera_url", "")
+        self.declare_parameter("perception_url", os.environ.get("MOTIONBRAIN_PERCEPTION_URL", ""))
         self.declare_parameter("detect_color", "red")
         self.declare_parameter("poll_interval", 1.0)
         self.declare_parameter("http_timeout", 2.0)
@@ -167,6 +169,13 @@ class MotionBrainStatusNode(Node):
         message.stamp = self.get_clock().now().to_msg()
         message.available = as_bool(payload.get("available"))
         message.detected = as_bool(payload.get("detected"))
+        message.target_type = as_str(payload.get("targetType"))
+        message.label = as_str(payload.get("label") or payload.get("color"))
+        try:
+            message.class_id = int(payload["classId"]) if payload.get("classId") is not None else -1
+        except (TypeError, ValueError):
+            message.class_id = -1
+        message.confidence = as_float(payload.get("confidence"))
         message.color = as_str(payload.get("color"))
         message.alignment = as_str(payload.get("alignment"), "LOST")
         message.command_suggestion = as_str(payload.get("commandSuggestion"), "none")
@@ -219,9 +228,32 @@ class MotionBrainStatusNode(Node):
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
             self.get_logger().warning(f"events poll failed: {exc}")
 
+        perception_url = str(self.get_parameter("perception_url").value).strip().rstrip("/")
         camera_url = str(self.get_parameter("camera_url").value).strip().rstrip("/")
-        if camera_url:
+        if perception_url:
+            self.poll_perception(perception_url, timeout)
+        elif camera_url:
             self.poll_camera(camera_url, timeout)
+
+    def poll_perception(self, perception_url: str, timeout: float) -> None:
+        try:
+            detection = fetch_json(perception_detection_url(perception_url), timeout)
+            if not isinstance(detection, dict):
+                raise ValueError("perception_detection_not_object")
+            detection.setdefault("ts", time.time())
+            detection.setdefault("perceptionUrl", perception_url)
+            self.publish_json(self.detection_pub, detection)
+            self.publish_detection_typed(detection)
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError) as exc:
+            detection = {
+                "detected": False,
+                "available": False,
+                "perceptionUrl": perception_url,
+                "reason": str(exc),
+                "ts": time.time(),
+            }
+            self.publish_json(self.detection_pub, detection)
+            self.publish_detection_typed(detection)
 
     def poll_camera(self, camera_url: str, timeout: float) -> None:
         color = str(self.get_parameter("detect_color").value)

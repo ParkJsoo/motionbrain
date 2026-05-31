@@ -21,8 +21,8 @@ The original JSON topics remain available for debugging, while typed
 | `/motionbrain/status_typed` | publish | `motionbrain_msgs/msg/MotionStatus` | Stable status fields plus raw JSON |
 | `/motionbrain/events` | publish | `std_msgs/String` | Raw `GET /events?limit=N` JSON |
 | `/motionbrain/events_typed` | publish | `motionbrain_msgs/msg/MotionEvent` | One typed message per ESP32 event |
-| `/camera/detection` | publish | `std_msgs/String` | Color detection JSON from ESP32-CAM `/capture` |
-| `/camera/detection_typed` | publish | `motionbrain_msgs/msg/CameraDetection` | Stable detection/alignment fields plus raw JSON |
+| `/camera/detection` | publish | `std_msgs/String` | Color detection JSON from ESP32-CAM `/capture`, or Pi perception `/api/detection` when configured |
+| `/camera/detection_typed` | publish | `motionbrain_msgs/msg/CameraDetection` | Stable selected-target, label/confidence, and alignment fields plus raw JSON |
 | `/motionbrain/mission_cmd_typed` | subscribe | `motionbrain_msgs/msg/MissionCommand` | Typed `start`, `confirm`, `cancel`, `reset` mission commands |
 | `/motionbrain/mission_cmd` | subscribe | `std_msgs/String` | Compatibility mission command input |
 | `/motionbrain/light_cmd` | subscribe | `std_msgs/String` | `on`, `off`, `toggle`, or `{"action":"toggle"}` |
@@ -30,7 +30,13 @@ The original JSON topics remain available for debugging, while typed
 | `/motionbrain/light_result` | publish | `std_msgs/String` | Raw `/light` command result JSON |
 | `/motionbrain/light_result_typed` | publish | `motionbrain_msgs/msg/LightResult` | Stable command result fields plus raw JSON |
 
-`/camera/detection` includes color ratio plus vision-alignment fields: `centerX`, `centerY`, `centroidX`, `centroidY`, `areaRatio`, `offsetX`, `offsetY`, `alignDeadband`, `alignment` (`LEFT`, `CENTER`, `RIGHT`, or `LOST`), and `commandSuggestion` (`base_left`, `hold`, `base_right`, or `none`).
+`/camera/detection` includes selected-target fields: `targetType`, `label`,
+`classId`, `confidence`, `centerX`, `centerY`, `centroidX`, `centroidY`,
+`areaRatio`, `offsetX`, `offsetY`, `alignDeadband`, `alignment` (`LEFT`,
+`CENTER`, `RIGHT`, or `LOST`), and `commandSuggestion` (`base_left`, `hold`,
+`base_right`, or `none`). If `perception_url` is set, the bridge consumes the
+Pi perception service `/api/detection` payload and does not open another direct
+ESP32-CAM `/capture` connection.
 
 `motionbrain_kinematics_node` subscribes to `/joint_states`, applies a simple
 arm model that matches the current URDF dimensions, and publishes FK pose plus
@@ -110,6 +116,7 @@ Override hostnames or timing when needed:
 ros2 launch motionbrain_ros_bridge motionbrain_home_wifi.launch.py \
   motion_host:=192.168.1.50 \
   camera_url:=http://192.168.1.51 \
+  perception_url:=http://192.168.1.52:8766 \
   poll_interval:=2.0 \
   http_timeout:=6.0
 ```

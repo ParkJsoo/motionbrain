@@ -8,6 +8,7 @@ from motionbrain_ros_bridge.payload_utils import as_uint
 from motionbrain_ros_bridge.payload_utils import classify_alignment
 from motionbrain_ros_bridge.payload_utils import command_suggestion_for_alignment
 from motionbrain_ros_bridge.payload_utils import compact_json
+from motionbrain_ros_bridge.payload_utils import perception_detection_url
 from motionbrain_ros_bridge.payload_utils import parse_light_action
 
 
@@ -50,7 +51,21 @@ class PayloadUtilsPackageTest(unittest.TestCase):
     def test_compact_json_is_sorted_and_minimal(self):
         self.assertEqual('{"a":1,"b":2}', compact_json({"b": 2, "a": 1}))
 
+    def test_perception_detection_url_accepts_base_or_api_url(self):
+        self.assertEqual("", perception_detection_url(""))
+        self.assertEqual(
+            "http://motionbrain-pi.local:8766/api/detection",
+            perception_detection_url(" http://motionbrain-pi.local:8766 "),
+        )
+        self.assertEqual(
+            "http://192.168.219.114:8766/api/detection",
+            perception_detection_url("http://192.168.219.114:8766/api"),
+        )
+        self.assertEqual(
+            "http://192.168.219.114:8766/api/detection",
+            perception_detection_url("http://192.168.219.114:8766/api/detection"),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
-
