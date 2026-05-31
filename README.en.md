@@ -393,7 +393,8 @@ python3 tools/motionbrain_dashboard.py \
 ```
 
 Object mode is enabled only through explicit local model and label files; model
-weights are not committed to this repository.
+weights are not committed to this repository. For the first live check, use a
+YOLO11n detect ONNX export with the repository's `config/coco80.labels` file.
 
 ```bash
 python3 tools/motionbrain_perception_service.py \
@@ -402,8 +403,9 @@ python3 tools/motionbrain_perception_service.py \
   --detector-mode object \
   --object-backend opencv-dnn \
   --object-model <model.onnx> \
-  --object-labels <labels.txt> \
-  --object-target <label>
+  --object-labels config/coco80.labels \
+  --object-target cup \
+  --object-input-size 640
 ```
 
 The `TRACKED` camera mode in `MotionBrain Control` uses the same dashboard API. Its default dashboard URL is `http://motionbrain-pi.local:8765`, and the on-page `API` field can be changed to `http://<pi-ip>:8765`. Legacy browser storage from the earlier Mac-hosted dashboard value `127.0.0.1:8765` is migrated to the Pi default.

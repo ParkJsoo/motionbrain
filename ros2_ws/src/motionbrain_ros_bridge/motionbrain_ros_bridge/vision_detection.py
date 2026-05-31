@@ -169,6 +169,9 @@ def _scaled_box(
     values: Sequence[float],
     frame_width: int,
     frame_height: int,
+    *,
+    input_width: int | None = None,
+    input_height: int | None = None,
 ) -> tuple[float, float, float, float]:
     x1, y1, x2, y2 = [float(value) for value in values[:4]]
     if max(abs(x1), abs(y1), abs(x2), abs(y2)) <= 1.5:
@@ -176,12 +179,42 @@ def _scaled_box(
         x2 *= frame_width
         y1 *= frame_height
         y2 *= frame_height
+    elif input_width and input_height:
+        x_scale = frame_width / max(float(input_width), 1.0)
+        y_scale = frame_height / max(float(input_height), 1.0)
+        x1 *= x_scale
+        x2 *= x_scale
+        y1 *= y_scale
+        y2 *= y_scale
 
     left = max(min(x1, x2), 0.0)
     top = max(min(y1, y2), 0.0)
     right = min(max(x1, x2), float(frame_width))
     bottom = min(max(y1, y2), float(frame_height))
     return left, top, max(right - left, 0.0), max(bottom - top, 0.0)
+
+
+def _scaled_center_box(
+    values: Sequence[float],
+    frame_width: int,
+    frame_height: int,
+    *,
+    input_width: int | None = None,
+    input_height: int | None = None,
+) -> tuple[float, float, float, float]:
+    center_x, center_y, width, height = [float(value) for value in values[:4]]
+    return _scaled_box(
+        (
+            center_x - width / 2.0,
+            center_y - height / 2.0,
+            center_x + width / 2.0,
+            center_y + height / 2.0,
+        ),
+        frame_width,
+        frame_height,
+        input_width=input_width,
+        input_height=input_height,
+    )
 
 
 def _candidate_iou(left: DetectionCandidate, right: DetectionCandidate) -> float:
@@ -227,6 +260,8 @@ def decode_dnn_detections(
     labels: Sequence[str],
     min_confidence: float,
     nms_threshold: float,
+    input_width: int | None = None,
+    input_height: int | None = None,
 ) -> list[DetectionCandidate]:
     try:
         import numpy as np  # type: ignore
@@ -249,7 +284,13 @@ def decode_dnn_detections(
                 if confidence < min_confidence:
                     continue
                 class_id = int(row[1])
-                x, y, width, height = _scaled_box(row[3:7], frame_width, frame_height)
+                x, y, width, height = _scaled_box(
+                    row[3:7],
+                    frame_width,
+                    frame_height,
+                    input_width=input_width,
+                    input_height=input_height,
+                )
                 if width <= 0.0 or height <= 0.0:
                     continue
                 candidates.append(
@@ -268,6 +309,50 @@ def decode_dnn_detections(
                 )
             continue
 
+        if array.ndim == 3 and array.shape[0] == 1:
+            matrix = array[0]
+            if labels and matrix.shape[0] == 4 + len(labels):
+                rows = matrix.transpose()
+            elif matrix.shape[0] >= 5 and matrix.shape[0] < matrix.shape[1]:
+                rows = matrix.transpose()
+            else:
+                rows = matrix
+            if rows.shape[-1] > 6:
+                for row in rows:
+                    if row.shape[0] < 5:
+                        continue
+                    class_scores = row[4:]
+                    if class_scores.size == 0:
+                        continue
+                    class_id = int(np.argmax(class_scores))
+                    confidence = float(class_scores[class_id])
+                    if confidence < min_confidence:
+                        continue
+                    x, y, width, height = _scaled_center_box(
+                        row[0:4],
+                        frame_width,
+                        frame_height,
+                        input_width=input_width,
+                        input_height=input_height,
+                    )
+                    if width <= 0.0 or height <= 0.0:
+                        continue
+                    candidates.append(
+                        DetectionCandidate(
+                            target_type="object",
+                            label=_label_for_class_id(labels, class_id),
+                            class_id=class_id,
+                            confidence=confidence,
+                            x=x,
+                            y=y,
+                            width=width,
+                            height=height,
+                            frame_width=frame_width,
+                            frame_height=frame_height,
+                        )
+                    )
+                continue
+
         if array.ndim >= 2 and array.shape[-1] >= 6:
             rows = array.reshape(-1, array.shape[-1])
             for row in rows:
@@ -275,7 +360,13 @@ def decode_dnn_detections(
                 if confidence < min_confidence:
                     continue
                 class_id = int(row[5])
-                x, y, width, height = _scaled_box(row[0:4], frame_width, frame_height)
+                x, y, width, height = _scaled_box(
+                    row[0:4],
+                    frame_width,
+                    frame_height,
+                    input_width=input_width,
+                    input_height=input_height,
+                )
                 if width <= 0.0 or height <= 0.0:
                     continue
                 candidates.append(
@@ -360,6 +451,8 @@ class OpenCvDnnObjectDetector:
             labels=self.labels,
             min_confidence=config.object_min_confidence,
             nms_threshold=config.object_nms_threshold,
+            input_width=input_size,
+            input_height=input_size,
         )
 
 

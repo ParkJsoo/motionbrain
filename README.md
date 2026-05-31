@@ -436,6 +436,8 @@ python3 tools/motionbrain_dashboard.py \
 ```
 
 Object mode는 repository에 모델 weight를 넣지 않고 명시적 모델/라벨 파일로만 켠다.
+첫 live 검증 모델은 `YOLO11n` detect ONNX를 권장하고, COCO class label은
+repo의 `config/coco80.labels`를 사용한다.
 
 ```bash
 python3 tools/motionbrain_perception_service.py \
@@ -444,8 +446,9 @@ python3 tools/motionbrain_perception_service.py \
   --detector-mode object \
   --object-backend opencv-dnn \
   --object-model <model.onnx> \
-  --object-labels <labels.txt> \
-  --object-target <label>
+  --object-labels config/coco80.labels \
+  --object-target cup \
+  --object-input-size 640
 ```
 
 `MotionBrain Control`의 `TRACKED` camera mode는 같은 dashboard API를 사용한다. 기본 dashboard URL은 `http://motionbrain-pi.local:8765`이고, 화면의 `API` 입력칸에서 `http://<pi-ip>:8765`로 바꿀 수 있다. 예전 Mac-hosted dashboard 값인 `127.0.0.1:8765`가 브라우저에 저장되어 있으면 자동으로 Pi 기본값으로 교체된다.

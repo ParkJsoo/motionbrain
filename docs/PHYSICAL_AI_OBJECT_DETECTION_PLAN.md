@@ -60,9 +60,10 @@ As of 2026-05-31 on `feature/pi-object-detection-mvp`:
   `/api/detection`, `/api/perception`, `/api/vision_frame`, `/health`, and
   dashboard `--perception-url` proxy mode.
 - Milestone 3 is in progress: the first real object backend path exists through
-  OpenCV DNN/ONNX model loading, label-map loading, SSD-style output decoding,
-  confidence filtering, NMS, and detector injection into the Pi perception
-  service. Model weights are intentionally not committed.
+  OpenCV DNN/ONNX model loading, label-map loading, SSD-style and Ultralytics
+  YOLO raw-output decoding, confidence filtering, NMS, and detector injection
+  into the Pi perception service. Model weights are intentionally not
+  committed.
 - Live hardware validation is currently color-mode only. Real object-mode
   validation still requires selecting/downloading a small Pi-suitable model and
   labels file outside the repository.
@@ -96,10 +97,21 @@ Completed second implementation step:
 Current object-backend step:
 
 - Add OpenCV DNN/ONNX backend behind explicit model paths.
-- Decode SSD-style detector outputs into the existing selected-target payload.
+- Decode SSD-style and YOLO-style detector outputs into the existing
+  selected-target payload.
 - Keep color detection as the runtime fallback by running
   `--detector-mode color`; if object mode is explicitly requested without a
   usable model, fail fast instead of silently changing the requested mode.
+
+Recommended first live model:
+
+- `YOLO11n` detect model exported to ONNX.
+- Use `config/coco80.labels` for COCO class names.
+- Start with `--object-input-size 640` for correctness, then benchmark 416/320
+  if Pi CPU load is too high.
+- Good first targets: `cup`, `bottle`, `cell phone`, `person`, `chair`.
+- Avoid open-vocabulary prompts for the MVP. This phase detects known COCO
+  classes; arbitrary text-described object search is a later model family.
 
 Preferred runtime path:
 
@@ -328,8 +340,8 @@ python3 tools/motionbrain_perception_service.py \
   --camera-url http://<camera-ip> \
   --detector-mode object \
   --object-backend opencv-dnn \
-  --object-model <model> \
-  --object-labels <labels> \
+  --object-model <model.onnx> \
+  --object-labels config/coco80.labels \
   --object-target cup
 curl -sS http://127.0.0.1:<port>/api/detection
 ```

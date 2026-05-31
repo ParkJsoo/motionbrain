@@ -39,6 +39,15 @@ class FakeNet:
 
 
 class VisionObjectBackendTest(unittest.TestCase):
+    def test_repo_coco_label_file_matches_yolo_class_count(self) -> None:
+        labels = load_labels(str(ROOT / "config" / "coco80.labels"))
+
+        self.assertEqual(len(labels), 80)
+        self.assertEqual(labels[0], "person")
+        self.assertEqual(labels[39], "bottle")
+        self.assertEqual(labels[41], "cup")
+        self.assertEqual(labels[67], "cell phone")
+
     def test_label_loader_supports_plain_and_indexed_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             labels_path = Path(tmpdir) / "labels.txt"
@@ -76,6 +85,50 @@ class VisionObjectBackendTest(unittest.TestCase):
         self.assertAlmostEqual(candidate.y, 24.0, places=5)
         self.assertAlmostEqual(candidate.width, 80.0, places=5)
         self.assertAlmostEqual(candidate.height, 72.0, places=5)
+
+    def test_decode_yolo_output_maps_center_box_to_candidates(self) -> None:
+        output = np.zeros((1, 7, 2), dtype=np.float32)
+        output[0, :, 0] = [320, 320, 160, 200, 0.20, 0.10, 0.86]
+        output[0, :, 1] = [80, 160, 80, 120, 0.12, 0.88, 0.20]
+
+        candidates = decode_dnn_detections(
+            output,
+            frame_width=320,
+            frame_height=240,
+            labels=["person", "bottle", "cup"],
+            min_confidence=0.5,
+            nms_threshold=0.45,
+            input_width=640,
+            input_height=640,
+        )
+
+        self.assertEqual(len(candidates), 2)
+        candidate = candidates[0]
+        self.assertEqual(candidate.label, "bottle")
+        self.assertEqual(candidate.class_id, 1)
+        self.assertAlmostEqual(candidate.confidence or 0.0, 0.88, places=5)
+        self.assertEqual((candidate.x, candidate.y, candidate.width, candidate.height), (20.0, 37.5, 40.0, 45.0))
+        candidate = candidates[1]
+        self.assertEqual(candidate.label, "cup")
+        self.assertEqual(candidate.class_id, 2)
+        self.assertAlmostEqual(candidate.confidence or 0.0, 0.86, places=5)
+        self.assertEqual((candidate.x, candidate.y, candidate.width, candidate.height), (120.0, 82.5, 80.0, 75.0))
+
+    def test_decode_nx6_output_still_handles_batched_shape(self) -> None:
+        output = np.array([[[0.25, 0.20, 0.75, 0.80, 0.78, 2]]], dtype=np.float32)
+
+        candidates = decode_dnn_detections(
+            output,
+            frame_width=160,
+            frame_height=120,
+            labels=["person", "bottle", "cup"],
+            min_confidence=0.5,
+            nms_threshold=0.45,
+        )
+
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0].label, "cup")
+        self.assertAlmostEqual(candidates[0].x, 40.0, places=5)
 
     def test_opencv_dnn_detector_feeds_net_and_returns_object_payload(self) -> None:
         output = np.array(

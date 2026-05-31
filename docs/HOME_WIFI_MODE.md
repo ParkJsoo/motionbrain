@@ -135,7 +135,8 @@ python3 tools/motionbrain_dashboard.py \
   --timeout 6
 ```
 
-Object mode uses explicit local model and label files, for example:
+Object mode uses explicit local model and label files. For the first live
+check, use a YOLO11n detect ONNX export with `config/coco80.labels`:
 
 ```bash
 python3 tools/motionbrain_perception_service.py \
@@ -144,8 +145,9 @@ python3 tools/motionbrain_perception_service.py \
   --detector-mode object \
   --object-backend opencv-dnn \
   --object-model <model.onnx> \
-  --object-labels <labels.txt> \
-  --object-target <label>
+  --object-labels config/coco80.labels \
+  --object-target cup \
+  --object-input-size 640
 ```
 
 The ESP32-hosted `MotionBrain Control` page also uses this dashboard for
