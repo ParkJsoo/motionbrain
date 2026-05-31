@@ -10,6 +10,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "ros2_ws" / "src" / "motionbrain_ros_bridge"))
 
+from motionbrain_ros_bridge.vision_detection import DetectionCandidate  # noqa: E402
 from motionbrain_ros_bridge.vision_detection import DetectionConfig  # noqa: E402
 from motionbrain_ros_bridge.vision_detection import OpenCvDnnObjectDetector  # noqa: E402
 from motionbrain_ros_bridge.vision_detection import decode_dnn_detections  # noqa: E402
@@ -114,6 +115,28 @@ class VisionObjectBackendTest(unittest.TestCase):
         self.assertAlmostEqual(candidate.confidence or 0.0, 0.86, places=5)
         self.assertEqual((candidate.x, candidate.y, candidate.width, candidate.height), (120.0, 82.5, 80.0, 75.0))
 
+    def test_decode_yolov5_output_multiplies_objectness_and_class_score(self) -> None:
+        output = np.zeros((1, 2, 8), dtype=np.float32)
+        output[0, 0, :] = [320, 320, 160, 200, 0.80, 0.20, 0.10, 0.70]
+        output[0, 1, :] = [80, 160, 80, 120, 0.90, 0.12, 0.88, 0.20]
+
+        candidates = decode_dnn_detections(
+            output,
+            frame_width=320,
+            frame_height=240,
+            labels=["person", "bottle", "cup"],
+            min_confidence=0.5,
+            nms_threshold=0.45,
+            input_width=640,
+            input_height=640,
+        )
+
+        self.assertEqual(len(candidates), 2)
+        self.assertEqual(candidates[0].label, "bottle")
+        self.assertAlmostEqual(candidates[0].confidence or 0.0, 0.792, places=5)
+        self.assertEqual(candidates[1].label, "cup")
+        self.assertAlmostEqual(candidates[1].confidence or 0.0, 0.56, places=5)
+
     def test_decode_nx6_output_still_handles_batched_shape(self) -> None:
         output = np.array([[[0.25, 0.20, 0.75, 0.80, 0.78, 2]]], dtype=np.float32)
 
@@ -153,6 +176,30 @@ class VisionObjectBackendTest(unittest.TestCase):
         self.assertEqual(payload["detector"]["name"], "opencv-dnn")
         self.assertEqual(payload["targetBox"], {"x": 88, "y": 30, "width": 56, "height": 72})
         self.assertEqual(len(payload["objects"]), 2)
+
+    def test_object_payload_limits_candidate_list_size(self) -> None:
+        candidates = []
+        for index in range(60):
+            candidates.append(
+                DetectionCandidate(
+                    target_type="object",
+                    label="cup",
+                    class_id=41,
+                    confidence=0.90,
+                    x=index,
+                    y=10,
+                    width=4,
+                    height=4,
+                    frame_width=160,
+                    frame_height=120,
+                )
+            )
+        detector = type("Detector", (), {"name": "many", "detect": lambda self, _frame, _config: candidates})()
+
+        payload = detect_frame(make_jpeg(), DetectionConfig(mode="object"), detector)
+
+        self.assertTrue(payload["detected"])
+        self.assertEqual(len(payload["objects"]), 40)
 
     def test_service_build_detector_keeps_color_path_and_requires_object_model(self) -> None:
         self.assertIsNone(build_detector(DetectionConfig(mode="color")))

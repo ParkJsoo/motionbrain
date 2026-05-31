@@ -135,18 +135,20 @@ python3 tools/motionbrain_dashboard.py \
   --timeout 6
 ```
 
-Object mode uses explicit local model and label files. For the first live
-check, use a YOLO11n detect ONNX export with `config/coco80.labels`:
+Object mode uses explicit local model and label files. For the first Raspberry
+Pi live check, use the OpenCV-DNN-compatible YOLOv5n detect ONNX file with
+`config/coco80.labels`:
 
 ```bash
-python3 tools/motionbrain_perception_service.py \
+~/.cache/motionbrain/opencv-venv/bin/python tools/motionbrain_perception_service.py \
   --host 0.0.0.0 \
   --camera-url http://<camera-ip> \
   --detector-mode object \
   --object-backend opencv-dnn \
-  --object-model <model.onnx> \
+  --object-model ~/.cache/motionbrain/models/yolov5n.onnx \
   --object-labels config/coco80.labels \
   --object-target cup \
+  --object-min-confidence 0.5 \
   --object-input-size 640
 ```
 

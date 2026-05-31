@@ -105,10 +105,14 @@ Current object-backend step:
 
 Recommended first live model:
 
-- `YOLO11n` detect model exported to ONNX.
+- Current tested Pi path: `YOLOv5n` detect ONNX with the Pi cache venv OpenCV
+  runtime. The official `YOLO11n` ONNX asset is a better modern target, but it
+  did not load through OpenCV DNN on the current Pi due ONNX shape handling.
 - Use `config/coco80.labels` for COCO class names.
 - Start with `--object-input-size 640` for correctness, then benchmark 416/320
   if Pi CPU load is too high.
+- Start `--object-min-confidence` at `0.5` for YOLOv5n on the live camera, then
+  lower only if known targets are consistently missed.
 - Good first targets: `cup`, `bottle`, `cell phone`, `person`, `chair`.
 - Avoid open-vocabulary prompts for the MVP. This phase detects known COCO
   classes; arbitrary text-described object search is a later model family.
@@ -340,8 +344,9 @@ python3 tools/motionbrain_perception_service.py \
   --camera-url http://<camera-ip> \
   --detector-mode object \
   --object-backend opencv-dnn \
-  --object-model <model.onnx> \
+  --object-model ~/.cache/motionbrain/models/yolov5n.onnx \
   --object-labels config/coco80.labels \
+  --object-min-confidence 0.5 \
   --object-target cup
 curl -sS http://127.0.0.1:<port>/api/detection
 ```

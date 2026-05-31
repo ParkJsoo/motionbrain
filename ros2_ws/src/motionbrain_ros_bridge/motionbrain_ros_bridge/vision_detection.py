@@ -14,6 +14,7 @@ from motionbrain_ros_bridge.payload_utils import command_suggestion_for_alignmen
 
 
 TARGET_RATIO_THRESHOLD = 0.02
+MAX_OBJECT_PAYLOADS = 40
 
 
 @dataclass(frozen=True)
@@ -321,11 +322,16 @@ def decode_dnn_detections(
                 for row in rows:
                     if row.shape[0] < 5:
                         continue
-                    class_scores = row[4:]
+                    if labels and row.shape[0] == 5 + len(labels):
+                        objectness = float(row[4])
+                        class_scores = row[5:]
+                    else:
+                        objectness = 1.0
+                        class_scores = row[4:]
                     if class_scores.size == 0:
                         continue
                     class_id = int(np.argmax(class_scores))
-                    confidence = float(class_scores[class_id])
+                    confidence = objectness * float(class_scores[class_id])
                     if confidence < min_confidence:
                         continue
                     x, y, width, height = _scaled_center_box(
@@ -466,6 +472,7 @@ def payload_from_candidate(
     latency_ms: float | None = None,
 ) -> dict[str, Any]:
     payload = candidate_payload(candidate, config)
+    object_payloads = [candidate_payload(item, config) for item in list(all_candidates)[:MAX_OBJECT_PAYLOADS]]
     payload.update(
         {
             "available": True,
@@ -480,7 +487,7 @@ def payload_from_candidate(
                 "latencyMs": latency_ms,
                 "targetPolicy": config.target_policy,
             },
-            "objects": [candidate_payload(item, config) for item in all_candidates],
+            "objects": object_payloads,
             "target": candidate_payload(candidate, config),
             "stableFrames": 0,
         }
@@ -498,7 +505,7 @@ def _empty_payload(
     latency_ms: float | None = None,
     candidates: Iterable[DetectionCandidate] = (),
 ) -> dict[str, Any]:
-    objects = [candidate_payload(item, config) for item in candidates]
+    objects = [candidate_payload(item, config) for item in list(candidates)[:MAX_OBJECT_PAYLOADS]]
     payload: dict[str, Any] = {
         "available": available,
         "detected": False,

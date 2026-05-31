@@ -436,18 +436,20 @@ python3 tools/motionbrain_dashboard.py \
 ```
 
 Object mode는 repository에 모델 weight를 넣지 않고 명시적 모델/라벨 파일로만 켠다.
-첫 live 검증 모델은 `YOLO11n` detect ONNX를 권장하고, COCO class label은
-repo의 `config/coco80.labels`를 사용한다.
+현재 Raspberry Pi 실기 검증용 첫 모델은 OpenCV DNN 호환성이 확인된
+`YOLOv5n` detect ONNX를 사용한다. COCO class label은 repo의
+`config/coco80.labels`를 사용한다.
 
 ```bash
-python3 tools/motionbrain_perception_service.py \
+~/.cache/motionbrain/opencv-venv/bin/python tools/motionbrain_perception_service.py \
   --host 0.0.0.0 \
   --camera-url http://<camera-ip> \
   --detector-mode object \
   --object-backend opencv-dnn \
-  --object-model <model.onnx> \
+  --object-model ~/.cache/motionbrain/models/yolov5n.onnx \
   --object-labels config/coco80.labels \
   --object-target cup \
+  --object-min-confidence 0.5 \
   --object-input-size 640
 ```
 
