@@ -27,11 +27,17 @@ source "${WORKSPACE}/install/setup.bash"
 
 set -u
 
-exec ros2 launch motionbrain_ros_bridge motionbrain_home_wifi.launch.py \
-  motion_host:="${MOTION_HOST}" \
-  camera_url:="${CAMERA_URL}" \
-  perception_url:="${PERCEPTION_URL}" \
-  detect_color:="${DETECT_COLOR}" \
-  poll_interval:="${POLL_INTERVAL}" \
-  http_timeout:="${HTTP_TIMEOUT}" \
-  events_limit:="${EVENTS_LIMIT}"
+launch_args=(
+  "motion_host:=${MOTION_HOST}"
+  "camera_url:=${CAMERA_URL}"
+  "detect_color:=${DETECT_COLOR}"
+  "poll_interval:=${POLL_INTERVAL}"
+  "http_timeout:=${HTTP_TIMEOUT}"
+  "events_limit:=${EVENTS_LIMIT}"
+)
+
+if [[ -n "${PERCEPTION_URL}" ]]; then
+  launch_args+=("perception_url:=${PERCEPTION_URL}")
+fi
+
+exec ros2 launch motionbrain_ros_bridge motionbrain_home_wifi.launch.py "${launch_args[@]}"
