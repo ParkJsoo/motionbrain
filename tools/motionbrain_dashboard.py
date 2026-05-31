@@ -27,17 +27,21 @@ INDEX_HTML = """<!doctype html>
   <title>MotionBrain Ops Dashboard</title>
   <style>
     :root {
-      color-scheme: light;
-      --bg: #f6f7f9;
-      --panel: #ffffff;
-      --text: #172026;
-      --muted: #66737f;
-      --border: #d7dde3;
-      --ok: #16835f;
-      --warn: #b36b00;
-      --bad: #b42318;
-      --accent: #2457c5;
-      --shadow: 0 1px 3px rgba(20, 30, 40, 0.08);
+      color-scheme: dark;
+      --bg: #080b10;
+      --panel: #111821;
+      --panel-2: #151e29;
+      --panel-3: #0e141c;
+      --line: #263241;
+      --line-soft: #1b2532;
+      --text: #e6edf3;
+      --muted: #8fa1b4;
+      --faint: #5e7084;
+      --ok: #86efac;
+      --warn: #fcd34d;
+      --bad: #fca5a5;
+      --accent: #38bdf8;
+      --shadow: 0 18px 42px rgba(0, 0, 0, 0.28);
     }
     * { box-sizing: border-box; }
     body {
@@ -49,53 +53,76 @@ INDEX_HTML = """<!doctype html>
     }
     header {
       display: flex;
-      align-items: center;
+      align-items: flex-end;
       justify-content: space-between;
       gap: 16px;
-      padding: 16px 20px;
-      border-bottom: 1px solid var(--border);
-      background: var(--panel);
+      padding: 18px 20px 14px;
+      border-bottom: 1px solid var(--line-soft);
+      background: #080b10;
       position: sticky;
       top: 0;
       z-index: 2;
     }
+    .brand-kicker {
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 1.8px;
+      margin-bottom: 5px;
+    }
     h1 {
       margin: 0;
-      font-size: 20px;
-      font-weight: 700;
+      font-size: 30px;
+      line-height: 1.05;
+      font-weight: 800;
       letter-spacing: 0;
     }
     .topline {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
       flex-wrap: wrap;
       justify-content: flex-end;
-      color: var(--muted);
-      font-size: 13px;
+      color: #b8c7d6;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+    .topline span {
+      max-width: 360px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 7px 10px;
+      background: #101721;
     }
     main {
       display: grid;
       grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
-      gap: 16px;
+      gap: 14px;
       padding: 16px;
-      max-width: 1440px;
+      max-width: 1360px;
       margin: 0 auto;
     }
     section {
       background: var(--panel);
-      border: 1px solid var(--border);
+      border: 1px solid var(--line);
       border-radius: 8px;
       box-shadow: var(--shadow);
       overflow: hidden;
     }
     section h2 {
       margin: 0;
-      padding: 12px 14px;
-      border-bottom: 1px solid var(--border);
-      font-size: 14px;
-      letter-spacing: 0;
-      background: #fbfcfd;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line-soft);
+      font-size: 12px;
+      color: #c9d6e2;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      background: var(--panel);
     }
     .grid {
       display: grid;
@@ -105,19 +132,22 @@ INDEX_HTML = """<!doctype html>
     }
     .metric {
       min-height: 82px;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 10px;
-      background: #fff;
+      border: 1px solid var(--line-soft);
+      border-radius: 8px;
+      padding: 12px;
+      background: var(--panel-3);
     }
     .label {
       color: var(--muted);
-      font-size: 12px;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.9px;
       margin-bottom: 8px;
     }
     .value {
       font-size: 18px;
-      font-weight: 700;
+      font-weight: 850;
       overflow-wrap: anywhere;
     }
     .subvalue {
@@ -135,14 +165,18 @@ INDEX_HTML = """<!doctype html>
       gap: 16px;
       margin-top: 16px;
     }
+    .row .grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
     .panel-body { padding: 12px; }
     .camera-frame {
       width: 100%;
       aspect-ratio: 4 / 3;
       object-fit: contain;
-      background: #20262d;
-      border: 1px solid var(--border);
-      border-radius: 6px;
+      background: #05080d;
+      border: 1px solid var(--line-soft);
+      border-radius: 8px;
+      display: block;
     }
     .controls {
       display: flex;
@@ -151,22 +185,25 @@ INDEX_HTML = """<!doctype html>
       margin-top: 12px;
     }
     button {
-      height: 34px;
-      padding: 0 12px;
-      border: 1px solid var(--border);
+      min-height: 38px;
+      padding: 9px 12px;
+      border: 1px solid #334155;
       border-radius: 6px;
-      background: #fff;
-      color: var(--text);
+      background: #1d2836;
+      color: #dbeafe;
       font: inherit;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
       cursor: pointer;
     }
     button.primary {
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #fff;
+      background: #0b3b54;
+      border-color: rgba(56, 189, 248, 0.45);
+      color: #d9f3ff;
     }
     button:disabled {
-      color: #9aa5ae;
+      opacity: 0.48;
       cursor: not-allowed;
     }
     table {
@@ -175,25 +212,28 @@ INDEX_HTML = """<!doctype html>
     }
     th, td {
       padding: 8px 10px;
-      border-bottom: 1px solid var(--border);
+      border-bottom: 1px solid var(--line-soft);
       text-align: left;
       vertical-align: top;
       font-size: 13px;
     }
     th {
       color: var(--muted);
-      font-weight: 600;
-      background: #fbfcfd;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      background: var(--panel-3);
     }
     .log {
       height: 260px;
       overflow: auto;
-      background: #111820;
+      background: #05080d;
       color: #dce6ef;
       padding: 10px;
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       font-size: 12px;
       line-height: 1.45;
+      border-top: 1px solid var(--line-soft);
     }
     .stack {
       display: flex;
@@ -224,7 +264,10 @@ INDEX_HTML = """<!doctype html>
 </head>
 <body>
   <header>
-    <h1>MotionBrain Ops Dashboard</h1>
+    <div>
+      <div class="brand-kicker">Operations Console</div>
+      <h1>MotionBrain</h1>
+    </div>
     <div class="topline">
       <span id="motionTarget">motion: -</span>
       <span id="cameraTarget">camera: -</span>
@@ -307,7 +350,7 @@ INDEX_HTML = """<!doctype html>
 
     <div class="stack">
       <section>
-        <h2>Camera Detection</h2>
+        <h2>Vision Feed</h2>
         <div class="panel-body">
           <img id="cameraFrame" class="camera-frame" alt="ESP32-CAM capture">
           <div class="grid">
@@ -552,7 +595,7 @@ INDEX_HTML = """<!doctype html>
       try {
         updateDetection(await getJson("/api/detection"));
         const img = document.getElementById("cameraFrame");
-        img.src = `/api/capture?t=${Date.now()}`;
+        if (img) img.src = `/api/capture?t=${Date.now()}`;
       } catch (err) {
         updateDetection({ detected: false, reason: err.message });
       }
@@ -590,8 +633,13 @@ INDEX_HTML = """<!doctype html>
       }
     }
 
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) refresh();
+    });
     refresh();
-    setInterval(refresh, 1500);
+    setInterval(() => {
+      if (!document.hidden) refresh();
+    }, 2500);
   </script>
 </body>
 </html>
