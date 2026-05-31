@@ -386,6 +386,10 @@ http://127.0.0.1:8765
 http://<pi-ip>:8765
 ```
 
+The `TRACKED` camera mode in `motionbrain.local` uses this dashboard API too.
+Confirm that the on-page `API` field is `http://motionbrain-pi.local:8765` or
+`http://<pi-ip>:8765`.
+
 ## Segment 4: Timed Vision Nudge
 
 Use this only if the robot area is clear and the system is in a known safe

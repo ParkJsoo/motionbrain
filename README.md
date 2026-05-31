@@ -416,6 +416,8 @@ python3 tools/motionbrain_dashboard.py \
   --timeout 6
 ```
 
+`MotionBrain Control`의 `TRACKED` camera mode는 같은 dashboard API를 사용한다. 기본 dashboard URL은 `http://motionbrain-pi.local:8765`이고, 화면의 `API` 입력칸에서 `http://<pi-ip>:8765`로 바꿀 수 있다. 예전 Mac-hosted dashboard 값인 `127.0.0.1:8765`가 브라우저에 저장되어 있으면 자동으로 Pi 기본값으로 교체된다.
+
 기본 Nudge Once는 `250ms`/`25%`로 보수적이다. 실제 움직임을 영상에서 더 잘 보이게 할 때는 주변 clearance와 stop 동작을 확인한 뒤 `--align-nudge-ms 600 --align-percent 40` 정도로 올려 실행한다.
 
 STM32 teleop remote가 연결된 bench 구성에서는 teleop frame 안의 embedded safety telemetry로 `SENSOR_STALE`을 해제한다. 하드웨어 없이 safety 상태를 재현하거나 fault case를 강제로 만들 때는 simulation 명령을 사용할 수 있다.

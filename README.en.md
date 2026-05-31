@@ -372,6 +372,8 @@ python3 tools/motionbrain_dashboard.py \
   --timeout 6
 ```
 
+The `TRACKED` camera mode in `MotionBrain Control` uses the same dashboard API. Its default dashboard URL is `http://motionbrain-pi.local:8765`, and the on-page `API` field can be changed to `http://<pi-ip>:8765`. Legacy browser storage from the earlier Mac-hosted dashboard value `127.0.0.1:8765` is migrated to the Pi default.
+
 The default Nudge Once setting is conservative at `250ms`/`25%`. For a more visible demo movement, after checking clearance and stop behavior, use about `--align-nudge-ms 600 --align-percent 40`.
 
 ## Why This Project Matters

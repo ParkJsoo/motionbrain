@@ -390,6 +390,10 @@ http://127.0.0.1:8765
 http://<pi-ip>:8765
 ```
 
+`motionbrain.local`의 `TRACKED` camera mode도 이 dashboard API를 사용한다.
+화면의 `API` 입력칸이 `http://motionbrain-pi.local:8765` 또는
+`http://<pi-ip>:8765`인지 확인한다.
+
 ## Segment 4: Timed Vision Nudge
 
 로봇 주변이 비어 있고 시스템 상태가 안전할 때만 실행한다.

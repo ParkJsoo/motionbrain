@@ -115,6 +115,13 @@ The default dashboard Nudge Once setting is conservative (`250ms`/`25%`). For a
 visible demo nudge after confirming clearance and stop behavior, restart with
 `--align-nudge-ms 600 --align-percent 40`.
 
+The ESP32-hosted `MotionBrain Control` page also uses this dashboard for
+`TRACKED` camera mode. Its default dashboard API is
+`http://motionbrain-pi.local:8765`; if mDNS is unreliable, set the page's `API`
+field to `http://<pi-ip>:8765`. Older browser storage pointing to the
+Mac-hosted `127.0.0.1:8765` dashboard is automatically migrated to the Pi
+default.
+
 If `.local` names do not resolve, use the IP addresses printed in serial logs or
 reserve fixed IP addresses in the router.
 
