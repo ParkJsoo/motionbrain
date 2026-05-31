@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 from typing import Iterable
 from typing import Protocol
+from typing import Sequence
 
 from motionbrain_ros_bridge.payload_utils import ALIGN_DEADBAND
 from motionbrain_ros_bridge.payload_utils import classify_alignment
@@ -135,6 +137,230 @@ def select_target(
     if policy == "highest-confidence":
         return max(filtered, key=lambda candidate: candidate.confidence if candidate.confidence is not None else 0.0)
     return max(filtered, key=_candidate_area)
+
+
+def load_labels(labels_path: str) -> list[str]:
+    labels: list[str] = []
+    if not labels_path:
+        return labels
+
+    for raw_line in Path(labels_path).read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split(maxsplit=1)
+        if len(parts) == 2 and parts[0].isdigit():
+            label_index = int(parts[0])
+            while len(labels) <= label_index:
+                labels.append(f"class_{len(labels)}")
+            labels[label_index] = parts[1].strip()
+        else:
+            labels.append(line)
+    return labels
+
+
+def _label_for_class_id(labels: Sequence[str], class_id: int) -> str:
+    if 0 <= class_id < len(labels) and labels[class_id]:
+        return labels[class_id]
+    return f"class_{class_id}"
+
+
+def _scaled_box(
+    values: Sequence[float],
+    frame_width: int,
+    frame_height: int,
+) -> tuple[float, float, float, float]:
+    x1, y1, x2, y2 = [float(value) for value in values[:4]]
+    if max(abs(x1), abs(y1), abs(x2), abs(y2)) <= 1.5:
+        x1 *= frame_width
+        x2 *= frame_width
+        y1 *= frame_height
+        y2 *= frame_height
+
+    left = max(min(x1, x2), 0.0)
+    top = max(min(y1, y2), 0.0)
+    right = min(max(x1, x2), float(frame_width))
+    bottom = min(max(y1, y2), float(frame_height))
+    return left, top, max(right - left, 0.0), max(bottom - top, 0.0)
+
+
+def _candidate_iou(left: DetectionCandidate, right: DetectionCandidate) -> float:
+    left_x2 = left.x + left.width
+    left_y2 = left.y + left.height
+    right_x2 = right.x + right.width
+    right_y2 = right.y + right.height
+
+    overlap_left = max(left.x, right.x)
+    overlap_top = max(left.y, right.y)
+    overlap_right = min(left_x2, right_x2)
+    overlap_bottom = min(left_y2, right_y2)
+    overlap_width = max(overlap_right - overlap_left, 0.0)
+    overlap_height = max(overlap_bottom - overlap_top, 0.0)
+    overlap_area = overlap_width * overlap_height
+    if overlap_area <= 0.0:
+        return 0.0
+    union_area = _candidate_area(left) + _candidate_area(right) - overlap_area
+    return overlap_area / max(union_area, 1.0)
+
+
+def apply_nms(candidates: Iterable[DetectionCandidate], threshold: float) -> list[DetectionCandidate]:
+    if threshold <= 0.0:
+        return list(candidates)
+
+    kept: list[DetectionCandidate] = []
+    sorted_candidates = sorted(
+        candidates,
+        key=lambda candidate: candidate.confidence if candidate.confidence is not None else 0.0,
+        reverse=True,
+    )
+    for candidate in sorted_candidates:
+        if all(_candidate_iou(candidate, existing) <= threshold for existing in kept):
+            kept.append(candidate)
+    return kept
+
+
+def decode_dnn_detections(
+    outputs: Any,
+    *,
+    frame_width: int,
+    frame_height: int,
+    labels: Sequence[str],
+    min_confidence: float,
+    nms_threshold: float,
+) -> list[DetectionCandidate]:
+    try:
+        import numpy as np  # type: ignore
+    except ImportError:
+        return []
+
+    candidates: list[DetectionCandidate] = []
+    output_items = outputs if isinstance(outputs, (list, tuple)) else [outputs]
+    for output in output_items:
+        array = np.asarray(output)
+        if array.size == 0:
+            continue
+
+        if array.ndim == 4 and array.shape[-1] >= 7:
+            rows = array.reshape(-1, array.shape[-1])
+            for row in rows:
+                if float(row[0]) < 0:
+                    continue
+                confidence = float(row[2])
+                if confidence < min_confidence:
+                    continue
+                class_id = int(row[1])
+                x, y, width, height = _scaled_box(row[3:7], frame_width, frame_height)
+                if width <= 0.0 or height <= 0.0:
+                    continue
+                candidates.append(
+                    DetectionCandidate(
+                        target_type="object",
+                        label=_label_for_class_id(labels, class_id),
+                        class_id=class_id,
+                        confidence=confidence,
+                        x=x,
+                        y=y,
+                        width=width,
+                        height=height,
+                        frame_width=frame_width,
+                        frame_height=frame_height,
+                    )
+                )
+            continue
+
+        if array.ndim >= 2 and array.shape[-1] >= 6:
+            rows = array.reshape(-1, array.shape[-1])
+            for row in rows:
+                confidence = float(row[4])
+                if confidence < min_confidence:
+                    continue
+                class_id = int(row[5])
+                x, y, width, height = _scaled_box(row[0:4], frame_width, frame_height)
+                if width <= 0.0 or height <= 0.0:
+                    continue
+                candidates.append(
+                    DetectionCandidate(
+                        target_type="object",
+                        label=_label_for_class_id(labels, class_id),
+                        class_id=class_id,
+                        confidence=confidence,
+                        x=x,
+                        y=y,
+                        width=width,
+                        height=height,
+                        frame_width=frame_width,
+                        frame_height=frame_height,
+                    )
+                )
+
+    return apply_nms(candidates, nms_threshold)
+
+
+@dataclass
+class OpenCvDnnObjectDetector:
+    net: Any
+    labels: Sequence[str]
+    input_size: int = 320
+    name: str = "opencv-dnn"
+
+    @classmethod
+    def from_model(
+        cls,
+        model_path: str,
+        labels_path: str = "",
+        *,
+        input_size: int = 320,
+    ) -> "OpenCvDnnObjectDetector":
+        if not model_path:
+            raise ValueError("--object-model is required for opencv-dnn object detection")
+        model = Path(model_path)
+        if not model.exists():
+            raise FileNotFoundError(f"object model not found: {model}")
+
+        try:
+            import cv2  # type: ignore
+        except ImportError as exc:
+            raise RuntimeError("opencv_unavailable") from exc
+
+        labels = load_labels(labels_path) if labels_path else []
+        if model.suffix.lower() == ".onnx":
+            net = cv2.dnn.readNetFromONNX(str(model))
+        else:
+            net = cv2.dnn.readNet(str(model))
+        return cls(net=net, labels=labels, input_size=input_size)
+
+    def detect(self, frame: bytes, config: DetectionConfig) -> Iterable[DetectionCandidate]:
+        try:
+            import cv2  # type: ignore
+            import numpy as np  # type: ignore
+        except ImportError as exc:
+            raise RuntimeError("opencv_unavailable") from exc
+
+        data = np.frombuffer(frame, dtype=np.uint8)
+        image = cv2.imdecode(data, cv2.IMREAD_COLOR)
+        if image is None:
+            return []
+
+        frame_height, frame_width = image.shape[:2]
+        input_size = max(int(config.object_input_size or self.input_size), 32)
+        blob = cv2.dnn.blobFromImage(
+            image,
+            scalefactor=1.0 / 255.0,
+            size=(input_size, input_size),
+            mean=(0.0, 0.0, 0.0),
+            swapRB=True,
+            crop=False,
+        )
+        self.net.setInput(blob)
+        outputs = self.net.forward()
+        return decode_dnn_detections(
+            outputs,
+            frame_width=frame_width,
+            frame_height=frame_height,
+            labels=self.labels,
+            min_confidence=config.object_min_confidence,
+            nms_threshold=config.object_nms_threshold,
+        )
 
 
 def payload_from_candidate(

@@ -50,6 +50,23 @@ Do not describe this as a general-purpose autonomous grasping system.
 6. Keep physical motion behind explicit operator confirmation until more
    position/contact feedback exists.
 
+## Current Branch Status
+
+As of 2026-05-31 on `feature/pi-object-detection-mvp`:
+
+- Milestone 1 is implemented: shared detection contract, selected-target JSON,
+  fake object backend contract tests, and color compatibility.
+- Milestone 2 is implemented: Pi perception service with cached frame,
+  `/api/detection`, `/api/perception`, `/api/vision_frame`, `/health`, and
+  dashboard `--perception-url` proxy mode.
+- Milestone 3 is in progress: the first real object backend path exists through
+  OpenCV DNN/ONNX model loading, label-map loading, SSD-style output decoding,
+  confidence filtering, NMS, and detector injection into the Pi perception
+  service. Model weights are intentionally not committed.
+- Live hardware validation is currently color-mode only. Real object-mode
+  validation still requires selecting/downloading a small Pi-suitable model and
+  labels file outside the repository.
+
 ## Perception Design
 
 Current color detection is duplicated in:
@@ -58,7 +75,7 @@ Current color detection is duplicated in:
 - `tools/motionbrain_dashboard.py`
 - `ros2_ws/src/motionbrain_ros_bridge/motionbrain_ros_bridge/motionbrain_status_node.py`
 
-First implementation step:
+Completed first implementation step:
 
 - Add `ros2_ws/src/motionbrain_ros_bridge/motionbrain_ros_bridge/vision_detection.py`.
 - Move shared functions there:
@@ -71,10 +88,18 @@ First implementation step:
   - `payload_from_candidate(...)`
 - Keep defaults exactly compatible with the current red color detector.
 
-Second implementation step:
+Completed second implementation step:
 
 - Add object-mode config and fake backend tests.
-- Add real Pi backend behind explicit model paths.
+- Add Pi perception service plus dashboard proxy mode.
+
+Current object-backend step:
+
+- Add OpenCV DNN/ONNX backend behind explicit model paths.
+- Decode SSD-style detector outputs into the existing selected-target payload.
+- Keep color detection as the runtime fallback by running
+  `--detector-mode color`; if object mode is explicitly requested without a
+  usable model, fail fast instead of silently changing the requested mode.
 
 Preferred runtime path:
 
@@ -143,14 +168,12 @@ control guard continue to work while richer object details live in JSON.
 
 ## CLI And Config Surface
 
-Add these options consistently to `tools/vision_host_mvp.py`,
-`tools/motionbrain_dashboard.py`, and ROS2 launch/node config:
+Current Pi perception service options:
 
 ```text
 --detector-mode {color,object}
---object-backend {tflite,onnx,opencv-dnn}
+--object-backend {fake,tflite,onnx,opencv-dnn}
 --object-model PATH
---object-config PATH
 --object-labels PATH
 --object-target LABEL
 --object-min-confidence 0.45
@@ -158,6 +181,11 @@ Add these options consistently to `tools/vision_host_mvp.py`,
 --object-input-size 320
 --target-policy {largest,center,highest-confidence}
 ```
+
+`--object-config PATH` remains reserved for future backends that need a
+separate config file. The dashboard and embedded console consume the resulting
+`/api/detection` payload through `--perception-url`; they do not need to own the
+model runtime.
 
 Environment variables for Pi/systemd:
 
@@ -287,10 +315,11 @@ curl -sS http://127.0.0.1:<port>/api/detection
 
 Scope:
 
-- Add TFLite or ONNX backend behind explicit model path.
+- Add OpenCV DNN/ONNX backend behind explicit model path.
 - Add object labels and class whitelist.
 - Add latency/threshold/fallback fields.
-- Keep color fallback when model/runtime is missing.
+- Keep color fallback as the default detector mode; fail fast for explicitly
+  requested object mode if the model/runtime is missing.
 
 Validation:
 
@@ -298,6 +327,7 @@ Validation:
 python3 tools/motionbrain_perception_service.py \
   --camera-url http://<camera-ip> \
   --detector-mode object \
+  --object-backend opencv-dnn \
   --object-model <model> \
   --object-labels <labels> \
   --object-target cup

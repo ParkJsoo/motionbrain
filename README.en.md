@@ -372,6 +372,40 @@ python3 tools/motionbrain_dashboard.py \
   --timeout 6
 ```
 
+To split camera polling/detection from the dashboard on the Pi, start the
+perception service first and let the dashboard proxy that API:
+
+```bash
+python3 tools/motionbrain_perception_service.py \
+  --host 0.0.0.0 \
+  --port 8766 \
+  --camera-url http://<camera-ip> \
+  --detector-mode color \
+  --detect-color red \
+  --timeout 6
+
+export MOTIONBRAIN_HTTP_TOKEN="<local-controller-token>"
+python3 tools/motionbrain_dashboard.py \
+  --host 0.0.0.0 \
+  --motion-host <controller-ip> \
+  --perception-url http://127.0.0.1:8766 \
+  --timeout 6
+```
+
+Object mode is enabled only through explicit local model and label files; model
+weights are not committed to this repository.
+
+```bash
+python3 tools/motionbrain_perception_service.py \
+  --host 0.0.0.0 \
+  --camera-url http://<camera-ip> \
+  --detector-mode object \
+  --object-backend opencv-dnn \
+  --object-model <model.onnx> \
+  --object-labels <labels.txt> \
+  --object-target <label>
+```
+
 The `TRACKED` camera mode in `MotionBrain Control` uses the same dashboard API. Its default dashboard URL is `http://motionbrain-pi.local:8765`, and the on-page `API` field can be changed to `http://<pi-ip>:8765`. Legacy browser storage from the earlier Mac-hosted dashboard value `127.0.0.1:8765` is migrated to the Pi default.
 
 The default Nudge Once setting is conservative at `250ms`/`25%`. For a more visible demo movement, after checking clearance and stop behavior, use about `--align-nudge-ms 600 --align-percent 40`.

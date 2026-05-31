@@ -21,6 +21,8 @@ if str(ROS_BRIDGE_SRC) not in sys.path:
     sys.path.insert(0, str(ROS_BRIDGE_SRC))
 
 from motionbrain_ros_bridge.vision_detection import DetectionConfig  # noqa: E402
+from motionbrain_ros_bridge.vision_detection import DetectorBackend  # noqa: E402
+from motionbrain_ros_bridge.vision_detection import OpenCvDnnObjectDetector  # noqa: E402
 from motionbrain_ros_bridge.vision_detection import detect_frame  # noqa: E402
 
 
@@ -39,12 +41,14 @@ class PerceptionState:
         camera_url: str,
         config: DetectionConfig,
         *,
+        detector: DetectorBackend | None = None,
         timeout: float = 2.0,
         interval: float = 0.35,
         stale_seconds: float = 2.0,
     ) -> None:
         self.camera_url = camera_url.rstrip("/")
         self.config = config
+        self.detector = detector
         self.timeout = timeout
         self.interval = interval
         self.stale_seconds = stale_seconds
@@ -58,7 +62,7 @@ class PerceptionState:
 
     def run_once(self) -> None:
         frame, content_type = fetch_bytes(f"{self.camera_url}/capture", self.timeout)
-        detection = detect_frame(frame, self.config)
+        detection = detect_frame(frame, self.config, self.detector)
         now = time.time()
         detection["cameraUrl"] = self.camera_url
         detection["ts"] = now
@@ -148,6 +152,7 @@ class PerceptionState:
             "errorTotal": error_total,
             "lastError": last_error,
             "detector": detector,
+            "detectorConfigured": self.detector is not None,
         }
 
     def frame_payload(self) -> tuple[bytes, str] | None:
@@ -258,6 +263,7 @@ class PerceptionServer(ThreadingHTTPServer):
             "objectNmsThreshold": config.object_nms_threshold,
             "objectInputSize": config.object_input_size,
             "targetPolicy": config.target_policy,
+            "detectorConfigured": self.state.detector is not None,
         }
 
 
@@ -277,10 +283,32 @@ def build_detection_config(args: argparse.Namespace) -> DetectionConfig:
     )
 
 
+def build_detector(config: DetectionConfig) -> DetectorBackend | None:
+    mode = config.mode.strip().lower()
+    if mode == "color":
+        return None
+    if mode != "object":
+        raise ValueError(f"unsupported detector mode: {config.mode}")
+
+    backend = config.object_backend.strip().lower()
+    if backend in {"opencv-dnn", "onnx"}:
+        return OpenCvDnnObjectDetector.from_model(
+            config.object_model,
+            config.object_labels,
+            input_size=config.object_input_size,
+        )
+    if backend == "fake":
+        return None
+    raise ValueError(f"object backend not implemented: {config.object_backend}")
+
+
 def run(args: argparse.Namespace) -> int:
+    config = build_detection_config(args)
+    detector = build_detector(config)
     state = PerceptionState(
         args.camera_url,
-        build_detection_config(args),
+        config,
+        detector=detector,
         timeout=args.timeout,
         interval=args.interval,
         stale_seconds=args.stale_seconds,
@@ -296,7 +324,12 @@ def run(args: argparse.Namespace) -> int:
     )
     print(f"MotionBrain perception service: http://{args.host}:{args.port}")
     print(f"camera={args.camera_url}")
-    print(f"detector={args.detector_mode} color={args.detect_color} target={args.object_target or '-'}")
+    detector_name = getattr(detector, "name", "-")
+    print(
+        "detector="
+        f"{args.detector_mode} backend={args.object_backend} name={detector_name} "
+        f"color={args.detect_color} target={args.object_target or '-'}"
+    )
     try:
         server.serve_forever()
     except KeyboardInterrupt:

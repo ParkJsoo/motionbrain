@@ -115,6 +115,39 @@ The default dashboard Nudge Once setting is conservative (`250ms`/`25%`). For a
 visible demo nudge after confirming clearance and stop behavior, restart with
 `--align-nudge-ms 600 --align-percent 40`.
 
+If the Pi should own camera polling and detection, run the perception service
+next to the dashboard and point the dashboard at `--perception-url`:
+
+```bash
+python3 tools/motionbrain_perception_service.py \
+  --host 0.0.0.0 \
+  --port 8766 \
+  --camera-url http://<camera-ip> \
+  --detector-mode color \
+  --detect-color red \
+  --timeout 6
+
+export MOTIONBRAIN_HTTP_TOKEN="CHANGE_ME_TO_A_LONG_RANDOM_LOCAL_TOKEN"
+python3 tools/motionbrain_dashboard.py \
+  --host 0.0.0.0 \
+  --motion-host <controller-ip> \
+  --perception-url http://127.0.0.1:8766 \
+  --timeout 6
+```
+
+Object mode uses explicit local model and label files, for example:
+
+```bash
+python3 tools/motionbrain_perception_service.py \
+  --host 0.0.0.0 \
+  --camera-url http://<camera-ip> \
+  --detector-mode object \
+  --object-backend opencv-dnn \
+  --object-model <model.onnx> \
+  --object-labels <labels.txt> \
+  --object-target <label>
+```
+
 The ESP32-hosted `MotionBrain Control` page also uses this dashboard for
 `TRACKED` camera mode. Its default dashboard API is
 `http://motionbrain-pi.local:8765`; if mDNS is unreliable, set the page's `API`

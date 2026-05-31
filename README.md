@@ -416,6 +416,38 @@ python3 tools/motionbrain_dashboard.py \
   --timeout 6
 ```
 
+Pi에서 camera polling/detection을 dashboard와 분리하려면 perception service를 먼저 실행하고 dashboard는 그 API를 proxy한다.
+
+```bash
+python3 tools/motionbrain_perception_service.py \
+  --host 0.0.0.0 \
+  --port 8766 \
+  --camera-url http://<camera-ip> \
+  --detector-mode color \
+  --detect-color red \
+  --timeout 6
+
+export MOTIONBRAIN_HTTP_TOKEN="<local-controller-token>"
+python3 tools/motionbrain_dashboard.py \
+  --host 0.0.0.0 \
+  --motion-host <controller-ip> \
+  --perception-url http://127.0.0.1:8766 \
+  --timeout 6
+```
+
+Object mode는 repository에 모델 weight를 넣지 않고 명시적 모델/라벨 파일로만 켠다.
+
+```bash
+python3 tools/motionbrain_perception_service.py \
+  --host 0.0.0.0 \
+  --camera-url http://<camera-ip> \
+  --detector-mode object \
+  --object-backend opencv-dnn \
+  --object-model <model.onnx> \
+  --object-labels <labels.txt> \
+  --object-target <label>
+```
+
 `MotionBrain Control`의 `TRACKED` camera mode는 같은 dashboard API를 사용한다. 기본 dashboard URL은 `http://motionbrain-pi.local:8765`이고, 화면의 `API` 입력칸에서 `http://<pi-ip>:8765`로 바꿀 수 있다. 예전 Mac-hosted dashboard 값인 `127.0.0.1:8765`가 브라우저에 저장되어 있으면 자동으로 Pi 기본값으로 교체된다.
 
 기본 Nudge Once는 `250ms`/`25%`로 보수적이다. 실제 움직임을 영상에서 더 잘 보이게 할 때는 주변 clearance와 stop 동작을 확인한 뒤 `--align-nudge-ms 600 --align-percent 40` 정도로 올려 실행한다.
