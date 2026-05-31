@@ -25,6 +25,12 @@ namespace {
 constexpr const char* MESSAGE_SCHEMA_VERSION = "phase3.v1";
 constexpr uint32_t MANUAL_COMMAND_LEASE_MS = 750;
 
+void sendNoStoreHeaders(::WebServer& server) {
+  server.sendHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+  server.sendHeader("Pragma", "no-cache");
+  server.sendHeader("Expires", "0");
+}
+
 String jsonEscape(const String& raw) {
   String escaped;
   escaped.reserve(raw.length() + 8);
@@ -318,6 +324,7 @@ void MotionBrainWebServer::handleRoot() {
   // HTML을 생성하면서 동시에 전송 (스트리밍 방식)
   // 문제: 전체 HTML을 먼저 생성하면 메모리 부족 또는 전송 실패 가능
   // 해결: 생성과 동시에 전송하여 메모리 사용 최소화
+  sendNoStoreHeaders(server_);
   server_.setContentLength(CONTENT_LENGTH_UNKNOWN);  // 청크 전송 모드
   server_.send(200, "text/html", "");
   
@@ -342,7 +349,15 @@ void MotionBrainWebServer::handleRoot() {
   server_.sendContent(".brand-subtitle { margin-top: 6px; color: var(--muted); font-size: 13px; }");
   server_.sendContent(".header-pills { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }");
   server_.sendContent(".header-pills span { color: #b8c7d6; background: #101721; border: 1px solid var(--line); border-radius: 999px; padding: 7px 10px; font-size: 11px; font-weight: 700; text-transform: uppercase; }");
+  server_.sendContent(".status-strip { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }");
+  server_.sendContent(".metric { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 52px; padding: 12px 14px; background: var(--panel-3); border: 1px solid var(--line-soft); border-radius: 8px; }");
+  server_.sendContent(".metric-label { color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.1px; }");
+  server_.sendContent(".metric-value { color: #cbd5e1; font-size: 13px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px; text-align: right; }");
+  server_.sendContent(".metric-value.ok { color: #86efac; }");
+  server_.sendContent(".metric-value.warn { color: #fcd34d; }");
+  server_.sendContent(".metric-value.hot { color: #fca5a5; }");
   server_.sendContent(".card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; box-shadow: 0 14px 36px rgba(0,0,0,0.28); min-width: 0; }");
+  server_.sendContent(".card-system { border-color: rgba(56,189,248,0.32); }");
   server_.sendContent(".card-motor, .card-joint { grid-column: 1 / -1; }");
   server_.sendContent(".card-joint { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }");
   server_.sendContent(".card-joint .card-title, .card-joint .joint-speed-row { grid-column: 1 / -1; }");
@@ -367,10 +382,13 @@ void MotionBrainWebServer::handleRoot() {
   server_.sendContent(".btn-light-on { background: #78350f; color: #fef3c7; border-color: rgba(245,158,11,0.5); }");
   server_.sendContent(".btn-light-off { background: #1d2836; color: #cbd5e1; border-color: #334155; }");
   server_.sendContent(".btn-disarm { background: #3f1d25; color: #fecdd3; border-color: rgba(244,63,94,0.45); }");
-  server_.sendContent(".btn-stop, .btn-motor-stop { background: #4c1d1d; color: #fee2e2; border-color: rgba(239,68,68,0.55); }");
+  server_.sendContent(".btn-stop { background: #4c1d1d; color: #fee2e2; border-color: rgba(239,68,68,0.55); }");
+  server_.sendContent(".btn-motor-stop { background: #182332; color: #aebdd0; border-color: #334155; }");
+  server_.sendContent(".btn-light-toggle { background: #332515; color: #fcd34d; border-color: rgba(245,158,11,0.35); }");
   server_.sendContent(".btn-forward { background: #0b3b54; color: #d9f3ff; border-color: rgba(56,189,248,0.45); }");
   server_.sendContent(".btn-reverse { background: #263449; color: #d7e4f2; border-color: #40536d; }");
-  server_.sendContent(".btn-motor-stop:active { background: #5f1f1f; }");
+  server_.sendContent(".btn-motor-stop:active { background: #243246; }");
+  server_.sendContent(".btn-light-toggle:active { background: #433018; }");
   server_.sendContent(".btn-forward:active { background: #0e4f70; }");
   server_.sendContent(".btn-reverse:active { background: #30425d; }");
   server_.sendContent(".btn-pressed { opacity: 0.88; transform: scale(0.98); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12), inset 0 3px 8px rgba(0,0,0,0.35); }");
@@ -428,13 +446,14 @@ void MotionBrainWebServer::handleRoot() {
   server_.sendContent("@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }");
   server_.sendContent(".last-update { grid-column: 1 / -1; text-align: right; color: var(--faint); font-size: 11px; padding: 2px 2px 10px; }");
   server_.sendContent(".joint-speed-row { display: flex; gap: 10px; align-items: center; margin-bottom: 2px; padding: 12px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--panel-3); }");
-  server_.sendContent("@media (max-width: 980px) { .container { grid-template-columns: repeat(2, minmax(0, 1fr)); } .card-light { grid-column: 1 / -1; } }");
-  server_.sendContent("@media (max-width: 720px) { body { padding: 10px; } .container { grid-template-columns: 1fr; gap: 10px; } .app-header { align-items: flex-start; flex-direction: column; } .header-pills { justify-content: flex-start; } .brand-title { font-size: 28px; } .card-light, .card-motor, .card-joint { grid-column: 1 / -1; } .button-container.active, .joystick-container.active, .card-joint { grid-template-columns: 1fr; } .motor-controls { align-items: stretch; } .motor-controls button { flex: 1 1 30%; } }");
+  server_.sendContent("@media (max-width: 980px) { .container { grid-template-columns: repeat(2, minmax(0, 1fr)); } .card-light { grid-column: 1 / -1; } .status-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); } }");
+  server_.sendContent("@media (max-width: 720px) { body { padding: 10px; } .container { grid-template-columns: 1fr; gap: 10px; } .app-header { align-items: flex-start; flex-direction: column; } .header-pills { justify-content: flex-start; } .brand-title { font-size: 28px; } .status-strip { grid-template-columns: 1fr; } .card-light, .card-motor, .card-joint { grid-column: 1 / -1; } .button-container.active, .joystick-container.active, .card-joint { grid-template-columns: 1fr; } .motor-controls { align-items: stretch; } .motor-controls button { flex: 1 1 30%; } }");
   server_.sendContent("</style></head><body>");
   
   // HTML 본문 전송
   server_.sendContent("<div class=\"container\">");
-  server_.sendContent("<header class=\"app-header\"><div class=\"brand-block\"><div class=\"brand-kicker\">Embedded Robotics</div><h1 class=\"brand-title\">MotionBrain</h1><div class=\"brand-subtitle\">Local control console for manipulator bring-up and demo operation</div></div><div class=\"header-pills\"><span>ESP32</span><span>Manual Lease</span><span>Local Link</span></div></header>");
+  server_.sendContent("<header class=\"app-header\"><div class=\"brand-block\"><div class=\"brand-kicker\">Control Console</div><h1 class=\"brand-title\">MotionBrain</h1><div class=\"brand-subtitle\">Local robotics operations for bring-up and demo control</div></div><div class=\"header-pills\"><span>ESP32</span><span>Token Gate</span><span>Local Link</span></div></header>");
+  server_.sendContent("<section class=\"status-strip\"><div class=\"metric\"><span class=\"metric-label\">Controller</span><span class=\"metric-value warn\" id=\"link-status\">CHECKING</span></div><div class=\"metric\"><span class=\"metric-label\">Teleop</span><span class=\"metric-value warn\" id=\"teleop-status\">CHECKING</span></div><div class=\"metric\"><span class=\"metric-label\">Sensor</span><span class=\"metric-value warn\" id=\"sensor-status\">CHECKING</span></div><div class=\"metric\"><span class=\"metric-label\">Light</span><span class=\"metric-value\" id=\"light-status\">OFF</span></div></section>");
   server_.sendContent("<div class=\"card card-system\">");
   server_.sendContent("<div class=\"card-title\">System</div>");
   server_.sendContent("<div class=\"info-row\">");
@@ -459,7 +478,7 @@ void MotionBrainWebServer::handleRoot() {
   server_.sendContent("<div class=\"button-group\">");
   server_.sendContent("<button class=\"btn-light-on\" id=\"btn-light-on\" onclick=\"sendLight('on')\">ON</button>");
   server_.sendContent("<button class=\"btn-light-off\" id=\"btn-light-off\" onclick=\"sendLight('off')\">OFF</button>");
-  server_.sendContent("<button class=\"btn-stop\" onclick=\"sendLight('toggle')\">TOGGLE</button>");
+  server_.sendContent("<button class=\"btn-light-toggle\" onclick=\"sendLight('toggle')\">TOGGLE</button>");
   server_.sendContent("</div></div>");
   server_.sendContent("<div class=\"card card-motor\">");
   server_.sendContent("<div class=\"card-title\">Manual Motors</div>");
@@ -532,7 +551,8 @@ void MotionBrainWebServer::handleRoot() {
   server_.sendContent("function showMessage(text, isError) { const msg = document.getElementById(\"message\"); msg.textContent = text; msg.className = \"message \" + (isError ? \"error\" : \"success\"); msg.style.display = \"block\"; setTimeout(() => { msg.style.display = \"none\"; }, 3000); }");
   server_.sendContent("function sendCommand(cmd) { const btn = document.getElementById(\"btn-\" + cmd); btn.disabled = true; commandFetch(\"/command?cmd=\" + cmd, { method: \"POST\" }).then(data => { btn.disabled = false; showMessage(data.message || data.error || \"Command sent\", !data.success); updateStatus(); }).catch(err => { btn.disabled = false; showMessage(\"Error: \" + err.message, true); }); }");
   server_.sendContent("function sendLight(action) { commandFetch(\"/light?action=\" + action, { method: \"POST\" }).then(data => { updateStatus(); if (data && data.success === false) showMessage(data.message || data.error || 'Light command failed', true); }).catch(err => { showMessage('Error: ' + err.message, true); }); }");
-  server_.sendContent("function updateStatus() { fetch(\"/status\").then(r => { if (!r.ok) { throw new Error(\"HTTP \" + r.status + \": \" + r.statusText); } return r.text(); }).then(text => { try { const data = JSON.parse(text); const state = data.state || \"UNKNOWN\"; const badge = document.getElementById(\"state-badge\"); if (badge) { badge.textContent = state; badge.className = \"status-badge \" + (stateColors[state] || \"state-LOADING\"); } const motorEl = document.getElementById(\"motor\"); if (motorEl) motorEl.textContent = data.motorEnabled ? \"YES\" : \"NO\"; const lastUpdate = document.getElementById(\"last-update\"); if (lastUpdate) lastUpdate.textContent = new Date().toLocaleTimeString(); updateButtons(state); if (data.motors) updateMotorStatus(data); } catch (e) { console.error(\"JSON parse error:\", e, \"Response:\", text); } }).catch(err => { console.error(\"Status update error:\", err); }); }");
+  server_.sendContent("function setMetric(id, value, tone) { const el = document.getElementById(id); if (!el) return; el.textContent = value; el.className = 'metric-value' + (tone ? ' ' + tone : ''); }");
+  server_.sendContent("function updateStatus() { fetch(\"/status\").then(r => { if (!r.ok) { throw new Error(\"HTTP \" + r.status + \": \" + r.statusText); } return r.text(); }).then(text => { try { const data = JSON.parse(text); const state = data.state || \"UNKNOWN\"; const badge = document.getElementById(\"state-badge\"); if (badge) { badge.textContent = state; badge.className = \"status-badge \" + (stateColors[state] || \"state-LOADING\"); } const motorEl = document.getElementById(\"motor\"); if (motorEl) motorEl.textContent = data.motorEnabled ? \"YES\" : \"NO\"; setMetric('link-status', 'ONLINE', 'ok'); const teleop = data.teleop || {}; const teleopText = teleop.controlActive ? 'ACTIVE' : (teleop.deadman ? 'READY' : (teleop.connected ? 'STANDBY' : 'OFFLINE')); setMetric('teleop-status', teleopText, teleop.connected ? 'ok' : 'hot'); const sensor = data.sensor || {}; const sensorText = sensor.connected ? (sensor.simulated ? 'SIM' : 'LIVE') : 'STALE'; setMetric('sensor-status', sensorText, sensor.connected ? (sensor.simulated ? 'warn' : 'ok') : 'hot'); setMetric('light-status', data.light ? 'ON' : 'OFF', data.light ? 'warn' : ''); const lastUpdate = document.getElementById(\"last-update\"); if (lastUpdate) lastUpdate.textContent = new Date().toLocaleTimeString(); updateButtons(state); if (data.motors) updateMotorStatus(data); } catch (e) { console.error(\"JSON parse error:\", e, \"Response:\", text); } }).catch(err => { setMetric('link-status', 'OFFLINE', 'hot'); console.error(\"Status update error:\", err); }); }");
   server_.sendContent("function updateButtons(state) { const btnArm = document.getElementById(\"btn-arm\"); const btnDisarm = document.getElementById(\"btn-disarm\"); const btnStop = document.getElementById(\"btn-stop\"); btnArm.disabled = (state === \"ARMED\" || state === \"FAULT\" || state === \"BOOT\"); btnDisarm.disabled = (state !== \"ARMED\"); btnStop.disabled = (state === \"IDLE\"); const isArmed = (state === \"ARMED\"); if (btnStop) { btnStop.textContent = (state === \"FAULT\") ? \"RECOVER\" : \"STOP\"; } for (let i = 1; i <= MOTOR_COUNT; i++) { const joystickArea = document.getElementById(\"joystick-\" + i); if (joystickArea) { if (isArmed) { joystickArea.classList.remove(\"disabled\"); } else { joystickArea.classList.add(\"disabled\"); } } } }");
   server_.sendContent("function updateSpeedValue(motorId) { const slider = document.getElementById(\"speed-\" + motorId); const value = document.getElementById(\"speed-value-\" + motorId); value.textContent = slider.value + \"%\"; }");
   server_.sendContent("function validateDefaultSpeed() { const speedInput = document.getElementById(\"default-speed\"); const btnSet = document.getElementById(\"btn-set-speed\"); const validationMsg = document.getElementById(\"speed-validation\"); const value = speedInput.value.trim(); if (value === \"\") { btnSet.disabled = true; validationMsg.textContent = \"Please enter a speed value (1-255)\"; validationMsg.className = \"validation-message\"; speedInput.style.borderColor = \"#f44336\"; return false; } if (value.indexOf(\".\") !== -1 || value.indexOf(\",\") !== -1) { btnSet.disabled = true; validationMsg.textContent = \"Please enter an integer (no decimals)\"; validationMsg.className = \"validation-message\"; speedInput.style.borderColor = \"#f44336\"; return false; } const speed = parseInt(value); if (isNaN(speed)) { btnSet.disabled = true; validationMsg.textContent = \"Please enter a valid number\"; validationMsg.className = \"validation-message\"; speedInput.style.borderColor = \"#f44336\"; return false; } if (speed < 1 || speed > 255) { btnSet.disabled = true; validationMsg.textContent = \"Speed must be between 1 and 255\"; validationMsg.className = \"validation-message\"; speedInput.style.borderColor = \"#f44336\"; return false; } btnSet.disabled = false; validationMsg.textContent = \"Valid speed value\"; validationMsg.className = \"validation-message valid\"; speedInput.style.borderColor = \"#4caf50\"; return true; }");
@@ -581,6 +601,7 @@ void MotionBrainWebServer::handleStatus() {
     sendErrorJson(500, "SystemStateManager not initialized");
     return;
   }
+  sendNoStoreHeaders(server_);
   
   // 현재 상태 조회
   const char* stateString = systemState_->getStateString();
