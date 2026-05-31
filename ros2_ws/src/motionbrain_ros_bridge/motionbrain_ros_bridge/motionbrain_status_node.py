@@ -19,15 +19,11 @@ from motionbrain_ros_bridge.payload_utils import as_bool
 from motionbrain_ros_bridge.payload_utils import as_float
 from motionbrain_ros_bridge.payload_utils import as_str
 from motionbrain_ros_bridge.payload_utils import as_uint
-from motionbrain_ros_bridge.payload_utils import classify_alignment
-from motionbrain_ros_bridge.payload_utils import command_suggestion_for_alignment
 from motionbrain_ros_bridge.payload_utils import compact_json
 from motionbrain_ros_bridge.payload_utils import parse_light_action
+from motionbrain_ros_bridge.vision_detection import detect_colored_target
 from rclpy.node import Node
 from std_msgs.msg import String
-
-
-TARGET_RATIO_THRESHOLD = 0.02
 
 
 def fetch_json(url: str, timeout: float) -> dict[str, Any]:
@@ -53,95 +49,6 @@ def post_motionbrain(base_url: str, path: str, timeout: float, token: str = "") 
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
-
-
-def detect_colored_target(frame: bytes, color: str) -> dict[str, Any]:
-    try:
-        import cv2  # type: ignore
-        import numpy as np  # type: ignore
-    except ImportError:
-        return {
-            "detected": False,
-            "color": color,
-            "available": False,
-            "reason": "opencv_unavailable",
-            "alignment": "LOST",
-            "commandSuggestion": "none",
-        }
-
-    data = np.frombuffer(frame, dtype=np.uint8)
-    image = cv2.imdecode(data, cv2.IMREAD_COLOR)
-    if image is None:
-        return {
-            "detected": False,
-            "color": color,
-            "available": True,
-            "reason": "decode_failed",
-            "alignment": "LOST",
-            "commandSuggestion": "none",
-        }
-
-    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    if color == "red":
-        mask1 = cv2.inRange(hsv, (0, 80, 80), (10, 255, 255))
-        mask2 = cv2.inRange(hsv, (170, 80, 80), (180, 255, 255))
-        mask = cv2.bitwise_or(mask1, mask2)
-    elif color == "green":
-        mask = cv2.inRange(hsv, (40, 70, 70), (85, 255, 255))
-    elif color == "blue":
-        mask = cv2.inRange(hsv, (95, 70, 70), (130, 255, 255))
-    else:
-        return {
-            "detected": False,
-            "color": color,
-            "available": True,
-            "reason": "unsupported_color",
-            "alignment": "LOST",
-            "commandSuggestion": "none",
-        }
-
-    pixels = int(cv2.countNonZero(mask))
-    height, width = image.shape[:2]
-    area = max(height * width, 1)
-    ratio = pixels / area
-    detected = ratio >= TARGET_RATIO_THRESHOLD
-    centroid_x: float | None = None
-    centroid_y: float | None = None
-    offset_x: float | None = None
-    offset_y: float | None = None
-
-    if detected and pixels > 0:
-        moments = cv2.moments(mask)
-        if moments["m00"] != 0:
-            centroid_x = float(moments["m10"] / moments["m00"])
-            centroid_y = float(moments["m01"] / moments["m00"])
-            center_x = (width - 1) / 2.0
-            center_y = (height - 1) / 2.0
-            offset_x = (centroid_x - center_x) / max(center_x, 1.0)
-            offset_y = (centroid_y - center_y) / max(center_y, 1.0)
-
-    alignment = classify_alignment(offset_x) if detected else "LOST"
-    command_suggestion = command_suggestion_for_alignment(alignment)
-    return {
-        "detected": detected,
-        "color": color,
-        "available": True,
-        "ratio": ratio,
-        "areaRatio": ratio,
-        "pixels": pixels,
-        "width": width,
-        "height": height,
-        "frameBytes": len(frame),
-        "centerX": centroid_x,
-        "centerY": centroid_y,
-        "centroidX": centroid_x,
-        "centroidY": centroid_y,
-        "offsetX": offset_x,
-        "offsetY": offset_y,
-        "alignDeadband": ALIGN_DEADBAND,
-        "alignment": alignment,
-        "commandSuggestion": command_suggestion,
-    }
 
 
 class MotionBrainStatusNode(Node):

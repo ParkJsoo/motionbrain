@@ -8,9 +8,17 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from pathlib import Path
 
+ROS_BRIDGE_SRC = Path(__file__).resolve().parents[1] / "ros2_ws" / "src" / "motionbrain_ros_bridge"
+if str(ROS_BRIDGE_SRC) not in sys.path:
+    sys.path.insert(0, str(ROS_BRIDGE_SRC))
 
-TARGET_RATIO_THRESHOLD = 0.02
+from motionbrain_ros_bridge.vision_detection import TARGET_RATIO_THRESHOLD  # noqa: E402
+from motionbrain_ros_bridge.vision_detection import classify_alignment  # noqa: E402
+from motionbrain_ros_bridge.vision_detection import command_suggestion_for_alignment  # noqa: E402
+from motionbrain_ros_bridge.vision_detection import detect_colored_target  # noqa: E402
+
 NETWORK_EXCEPTIONS = (urllib.error.URLError, TimeoutError, OSError)
 LOOP_EXCEPTIONS = NETWORK_EXCEPTIONS + (json.JSONDecodeError, ValueError)
 
@@ -86,119 +94,6 @@ def status_allows_base_alignment(status: dict) -> bool:
     if base.get("active", False):
         return False
     return status.get("state") == "ARMED"
-
-
-def classify_alignment(offset_x: float | None, deadband: float) -> str:
-    if offset_x is None:
-        return "LOST"
-    if offset_x < -deadband:
-        return "LEFT"
-    if offset_x > deadband:
-        return "RIGHT"
-    return "CENTER"
-
-
-def command_suggestion_for_alignment(alignment: str) -> str:
-    if alignment == "LEFT":
-        return "base_left"
-    if alignment == "RIGHT":
-        return "base_right"
-    if alignment == "CENTER":
-        return "hold"
-    return "none"
-
-
-def detect_colored_target(frame: bytes, color: str, align_deadband: float) -> dict:
-    try:
-        import cv2  # type: ignore
-        import numpy as np  # type: ignore
-    except ImportError:
-        return {
-            "detected": False,
-            "available": False,
-            "color": color,
-            "reason": "opencv_unavailable",
-            "frameBytes": len(frame),
-            "alignment": "LOST",
-            "commandSuggestion": "none",
-        }
-
-    data = np.frombuffer(frame, dtype=np.uint8)
-    image = cv2.imdecode(data, cv2.IMREAD_COLOR)
-    if image is None:
-        return {
-            "detected": False,
-            "available": True,
-            "color": color,
-            "reason": "decode_failed",
-            "frameBytes": len(frame),
-            "alignment": "LOST",
-            "commandSuggestion": "none",
-        }
-
-    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    if color == "red":
-        mask1 = cv2.inRange(hsv, (0, 80, 80), (10, 255, 255))
-        mask2 = cv2.inRange(hsv, (170, 80, 80), (180, 255, 255))
-        mask = cv2.bitwise_or(mask1, mask2)
-    elif color == "green":
-        mask = cv2.inRange(hsv, (40, 70, 70), (85, 255, 255))
-    elif color == "blue":
-        mask = cv2.inRange(hsv, (95, 70, 70), (130, 255, 255))
-    else:
-        raise ValueError(f"unsupported color: {color}")
-
-    pixels = int(cv2.countNonZero(mask))
-    height, width = image.shape[:2]
-    area = max(height * width, 1)
-    ratio = pixels / max(area, 1)
-    detected = ratio >= TARGET_RATIO_THRESHOLD
-    centroid_x: float | None = None
-    centroid_y: float | None = None
-    offset_x: float | None = None
-    offset_y: float | None = None
-    target_box: dict[str, int] | None = None
-
-    if detected and pixels > 0:
-        x, y, box_width, box_height = cv2.boundingRect(mask)
-        target_box = {
-            "x": int(x),
-            "y": int(y),
-            "width": int(box_width),
-            "height": int(box_height),
-        }
-        moments = cv2.moments(mask)
-        if moments["m00"] != 0:
-            centroid_x = float(moments["m10"] / moments["m00"])
-            centroid_y = float(moments["m01"] / moments["m00"])
-            center_x = (width - 1) / 2.0
-            center_y = (height - 1) / 2.0
-            offset_x = (centroid_x - center_x) / max(center_x, 1.0)
-            offset_y = (centroid_y - center_y) / max(center_y, 1.0)
-
-    alignment = classify_alignment(offset_x, align_deadband) if detected else "LOST"
-    command_suggestion = command_suggestion_for_alignment(alignment)
-    return {
-        "detected": detected,
-        "available": True,
-        "color": color,
-        "ratio": ratio,
-        "areaRatio": ratio,
-        "pixels": pixels,
-        "width": width,
-        "height": height,
-        "frameBytes": len(frame),
-        "centerX": centroid_x,
-        "centerY": centroid_y,
-        "centroidX": centroid_x,
-        "centroidY": centroid_y,
-        "targetBox": target_box,
-        "offsetX": offset_x,
-        "offsetY": offset_y,
-        "alignDeadband": align_deadband,
-        "alignment": alignment,
-        "commandSuggestion": command_suggestion,
-    }
 
 
 def format_detection_detail(detection: dict) -> str:
