@@ -40,9 +40,34 @@ class DashboardAlignmentTest(unittest.TestCase):
 
         self.assertTrue(result["success"])
         self.assertTrue(result["stopped"])
+        self.assertTrue(result["startSuccess"])
+        self.assertTrue(result["stopSuccess"])
         self.assertEqual(
             calls,
             ["/joint?joint=base&action=right&percent=25", "/joint?joint=base&action=stop"],
+        )
+
+    def test_execute_base_nudge_reports_failed_start_even_if_stop_succeeds(self) -> None:
+        calls: list[str] = []
+
+        def fake_post(_base_url: str, path: str, _timeout: float, _token: str) -> dict:
+            calls.append(path)
+            if "action=stop" in path:
+                return {"success": True, "message": "base stop"}
+            return {"success": False, "message": "Blocked by safety"}
+
+        with patch.object(dashboard, "post_motionbrain", side_effect=fake_post), patch.object(dashboard.time, "sleep") as sleep:
+            result = dashboard.execute_base_nudge("http://motionbrain", "left", 25, 250, 2.0, "token")
+
+        sleep.assert_not_called()
+        self.assertFalse(result["ok"])
+        self.assertFalse(result["success"])
+        self.assertTrue(result["stopped"])
+        self.assertFalse(result["startSuccess"])
+        self.assertTrue(result["stopSuccess"])
+        self.assertEqual(
+            calls,
+            ["/joint?joint=base&action=left&percent=25", "/joint?joint=base&action=stop"],
         )
 
     def test_execute_base_nudge_attempts_stop_if_start_response_fails(self) -> None:

@@ -795,10 +795,12 @@ INDEX_HTML = """<!doctype html>
       const alignment = lastDetection.alignment;
       try {
         const data = await postJson("/api/align_nudge", { alignment });
-        if (data.stopped === false) {
-          throw new Error(data.error || data.message || "nudge failed");
+        if (!data.ok || !data.success || !data.stopped) {
+          const start = data.start && (data.start.message || data.start.error);
+          const stop = data.stop && (data.stop.message || data.stop.error);
+          throw new Error(data.error || data.message || start || stop || "nudge failed");
         }
-        pushLog(`align ${alignment}: ${data.message || "ok"} stopped=${data.stopped}`);
+        pushLog(`align ${alignment}: ${data.message || "ok"} ${data.nudgeMs}ms @ ${data.percent}% stopped=${data.stopped}`);
         refresh();
       } catch (err) {
         pushLog(`align ${alignment} error: ${err.message}`);
@@ -900,6 +902,8 @@ def execute_base_nudge(
         "ok": bool(start_result.get("success")) and stopped,
         "success": bool(start_result.get("success")),
         "stopped": stopped,
+        "startSuccess": bool(start_result.get("success")),
+        "stopSuccess": stopped,
         "direction": direction,
         "nudgeMs": nudge_ms,
         "percent": percent,
