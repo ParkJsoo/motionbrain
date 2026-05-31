@@ -169,14 +169,109 @@ INDEX_HTML = """<!doctype html>
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
     .panel-body { padding: 12px; }
-    .camera-frame {
+    .camera-stage {
+      position: relative;
       width: 100%;
       aspect-ratio: 4 / 3;
-      object-fit: contain;
       background: #05080d;
       border: 1px solid var(--line-soft);
       border-radius: 8px;
+      overflow: hidden;
+    }
+    .camera-frame {
       display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background: #05080d;
+    }
+    .vision-overlay {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      overflow: hidden;
+    }
+    .target-box {
+      position: absolute;
+      display: none;
+      border: 2px solid rgba(134, 239, 172, 0.95);
+      border-radius: 4px;
+      box-shadow: 0 0 0 1px rgba(4, 120, 87, 0.7), 0 0 24px rgba(34, 197, 94, 0.34);
+    }
+    .target-box.visible {
+      display: block;
+    }
+    .target-box::before,
+    .target-box::after {
+      content: "";
+      position: absolute;
+      width: 13px;
+      height: 13px;
+      border-color: #eafff2;
+      border-style: solid;
+    }
+    .target-box::before {
+      left: -4px;
+      top: -4px;
+      border-width: 2px 0 0 2px;
+    }
+    .target-box::after {
+      right: -4px;
+      bottom: -4px;
+      border-width: 0 2px 2px 0;
+    }
+    .target-label {
+      position: absolute;
+      left: -2px;
+      top: -28px;
+      padding: 4px 7px;
+      border-radius: 4px;
+      background: rgba(8, 11, 16, 0.82);
+      color: #bbf7d0;
+      border: 1px solid rgba(134, 239, 172, 0.5);
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .target-dot {
+      position: absolute;
+      display: none;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      border: 2px solid #ecfeff;
+      background: rgba(34, 197, 94, 0.82);
+      box-shadow: 0 0 16px rgba(34, 197, 94, 0.8);
+      transform: translate(-50%, -50%);
+    }
+    .target-dot.visible {
+      display: block;
+    }
+    .lock-state {
+      position: absolute;
+      left: 12px;
+      top: 12px;
+      padding: 6px 9px;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      background: rgba(8, 11, 16, 0.74);
+      color: #cbd5e1;
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+    .lock-state.lock {
+      color: #bbf7d0;
+      border-color: rgba(34, 197, 94, 0.58);
+      background: rgba(20, 83, 45, 0.42);
+    }
+    .lock-state.track {
+      color: #fef3c7;
+      border-color: rgba(245, 158, 11, 0.55);
+      background: rgba(120, 53, 15, 0.35);
     }
     .controls {
       display: flex;
@@ -352,7 +447,14 @@ INDEX_HTML = """<!doctype html>
       <section>
         <h2>Vision Feed</h2>
         <div class="panel-body">
-          <img id="cameraFrame" class="camera-frame" alt="ESP32-CAM capture">
+          <div class="camera-stage" id="cameraStage">
+            <img id="cameraFrame" class="camera-frame" alt="ESP32-CAM capture">
+            <div class="vision-overlay" id="visionOverlay">
+              <div class="target-box" id="targetBox"><span class="target-label" id="targetLabel">TARGET</span></div>
+              <div class="target-dot" id="targetDot"></div>
+              <div class="lock-state" id="lockState">SEARCHING</div>
+            </div>
+          </div>
           <div class="grid">
             <div class="metric">
               <div class="label">Detected</div>
@@ -508,9 +610,77 @@ INDEX_HTML = """<!doctype html>
       }
     }
 
+    function frameViewport(stage, frameWidth, frameHeight) {
+      const width = Number(frameWidth) || 320;
+      const height = Number(frameHeight) || 240;
+      const rect = stage.getBoundingClientRect();
+      const scale = Math.min(rect.width / width, rect.height / height);
+      const drawWidth = width * scale;
+      const drawHeight = height * scale;
+      return {
+        left: (rect.width - drawWidth) / 2,
+        top: (rect.height - drawHeight) / 2,
+        scale,
+        frameWidth: width,
+        frameHeight: height,
+      };
+    }
+
+    function setTargetOverlay(payload) {
+      const stage = document.getElementById("cameraStage");
+      const box = document.getElementById("targetBox");
+      const dot = document.getElementById("targetDot");
+      const label = document.getElementById("targetLabel");
+      const lockState = document.getElementById("lockState");
+      if (!stage || !box || !dot || !label || !lockState) return;
+
+      const detected = Boolean(payload.detected);
+      const alignment = payload.alignment || "LOST";
+      if (!detected) {
+        box.classList.remove("visible");
+        dot.classList.remove("visible");
+        lockState.textContent = payload.reason ? "NO SIGNAL" : "SEARCHING";
+        lockState.className = "lock-state";
+        return;
+      }
+
+      const centerX = typeof payload.centerX === "number" ? payload.centerX : payload.centroidX;
+      const centerY = typeof payload.centerY === "number" ? payload.centerY : payload.centroidY;
+      if (typeof centerX !== "number" || typeof centerY !== "number") {
+        box.classList.remove("visible");
+        dot.classList.remove("visible");
+        lockState.textContent = "SEARCHING";
+        lockState.className = "lock-state";
+        return;
+      }
+
+      const viewport = frameViewport(stage, payload.width, payload.height);
+      const targetBox = payload.targetBox || {};
+      const fallbackSize = Math.max(34, Math.min(96, Math.sqrt(Math.max(payload.pixels || 0, 1)) * viewport.scale * 1.7));
+      const x = typeof targetBox.x === "number" ? viewport.left + targetBox.x * viewport.scale : viewport.left + centerX * viewport.scale - fallbackSize / 2;
+      const y = typeof targetBox.y === "number" ? viewport.top + targetBox.y * viewport.scale : viewport.top + centerY * viewport.scale - fallbackSize / 2;
+      const width = typeof targetBox.width === "number" ? Math.max(28, targetBox.width * viewport.scale) : fallbackSize;
+      const height = typeof targetBox.height === "number" ? Math.max(28, targetBox.height * viewport.scale) : fallbackSize;
+      box.style.left = `${x}px`;
+      box.style.top = `${y}px`;
+      box.style.width = `${width}px`;
+      box.style.height = `${height}px`;
+      box.classList.add("visible");
+
+      dot.style.left = `${viewport.left + centerX * viewport.scale}px`;
+      dot.style.top = `${viewport.top + centerY * viewport.scale}px`;
+      dot.classList.add("visible");
+
+      const lockText = alignment === "CENTER" ? "LOCK" : `TRACK ${alignment}`;
+      label.textContent = `${lockText} ${(payload.color || "target").toUpperCase()}`;
+      lockState.textContent = lockText;
+      lockState.className = `lock-state ${alignment === "CENTER" ? "lock" : "track"}`;
+    }
+
     function updateDetection(payload) {
       lastDetection = payload;
       const detected = Boolean(payload.detected);
+      setTargetOverlay(payload);
       setText("detectedValue", detected ? "YES" : "NO", detected ? "ok" : "");
       const areaRatio = typeof payload.areaRatio === "number" ? payload.areaRatio : payload.ratio;
       document.getElementById("detectionRatio").textContent = typeof areaRatio === "number" ? `area ${(areaRatio * 100).toFixed(2)}%` : "area -";
@@ -592,6 +762,10 @@ INDEX_HTML = """<!doctype html>
         pushLog(`events error: ${err.message}`);
       }
 
+      document.getElementById("lastRefresh").textContent = `last: ${new Date().toLocaleTimeString()}`;
+    }
+
+    async function refreshVision() {
       try {
         updateDetection(await getJson("/api/detection"));
         const img = document.getElementById("cameraFrame");
@@ -599,8 +773,6 @@ INDEX_HTML = """<!doctype html>
       } catch (err) {
         updateDetection({ detected: false, reason: err.message });
       }
-
-      document.getElementById("lastRefresh").textContent = `last: ${new Date().toLocaleTimeString()}`;
     }
 
     async function sendLight(action) {
@@ -634,12 +806,22 @@ INDEX_HTML = """<!doctype html>
     }
 
     document.addEventListener("visibilitychange", () => {
-      if (!document.hidden) refresh();
+      if (!document.hidden) {
+        refresh();
+        refreshVision();
+      }
+    });
+    window.addEventListener("resize", () => {
+      if (lastDetection) setTargetOverlay(lastDetection);
     });
     refresh();
+    refreshVision();
     setInterval(() => {
       if (!document.hidden) refresh();
     }, 2500);
+    setInterval(() => {
+      if (!document.hidden) refreshVision();
+    }, 350);
   </script>
 </body>
 </html>
@@ -784,8 +966,16 @@ def detect_colored_target(frame: bytes, color: str) -> dict[str, Any]:
     centroid_y: float | None = None
     offset_x: float | None = None
     offset_y: float | None = None
+    target_box: dict[str, int] | None = None
 
     if detected and pixels > 0:
+        x, y, box_width, box_height = cv2.boundingRect(mask)
+        target_box = {
+            "x": int(x),
+            "y": int(y),
+            "width": int(box_width),
+            "height": int(box_height),
+        }
         moments = cv2.moments(mask)
         if moments["m00"] != 0:
             centroid_x = float(moments["m10"] / moments["m00"])
@@ -811,6 +1001,7 @@ def detect_colored_target(frame: bytes, color: str) -> dict[str, Any]:
         "centerY": centroid_y,
         "centroidX": centroid_x,
         "centroidY": centroid_y,
+        "targetBox": target_box,
         "offsetX": offset_x,
         "offsetY": offset_y,
         "alignDeadband": ALIGN_DEADBAND,
@@ -855,6 +1046,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self.send_json(fetch_json(f"{self.server.motion_base_url}/events?limit={urllib.parse.quote(limit)}", self.server.timeout))
             elif parsed.path == "/api/capture":
                 self.handle_capture()
+            elif parsed.path == "/api/vision_frame":
+                self.handle_capture(allow_cross_origin=True)
             elif parsed.path == "/api/detection":
                 self.handle_detection()
             else:
@@ -947,7 +1140,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError, OSError) as exc:
             self.send_error_json(HTTPStatus.BAD_GATEWAY, str(exc))
 
-    def handle_capture(self) -> None:
+    def handle_capture(self, allow_cross_origin: bool = False) -> None:
         if not self.server.camera_url:
             self.send_error_json(HTTPStatus.BAD_REQUEST, "camera_url_not_configured")
             return
@@ -956,6 +1149,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", content_type)
         self.send_header("Cache-Control", "no-store")
+        if allow_cross_origin:
+            self.send_cross_origin_headers()
         self.send_header("Content-Length", str(len(frame)))
         self.end_headers()
         self.wfile.write(frame)
@@ -969,7 +1164,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         payload = detect_colored_target(frame, self.server.detect_color)
         payload["cameraUrl"] = self.server.camera_url
         payload["ts"] = time.time()
-        self.send_json(payload)
+        self.send_json(payload, allow_cross_origin=True)
 
     def send_html(self, html: str) -> None:
         body = html.encode("utf-8")
@@ -980,14 +1175,30 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def send_json(self, payload: dict[str, Any], status: HTTPStatus = HTTPStatus.OK) -> None:
+    def send_json(
+        self,
+        payload: dict[str, Any],
+        status: HTTPStatus = HTTPStatus.OK,
+        allow_cross_origin: bool = False,
+    ) -> None:
         body = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
+        if allow_cross_origin:
+            self.send_cross_origin_headers()
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def send_cross_origin_headers(self) -> None:
+        origin = self.headers.get("Origin", "")
+        allowed_origins = {self.server.motion_base_url, "http://motionbrain.local"}
+        if self.server.motion_base_url.endswith(":80"):
+            allowed_origins.add(self.server.motion_base_url[:-3])
+        if origin in allowed_origins:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
 
     def send_error_json(self, status: HTTPStatus, error: str) -> None:
         self.send_json({"ok": False, "error": error}, status)
@@ -1020,7 +1231,7 @@ class DashboardServer(ThreadingHTTPServer):
         self.align_percent = align_percent
         self.camera_cache_lock = threading.Lock()
         self.camera_cache: tuple[float, bytes, str] | None = None
-        self.camera_cache_seconds = 1.0
+        self.camera_cache_seconds = 0.25
 
     def status_allows_align_nudge(self, status: dict[str, Any]) -> tuple[bool, str]:
         sensor = status.get("sensor", {})

@@ -157,8 +157,16 @@ def detect_colored_target(frame: bytes, color: str, align_deadband: float) -> di
     centroid_y: float | None = None
     offset_x: float | None = None
     offset_y: float | None = None
+    target_box: dict[str, int] | None = None
 
     if detected and pixels > 0:
+        x, y, box_width, box_height = cv2.boundingRect(mask)
+        target_box = {
+            "x": int(x),
+            "y": int(y),
+            "width": int(box_width),
+            "height": int(box_height),
+        }
         moments = cv2.moments(mask)
         if moments["m00"] != 0:
             centroid_x = float(moments["m10"] / moments["m00"])
@@ -184,6 +192,7 @@ def detect_colored_target(frame: bytes, color: str, align_deadband: float) -> di
         "centerY": centroid_y,
         "centroidX": centroid_x,
         "centroidY": centroid_y,
+        "targetBox": target_box,
         "offsetX": offset_x,
         "offsetY": offset_y,
         "alignDeadband": align_deadband,

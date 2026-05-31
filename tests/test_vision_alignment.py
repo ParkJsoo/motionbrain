@@ -53,6 +53,9 @@ class VisionAlignmentTest(unittest.TestCase):
                 self.assertIsInstance(detection["centerY"], float)
                 self.assertEqual(detection["centroidX"], detection["centerX"])
                 self.assertEqual(detection["centroidY"], detection["centerY"])
+                self.assertIsInstance(detection["targetBox"], dict)
+                self.assertGreater(detection["targetBox"]["width"], 0)
+                self.assertGreater(detection["targetBox"]["height"], 0)
                 self.assertIsInstance(detection["offsetX"], float)
 
         lost = vision.detect_colored_target(make_jpeg_with_target(None), "red", 0.15)
@@ -60,6 +63,7 @@ class VisionAlignmentTest(unittest.TestCase):
         self.assertEqual(lost["alignment"], "LOST")
         self.assertEqual(lost["commandSuggestion"], "none")
         self.assertIsNone(lost["centerX"])
+        self.assertIsNone(lost["targetBox"])
         self.assertIsNone(lost["offsetX"])
 
     def test_status_gates_alignment_actions(self) -> None:
