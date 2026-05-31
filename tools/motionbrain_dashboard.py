@@ -1028,7 +1028,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.send_error_json(HTTPStatus.BAD_GATEWAY, str(exc))
 
     def handle_capture(self, allow_cross_origin: bool = False) -> None:
-        if not self.server.camera_url:
+        if not self.server.camera_url and not self.server.perception_url:
             self.send_error_json(HTTPStatus.BAD_REQUEST, "camera_url_not_configured")
             return
 

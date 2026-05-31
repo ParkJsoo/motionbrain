@@ -145,6 +145,36 @@ class DashboardPerceptionProxyTest(unittest.TestCase):
         self.assertEqual(result, (frame, "image/jpeg"))
         fetch_bytes.assert_called_once_with("http://perception.local:8766/api/vision_frame", 1.0)
 
+    def test_capture_handler_allows_perception_only_mode(self) -> None:
+        server = self.make_server()
+        frame = b"jpeg"
+
+        class RecordingHandler(dashboard.DashboardHandler):
+            def send_response(self, status):  # type: ignore[no-untyped-def]
+                self.status = status
+
+            def send_header(self, key, value):  # type: ignore[no-untyped-def]
+                self.headers_sent.append((key, value))
+
+            def end_headers(self) -> None:
+                self.headers_done = True
+
+            def send_error_json(self, status, error):  # type: ignore[no-untyped-def]
+                self.error = (status, error)
+
+        handler = RecordingHandler.__new__(RecordingHandler)
+        handler.server = server
+        handler.headers_sent = []
+        handler.wfile = type("Writer", (), {"write": lambda self, value: setattr(self, "body", value)})()
+
+        with patch.object(server, "get_camera_frame", return_value=(frame, "image/jpeg")):
+            handler.handle_capture()
+
+        self.assertEqual(handler.status, 200)
+        self.assertNotIn("error", handler.__dict__)
+        self.assertEqual(handler.wfile.body, frame)
+        self.assertIn(("Content-Type", "image/jpeg"), handler.headers_sent)
+
 
 if __name__ == "__main__":
     unittest.main()
