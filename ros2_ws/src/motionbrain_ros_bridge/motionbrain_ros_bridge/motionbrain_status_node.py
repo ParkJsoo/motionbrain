@@ -27,6 +27,11 @@ from rclpy.node import Node
 from std_msgs.msg import String
 
 
+NETWORK_EXCEPTIONS = (urllib.error.URLError, TimeoutError, OSError)
+POLL_EXCEPTIONS = NETWORK_EXCEPTIONS + (json.JSONDecodeError,)
+PERCEPTION_EXCEPTIONS = POLL_EXCEPTIONS + (ValueError,)
+
+
 def fetch_json(url: str, timeout: float) -> dict[str, Any]:
     request = urllib.request.Request(url)
     with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -216,7 +221,7 @@ class MotionBrainStatusNode(Node):
             status = fetch_json(f"{self.motion_base_url}/status", timeout)
             self.publish_json(self.status_pub, status)
             self.publish_status_typed(status)
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        except POLL_EXCEPTIONS as exc:
             self.get_logger().warning(f"status poll failed: {exc}")
 
         try:
@@ -225,7 +230,7 @@ class MotionBrainStatusNode(Node):
                 events = fetch_json(f"{self.motion_base_url}/events?limit={limit}", timeout)
                 self.publish_json(self.events_pub, events)
                 self.publish_events_typed(events)
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        except POLL_EXCEPTIONS as exc:
             self.get_logger().warning(f"events poll failed: {exc}")
 
         perception_url = str(self.get_parameter("perception_url").value).strip().rstrip("/")
@@ -244,7 +249,7 @@ class MotionBrainStatusNode(Node):
             detection.setdefault("perceptionUrl", perception_url)
             self.publish_json(self.detection_pub, detection)
             self.publish_detection_typed(detection)
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError) as exc:
+        except PERCEPTION_EXCEPTIONS as exc:
             detection = {
                 "detected": False,
                 "available": False,
@@ -264,7 +269,7 @@ class MotionBrainStatusNode(Node):
             detection["cameraUrl"] = camera_url
             self.publish_json(self.detection_pub, detection)
             self.publish_detection_typed(detection)
-        except (urllib.error.URLError, TimeoutError) as exc:
+        except NETWORK_EXCEPTIONS as exc:
             detection = {
                 "detected": False,
                 "available": False,
@@ -302,7 +307,7 @@ class MotionBrainStatusNode(Node):
             result = post_motionbrain(self.motion_base_url, path, self._timeout(), token)
             result["requestedAction"] = action
             self.publish_light_result(result)
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        except POLL_EXCEPTIONS as exc:
             self.publish_light_result(
                 {
                     "success": False,
