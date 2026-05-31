@@ -1,0 +1,136 @@
+# MotionBrain 포트폴리오 요약
+
+[README](README.md) | [영어 README](README.en.md) | [영어 포트폴리오 요약](PORTFOLIO.en.md)
+
+## 개요
+
+MotionBrain은 ESP32 모션 제어기, STM32 센서/텔레오퍼레이션 계층, ESP32-CAM 비전 입력, Raspberry Pi + ROS2 호스트 브리지를 하나의 로봇팔 시스템으로 통합한 임베디드 로보틱스 프로젝트다.
+
+프로젝트의 핵심은 “모터를 움직였다”가 아니라, 실제 하드웨어에서 안전 상태, 명령 경계, 센서 피드백, 비전 입력, ROS2 토픽, 호스트 측 판단을 분리된 계층으로 설계하고 검증했다는 점이다.
+
+## 문제 정의
+
+저가형 5축 DC 모터 로봇팔은 엔코더, 힘 센서, 절대 위치 피드백이 부족하다. 이 조건에서 무리하게 완전 자율 집기를 주장하면 시스템 신뢰도가 떨어진다.
+
+그래서 MotionBrain은 다음 기준으로 설계했다.
+
+- 저수준 모터 출력은 ESP32 안전 게이트 뒤에 둔다.
+- 센서와 텔레오퍼레이션 입력은 STM32에서 구조화된 UART 프레임으로 보낸다.
+- 시리얼, HTTP, 대시보드, ROS2 입력은 같은 명령 의미를 공유한다.
+- 비전과 AI는 Raspberry Pi 쪽에서 실행하되, 물리 동작은 작업자 확인과 안전 상태를 통과해야 한다.
+- 검증되지 않은 호스트 계층이 직접 모터를 우회 제어하지 않게 한다.
+
+## 담당 구현
+
+- ESP32 5축 DC 모터 제어 펌웨어
+- `BOOT -> IDLE -> ARMED -> FAULT` 안전 상태 머신
+- 시리얼/HTTP 공통 명령 처리 구조
+- 토큰 기반 HTTP 상태 변경 명령
+- STM32 `MPU-6050 + HC-SR04 + UART` 센서/텔레오퍼레이션 펌웨어
+- 데드맨, 프레임 최신성 타임아웃, 센서 고장 래치
+- ESP32-CAM 캡처/스트림 펌웨어
+- Raspberry Pi 대시보드와 인식 서비스
+- OpenCV 기반 빨간 타겟 검출과 타겟 오버레이
+- 안전 게이트 기반 짧은 베이스 보정 동작
+- ROS2 Jazzy 브리지, 타입 지정 메시지, C++ 제어 guard, mission supervisor
+- Raspberry Pi systemd 배포와 상태 점검
+- GitHub Actions 기반 PlatformIO/Python/ROS2 품질 게이트
+
+## 시스템 구조
+
+```text
+STM32 센서 / 텔레오퍼레이션
+  -> UART 센서와 조작 프레임
+  -> ESP32 모션 제어기
+  -> Dispatcher + SafetyGate
+  -> RobotArm / MotionSequence
+  -> TB6612FNG 모터 드라이버
+  -> 5축 DC 모터 로봇팔
+
+ESP32-CAM
+  -> HTTP 캡처 / 스트림
+  -> Raspberry Pi 인식 서비스
+  -> 대시보드 타겟 오버레이
+  -> ROS2 /camera/detection(_typed)
+
+Raspberry Pi ROS2 호스트
+  -> motionbrain_msgs
+  -> motionbrain_ros_bridge
+  -> motionbrain_control C++ guard
+  -> motionbrain_mission supervisor
+  -> 타입 지정 상태, 감지, 기구학, guard, mission 토픽
+```
+
+## 핵심 기술 포인트
+
+### 안전 중심 제어
+
+모션 명령은 시스템 상태, 고장 래치, 센서 상태, 토큰 검증을 통과해야 실행된다. 수동 웹 조작은 제어기 쪽 lease를 적용해 갱신이 끊기면 즉시 hard stop으로 떨어지게 했다.
+
+### 멀티 MCU 역할 분리
+
+ESP32는 모터 출력과 안전 상태를 담당하고, STM32는 센서/텔레오퍼레이션 프레임을 담당한다. 이 분리는 센서 입력, 수동 조작, 호스트 명령이 같은 ESP32 안전 경계를 통과하게 만든다.
+
+### 비전과 로봇 동작의 분리
+
+ESP32-CAM은 카메라 노드로만 두고, Raspberry Pi에서 감지와 오버레이를 처리한다. 대시보드와 ROS2 브리지는 같은 선택 타겟 payload를 소비한다.
+
+### ROS2 host boundary
+
+ROS2는 ESP32 내부 제어를 대체하지 않는다. 대신 `/status`, `/events`, `/camera/detection`을 타입 지정 토픽으로 승격하고, C++ 제어 guard와 mission supervisor가 현재 상태와 타겟 정렬을 판단한다.
+
+### 검증 가능한 데모 경계
+
+현재 안정 데모는 빨간 타겟 추적, 타겟 오버레이, Pi 호스트 대시보드, ROS2 타입 지정 토픽, 안전 게이트 기반 짧은 보정 동작, search light 명령 경로다. 자동 집기는 아직 활성화하지 않는다.
+
+## 검증 결과
+
+- ESP32 제어기와 ESP32-CAM PlatformIO 빌드 통과
+- `TB6612FNG x3`와 `M1~M5` 실제 모터 출력 확인
+- STM32 `MPU-6050 + HC-SR04 + UART` bench 검증
+- 유선 텔레오퍼레이션 데드맨 입력으로 실제 모터 출력 및 release 정지 확인
+- ESP32-CAM `/status`, `/capture`, `/stream` 확인
+- 홈 Wi-Fi에서 ESP32 제어기, ESP32-CAM, Raspberry Pi 동시 연결 확인
+- `MotionBrain Control` 웹 UI에서 토큰 입력 후 상태 변경 명령 확인
+- Pi 대시보드에서 카메라 feed, 빨간 타겟 박스, 보정 동작 확인
+- Raspberry Pi 4 + Ubuntu 24.04 + ROS2 Jazzy에서 `colcon build/test` 통과
+- `/motionbrain/status_typed`, `/camera/detection_typed`, `/joint_states`, `/motionbrain/kinematics_typed`, `/motionbrain/control_guard_typed`, `/motionbrain/mission_state_typed` 상태 점검 통과
+- Pi 인식 서비스 결과가 ROS2 `/camera/detection_typed`까지 전달되는 것 확인
+- GitHub Actions에서 PlatformIO와 ROS2 workspace 검증
+
+## 객체 인식 현황
+
+Pi에서 OpenCV DNN/ONNX 기반 객체 인식 경로는 구현했다. `config/coco80.labels`와 명시적 모델 경로를 사용하고, 모델 weight는 repository에 넣지 않는다.
+
+다만 현재 ESP32-CAM QVGA 입력과 테스트한 YOLO 계열 모델 조합으로는 흰 컵을 안정적으로 `cup`으로 인식하지 못했다. 컵 대신 `person`, `skateboard`, `suitcase` 같은 오검출이 발생했다.
+
+따라서 현재 문서와 데모에서는 다음처럼 표현한다.
+
+- 가능: Pi 호스트 객체 인식 흐름, 선택 타겟 계약, ROS2/대시보드 연동
+- 안정 검증 완료: 빨간 타겟 추적과 오버레이
+- 아직 미완료: 임의 물체, 특히 현재 컵의 안정 인식과 자동 집기
+
+## 현재 한계
+
+- 로봇팔에 엔코더, 힘 피드백, 신뢰할 수 있는 절대 관절 위치가 없다.
+- HC-SR04는 현재 gripper 장착 거리 센서가 아니라 텔레오퍼레이션/안전 입력 계층에 가깝다.
+- ESP32-CAM QVGA 입력은 일반 객체 인식에는 품질 한계가 있다.
+- 일반 텍스트 명령으로 임의 물체를 찾아 집는 수준은 아직 아니다.
+- 공개용 사진/영상 증거는 별도 캡처가 필요하다.
+
+## 다음 단계
+
+1. 빨간 타겟 기반 안정 데모 영상 캡처
+2. ROS2 타입 지정 토픽, 대시보드, 임베디드 UI를 함께 보여주는 데모 구성
+3. 결정론적 마커 또는 고정된 known-object 기반 제한 집기 dry-run
+4. 더 좋은 카메라나 검증된 edge detector runtime으로 객체 인식 개선
+5. 추가 센서 장착 후 거리/접촉 기반 집기 안전성 강화
+
+## 관련 문서
+
+- [README.md](README.md): 프로젝트 진입점
+- [MESSAGE_INTERFACE.md](MESSAGE_INTERFACE.md): 명령/상태 메시지 경계
+- [docs/DEMO_RUNBOOK.md](docs/DEMO_RUNBOOK.md): 데모 촬영 절차
+- [docs/RASPBERRY_PI_DEPLOYMENT.md](docs/RASPBERRY_PI_DEPLOYMENT.md): Pi systemd 배포
+- [docs/PHYSICAL_AI_OBJECT_DETECTION_PLAN.md](docs/PHYSICAL_AI_OBJECT_DETECTION_PLAN.md): 객체 인식과 물리 AI 계획
+- [docs/EMBEDDED_FIRMWARE_EVIDENCE.md](docs/EMBEDDED_FIRMWARE_EVIDENCE.md): 임베디드 펌웨어 검증 근거

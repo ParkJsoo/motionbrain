@@ -1,245 +1,138 @@
 # MotionBrain Portfolio One-Pager
 
-[한국어 README](README.md) | [English README](README.en.md)
+[Korean README](README.md) | [English README](README.en.md) | [Korean Portfolio](PORTFOLIO.md)
 
 ## Summary
 
-MotionBrain is a multi-MCU robotic arm control project built around an ESP32 motion controller, STM32 sensor/teleop layer, ESP32-CAM vision input, Mac host-side perception, and a Raspberry Pi ROS2 bridge path validated on real hardware. The project focuses on reliable embedded control, safety state management, sensor feedback, and a clean command boundary that can be exposed to ROS2 without rewriting the embedded firmware.
+MotionBrain is an embedded robotics portfolio project that integrates an ESP32 motion controller, STM32 sensor/teleop layer, ESP32-CAM vision input, and a Raspberry Pi + ROS2 host bridge into one robotic-arm system.
+
+The project is designed to demonstrate reliable embedded control, not just motor movement. The main engineering signal is the separation between low-level motion execution, safety state, structured sensor feedback, host-side perception, and ROS2 orchestration.
 
 ## Engineering Problem
 
-The goal is not just to move motors. The project treats the robot arm as a layered control system:
+The current arm is a low-cost 5-axis DC motor platform without encoders, force feedback, or reliable absolute joint pose. Claiming fully autonomous grasping on this hardware would be misleading.
 
-- Low-level motor output must be isolated from unsafe commands.
-- Sensor and teleop inputs must be handled as structured feedback, not ad hoc serial text.
-- Host-side control should be able to consume status and events without depending on internal firmware details.
-- The system should evolve from bench hardware to camera-driven and ROS2-driven demos without rewriting the command model.
+MotionBrain therefore uses a constrained architecture:
+
+- The ESP32 owns motor output and the safety boundary.
+- The STM32 turns sensors and wired teleop inputs into structured UART frames.
+- Serial, HTTP, dashboard, and ROS2-facing commands share the same command semantics.
+- Camera and AI workloads run on the Raspberry Pi.
+- Physical motion remains safety-gated and operator-confirmed.
 
 ## My Role
 
-I designed and implemented the embedded control structure, including:
+I designed and implemented:
 
-- ESP32 motor control for a 5-axis robotic arm
-- Safety state machine and fault handling
-- Unified serial and HTTP command dispatch
-- STM32 UART sensor bridge integration
-- Safety monitor for sensor-based blocking and latching
-- Wired handheld teleop path with deadman and frame freshness timeout
+- ESP32 firmware for 5-axis DC motor control
+- `BOOT -> IDLE -> ARMED -> FAULT` safety state machine
+- Shared serial/HTTP command dispatch
+- Token-gated HTTP state-changing commands
+- STM32 `MPU-6050 + HC-SR04 + UART` sensor/teleop firmware
+- Deadman handling, frame freshness timeout, and sensor fault latching
 - ESP32-CAM capture/stream firmware
-- Mac host-side OpenCV red-target detection MVP
-- Trusted Home Wi-Fi workflow for the controller and ESP32-CAM
-- Phone-browser manual control through the ESP32-hosted `MotionBrain Control` page
-- Safe host-triggered `/light` action through the existing MotionBrain command boundary
-- Raspberry Pi 4 ROS2 Jazzy validation for status, events, ESP32-CAM detection, and token-gated light command forwarding
-- Bench simulation commands for hardware-independent validation
-- Documentation for pin mapping, message boundaries, Phase 4 host-side integration, and Raspberry Pi ROS2 bring-up
+- Raspberry Pi dashboard and perception service
+- OpenCV-based red target detection and target overlay
+- Safety-gated short base nudge actions
+- ROS2 Jazzy bridge, typed messages, C++ control guard, and mission supervisor
+- Raspberry Pi systemd deployment and health checks
+- GitHub Actions quality gates for PlatformIO, Python tests, and ROS2 build/test
 
 ## System Architecture
 
 ```text
-STM32 Sensor / Teleop Layer
-  -> UART JSON sensor and teleop frames
+STM32 Sensor / Teleop
+  -> UART sensor and teleop frames
   -> ESP32 Motion Controller
   -> Dispatcher + SafetyGate
   -> RobotArm / MotionSequence
   -> TB6612FNG motor drivers
-  -> 5-axis DC motor robotic arm
+  -> 5-axis DC motor arm
 
-ESP32-CAM Vision Node
-  -> HTTP /status, /capture, /stream
-  -> Mac host OpenCV target detection
-  -> MotionBrain /status safety check
-  -> safe /light demo action
-  -> opt-in base nudge alignment action
-
-Phone / Browser Operator
-  -> ESP32-hosted MotionBrain Control
-  -> runtime command token prompt
-  -> manual ARM / STOP / joint commands
-
-Mac Ops Dashboard
-  -> status, events, camera, detection, action log
-  -> token-gated one-shot vision nudge
+ESP32-CAM
+  -> HTTP capture / stream
+  -> Raspberry Pi perception service
+  -> dashboard target overlay
+  -> ROS2 /camera/detection(_typed)
 
 Raspberry Pi ROS2 Host
+  -> motionbrain_msgs
   -> motionbrain_ros_bridge
-  -> /motionbrain/status, /motionbrain/events
-  -> /camera/detection
-  -> /motionbrain/light_cmd, /motionbrain/light_result
-  -> token-gated /light command
-  -> real SearchLight output
+  -> motionbrain_control C++ guard
+  -> motionbrain_mission supervisor
+  -> typed status, detection, kinematics, guard, and mission topics
 ```
 
 ## Technical Highlights
 
-### Safety State Machine
+### Safety-Gated Motion
 
-The ESP32 firmware uses explicit system states:
+Motion commands must pass state checks, fault checks, sensor checks, and token checks before reaching motor output. Browser manual commands use a controller-side lease so missed refreshes force a hard stop.
 
-```text
-BOOT -> IDLE -> ARMED -> FAULT
-```
+### Multi-MCU Decomposition
 
-Motion commands are accepted only when they pass state and safety checks. Fault conditions can latch the system into `FAULT`, forcing the operator to stop and recover intentionally.
+The ESP32 is the motion and safety controller. The STM32 is the sensor and wired teleop layer. This keeps manual input, sensor feedback, and host commands behind one embedded safety boundary.
 
-### Unified Command Boundary
+### Vision Without Bypassing Safety
 
-Serial and HTTP inputs are routed through a common command path instead of separate behavior branches. This reduces drift between local bench operation, web control, and future host/ROS2 control.
+The ESP32-CAM acts as a camera node. The Raspberry Pi runs detection and overlay logic. The dashboard and ROS2 bridge consume the same selected-target payload instead of each opening competing camera loops.
 
-State-changing HTTP commands require the MotionBrain command header and can be protected with a provisioned command token. The token is entered at runtime on the ESP32-hosted control page and kept only in the current browser page memory.
+### ROS2 Host Boundary
 
-Current control routes include:
+ROS2 does not replace the embedded controller. It promotes ESP32 status/events/camera detection into typed topics and adds host-side guard and mission-state logic while preserving the ESP32 command boundary.
 
-- `POST /command`
-- `POST /motor`
-- `POST /joint`
-- `POST /base`
-- `POST /sequence`
-- `POST /light`
-- `GET /status`
-- `GET /events`
+### Demo-Ready Scope
 
-### STM32 Sensor and Teleop Layer
+The reliable demo path is red target tracking, target overlay, Pi-hosted dashboard, ROS2 typed topics, a safety-gated short nudge, and a token-gated command path to physical hardware. Autonomous grasping remains out of scope for the current hardware state.
 
-The STM32 side handles IMU/range sensing and wired handheld teleop experiments. The ESP32 receives structured UART frames and converts them into safe motion intent.
+## Validation
 
-Implemented teleop behavior includes:
+- ESP32 controller and ESP32-CAM PlatformIO builds pass.
+- `TB6612FNG x3` and `M1~M5` motor outputs were physically tested.
+- STM32 `MPU-6050 + HC-SR04 + UART` bench path was validated.
+- Wired teleop produced real motor output under deadman control and stopped on release.
+- ESP32-CAM `/status`, `/capture`, and `/stream` were verified.
+- Home Wi-Fi operation was validated across ESP32 controller, ESP32-CAM, and Raspberry Pi.
+- The ESP32-hosted `MotionBrain Control` page accepted a runtime token and executed state-changing commands.
+- The Pi dashboard showed the camera feed, red target box, and physical nudge behavior.
+- Raspberry Pi 4 + Ubuntu 24.04 + ROS2 Jazzy `colcon build/test` passed.
+- Health checks passed for `/motionbrain/status_typed`, `/camera/detection_typed`, `/joint_states`, `/motionbrain/kinematics_typed`, `/motionbrain/control_guard_typed`, and `/motionbrain/mission_state_typed`.
+- Pi perception service output was verified through ROS2 `/camera/detection_typed`.
+- GitHub Actions validates PlatformIO firmware builds and ROS2 workspace build/test.
 
-- Deadman hold-to-move control
-- Frame freshness timeout
-- Neutral reset on new deadman session
-- `reach`, `lift`, `twist`, and gripper inputs
-- Parse-error counters and status reporting
+## Object Detection Status
 
-### Bench Simulation
+The Pi object-detection path exists: OpenCV DNN/ONNX backend loading, explicit model/label paths, selected-target JSON, dashboard overlay, and ROS2 typed detection publishing. Model weights are intentionally not committed.
 
-The firmware includes `sensor sim ...` commands so safety and status behavior can be tested without the full sensor stack connected.
+However, the current ESP32-CAM QVGA input and tested YOLO-family models did not reliably classify the white cup as `cup`. The model returned false positives such as `person`, `skateboard`, and `suitcase`.
 
-Examples:
+Current honest positioning:
 
-```text
-sensor sim healthy
-sensor sim obstacle 10
-sensor sim vibration 9
-sensor sim stale
-sensor sim off
-```
-
-### ESP32-CAM Host Vision MVP
-
-The Phase 4 MVP proves the first camera-to-host-to-controller loop before moving the host role onto Raspberry Pi:
-
-- ESP32-CAM joins the `MotionBrain-AP` network as a camera node.
-- For normal bench work, the ESP32 controller and ESP32-CAM can also join a trusted Home Wi-Fi LAN to avoid switching the Mac between networks.
-- Mac host fetches ESP32-CAM `/capture` frames and MotionBrain `/status`.
-- OpenCV detects a red target in the camera frame.
-- The host computes target centroid, normalized horizontal offset, and an alignment decision.
-- The host only triggers an action when MotionBrain status allows it.
-- The default demo action uses the safe non-motion `/light?action=toggle` path.
-- Base alignment is opt-in. On the current handheld-teleop hardware it uses a short safety-gated base nudge with an immediate stop; closed-loop `/base?action=angle` is kept for future base-mounted gyro or encoder feedback.
-
-### ROS2 Bridge Path
-
-The repository includes a ROS2 bridge package validated on Raspberry Pi 4 with Ubuntu 24.04 and ROS2 Jazzy:
-
-- `motionbrain_ros_bridge` polls ESP32 `GET /status` and publishes `/motionbrain/status`.
-- `motionbrain_msgs` promotes stable status, event, detection, and light command/result fields into typed ROS2 messages.
-- The bridge also publishes typed topics such as `/motionbrain/status_typed`, `/motionbrain/events_typed`, `/camera/detection_typed`, and `/motionbrain/light_result_typed`.
-- The ROS2 workspace includes typed guard, kinematics, and mission topics:
-  `/motionbrain/control_guard_typed`, `/motionbrain/kinematics_typed`, and
-  `/motionbrain/mission_state_typed`, while keeping JSON compatibility topics.
-- It polls ESP32 `GET /events?limit=N` and publishes `/motionbrain/events`.
-- It fetches ESP32-CAM `/capture`, runs color-target detection, and publishes `/camera/detection`.
-- It subscribes to `/motionbrain/light_cmd` and forwards safe `on`, `off`, or `toggle` commands to the token-gated ESP32 `/light` endpoint.
-- It also accepts `/motionbrain/light_cmd_typed` for typed command-path validation.
-- The Home Wi-Fi launch path was run with IP fallback when `.local` name resolution was unavailable on the Pi.
-- The command-channel test toggled the real search light and published `/motionbrain/light_result`.
-
-This keeps ROS2 integration at the host boundary while preserving the existing embedded command model.
-
-### Operator Interfaces
-
-The project separates manual control from observability:
-
-- `MotionBrain Control`, served directly by the ESP32, is the primary manual control surface and has been verified from a phone browser.
-- The local Mac ops dashboard is used for status, events, camera/detection, action logs, and a gated one-shot vision nudge.
-- Command tokens are provisioned on-device and entered only at runtime; real Wi-Fi credentials and tokens are not committed to the repository.
-
-## Validation So Far
-
-- ESP32 firmware builds with PlatformIO.
-- `TB6612FNG x3` and `M1~M5` motor outputs were physically connected and bench-tested.
-- STM32 `MPU-6050 + HC-SR04 + UART` sensor stream was bench-validated.
-- ESP32 sensor bridge received STM32 sensor packets in bench testing.
-- Wired handheld teleop produced real motor output under deadman control.
-- Deadman release stopped teleop-controlled motion.
-- `teleop.parseErrors=0` and `sensor.parseErrors=0` were observed in the current bench path.
-- ESP32-CAM firmware was uploaded and joined `MotionBrain-AP` at `192.168.4.2`.
-- ESP32-CAM `/status`, `/capture`, and `/stream` were verified from a phone viewer.
-- Mac host fetched MotionBrain `/status` and ESP32-CAM `/capture` in the same loop.
-- Host action MVP succeeded with `ACTION light.toggle success=True`.
-- OpenCV red target detection succeeded with `red_ratio=0.254` in dry-run.
-- Red target action test toggled the real search light; removing the target produced `detected=N red_ratio=0.000`.
-- Vision alignment now exposes centroid, horizontal offset, `LEFT|CENTER|RIGHT|LOST` decisions, and command suggestions in the host loop, dashboard, and ROS2 detection payload.
-- Vision alignment nudge mode was physically validated in both directions: right target -> `base.right`, left target -> `base.left`, each with a 250 ms / 25% base nudge and confirmed stop.
-- The dashboard includes a token-gated one-shot nudge control that revalidates the current camera frame and controller status server-side before motion.
-- Home Wi-Fi operation was verified with the ESP32 controller and ESP32-CAM on the same trusted LAN.
-- Phone-browser control was verified on 2026-05-25: token prompt appeared, the token was accepted, and commands executed.
-- Raspberry Pi 4 ROS2 host validation was completed on 2026-05-26:
-  - Ubuntu Server 24.04 arm64 and ROS2 Jazzy on Raspberry Pi 4
-  - `motionbrain_ros_bridge` built successfully with `colcon`
-  - `/motionbrain/status`, `/motionbrain/events`, and `/camera/detection` published real ESP32/ESP32-CAM data
-  - `/motionbrain/light_cmd` forwarded through the token-gated ESP32 `/light` endpoint
-  - `/motionbrain/light_result` returned the ESP32 command result
-  - the real search light turned on from a ROS2 command
-- Typed ROS2 message validation was completed on 2026-05-27:
-  - `motionbrain_msgs` and `motionbrain_ros_bridge` built successfully on the Pi
-  - `ros2 interface show` and `ros2 interface list` confirmed all five custom messages
-  - `/motionbrain/status_typed` returned real controller status
-  - `/camera/detection_typed` returned real ESP32-CAM detection data
-- A first-pass URDF/TF/joint-state path was validated on the Raspberry Pi:
-  - `motionbrain_description` provides a 5-axis arm URDF, display launch file, and RViz config
-  - `motionbrain_joint_state_node` maps `/motionbrain/status_typed` into `/joint_states`
-  - `robot_state_publisher` publishes `/tf` and `/tf_static` from the MotionBrain URDF
-- C++ guard, kinematics, and mission topics were promoted to typed ROS2 interfaces on 2026-05-30:
-  - `ControlGuard`, `KinematicsState`, `MissionCommand`, and `MissionState`
-    custom messages were added.
-  - Raspberry Pi `colcon build` and `colcon test` passed.
-  - `motionbrain-ros-bridge.service` ran the status, joint-state, kinematics,
-    C++ guard, and mission supervisor nodes under systemd.
-  - Health checks passed for all typed topics and one sample from each.
-- CI now runs synthetic host-side vision alignment tests, PlatformIO firmware
-  builds, ROS2 contract tests, `colcon build`, and `colcon test`.
+- Implemented: Pi-hosted object-detection pipeline and selected-target contract
+- Stable demo: red target tracking and overlay
+- Not yet solved: reliable arbitrary-object detection, cup detection on the current camera feed, and autonomous grasping
 
 ## Current Limitations
 
-- Final hardware enclosure and wiring layout are not locked yet.
-- Public demo images and videos are not included yet.
-- The URDF/TF/joint-state path is validated on the Raspberry Pi, but public RViz evidence capture is still pending.
-- Vision-based base alignment is implemented as an explicit opt-in nudge step. It is validated for left/right correction nudges, but not yet for full pick behavior.
-- AI planning integration is planned but not complete.
-- Teleop sign, deadzone, and speed weights need final tuning after mechanical mounting is fixed.
-
-## Why It Is Relevant
-
-This project demonstrates practical embedded robotics engineering:
-
-- Multi-MCU system decomposition
-- Safety-gated motor control
-- UART sensor integration
-- HTTP and serial command APIs
-- State and event observability
-- Hardware bench validation
-- ROS2 host bridge validation that preserves embedded command boundaries
+- No joint encoders, force feedback, or reliable absolute joint pose
+- HC-SR04 is currently part of the teleop/safety layer, not a gripper-mounted range sensor
+- ESP32-CAM QVGA input limits general object detection quality
+- No general text-prompt object search
+- Public photos and videos still need final capture
 
 ## Next Steps
 
-1. Capture public demo media showing teleop, safety/status, camera capture, red detection, ROS2 topic output, and ROS2-triggered light action.
-2. Capture demo media showing red target localization and left/right base nudge alignment.
-3. Capture public RViz/TF evidence for the validated URDF, TF, and `joint_states` path.
-4. Extend camera or host decisions from alignment nudges toward semi-autonomous pick behavior.
-5. Finalize wiring, obstacle-safety placement, and teleop tuning.
+1. Capture demo media for red target tracking, dashboard overlay, ROS2 topics, and safety-gated nudge behavior.
+2. Build a deterministic marker or known-object constrained grasp dry run.
+3. Improve object detection with a better camera or a validated edge-runtime model.
+4. Add range/contact sensing before attempting more autonomous grasp sequences.
+5. Keep physical motion operator-confirmed until richer feedback exists.
 
-The planned public capture sequence is tracked in
-[docs/DEMO_RUNBOOK.en.md](docs/DEMO_RUNBOOK.en.md), with supporting system
-diagrams in [docs/ARCHITECTURE_DIAGRAMS.en.md](docs/ARCHITECTURE_DIAGRAMS.en.md).
+## Related Documents
+
+- [README.en.md](README.en.md): project entry point
+- [MESSAGE_INTERFACE.md](MESSAGE_INTERFACE.md): command and status boundary
+- [docs/DEMO_RUNBOOK.en.md](docs/DEMO_RUNBOOK.en.md): demo capture runbook
+- [docs/RASPBERRY_PI_DEPLOYMENT.en.md](docs/RASPBERRY_PI_DEPLOYMENT.en.md): Pi systemd deployment
+- [docs/PHYSICAL_AI_OBJECT_DETECTION_PLAN.md](docs/PHYSICAL_AI_OBJECT_DETECTION_PLAN.md): object detection and constrained physical-AI plan
+- [docs/EMBEDDED_FIRMWARE_EVIDENCE.md](docs/EMBEDDED_FIRMWARE_EVIDENCE.md): embedded firmware validation evidence

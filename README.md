@@ -1,410 +1,104 @@
 # MotionBrain
 
-[한국어 README](README.md) | [English README](README.en.md) | [Portfolio One-Pager](PORTFOLIO.en.md)
+[영어 README](README.en.md) | [포트폴리오 요약](PORTFOLIO.md) | [영어 포트폴리오 요약](PORTFOLIO.en.md)
 
-MotionBrain is an embedded robotics portfolio project built around an ESP32-based 5-axis robotic arm controller, an STM32 sensor/teleop layer, ESP32-CAM vision input, and a Raspberry Pi + ROS2 host bridge for higher-level robot orchestration.
+MotionBrain은 ESP32 기반 5축 로봇팔 제어기에서 시작해 STM32 센서/텔레오퍼레이션 계층, ESP32-CAM 비전 입력, Raspberry Pi + ROS2 호스트 브리지까지 확장한 임베디드 로보틱스 포트폴리오 프로젝트다.
 
-Key engineering areas: safety state machine, multi-MCU role separation, UART sensor feedback, unified serial/HTTP command dispatch, wired handheld teleoperation, and a clear path toward host-side robotics orchestration.
-
-ESP32 기반 5축 로봇팔 제어 시스템에서 출발해, STM32 센서 허브, ESP32-CAM 비전 입력, Raspberry Pi + ROS2 상위 제어 경계까지 실제 하드웨어로 검증한 로봇 개발 포트폴리오 프로젝트.
-
-핵심 구조는 다음 한 줄로 요약된다.
+핵심 목표는 단순히 모터를 움직이는 것이 아니라, 실제 하드웨어에서 안전 상태, 명령 경계, 센서 피드백, 비전 입력, ROS2 연동을 한 흐름으로 검증하는 것이다.
 
 ```text
 입력 -> 판단 -> 상태 -> 움직임 -> 피드백
 ```
 
-## 프로젝트 목표
-
-- ESP32에서 실시간 모터 제어와 안전 상태 관리를 구현한다.
-- STM32 센서/teleop 계층을 분리해 피드백과 조작 입력을 구조화한다.
-- 시리얼, HTTP, teleop, ROS2 입력이 같은 명령 경계를 공유하도록 설계한다.
-- ESP32-CAM, host-side decision, ROS2, AI 상위 제어로 확장 가능한 구조를 만든다.
-- 전체 설계와 검증 과정을 취업용 포트폴리오로 설명 가능한 형태로 정리한다.
-
 ## 현재 상태
 
-### 구현 완료
+검증 완료:
 
-- ESP32 5축 DC 모터 제어 커널
-- 안전 상태 머신: `BOOT -> IDLE -> ARMED -> FAULT`
-- 시리얼 명령 인터페이스와 Wi-Fi AP 기반 HTTP 제어
-- `RobotArm` 관절 추상화와 `MotionSequence` 비차단 시퀀스 큐
-- `Dispatcher` + `SafetyGate` 기반 공통 명령 경로
-- STM32 `MPU-6050 + HC-SR04 + UART` 센서 스트림 bench 검증
-- ESP32 `Stm32Bridge`, `SafetyMonitor`, `EventLog`
-- `GET /status`, `GET /events` 기반 상태/이벤트 관측
-- `sensor sim ...` 기반 bench simulation 경로
-- 유선 handheld teleop v1: deadman, frame freshness timeout, LED edge, initial mixer, embedded safety telemetry
-- `TB6612FNG x3` + `M1~M5` 실물 연결 및 모터 출력 확인
-- 유선 teleop deadman + IMU 입력으로 실제 모터 출력 및 release 정지 확인
-- trusted home Wi-Fi station mode와 token-aware host command path
-- GitHub Actions 기반 PlatformIO 빌드, host vision alignment synthetic test,
-  ROS2 workspace `colcon build/test` 품질 게이트
-- Raspberry Pi 4 + Ubuntu 24.04 + ROS2 Jazzy 기반 `motionbrain_ros_bridge` 실기 검증
-  - Pi에서 ROS2 package build 및 launch 확인
-  - ESP32 controller `/status`, `/events`를 ROS2 topic으로 publish 확인
-  - ESP32-CAM `/capture` 기반 `/camera/detection` publish 확인
-  - `/motionbrain/light_cmd` -> token-gated ESP32 `/light` -> 실제 search light 점등 확인
-- ESP32-CAM + Mac host Phase 4 MVP
-  - `/status`, `/capture`, `/stream` 실기 확인
-  - Mac host에서 MotionBrain `/status`와 ESP32-CAM frame 동시 fetch 확인
-  - OpenCV red target detection 확인
-  - red target 감지 시 안전한 `/light?action=toggle` command path 확인
-  - 실제 search light 점등 확인
-  - Vision-Based Alignment dry-run `LEFT/CENTER/RIGHT` 판정 확인
-  - opt-in timed nudge mode로 `base.left` / `base.right` 실제 짧은 보정 동작 확인
+- ESP32 5축 DC 모터 제어와 `BOOT -> IDLE -> ARMED -> FAULT` 안전 상태 머신
+- `Dispatcher` + `SafetyGate` 기반 시리얼/HTTP 공통 명령 경로
+- STM32 `MPU-6050 + HC-SR04 + UART` 센서/텔레오퍼레이션 스트림
+- 유선 핸드헬드 텔레오퍼레이션: 데드맨, 프레임 타임아웃, 안전 텔레메트리
+- ESP32-CAM `/status`, `/capture`, `/stream`
+- 홈 Wi-Fi 기반 ESP32 제어기, ESP32-CAM, Raspberry Pi 연결
+- ESP32 내장 `MotionBrain Control` 웹 UI와 토큰 기반 상태 변경 명령
+- Pi 호스트 대시보드: 상태, 이벤트, 카메라, 타겟 오버레이, 안전 게이트 기반 짧은 보정 동작
+- Raspberry Pi 4 + Ubuntu 24.04 + ROS2 Jazzy 브리지
+- ROS2 타입 지정 토픽: 상태, 이벤트, 카메라 감지, 조인트 상태, 기구학, 제어 guard, mission 상태
+- Pi 인식 서비스를 통한 `/camera/detection(_typed)` 연동
+- GitHub Actions 기반 PlatformIO 빌드, Python 테스트, ROS2 `colcon build/test`
 
-### 현재 집중 작업
+현재 주의점:
 
-- Raspberry Pi ROS2 검증 로그와 데모 증거 정리
-- Vision-Based Alignment 1차 실기 검증 결과 정리
-- 포트폴리오용 데모 시나리오와 영상 캡처 준비
-- Tests / CI 보강
-- 최종 부품 배치와 배선표 확정
-- 다음 단계의 ROS2 message package / AI planning 연결 설계
+- 빨간 타겟 추적은 데모 가능한 안정 경로다.
+- 일반 객체 인식 흐름은 Pi에서 구현됐지만, 현재 ESP32-CAM QVGA 입력과 테스트한 YOLO 계열 모델 조합으로는 컵 인식이 안정적으로 성공하지 않았다.
+- 자동 grasp는 아직 하지 않는다. 현재는 안전 게이트, 타겟 정렬, 작업자 확인을 중심으로 한 제한된 데모 단계다.
 
-## 아키텍처
-
-### 구현된 계층
+## 시스템 구성
 
 ```text
-[STM32 Sensor / Teleop Layer]
-  MPU-6050
-  HC-SR04
-  UART teleop stream + embedded safety telemetry
+[STM32 센서/텔레오퍼레이션]
+  MPU-6050, HC-SR04, UART 프레임
         ->
-[ESP32 Motion Controller]
-  Stm32Bridge
-  SafetyMonitor
-  TeleopAdapter
-  Dispatcher + SafetyGate
-  AngleController
-  RobotArm + MotionSequence
-  EventLog
+[ESP32 모션 제어기]
+  SafetyMonitor, Dispatcher, SafetyGate
+  RobotArm, MotionSequence, EventLog
         ->
-TB6612FNG x3
+[TB6612FNG x3]
         ->
-5-axis DC motors
-```
+5축 DC 모터 로봇팔
 
-### 목표 계층
-
-```text
-[STM32 Sensor / Teleop Layer]
-  Safety input
-  Handheld remote input
-  UART sensor/teleop stream
+[ESP32-CAM]
+  /capture, /stream
         ->
-[ESP32 Motion Controller]
-  Safety state machine
-  Command processing
-  Motion execution
-        <-
-[ESP32-CAM Vision Node]
-  Camera streaming
-  Visual target input
+[Raspberry Pi]
+  인식 서비스
+  대시보드
+  ROS2 bridge
         ->
-[Raspberry Pi + ROS2 + AI]
-  High-level planning
-  Vision processing
-  Message bridge
-  Portfolio demo orchestration
+ROS2 타입 지정 토픽, control guard, mission supervisor
 ```
 
-### Raspberry Pi ROS2 검증 완료 계층
+## 주요 디렉터리
 
-2026-05-30 기준 Raspberry Pi 4에서 ROS2 Jazzy bridge 경로를 실제로 검증했다.
+- `src/`: ESP32 모션 제어기 펌웨어
+- `firmware/esp32cam/`: ESP32-CAM 펌웨어
+- `firmware/stm32/MotionBrainSensor/`: STM32 센서/텔레오퍼레이션 펌웨어
+- `tools/`: 대시보드, 인식 서비스, 상태 감시기, STM32 보조 스크립트
+- `ros2_ws/src/`: ROS2 메시지, 브리지, 제어 guard, mission, URDF 패키지
+- `docs/`: 데모 절차, Raspberry Pi 배포, 아키텍처, 검증 기록
+- `config/`: 비전 모델 라벨 등 런타임 설정 파일
 
-```text
-[Raspberry Pi 4 / Ubuntu 24.04 / ROS2 Jazzy]
-  motionbrain_msgs
-  motionbrain_ros_bridge
-  /motionbrain/status
-  /motionbrain/status_typed
-  /motionbrain/events
-  /motionbrain/events_typed
-  /camera/detection
-  /camera/detection_typed
-  /joint_states
-  /motionbrain/end_effector_pose
-  /motionbrain/kinematics
-  /motionbrain/kinematics_typed
-  /motionbrain/control_guard
-  /motionbrain/control_guard_typed
-  /motionbrain/mission_state
-  /motionbrain/mission_state_typed
-  /motionbrain/mission_cmd
-  /motionbrain/mission_cmd_typed
-  /motionbrain/light_cmd
-  /motionbrain/light_cmd_typed
-  /motionbrain/light_result
-  /motionbrain/light_result_typed
-        <->
-[ESP32 Motion Controller + ESP32-CAM on Home Wi-Fi]
-  GET /status
-  GET /events
-  GET /capture
-  POST /light?action=toggle
-        ->
-SearchLight 실제 점등
-```
+## 빠른 실행
 
-### Phase 4 MVP 검증 완료 계층
-
-```text
-[ESP32-CAM Vision Node]
-  /status
-  /capture
-  /stream
-        ->
-[Mac Host Script]
-  OpenCV red target detection
-  MotionBrain /status safety check
-        ->
-[ESP32 Motion Controller]
-  Dispatcher + SafetyGate
-  /light?action=toggle
-        ->
-SearchLight
-```
-
-## 하드웨어
-
-세부 GPIO와 전원 기준은 [PIN_MAP.md](PIN_MAP.md)를 기준으로 한다. Teleop 배선과 bring-up 절차는 [docs/TELEOP_BRINGUP.md](docs/TELEOP_BRINGUP.md)에 정리한다.
-
-주요 구성품:
-
-- `ESP32 DevKit`
-- `ESP32-CAM`
-- `TB6612FNG x3`
-- 5축 DC 모터 로봇팔
-- `STM32 B-F446E-96B01A`
-- `MPU-6050 (GY-521)`
-- `HC-SR04`
-- `1602 LCD + I2C backpack`
-- 점퍼선, 전원 모듈, 브레드보드
-
-## 소프트웨어 구조
-
-현재 ESP32 메인 진입점은 [src/main.cpp](src/main.cpp)이다.
-
-- `system/`: 상태 머신과 시스템 초기화
-- `motor/`: `TB6612FNG` 기반 모터 제어
-- `motion/`: `RobotArm`, `MotionSequence`
-- `bridge/`: STM32 센서 수신과 simulation
-- `safety/`: 센서 기반 차단과 fault latch
-- `control/`: `Dispatcher`, `SafetyGate`, `AngleController`, `EventLog`
-- `input/`: 시리얼 명령과 teleop 입력 처리
-- `network/`: Wi-Fi AP, 웹 서버
-- `peripheral/`: `SearchLight`
-- `debug/`: 로그 출력
-
-현재 HTTP 경계:
-
-- `GET /status`
-- `GET /events`
-- `POST /command`
-- `POST /motor`
-- `POST /joint`
-- `POST /base`
-- `POST /sequence`
-- `POST /light`
-
-### ROS2 Bridge MVP
-
-Phase 4 host path is also exposed through a minimal ROS2 package:
-
-```text
-ros2_ws/src/motionbrain_ros_bridge
-```
-
-It keeps the ESP32 HTTP API unchanged and publishes JSON plus typed ROS2
-messages on:
-
-- `/joint_states`
-- `/motionbrain/status`
-- `/motionbrain/status_typed`
-- `/motionbrain/events`
-- `/motionbrain/events_typed`
-- `/camera/detection`
-- `/camera/detection_typed`
-- `/motionbrain/end_effector_pose`
-- `/motionbrain/kinematics`
-- `/motionbrain/kinematics_typed`
-- `/motionbrain/control_guard`
-- `/motionbrain/control_guard_typed`
-- `/motionbrain/mission_state`
-- `/motionbrain/mission_state_typed`
-- `/motionbrain/mission_cmd`
-- `/motionbrain/mission_cmd_typed`
-
-It also subscribes to `/motionbrain/light_cmd` and
-`/motionbrain/light_cmd_typed`, then forwards `on`, `off`, or `toggle` to
-token-gated `POST /light`. `motionbrain_mission` subscribes to
-`/motionbrain/mission_cmd` for `start`, `confirm`, `cancel`, and `reset`.
-
-The ROS2 workspace also includes `motionbrain_description`, a lightweight URDF,
-`robot_state_publisher` launch path, and RViz config for TF/joint-state
-visualization.
-
-`motionbrain_control` adds a small C++ ROS2 guard node that subscribes to typed
-status and camera-detection topics, then publishes
-`/motionbrain/control_guard_typed` plus compatibility JSON on
-`/motionbrain/control_guard`. This gives the portfolio a real C++ ROS2
-component without moving unsafe motion decisions into an unverified layer.
-
-`motionbrain_mission` adds a lightweight Nav2-style mission supervisor for the
-bounded portfolio flow `detect -> align -> operator confirm -> act`. It
-publishes `/motionbrain/mission_state_typed`, accepts
-`/motionbrain/mission_cmd_typed`, keeps JSON compatibility topics, and only
-emits a typed light command after an explicit operator `confirm`.
-
-`motionbrain_kinematics_node` subscribes to `/joint_states`, publishes an FK
-end-effector pose on `/motionbrain/end_effector_pose`, and publishes kinematics
-diagnostics on `/motionbrain/kinematics_typed` plus compatibility JSON on
-`/motionbrain/kinematics`. The pure Python kinematics module also includes a
-tested IK suggestion path for reachable target points and joint-limit
-checks.
-
-Raspberry Pi bring-up is documented in [docs/RASPBERRY_PI_ROS2_BRINGUP.md](docs/RASPBERRY_PI_ROS2_BRINGUP.md). The portfolio validation path has been run on Raspberry Pi 4 with ROS2 Jazzy: Home Wi-Fi access to the ESP32 controller and ESP32-CAM, JSON and typed topic echo verification, and a ROS2 command-channel test that toggled the real search light.
-For service-style operation on the Pi, see [docs/RASPBERRY_PI_DEPLOYMENT.md](docs/RASPBERRY_PI_DEPLOYMENT.md).
-For public-safe terminal evidence capture from the running Pi service, use
-`tools/raspi/capture_ros2_evidence.sh`; its default mode records service,
-health, interface, topic, and sample evidence without publishing actuator
-commands.
-
-Build and run directly:
-
-```bash
-cd ros2_ws
-colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_mission motionbrain_ros_bridge motionbrain_description
-source install/setup.bash
-ros2 run motionbrain_ros_bridge motionbrain_status_node --ros-args -p motion_host:=192.168.4.1 -p camera_url:=http://192.168.4.2
-```
-
-Run on Home Wi-Fi with the launch file:
-
-```bash
-export MOTIONBRAIN_HTTP_TOKEN="CHANGE_ME_TO_LOCAL_TOKEN"
-ros2 launch motionbrain_ros_bridge motionbrain_home_wifi.launch.py
-```
-
-If mDNS is unavailable on the Pi, pass the controller and camera IP addresses:
-
-```bash
-ros2 launch motionbrain_ros_bridge motionbrain_home_wifi.launch.py \
-  motion_host:=<controller-ip> \
-  camera_url:=http://<camera-ip>
-```
-
-Start the URDF/TF visualization path:
-
-```bash
-ros2 launch motionbrain_description display.launch.py
-```
-
-On a desktop with RViz2 installed:
-
-```bash
-ros2 launch motionbrain_description display.launch.py use_rviz:=true
-```
-
-Package notes are in [ros2_ws/src/motionbrain_ros_bridge/README.md](ros2_ws/src/motionbrain_ros_bridge/README.md).
-
-## 개발 환경
-
-### 품질 게이트
-
-GitHub Actions는 두 경로를 분리해서 검증한다.
-
-- `PlatformIO`: host Python tests, ESP32 controller build, ESP32-CAM build
-- `ROS2 Workspace`: `ros:jazzy-ros-base` 컨테이너에서 ROS2 package contract
-  tests, `colcon build`, `colcon test`
-
-로컬에서 빠르게 확인:
-
-```bash
-python3 -m unittest discover -s tests
-python3 -m py_compile ros2_ws/src/motionbrain_ros_bridge/launch/motionbrain_home_wifi.launch.py \
-  ros2_ws/src/motionbrain_mission/motionbrain_mission/mission_flow.py \
-  ros2_ws/src/motionbrain_mission/motionbrain_mission/mission_supervisor_node.py
-bash -n tools/raspi/start_ros_bridge.sh tools/raspi/check_ros_bridge_health.sh
-```
-
-### ESP32 Motion Controller
-
-- PlatformIO
-- `esp32dev`
-- Arduino framework
+ESP32 모션 제어기 빌드:
 
 ```bash
 pio run
-pio run -t upload
-pio device monitor
 ```
 
-### ESP32-CAM
-
-ESP32-CAM 펌웨어 경로:
-
-```bash
-firmware/esp32cam
-```
-
-빌드:
+ESP32-CAM 빌드:
 
 ```bash
 pio run -d firmware/esp32cam
 ```
 
-카메라와 Mac host를 연결하는 Phase 4 MVP 절차는 [PHASE4_MVP.md](PHASE4_MVP.md)를 기준으로 한다.
-
-집 Wi-Fi에서 controller와 ESP32-CAM을 같은 LAN에 붙여 Mac Wi-Fi 전환 없이 테스트하려면 [docs/HOME_WIFI_MODE.md](docs/HOME_WIFI_MODE.md)를 따른다. 실제 SSID/password와 command token은 serial monitor에서 입력하고 ESP32 NVS flash에만 저장한다.
-
-검증된 host-side vision loop:
+호스트 테스트:
 
 ```bash
-python3 tools/vision_host_mvp.py --camera-url http://192.168.4.2 --detect-color red --once
-python3 tools/vision_host_mvp.py --camera-url http://192.168.4.2 --detect-color red --enable-action --once
-python3 tools/vision_host_mvp.py --camera-url http://192.168.4.2 --detect-color red --enable-align-action
+python3 -m unittest discover -s tests
 ```
 
-기본 vision loop는 target center, horizontal offset, `LEFT|CENTER|RIGHT|LOST` alignment, `commandSuggestion`을 dry-run으로 출력한다. ESP32-CAM 캡처 안정성을 위해 기본 요청 간격은 3초, timeout은 6초, capture retry는 2회다. `--enable-align-action`을 켠 경우 현재 하드웨어 구성에서는 안전 조건 확인 후 짧은 `/joint?joint=base` nudge를 보내고 즉시 stop한다. base-mounted gyro feedback이 생기면 `--align-mode angle`로 `/base?action=angle` 폐루프를 쓸 수 있다.
-
-### STM32 Sensor / Teleop Layer
-
-- STM32CubeIDE
-- HAL / CubeMX
-- 프로젝트 경로: `firmware/stm32/MotionBrainSensor`
-
-Helper scripts:
-
-- `tools/stm32_build.sh`
-- `tools/stm32_upload.sh`
-- `tools/stm32_build_upload.sh`
-
-## 빠른 확인
-
-Host watcher는 `GET /status`, `GET /events`를 주기적으로 읽어 state, safety, base-angle, teleop 상태를 한 줄로 보여준다.
+Raspberry Pi ROS2 빌드:
 
 ```bash
-python3 tools/motionbrain_watch.py --host 192.168.4.1 --interval 1.0
+cd ros2_ws
+source /opt/ros/jazzy/setup.bash
+colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_mission motionbrain_ros_bridge motionbrain_description
+colcon test --packages-select motionbrain_msgs motionbrain_control motionbrain_mission motionbrain_ros_bridge motionbrain_description
+colcon test-result --verbose
 ```
 
-Local ops dashboard는 같은 상태/이벤트 경계에 ESP32-CAM capture, 색상 감지, target overlay, light command log, token-gated one-shot vision nudge control을 더해 브라우저에서 보여준다. Dashboard POST는 로컬 dashboard token 헤더가 있어야 처리되고, controller로 전달되는 light/nudge POST는 `MOTIONBRAIN_HTTP_TOKEN`이 provisioned command token과 맞아야 처리된다. 수동 조작은 ESP32가 직접 제공하는 `MotionBrain Control`을 사용한다. `MotionBrain Control`은 모든 state-changing command에서 provisioned command token을 요구하며, 입력값은 현재 브라우저 페이지 메모리에만 유지한다. 2026-05-25 bench에서는 phone browser에서 token prompt와 command 동작을 확인했다.
-
-```bash
-python3 tools/motionbrain_dashboard.py --camera-url http://192.168.4.2
-```
-
-브라우저에서 연다.
-
-```text
-http://127.0.0.1:8765
-```
-
-Raspberry Pi에서 dashboard를 LAN에 공개해 demo view로 쓸 때는 신뢰된 네트워크에서만 `--host 0.0.0.0`로 bind한다.
+Pi 대시보드 예시:
 
 ```bash
 export MOTIONBRAIN_HTTP_TOKEN="<local-controller-token>"
@@ -416,7 +110,7 @@ python3 tools/motionbrain_dashboard.py \
   --timeout 6
 ```
 
-Pi에서 camera polling/detection을 dashboard와 분리하려면 perception service를 먼저 실행하고 dashboard는 그 API를 proxy한다.
+Pi 인식 서비스를 분리해서 쓰는 예시:
 
 ```bash
 python3 tools/motionbrain_perception_service.py \
@@ -435,74 +129,17 @@ python3 tools/motionbrain_dashboard.py \
   --timeout 6
 ```
 
-Object mode는 repository에 모델 weight를 넣지 않고 명시적 모델/라벨 파일로만 켠다.
-현재 Raspberry Pi 실기 검증용 첫 모델은 OpenCV DNN 호환성이 확인된
-`YOLOv5n` detect ONNX를 사용한다. COCO class label은 repo의
-`config/coco80.labels`를 사용한다.
-
-```bash
-~/.cache/motionbrain/opencv-venv/bin/python tools/motionbrain_perception_service.py \
-  --host 0.0.0.0 \
-  --camera-url http://<camera-ip> \
-  --detector-mode object \
-  --object-backend opencv-dnn \
-  --object-model ~/.cache/motionbrain/models/yolov5n.onnx \
-  --object-labels config/coco80.labels \
-  --object-target cup \
-  --object-min-confidence 0.5 \
-  --object-input-size 640
-```
-
-`MotionBrain Control`의 `TRACKED` camera mode는 같은 dashboard API를 사용한다. 기본 dashboard URL은 `http://motionbrain-pi.local:8765`이고, 화면의 `API` 입력칸에서 `http://<pi-ip>:8765`로 바꿀 수 있다. 예전 Mac-hosted dashboard 값인 `127.0.0.1:8765`가 브라우저에 저장되어 있으면 자동으로 Pi 기본값으로 교체된다.
-
-기본 Nudge Once는 `250ms`/`25%`로 보수적이다. 실제 움직임을 영상에서 더 잘 보이게 할 때는 주변 clearance와 stop 동작을 확인한 뒤 `--align-nudge-ms 600 --align-percent 40` 정도로 올려 실행한다.
-
-STM32 teleop remote가 연결된 bench 구성에서는 teleop frame 안의 embedded safety telemetry로 `SENSOR_STALE`을 해제한다. 하드웨어 없이 safety 상태를 재현하거나 fault case를 강제로 만들 때는 simulation 명령을 사용할 수 있다.
-
-```text
-sensor sim healthy
-sensor sim obstacle 10
-sensor sim vibration 9
-sensor sim stale
-sensor sim off
-```
-
-기본 사용 흐름:
-
-1. ESP32 부팅
-2. Serial log에 출력된 fallback Wi-Fi AP `MotionBrain-XXXX` 접속 또는 USB 시리얼 연결
-3. `arm`
-4. `joint`, `motor`, `sequence`, `light` 명령 사용
-5. 필요 시 `stop` 또는 `disarm`
-
-## 포트폴리오 관점
-
-이 프로젝트에서 강조하는 역량:
-
-- 멀티 MCU 역할 분리 설계
-- 안전 상태 머신 기반 모터 제어
-- 센서 피드백과 handheld teleop를 통한 입력/안전 계층 확장
-- 시리얼/HTTP/status/event 경계 설계
-- 카메라 입력, host-side decision, ROS2로 확장 가능한 구조
-- ESP32-CAM + OpenCV 기반 host-side perception/action loop 실기 검증
-- Raspberry Pi 4 + ROS2 Jazzy 기반 topic bridge와 실제 command path 검증
-- 하드웨어 bench 검증과 문서화
-
 ## 문서
 
-- [README.en.md](README.en.md): 영어 프로젝트 개요
-- [PORTFOLIO.en.md](PORTFOLIO.en.md): 영어 포트폴리오 one-pager
-- [로드맵.md](%EB%A1%9C%EB%93%9C%EB%A7%B5.md): 포트폴리오 기준 전체 단계
-- [PHASE3_PLAN.md](PHASE3_PLAN.md): 센서/브리지 계획
-- [PHASE4_MVP.md](PHASE4_MVP.md): ESP32-CAM + Mac host 비전 MVP
-- [docs/RASPBERRY_PI_ROS2_BRINGUP.md](docs/RASPBERRY_PI_ROS2_BRINGUP.md): Raspberry Pi ROS2 bring-up 및 검증 결과
-- [docs/EMBEDDED_FIRMWARE_EVIDENCE.md](docs/EMBEDDED_FIRMWARE_EVIDENCE.md): MCU 펌웨어/인터페이스/멀티미터 검증 evidence와 남은 gap
-- [docs/ARCHITECTURE_DIAGRAMS.md](docs/ARCHITECTURE_DIAGRAMS.md): 포트폴리오 설명용 아키텍처/데모 다이어그램
-- [MESSAGE_INTERFACE.md](MESSAGE_INTERFACE.md): 시리얼/HTTP/status 메시지 경계
-- [PIN_MAP.md](PIN_MAP.md): ESP32 모터 핀 연결
-- [docs/TELEOP_BRINGUP.md](docs/TELEOP_BRINGUP.md): 유선 handheld teleop bring-up 절차
-- [docs/DEMO_RUNBOOK.md](docs/DEMO_RUNBOOK.md): 포트폴리오 데모 캡처 절차
-- [docs/DEMO_RUNBOOK.en.md](docs/DEMO_RUNBOOK.en.md): 영어 데모 캡처 절차
+- [PORTFOLIO.md](PORTFOLIO.md): 한국어 포트폴리오 요약
+- [PORTFOLIO.en.md](PORTFOLIO.en.md): 영어 포트폴리오 요약
+- [MESSAGE_INTERFACE.md](MESSAGE_INTERFACE.md): 시리얼/HTTP/ROS2 명령과 상태 경계
+- [PIN_MAP.md](PIN_MAP.md): 핀과 배선 기준
+- [docs/DEMO_RUNBOOK.md](docs/DEMO_RUNBOOK.md): 데모 캡처 절차
+- [docs/RASPBERRY_PI_DEPLOYMENT.md](docs/RASPBERRY_PI_DEPLOYMENT.md): Raspberry Pi systemd 배포
+- [docs/RASPBERRY_PI_ROS2_BRINGUP.md](docs/RASPBERRY_PI_ROS2_BRINGUP.md): Raspberry Pi ROS2 bring-up 기록
+- [docs/PHYSICAL_AI_OBJECT_DETECTION_PLAN.md](docs/PHYSICAL_AI_OBJECT_DETECTION_PLAN.md): 객체 인식과 제한된 물리 AI 계획
+- [docs/EMBEDDED_FIRMWARE_EVIDENCE.md](docs/EMBEDDED_FIRMWARE_EVIDENCE.md): 임베디드 펌웨어 검증 근거
 
 ## 라이선스
 
