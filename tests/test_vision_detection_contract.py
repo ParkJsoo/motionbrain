@@ -126,6 +126,15 @@ class VisionDetectionContractTest(unittest.TestCase):
         self.assertEqual(payload["targetType"], "object")
         self.assertEqual(payload["label"], "cup")
 
+    def test_object_mode_empty_payload_does_not_fall_back_to_color_label(self) -> None:
+        config = DetectionConfig(mode="object", object_target="")
+
+        payload = detect_frame(b"fake-jpeg", config)
+
+        self.assertEqual(payload["targetType"], "object")
+        self.assertEqual(payload["label"], "")
+        self.assertIsNone(payload["color"])
+
 
 if __name__ == "__main__":
     unittest.main()

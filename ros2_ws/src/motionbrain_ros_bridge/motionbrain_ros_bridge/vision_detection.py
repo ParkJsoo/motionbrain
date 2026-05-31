@@ -511,7 +511,7 @@ def _empty_payload(
         "detected": False,
         "targetType": config.mode,
         "color": config.color if config.mode == "color" else None,
-        "label": config.object_target or config.color,
+        "label": config.color if config.mode == "color" else config.object_target,
         "classId": None,
         "confidence": None,
         "reason": reason,
