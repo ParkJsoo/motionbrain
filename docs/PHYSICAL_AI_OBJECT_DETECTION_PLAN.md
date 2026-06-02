@@ -420,8 +420,9 @@ python3 tools/motionbrain_perception_service.py \
   --object-backend opencv-dnn \
   --object-model ~/.cache/motionbrain/models/yolov5s.onnx \
   --object-labels config/coco80.labels \
-  --object-min-confidence 0.5 \
-  --object-target cup
+  --object-min-confidence 0.1 \
+  --object-target cup \
+  --display-hold-seconds 0.75
 curl -sS http://127.0.0.1:<port>/api/detection
 ```
 
@@ -472,7 +473,7 @@ Scope:
 - Dashboard exposes an operator-confirmed dry-run plan through
   `/api/cup_grasp_plan`.
 - Require selected target `cup`, confidence at least `0.5`, centered alignment,
-  a clear ARMED controller state, and base idle.
+  a recent detection, a clear ARMED controller state, and base idle.
 - No gripper or arm controller POSTs in the first pass.
 
 Output example:

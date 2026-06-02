@@ -150,15 +150,17 @@ curl -sS -X POST "http://<camera-ip>/camera?framesize=qvga&quality=4"
   --object-model ~/.cache/motionbrain/models/yolov5s.onnx \
   --object-labels config/coco80.labels \
   --object-target cup \
-  --object-min-confidence 0.5 \
+  --object-min-confidence 0.1 \
   --object-input-size 640 \
-  --display-hold-seconds 1.5
+  --display-hold-seconds 0.75
 ```
 
 The saved-frame cup dataset used VGA, but the current live Pi/ESP32-CAM bench
-is more reliable at QVGA quality `4`: it returns the centered cup above
-confidence `0.5`. VGA quality `18` captures reliably but can mislabel the live
-cup body in this low-angle scene.
+is more reliable at QVGA quality `4`. Run the detector with a low display
+threshold (`--object-min-confidence 0.1`) so the dashboard can keep showing cup
+candidates even when the live confidence dips.
+VGA quality `18` captures reliably but can mislabel the live cup body in this
+low-angle scene.
 `--display-hold-seconds` only smooths the UI overlay after transient misses;
 held detections are marked `held:true` and are blocked from nudge/dry-run
 actions.
@@ -179,6 +181,8 @@ python3 tools/motionbrain_dashboard.py \
   --camera-url http://<camera-ip> \
   --perception-url http://127.0.0.1:8766 \
   --grasp-target-label cup \
+  --align-min-confidence 0.5 \
+  --vision-action-max-age-ms 4000 \
   --grasp-min-confidence 0.5
 ```
 
@@ -188,9 +192,10 @@ more responsive video feed, while `/api/detection` still comes from the Pi
 object detector.
 
 The cup dry-run button does not send gripper commands. It revalidates the
-selected target, confidence, centered alignment, controller state, and safety
-status, then returns the proposed gripper open/close sequence for operator
-review.
+selected target, confidence, detection age, centered alignment, controller
+state, and safety status, then returns the proposed gripper open/close sequence
+for operator review. `Nudge Once` uses the same selected-target confidence and
+detection-age gate, so low-confidence display candidates do not move the base.
 
 The ESP32-hosted `MotionBrain Control` page also uses this dashboard for
 `TRACKED` camera mode. Its default dashboard API is

@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 from tools import motionbrain_dashboard as dashboard
 from tools.motionbrain_dashboard import DashboardServer
+from tools.motionbrain_dashboard import build_align_nudge_check
 from tools.motionbrain_dashboard import build_grasp_dry_run_plan
 
 
@@ -89,6 +90,66 @@ class DashboardAlignmentTest(unittest.TestCase):
             ["/joint?joint=base&action=left&percent=25", "/joint?joint=base&action=stop"],
         )
 
+    def test_align_nudge_check_allows_confident_fresh_cup(self) -> None:
+        detection = {
+            "detected": True,
+            "targetType": "object",
+            "label": "cup",
+            "confidence": 0.72,
+            "alignment": "LEFT",
+            "ageMs": 350.0,
+        }
+
+        check = build_align_nudge_check(
+            detection,
+            requested_alignment="LEFT",
+            target_label="cup",
+            min_confidence=0.5,
+            max_age_ms=4000.0,
+        )
+
+        self.assertTrue(check["ok"])
+        self.assertEqual(check["alignment"], "LEFT")
+
+    def test_align_nudge_check_blocks_low_confidence_and_stale_object_detections(self) -> None:
+        low_confidence = {
+            "detected": True,
+            "targetType": "object",
+            "label": "cup",
+            "confidence": 0.19,
+            "alignment": "RIGHT",
+            "ageMs": 250.0,
+        }
+        stale = {
+            "detected": True,
+            "targetType": "object",
+            "label": "cup",
+            "confidence": 0.82,
+            "alignment": "RIGHT",
+            "ageMs": 4500.0,
+        }
+
+        self.assertEqual(
+            build_align_nudge_check(
+                low_confidence,
+                requested_alignment="RIGHT",
+                target_label="cup",
+                min_confidence=0.5,
+                max_age_ms=4000.0,
+            )["error"],
+            "alignment_confidence_below_threshold",
+        )
+        self.assertEqual(
+            build_align_nudge_check(
+                stale,
+                requested_alignment="RIGHT",
+                target_label="cup",
+                min_confidence=0.5,
+                max_age_ms=4000.0,
+            )["error"],
+            "alignment_stale_detection",
+        )
+
     def test_grasp_dry_run_plan_requires_centered_cup(self) -> None:
         detection = {
             "detected": True,
@@ -160,6 +221,22 @@ class DashboardAlignmentTest(unittest.TestCase):
 
         self.assertFalse(plan["ok"])
         self.assertEqual(plan["error"], "held_detection")
+
+    def test_grasp_dry_run_plan_blocks_stale_detection_when_max_age_is_set(self) -> None:
+        stale = {
+            "detected": True,
+            "targetType": "object",
+            "label": "cup",
+            "confidence": 0.8,
+            "alignment": "CENTER",
+            "ageMs": 4500.0,
+        }
+
+        plan = build_grasp_dry_run_plan(stale, target_label="cup", min_confidence=0.5, max_age_ms=4000.0)
+
+        self.assertFalse(plan["ok"])
+        self.assertEqual(plan["error"], "stale_detection")
+        self.assertEqual(plan["maxAgeMs"], 4000.0)
 
 
 if __name__ == "__main__":

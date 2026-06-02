@@ -700,7 +700,12 @@ INDEX_HTML = """<!doctype html>
       const areaRatio = typeof payload.areaRatio === "number" ? payload.areaRatio : payload.ratio;
       document.getElementById("detectionRatio").textContent = typeof areaRatio === "number" ? `area ${(areaRatio * 100).toFixed(2)}%` : "area -";
       setText("frameValue", payload.frameBytes ? `${payload.frameBytes} B` : "-");
-      document.getElementById("detectionReason").textContent = payload.reason || `${payload.width || "-"}x${payload.height || "-"}`;
+      const confidence = typeof payload.confidence === "number" ? `conf ${payload.confidence.toFixed(2)}` : null;
+      const ageMs = detectionAgeMs(payload);
+      const age = ageMs === null ? null : `age ${(ageMs / 1000).toFixed(1)}s`;
+      const hold = payload.held ? "held" : null;
+      const reason = payload.reason || `${payload.width || "-"}x${payload.height || "-"}`;
+      document.getElementById("detectionReason").textContent = [confidence, age, hold, reason].filter(Boolean).join(" / ");
       const centerX = typeof payload.centerX === "number" ? payload.centerX : payload.centroidX;
       const centerY = typeof payload.centerY === "number" ? payload.centerY : payload.centroidY;
       const centroid = typeof centerX === "number" && typeof centerY === "number"
@@ -723,11 +728,33 @@ INDEX_HTML = """<!doctype html>
       return String((payload && (payload.label || payload.color)) || "").trim().toLowerCase();
     }
 
+    function detectionIsObject(payload) {
+      return payload && payload.targetType === "object";
+    }
+
+    function detectionAgeMs(payload) {
+      if (!payload) return null;
+      if (typeof payload.ageMs === "number") return Math.max(payload.ageMs, 0);
+      if (typeof payload.ts === "number") return Math.max(Date.now() - payload.ts * 1000, 0);
+      return null;
+    }
+
+    function actionAgeBlockReason(payload, cfg) {
+      const maxAgeMs = typeof cfg.visionActionMaxAgeMs === "number" ? cfg.visionActionMaxAgeMs : 4000;
+      if (maxAgeMs <= 0) return null;
+      const ageMs = detectionAgeMs(payload);
+      if (ageMs === null || ageMs > maxAgeMs || payload.fresh === false) {
+        return `age ${ageMs === null ? "-" : (ageMs / 1000).toFixed(1) + "s"}`;
+      }
+      return null;
+    }
+
     function alignActionEligibility() {
       const status = lastStatus || {};
       const sensor = status.sensor || {};
       const base = status.baseAngle || {};
       const detection = lastDetection || {};
+      const cfg = dashboardConfig || {};
       const alignment = detection.alignment || "LOST";
       if (!dashboardConfig || !dashboardConfig.hasHttpToken) {
         return { ok: false, reason: "token missing" };
@@ -747,6 +774,21 @@ INDEX_HTML = """<!doctype html>
       if (!detection.detected || !["LEFT", "RIGHT"].includes(alignment)) {
         return { ok: false, reason: `alignment ${alignment}` };
       }
+      const ageBlock = actionAgeBlockReason(detection, cfg);
+      if (ageBlock) {
+        return { ok: false, reason: ageBlock };
+      }
+      if (detectionIsObject(detection)) {
+        const requiredTarget = String(cfg.graspTargetLabel || "cup").trim().toLowerCase();
+        const confidence = typeof detection.confidence === "number" ? detection.confidence : null;
+        const minConfidence = typeof cfg.alignMinConfidence === "number" ? cfg.alignMinConfidence : 0.5;
+        if (detectionLabel(detection) !== requiredTarget) {
+          return { ok: false, reason: `target ${detectionLabel(detection) || "-"}` };
+        }
+        if (confidence === null || confidence < minConfidence) {
+          return { ok: false, reason: `confidence ${confidence === null ? "-" : confidence.toFixed(2)}` };
+        }
+      }
       return { ok: true, reason: `${alignment.toLowerCase()} nudge ready` };
     }
 
@@ -759,7 +801,11 @@ INDEX_HTML = """<!doctype html>
       const cfg = dashboardConfig || {};
       const nudge = cfg.alignNudgeMs ? `${cfg.alignNudgeMs}ms` : "-";
       const percent = cfg.alignPercent ? `${cfg.alignPercent}%` : "-";
-      state.textContent = `${eligibility.reason} / nudge ${nudge} @ ${percent}`;
+      const confidence = typeof cfg.alignMinConfidence === "number" ? cfg.alignMinConfidence.toFixed(2) : "0.50";
+      const maxAge = typeof cfg.visionActionMaxAgeMs === "number" && cfg.visionActionMaxAgeMs > 0
+        ? `${(cfg.visionActionMaxAgeMs / 1000).toFixed(1)}s`
+        : "-";
+      state.textContent = `${eligibility.reason} / nudge ${nudge} @ ${percent} / conf >= ${confidence} age <= ${maxAge}`;
     }
 
     function cupPlanEligibility() {
@@ -788,6 +834,10 @@ INDEX_HTML = """<!doctype html>
       }
       if (!detection.detected) {
         return { ok: false, reason: "target not detected" };
+      }
+      const ageBlock = actionAgeBlockReason(detection, cfg);
+      if (ageBlock) {
+        return { ok: false, reason: ageBlock };
       }
       if (detectionLabel(detection) !== requiredTarget) {
         return { ok: false, reason: `target ${detectionLabel(detection) || "-"}` };
@@ -954,11 +1004,78 @@ def detection_label(payload: dict[str, Any]) -> str:
     return normalized_target_label(payload.get("label") or payload.get("color"))
 
 
+def detection_is_object(payload: dict[str, Any]) -> bool:
+    return str(payload.get("targetType", "")).strip().lower() == "object"
+
+
+def detection_age_ms(payload: dict[str, Any]) -> float | None:
+    age_ms = payload.get("ageMs")
+    if isinstance(age_ms, (int, float)):
+        return max(float(age_ms), 0.0)
+    ts = payload.get("ts")
+    if isinstance(ts, (int, float)):
+        return max((time.time() - float(ts)) * 1000.0, 0.0)
+    return None
+
+
+def detection_stale_error(payload: dict[str, Any], max_age_ms: float | None) -> dict[str, Any] | None:
+    if max_age_ms is None or max_age_ms <= 0:
+        return None
+    age_ms = detection_age_ms(payload)
+    if age_ms is None or age_ms > max_age_ms or payload.get("fresh") is False:
+        return {
+            "ok": False,
+            "error": "stale_detection",
+            "ageMs": age_ms,
+            "maxAgeMs": max_age_ms,
+        }
+    return None
+
+
+def build_align_nudge_check(
+    detection: dict[str, Any],
+    *,
+    requested_alignment: str,
+    target_label: str = "cup",
+    min_confidence: float = 0.5,
+    max_age_ms: float | None = None,
+) -> dict[str, Any]:
+    alignment = str(detection.get("alignment", "LOST")).upper()
+    requested = requested_alignment.strip().upper()
+    if not detection.get("detected") or alignment != requested:
+        return {"ok": False, "error": f"alignment_changed:{alignment}"}
+    if detection.get("held"):
+        return {"ok": False, "error": "alignment_held_detection"}
+
+    stale = detection_stale_error(detection, max_age_ms)
+    if stale is not None:
+        stale["error"] = "alignment_stale_detection"
+        return stale
+
+    if detection_is_object(detection):
+        required_label = normalized_target_label(target_label)
+        label = detection_label(detection)
+        if required_label and label != required_label:
+            return {"ok": False, "error": f"alignment_target_mismatch:{label or '-'}"}
+
+        confidence = detection.get("confidence")
+        if not isinstance(confidence, (int, float)) or float(confidence) < min_confidence:
+            return {
+                "ok": False,
+                "error": "alignment_confidence_below_threshold",
+                "confidence": float(confidence) if isinstance(confidence, (int, float)) else None,
+                "minConfidence": min_confidence,
+            }
+
+    return {"ok": True, "alignment": requested}
+
+
 def build_grasp_dry_run_plan(
     detection: dict[str, Any],
     *,
     target_label: str = "cup",
     min_confidence: float = 0.5,
+    max_age_ms: float | None = None,
 ) -> dict[str, Any]:
     required_label = normalized_target_label(target_label) or "cup"
     label = detection_label(detection)
@@ -968,6 +1085,10 @@ def build_grasp_dry_run_plan(
         return {"ok": False, "error": "target_not_detected", "target": required_label}
     if detection.get("held"):
         return {"ok": False, "error": "held_detection", "target": required_label}
+    stale = detection_stale_error(detection, max_age_ms)
+    if stale is not None:
+        stale["target"] = required_label
+        return stale
     if label != required_label:
         return {"ok": False, "error": f"target_mismatch:{label or '-'}", "target": required_label}
     if not isinstance(confidence, (int, float)) or float(confidence) < min_confidence:
@@ -1055,6 +1176,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                         "alignMode": "nudge",
                         "alignNudgeMs": self.server.align_nudge_ms,
                         "alignPercent": self.server.align_percent,
+                        "alignMinConfidence": self.server.align_min_confidence,
+                        "visionActionMaxAgeMs": self.server.vision_action_max_age_ms,
                         "graspTargetLabel": self.server.grasp_target_label,
                         "graspMinConfidence": self.server.grasp_min_confidence,
                     }
@@ -1136,12 +1259,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return
 
             detection = self.server.get_detection()
-            if not detection.get("detected") or detection.get("alignment") != alignment:
-                detected_alignment = str(detection.get("alignment", "LOST"))
-                self.send_error_json(HTTPStatus.CONFLICT, f"alignment_changed:{detected_alignment}")
-                return
-            if detection.get("held"):
-                self.send_error_json(HTTPStatus.CONFLICT, "alignment_held_detection")
+            check = build_align_nudge_check(
+                detection,
+                requested_alignment=alignment,
+                target_label=self.server.grasp_target_label,
+                min_confidence=self.server.align_min_confidence,
+                max_age_ms=self.server.vision_action_max_age_ms,
+            )
+            if not check.get("ok"):
+                self.send_error_json(HTTPStatus.CONFLICT, str(check.get("error", "alignment_not_allowed")))
                 return
 
             status = fetch_json(f"{self.server.motion_base_url}/status", self.server.timeout)
@@ -1184,6 +1310,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 detection,
                 target_label=self.server.grasp_target_label,
                 min_confidence=self.server.grasp_min_confidence,
+                max_age_ms=self.server.vision_action_max_age_ms,
             )
             if not plan.get("ok"):
                 self.send_json(plan, HTTPStatus.CONFLICT)
@@ -1279,6 +1406,8 @@ class DashboardServer(ThreadingHTTPServer):
         dashboard_token: str,
         align_nudge_ms: int,
         align_percent: int,
+        align_min_confidence: float,
+        vision_action_max_age_ms: float,
         grasp_target_label: str,
         grasp_min_confidence: float,
     ) -> None:
@@ -1293,6 +1422,8 @@ class DashboardServer(ThreadingHTTPServer):
         self.dashboard_token = dashboard_token
         self.align_nudge_ms = align_nudge_ms
         self.align_percent = align_percent
+        self.align_min_confidence = align_min_confidence
+        self.vision_action_max_age_ms = vision_action_max_age_ms
         self.grasp_target_label = normalized_target_label(grasp_target_label) or "cup"
         self.grasp_min_confidence = grasp_min_confidence
         self.camera_cache_lock = threading.Lock()
@@ -1361,6 +1492,8 @@ def run(args: argparse.Namespace) -> int:
         args.dashboard_token,
         args.align_nudge_ms,
         args.align_percent,
+        args.align_min_confidence,
+        args.vision_action_max_age_ms,
         args.grasp_target_label,
         args.grasp_min_confidence,
     )
@@ -1400,6 +1533,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--align-nudge-ms", type=int, default=250, help="Dashboard vision nudge duration in milliseconds")
     parser.add_argument("--align-percent", type=int, default=25, help="Dashboard vision nudge base speed percent")
     parser.add_argument(
+        "--align-min-confidence",
+        type=float,
+        default=float(os.environ.get("MOTIONBRAIN_ALIGN_MIN_CONFIDENCE", "0.5")),
+        help="Minimum object confidence before enabling vision align nudge",
+    )
+    parser.add_argument(
+        "--vision-action-max-age-ms",
+        type=float,
+        default=float(os.environ.get("MOTIONBRAIN_VISION_ACTION_MAX_AGE_MS", "4000")),
+        help="Maximum detection age allowed for vision-triggered actions; set 0 to disable",
+    )
+    parser.add_argument(
         "--grasp-target-label",
         default=os.environ.get("MOTIONBRAIN_GRASP_TARGET_LABEL", "cup"),
         help="Required selected target label for the dry-run grasp plan",
@@ -1417,6 +1562,10 @@ def parse_args() -> argparse.Namespace:
         parser.error("--align-nudge-ms must be between 50 and 2000")
     if args.align_percent < 1 or args.align_percent > 100:
         parser.error("--align-percent must be between 1 and 100")
+    if args.align_min_confidence < 0.0 or args.align_min_confidence > 1.0:
+        parser.error("--align-min-confidence must be between 0 and 1")
+    if args.vision_action_max_age_ms < 0:
+        parser.error("--vision-action-max-age-ms must be >= 0")
     if args.grasp_min_confidence < 0.0 or args.grasp_min_confidence > 1.0:
         parser.error("--grasp-min-confidence must be between 0 and 1")
     return args
