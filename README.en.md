@@ -18,7 +18,7 @@ Validated:
 - Shared serial/HTTP command path through `Dispatcher` and `SafetyGate`
 - STM32 `MPU-6050 + HC-SR04 + UART` sensor and teleop stream
 - Wired handheld teleop with deadman, frame timeout, and embedded safety telemetry
-- ESP32-CAM `/status`, `/capture`, and `/stream`
+- ESP32-CAM `/status`, `/capture`, `/stream`, and `/camera` profile control
 - Home Wi-Fi operation across the ESP32 controller, ESP32-CAM, and Raspberry Pi
 - ESP32-hosted `MotionBrain Control` UI with token-gated state-changing commands
 - Pi-hosted dashboard for status, events, camera feed, target overlay, and safety-gated nudge actions
@@ -30,8 +30,9 @@ Validated:
 Important current limits:
 
 - Red target tracking is the reliable demo path.
-- The general object-detection pipeline is implemented on the Pi, but the current ESP32-CAM QVGA input and tested YOLO-family models did not reliably detect a cup.
-- Autonomous grasping is not enabled. The current physical-AI path is limited to safety-gated perception, alignment, and operator confirmation.
+- The general object-detection pipeline is implemented on the Pi, and constrained known-object detection has been validated with ESP32-CAM VGA plus YOLOv5s. The current physical-AI demo uses only the most reliable active target: `cup`.
+- A label-less dark bottle, a sticker-heavy iPhone back side, and the secondary Z Flip phone target are out of scope for the current demo. Describe this as constrained workcell known-object detection/alignment, not arbitrary object recognition.
+- Autonomous grasping is not enabled. The next physical-AI step is connecting selected-object perception to safety-gated alignment, operator confirmation, and a constrained gripper sequence.
 
 ## System Layout
 
@@ -48,7 +49,7 @@ Important current limits:
 5-axis DC motor robotic arm
 
 [ESP32-CAM]
-  /capture, /stream
+  /capture, /stream, /camera
         ->
 [Raspberry Pi]
   perception service
@@ -139,6 +140,7 @@ python3 tools/motionbrain_dashboard.py \
 - [docs/RASPBERRY_PI_DEPLOYMENT.en.md](docs/RASPBERRY_PI_DEPLOYMENT.en.md): Raspberry Pi systemd deployment
 - [docs/RASPBERRY_PI_ROS2_BRINGUP.md](docs/RASPBERRY_PI_ROS2_BRINGUP.md): Raspberry Pi ROS2 bring-up notes
 - [docs/PHYSICAL_AI_OBJECT_DETECTION_PLAN.md](docs/PHYSICAL_AI_OBJECT_DETECTION_PLAN.md): object detection and constrained physical-AI plan
+- [docs/VISION_DATASET_EVALUATION.md](docs/VISION_DATASET_EVALUATION.md): vision frame capture and offline detector evaluation
 - [docs/EMBEDDED_FIRMWARE_EVIDENCE.md](docs/EMBEDDED_FIRMWARE_EVIDENCE.md): embedded firmware validation evidence
 
 ## License

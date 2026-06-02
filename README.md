@@ -18,7 +18,7 @@ MotionBrain은 ESP32 기반 5축 로봇팔 제어기에서 시작해 STM32 센�
 - `Dispatcher` + `SafetyGate` 기반 시리얼/HTTP 공통 명령 경로
 - STM32 `MPU-6050 + HC-SR04 + UART` 센서/텔레오퍼레이션 스트림
 - 유선 핸드헬드 텔레오퍼레이션: 데드맨, 프레임 타임아웃, 안전 텔레메트리
-- ESP32-CAM `/status`, `/capture`, `/stream`
+- ESP32-CAM `/status`, `/capture`, `/stream`, `/camera` 프로필 제어
 - 홈 Wi-Fi 기반 ESP32 제어기, ESP32-CAM, Raspberry Pi 연결
 - ESP32 내장 `MotionBrain Control` 웹 UI와 토큰 기반 상태 변경 명령
 - Pi 호스트 대시보드: 상태, 이벤트, 카메라, 타겟 오버레이, 안전 게이트 기반 짧은 보정 동작
@@ -30,8 +30,9 @@ MotionBrain은 ESP32 기반 5축 로봇팔 제어기에서 시작해 STM32 센�
 현재 주의점:
 
 - 빨간 타겟 추적은 데모 가능한 안정 경로다.
-- 일반 객체 인식 흐름은 Pi에서 구현됐지만, 현재 ESP32-CAM QVGA 입력과 테스트한 YOLO 계열 모델 조합으로는 컵 인식이 안정적으로 성공하지 않았다.
-- 자동 grasp는 아직 하지 않는다. 현재는 안전 게이트, 타겟 정렬, 작업자 확인을 중심으로 한 제한된 데모 단계다.
+- 일반 객체 인식 흐름은 Pi에서 구현됐고, ESP32-CAM VGA + YOLOv5s 조합으로 제한된 known-object 인식이 검증됐다. 현재 물리 AI 데모는 가장 신뢰도가 높은 `cup` 하나만 활성 타겟으로 사용한다.
+- 검은 라벨 없는 병, 스티커가 큰 아이폰 뒷면, Z Flip 보조 phone 타겟은 현재 데모 범위에서 제외한다. 이 결과는 임의 객체 인식이 아니라 제한된 작업공간의 known-object 인식/정렬 데모로 설명해야 한다.
+- 자동 grasp는 아직 하지 않는다. 다음 단계는 인식된 타겟을 안전 게이트, 타겟 정렬, 작업자 확인, 제한된 그립 시퀀스에 연결하는 것이다.
 
 ## 시스템 구성
 
@@ -48,7 +49,7 @@ MotionBrain은 ESP32 기반 5축 로봇팔 제어기에서 시작해 STM32 센�
 5축 DC 모터 로봇팔
 
 [ESP32-CAM]
-  /capture, /stream
+  /capture, /stream, /camera
         ->
 [Raspberry Pi]
   인식 서비스
@@ -139,6 +140,7 @@ python3 tools/motionbrain_dashboard.py \
 - [docs/RASPBERRY_PI_DEPLOYMENT.md](docs/RASPBERRY_PI_DEPLOYMENT.md): Raspberry Pi systemd 배포
 - [docs/RASPBERRY_PI_ROS2_BRINGUP.md](docs/RASPBERRY_PI_ROS2_BRINGUP.md): Raspberry Pi ROS2 bring-up 기록
 - [docs/PHYSICAL_AI_OBJECT_DETECTION_PLAN.md](docs/PHYSICAL_AI_OBJECT_DETECTION_PLAN.md): 객체 인식과 제한된 물리 AI 계획
+- [docs/VISION_DATASET_EVALUATION.md](docs/VISION_DATASET_EVALUATION.md): 물체 인식 frame capture와 offline 평가 절차
 - [docs/EMBEDDED_FIRMWARE_EVIDENCE.md](docs/EMBEDDED_FIRMWARE_EVIDENCE.md): 임베디드 펌웨어 검증 근거
 
 ## 라이선스

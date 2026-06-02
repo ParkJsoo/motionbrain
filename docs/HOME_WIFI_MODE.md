@@ -136,7 +136,7 @@ python3 tools/motionbrain_dashboard.py \
 ```
 
 Object mode uses explicit local model and label files. For the first Raspberry
-Pi live check, use the OpenCV-DNN-compatible YOLOv5n detect ONNX file with
+Pi live check, use the OpenCV-DNN-compatible YOLOv5s detect ONNX file with
 `config/coco80.labels`:
 
 ```bash
@@ -145,12 +145,17 @@ Pi live check, use the OpenCV-DNN-compatible YOLOv5n detect ONNX file with
   --camera-url http://<camera-ip> \
   --detector-mode object \
   --object-backend opencv-dnn \
-  --object-model ~/.cache/motionbrain/models/yolov5n.onnx \
+  --object-model ~/.cache/motionbrain/models/yolov5s.onnx \
   --object-labels config/coco80.labels \
   --object-target cup \
   --object-min-confidence 0.5 \
   --object-input-size 640
 ```
+
+For the current physical-AI demo, keep object mode cup-only. Other tested
+objects, including the Z Flip phone target and the label-less dark cola bottle,
+are deferred until after one reliable cup perception/alignment sequence is
+captured. See `docs/VISION_DATASET_EVALUATION.md` for the saved-frame results.
 
 The ESP32-hosted `MotionBrain Control` page also uses this dashboard for
 `TRACKED` camera mode. Its default dashboard API is

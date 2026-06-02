@@ -11,3 +11,5 @@ __pycache__/
 *.pyc
 .DS_Store
 platformio.local.ini
+# Raw local vision captures; commit only curated fixtures elsewhere after review.
+datasets/

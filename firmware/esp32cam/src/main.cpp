@@ -32,10 +32,28 @@ namespace {
 const uint32_t STREAM_FRAME_DELAY_MS = 100;
 const uint32_t STREAM_MAX_DURATION_MS = 20000;
 const uint32_t WIFI_CONNECT_TIMEOUT_MS = 30000;
-const framesize_t CAMERA_FRAME_SIZE = FRAMESIZE_QVGA;
-const int CAMERA_JPEG_QUALITY = 15;
+const framesize_t DEFAULT_CAMERA_FRAME_SIZE = FRAMESIZE_QVGA;
+const int DEFAULT_CAMERA_JPEG_QUALITY = 15;
+const int MIN_CAMERA_JPEG_QUALITY = 4;
+const int MAX_CAMERA_JPEG_QUALITY = 30;
+
+struct CameraProfileOption {
+  const char* name;
+  framesize_t frameSize;
+  uint16_t width;
+  uint16_t height;
+};
+
+const CameraProfileOption CAMERA_PROFILE_OPTIONS[] = {
+    {"qvga", FRAMESIZE_QVGA, 320, 240},
+    {"vga", FRAMESIZE_VGA, 640, 480},
+    {"svga", FRAMESIZE_SVGA, 800, 600},
+};
 
 WebServer server(80);
+
+const CameraProfileOption* currentFrameProfile = &CAMERA_PROFILE_OPTIONS[0];
+int currentJpegQuality = DEFAULT_CAMERA_JPEG_QUALITY;
 
 struct CameraStats {
   uint32_t captures = 0;
@@ -47,6 +65,125 @@ struct CameraStats {
 };
 
 CameraStats cameraStats;
+
+const CameraProfileOption* findCameraProfile(framesize_t frameSize) {
+  for (const CameraProfileOption& option : CAMERA_PROFILE_OPTIONS) {
+    if (option.frameSize == frameSize) {
+      return &option;
+    }
+  }
+  return nullptr;
+}
+
+const CameraProfileOption* findCameraProfile(const String& value) {
+  String normalized = value;
+  normalized.trim();
+  normalized.toLowerCase();
+  for (const CameraProfileOption& option : CAMERA_PROFILE_OPTIONS) {
+    if (normalized == option.name) {
+      return &option;
+    }
+  }
+  return nullptr;
+}
+
+String allowedCameraProfilesJson() {
+  String json = "[";
+  for (size_t i = 0; i < sizeof(CAMERA_PROFILE_OPTIONS) / sizeof(CAMERA_PROFILE_OPTIONS[0]); ++i) {
+    if (i > 0) {
+      json += ",";
+    }
+    const CameraProfileOption& option = CAMERA_PROFILE_OPTIONS[i];
+    json += "{\"name\":\"";
+    json += option.name;
+    json += "\",\"width\":";
+    json += option.width;
+    json += ",\"height\":";
+    json += option.height;
+    json += "}";
+  }
+  json += "]";
+  return json;
+}
+
+bool parseQualityArg(const String& value, int& quality) {
+  String trimmed = value;
+  trimmed.trim();
+  if (trimmed.length() == 0) {
+    return false;
+  }
+  char* end = nullptr;
+  long parsed = strtol(trimmed.c_str(), &end, 10);
+  if (end == trimmed.c_str() || *end != '\0') {
+    return false;
+  }
+  if (parsed < MIN_CAMERA_JPEG_QUALITY || parsed > MAX_CAMERA_JPEG_QUALITY) {
+    return false;
+  }
+  quality = static_cast<int>(parsed);
+  return true;
+}
+
+bool applyCameraProfile(const CameraProfileOption* profile, int quality, String& error) {
+  if (profile == nullptr) {
+    error = "unknown_framesize";
+    return false;
+  }
+  if (quality < MIN_CAMERA_JPEG_QUALITY || quality > MAX_CAMERA_JPEG_QUALITY) {
+    error = "invalid_quality";
+    return false;
+  }
+  sensor_t* sensor = esp_camera_sensor_get();
+  if (sensor == nullptr) {
+    error = "camera_sensor_unavailable";
+    return false;
+  }
+  if (sensor->set_framesize(sensor, profile->frameSize) != 0) {
+    error = "set_framesize_failed";
+    return false;
+  }
+  if (sensor->set_quality(sensor, quality) != 0) {
+    error = "set_quality_failed";
+    return false;
+  }
+
+  currentFrameProfile = profile;
+  currentJpegQuality = quality;
+  cameraStats = CameraStats{};
+  return true;
+}
+
+void appendCameraProfileJson(String& json) {
+  json += "\"frameSize\":\"";
+  json += currentFrameProfile->name;
+  json += "\",\"frameWidth\":";
+  json += currentFrameProfile->width;
+  json += ",\"frameHeight\":";
+  json += currentFrameProfile->height;
+  json += ",\"jpegQuality\":";
+  json += currentJpegQuality;
+}
+
+void sendCameraProfileJson(int statusCode, const char* status, const String& message = "") {
+  String json = "{";
+  json += "\"status\":\"";
+  json += status;
+  json += "\",";
+  appendCameraProfileJson(json);
+  json += ",\"qualityRange\":{\"min\":";
+  json += MIN_CAMERA_JPEG_QUALITY;
+  json += ",\"max\":";
+  json += MAX_CAMERA_JPEG_QUALITY;
+  json += "},\"allowedFrameSizes\":";
+  json += allowedCameraProfilesJson();
+  if (message.length() > 0) {
+    json += ",\"message\":\"";
+    json += message;
+    json += "\"";
+  }
+  json += "}";
+  server.send(statusCode, "application/json", json);
+}
 
 struct WifiConfig {
   char ssid[33];
@@ -201,8 +338,8 @@ bool initCamera() {
   config.pin_reset = RESET_GPIO_NUM;
   config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_JPEG;
-  config.frame_size = CAMERA_FRAME_SIZE;
-  config.jpeg_quality = CAMERA_JPEG_QUALITY;
+  config.frame_size = DEFAULT_CAMERA_FRAME_SIZE;
+  config.jpeg_quality = DEFAULT_CAMERA_JPEG_QUALITY;
   config.fb_count = psramFound() ? 2 : 1;
   config.fb_location = psramFound() ? CAMERA_FB_IN_PSRAM : CAMERA_FB_IN_DRAM;
   config.grab_mode = CAMERA_GRAB_LATEST;
@@ -215,8 +352,13 @@ bool initCamera() {
 
   sensor_t* sensor = esp_camera_sensor_get();
   if (sensor != nullptr) {
-    sensor->set_framesize(sensor, CAMERA_FRAME_SIZE);
-    sensor->set_quality(sensor, CAMERA_JPEG_QUALITY);
+    sensor->set_framesize(sensor, DEFAULT_CAMERA_FRAME_SIZE);
+    sensor->set_quality(sensor, DEFAULT_CAMERA_JPEG_QUALITY);
+    const CameraProfileOption* profile = findCameraProfile(DEFAULT_CAMERA_FRAME_SIZE);
+    if (profile != nullptr) {
+      currentFrameProfile = profile;
+    }
+    currentJpegQuality = DEFAULT_CAMERA_JPEG_QUALITY;
   }
 
   camera_fb_t* warmup = esp_camera_fb_get();
@@ -232,7 +374,7 @@ void handleRoot() {
       "text/html",
       "<!doctype html><html><head><title>MotionBrain ESP32-CAM</title></head>"
       "<body><h1>MotionBrain ESP32-CAM</h1>"
-      "<p><a href=\"/capture\">capture</a> | <a href=\"/stream\">stream</a> | <a href=\"/status\">status</a></p>"
+      "<p><a href=\"/capture\">capture</a> | <a href=\"/stream\">stream</a> | <a href=\"/status\">status</a> | <a href=\"/camera\">camera profile</a></p>"
       "<img src=\"/capture\" style=\"max-width:100%;height:auto\">"
       "</body></html>");
 }
@@ -247,6 +389,8 @@ void handleStatus() {
   json += "\"rssi\":" + String(WiFi.RSSI()) + ",";
   json += "\"heapFree\":" + String(ESP.getFreeHeap()) + ",";
   json += "\"psram\":" + String(psramFound() ? "true" : "false") + ",";
+  appendCameraProfileJson(json);
+  json += ",";
   json += "\"captures\":" + String(cameraStats.captures) + ",";
   json += "\"captureFailures\":" + String(cameraStats.captureFailures) + ",";
   json += "\"clientWriteFailures\":" + String(cameraStats.clientWriteFailures) + ",";
@@ -255,6 +399,39 @@ void handleStatus() {
   json += "\"lastFrameBytes\":" + String(cameraStats.lastFrameBytes);
   json += "}";
   server.send(200, "application/json", json);
+}
+
+void handleCameraProfile() {
+  const bool wantsChange = server.hasArg("framesize") || server.hasArg("quality");
+  if (!wantsChange) {
+    sendCameraProfileJson(200, "ok");
+    return;
+  }
+  if (server.method() != HTTP_POST) {
+    sendCameraProfileJson(405, "error", "use POST /camera?framesize=qvga|vga|svga&quality=4..30");
+    return;
+  }
+
+  const CameraProfileOption* nextProfile = currentFrameProfile;
+  int nextQuality = currentJpegQuality;
+  if (server.hasArg("framesize")) {
+    nextProfile = findCameraProfile(server.arg("framesize"));
+    if (nextProfile == nullptr) {
+      sendCameraProfileJson(400, "error", "unknown_framesize");
+      return;
+    }
+  }
+  if (server.hasArg("quality") && !parseQualityArg(server.arg("quality"), nextQuality)) {
+    sendCameraProfileJson(400, "error", "invalid_quality");
+    return;
+  }
+
+  String error;
+  if (!applyCameraProfile(nextProfile, nextQuality, error)) {
+    sendCameraProfileJson(500, "error", error);
+    return;
+  }
+  sendCameraProfileJson(200, "ok", "camera_profile_updated");
 }
 
 void handleCapture() {
@@ -359,7 +536,10 @@ void setup() {
   Serial.setDebugOutput(false);
   Serial.println();
   Serial.println("MotionBrain ESP32-CAM boot");
-  Serial.printf("Camera profile: QVGA JPEG quality=%d psram=%s\n", CAMERA_JPEG_QUALITY, psramFound() ? "yes" : "no");
+  Serial.printf("Camera profile: %s JPEG quality=%d psram=%s\n",
+                currentFrameProfile->name,
+                currentJpegQuality,
+                psramFound() ? "yes" : "no");
   clearRequestedOnBoot();
 
   if (!initCamera()) {
@@ -371,6 +551,8 @@ void setup() {
   connectWifi();
   server.on("/", HTTP_GET, handleRoot);
   server.on("/status", HTTP_GET, handleStatus);
+  server.on("/camera", HTTP_GET, handleCameraProfile);
+  server.on("/camera", HTTP_POST, handleCameraProfile);
   server.on("/capture", HTTP_GET, handleCapture);
   server.on("/stream", HTTP_GET, handleStream);
   server.begin();

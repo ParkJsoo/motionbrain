@@ -30,7 +30,9 @@ Do not describe this as a general-purpose autonomous grasping system.
 ## Hardware Assumptions
 
 - Raspberry Pi 4B 8GB runs the perception workload.
-- ESP32-CAM provides QVGA JPEG frames via `/capture`; this is the stable input.
+- ESP32-CAM provides JPEG frames via `/capture`; `vga` with JPEG quality `12`
+  is the current object-detection baseline, with `qvga` quality `15` as the
+  low-bandwidth fallback.
 - ESP32 motion controller remains the actuator and safety boundary.
 - STM32 handheld teleop sends embedded sensor/safety telemetry.
 - The current HC-SR04 is in the handheld teleop path, not mounted as a robot
@@ -66,10 +68,48 @@ As of 2026-06-01 on `feature/pi-object-detection-mvp`:
   committed.
 - Live hardware validation confirms the Pi perception service and dashboard can
   track red color targets reliably with the ESP32-CAM QVGA feed.
-- Live object-mode validation on the same QVGA feed loaded YOLOv5n, YOLOv5s,
+- Earlier live object-mode validation on the QVGA feed loaded YOLOv5n, YOLOv5s,
   and a YOLOv8n ONNX candidate through the Pi OpenCV DNN path, but a white cup
-  target was not detected reliably. Keep this as a runtime-capable MVP path,
-  not a guaranteed arbitrary-object demo.
+  target was not detected reliably.
+- Offline validation after removing the ESP32-CAM lens film and switching to
+  `vga` / JPEG quality `12` changed the result: `YOLOv5s` detected the white cup
+  in `50/50` saved frames at confidence `0.5`; `YOLOv5n` remained too weak for
+  this scene. Keep this as a constrained-object MVP path, not a guaranteed
+  arbitrary-object demo.
+- A local live perception-service smoke test using the same ESP32-CAM profile
+  and `YOLOv5s` returned `label=cup` with confidence around `0.80-0.90` and
+  detector latency around `120ms` on the Mac host. Pi latency still needs to be
+  measured.
+- Background-only evaluation on 2026-06-02 KST produced `0/50` false positives
+  at confidence `0.5` and `0.25` with `YOLOv5s`; lowering to `0.1` introduced a
+  low-confidence `boat` false positive. Keep the first live cup demo at
+  confidence `0.5`.
+- A label-less dark cola bottle with a red cap on the same dark background was
+  not recognized as COCO `bottle` (`0/50` at confidence `0.05` to `0.5`), but it
+  was consistently detected as `vase` (`49/50` at confidence `0.5`, `50/50` at
+  confidence `0.25`) with no `vase` false positives on the saved background
+  set. Treat this only as a constrained proxy target, not bottle recognition.
+- Moving the same bottle to a white background increased the `vase` proxy
+  confidence to about `0.72` and produced `50/50` detections at confidence
+  `0.5`, but it still produced `0/50` COCO `bottle` detections. Use a more
+  typical bottle if the semantic `bottle` label matters.
+- An iPhone 13 mini back-side sample on the white background produced `0/50`
+  COCO `cell phone` detections at confidence `0.05` to `0.5`. The model mostly
+  detected the large sticker/phone silhouette as `tie` (`49/50` at confidence
+  `0.25`). Use the screen side or a cleaner phone surface before treating phone
+  detection as a viable semantic target.
+- A Samsung Z Flip back-side sample on the white background did work as a
+  semantic `cell phone` target when the threshold was lowered and the class was
+  filtered: `43/50` at confidence `0.1`, `47/50` at confidence `0.05`, and
+  `0/50` background false positives for `cell phone` at those thresholds. This
+  is deferred as a secondary target; do not include it in the first physical-AI
+  demo.
+- The immediate object-detection feasibility step is complete: saved-frame
+  evaluation and smoke tests show that the current ESP32-CAM can support
+  constrained known-object perception for `cup`. Next work should connect the
+  cup target to alignment, operator-confirmed motion, and a limited gripper
+  sequence rather than adding more object classes; see
+  `docs/VISION_DATASET_EVALUATION.md`.
 - ROS2 can consume the Pi perception service through `perception_url`, so
   `/camera/detection` and `/camera/detection_typed` can publish the same
   selected target used by the dashboard without opening an additional
@@ -123,17 +163,18 @@ Current ROS2 compatibility step:
 
 Recommended first live model path:
 
-- Current tested Pi path: small YOLO ONNX models through the Pi cache venv
-  OpenCV runtime. `YOLOv5n`, `YOLOv5s`, and one `YOLOv8n` ONNX candidate load
-  and return candidates, but did not reliably classify the live white cup at
-  QVGA. The official `YOLO11n` ONNX asset is a better modern target, but it did
-  not load through OpenCV DNN on the current Pi due ONNX shape handling.
+- Current tested path: YOLO ONNX models through OpenCV DNN. `YOLOv5s` is the
+  first useful baseline for the ESP32-CAM VGA cup scene; `YOLOv5n` loads but is
+  not reliable enough for this target. The official `YOLO11n` ONNX asset is a
+  better modern target, but it did not load through OpenCV DNN on the current Pi
+  due ONNX shape handling.
 - Use `config/coco80.labels` for COCO class names.
 - Start with `--object-input-size 640` for correctness, then benchmark 416/320
   if Pi CPU load is too high.
-- Start `--object-min-confidence` at `0.5` for YOLOv5n on the live camera, then
-  lower only if known targets are consistently missed.
-- Good first targets: `cup`, `bottle`, `cell phone`, `person`, `chair`.
+- Start `--object-min-confidence` at `0.5` for the cup.
+- Current active semantic target: `cup` only.
+- Defer the tested Z Flip phone target and avoid presenting the tested dark
+  bottle as `bottle`; it only works as a `vase` proxy target.
 - Avoid open-vocabulary prompts for the MVP. This phase detects known COCO
   classes; arbitrary text-described object search is a later model family.
 
@@ -214,7 +255,7 @@ Current Pi perception service options:
 --object-target LABEL
 --object-min-confidence 0.45
 --object-nms-threshold 0.45
---object-input-size 320
+--object-input-size 640
 --target-policy {largest,center,highest-confidence}
 ```
 
@@ -364,7 +405,7 @@ python3 tools/motionbrain_perception_service.py \
   --camera-url http://<camera-ip> \
   --detector-mode object \
   --object-backend opencv-dnn \
-  --object-model ~/.cache/motionbrain/models/yolov5n.onnx \
+  --object-model ~/.cache/motionbrain/models/yolov5s.onnx \
   --object-labels config/coco80.labels \
   --object-min-confidence 0.5 \
   --object-target cup

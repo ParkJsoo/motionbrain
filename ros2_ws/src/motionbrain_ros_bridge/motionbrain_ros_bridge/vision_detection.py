@@ -26,7 +26,7 @@ class DetectionConfig:
     object_target: str = ""
     object_min_confidence: float = 0.45
     object_nms_threshold: float = 0.45
-    object_input_size: int = 320
+    object_input_size: int = 640
     object_backend: str = "fake"
     object_model: str = ""
     object_labels: str = ""
@@ -397,7 +397,7 @@ def decode_dnn_detections(
 class OpenCvDnnObjectDetector:
     net: Any
     labels: Sequence[str]
-    input_size: int = 320
+    input_size: int = 640
     name: str = "opencv-dnn"
 
     @classmethod
@@ -406,7 +406,7 @@ class OpenCvDnnObjectDetector:
         model_path: str,
         labels_path: str = "",
         *,
-        input_size: int = 320,
+        input_size: int = 640,
     ) -> "OpenCvDnnObjectDetector":
         if not model_path:
             raise ValueError("--object-model is required for opencv-dnn object detection")

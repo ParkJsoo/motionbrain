@@ -368,7 +368,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--object-target", default=os.environ.get("MOTIONBRAIN_OBJECT_TARGET", ""))
     parser.add_argument("--object-min-confidence", type=float, default=float(os.environ.get("MOTIONBRAIN_OBJECT_MIN_CONFIDENCE", "0.45")))
     parser.add_argument("--object-nms-threshold", type=float, default=0.45)
-    parser.add_argument("--object-input-size", type=int, default=320)
+    parser.add_argument("--object-input-size", type=int, default=640)
     parser.add_argument("--target-policy", choices=("largest", "center", "highest-confidence"), default="largest")
     parser.add_argument(
         "--allow-origin",
