@@ -22,6 +22,14 @@ if str(ROS_BRIDGE_SRC) not in sys.path:
 from motionbrain_ros_bridge.vision_detection import detect_colored_target  # noqa: E402
 
 
+DEFAULT_GRASP_SEQUENCE = [
+    {"joint": "gripper", "action": "open", "percent": 35, "ms": 300},
+    {"joint": "gripper", "action": "stop", "percent": 0, "ms": 0},
+    {"joint": "gripper", "action": "close", "percent": 35, "ms": 450},
+    {"joint": "gripper", "action": "stop", "percent": 0, "ms": 0},
+]
+
+
 INDEX_HTML = """<!doctype html>
 <html lang="en">
 <head>
@@ -487,9 +495,11 @@ INDEX_HTML = """<!doctype html>
           </div>
           <div class="controls">
             <button id="alignNudgeButton" class="primary" onclick="sendAlignNudge()" disabled>Nudge Once</button>
+            <button id="cupPlanButton" onclick="sendCupGraspPlan()" disabled>Confirm Cup Dry Run</button>
             <button onclick="refresh()">Refresh</button>
           </div>
           <div class="subvalue" id="alignActionState">alignment action unavailable</div>
+          <div class="subvalue" id="cupPlanState">cup dry run unavailable</div>
         </div>
       </section>
 
@@ -587,6 +597,7 @@ INDEX_HTML = """<!doctype html>
       setText("teleopAxes", `R ${fmtNum(teleop.reach, 2)} L ${fmtNum(teleop.lift, 2)} T ${fmtNum(teleop.twist, 2)}`);
       document.getElementById("teleopGrip").textContent = `grip open ${fmtBool(teleop.gripOpen)} close ${fmtBool(teleop.gripClose)}`;
       updateAlignActionState();
+      updateCupPlanState();
     }
 
     function updateEvents(payload) {
@@ -705,6 +716,11 @@ INDEX_HTML = """<!doctype html>
       const deadband = typeof payload.alignDeadband === "number" ? `db ${payload.alignDeadband.toFixed(2)}` : "db -";
       document.getElementById("alignmentSuggestion").textContent = `${suggestion} / ${deadband}`;
       updateAlignActionState();
+      updateCupPlanState();
+    }
+
+    function detectionLabel(payload) {
+      return String((payload && (payload.label || payload.color)) || "").trim().toLowerCase();
     }
 
     function alignActionEligibility() {
@@ -743,6 +759,54 @@ INDEX_HTML = """<!doctype html>
       state.textContent = `${eligibility.reason} / nudge ${nudge} @ ${percent}`;
     }
 
+    function cupPlanEligibility() {
+      const status = lastStatus || {};
+      const sensor = status.sensor || {};
+      const base = status.baseAngle || {};
+      const detection = lastDetection || {};
+      const cfg = dashboardConfig || {};
+      const requiredTarget = String(cfg.graspTargetLabel || "cup").trim().toLowerCase();
+      const confidence = typeof detection.confidence === "number" ? detection.confidence : null;
+      const minConfidence = typeof cfg.graspMinConfidence === "number" ? cfg.graspMinConfidence : 0.5;
+      if (!cfg.hasHttpToken) {
+        return { ok: false, reason: "token missing" };
+      }
+      if (status.state !== "ARMED") {
+        return { ok: false, reason: `state ${status.state || "-"}` };
+      }
+      if (sensor.blocked || sensor.faultLatched) {
+        return { ok: false, reason: sensor.blockReason || sensor.faultReason || "safety block" };
+      }
+      if (base.active) {
+        return { ok: false, reason: "base busy" };
+      }
+      if (!detection.detected) {
+        return { ok: false, reason: "target not detected" };
+      }
+      if (detectionLabel(detection) !== requiredTarget) {
+        return { ok: false, reason: `target ${detectionLabel(detection) || "-"}` };
+      }
+      if (confidence === null || confidence < minConfidence) {
+        return { ok: false, reason: `confidence ${confidence === null ? "-" : confidence.toFixed(2)}` };
+      }
+      if (detection.alignment !== "CENTER") {
+        return { ok: false, reason: `alignment ${detection.alignment || "LOST"}` };
+      }
+      return { ok: true, reason: `${requiredTarget} dry-run ready` };
+    }
+
+    function updateCupPlanState() {
+      const button = document.getElementById("cupPlanButton");
+      const state = document.getElementById("cupPlanState");
+      if (!button || !state) return;
+      const eligibility = cupPlanEligibility();
+      button.disabled = !eligibility.ok;
+      const cfg = dashboardConfig || {};
+      const target = cfg.graspTargetLabel || "cup";
+      const confidence = typeof cfg.graspMinConfidence === "number" ? cfg.graspMinConfidence.toFixed(2) : "0.50";
+      state.textContent = `${eligibility.reason} / target ${target} >= ${confidence}`;
+    }
+
     async function refresh() {
       try {
         const config = await getJson("/api/config");
@@ -750,6 +814,7 @@ INDEX_HTML = """<!doctype html>
         document.getElementById("motionTarget").textContent = `motion: ${config.motionBaseUrl}`;
         document.getElementById("cameraTarget").textContent = `camera: ${config.cameraUrl || "disabled"}`;
         updateAlignActionState();
+        updateCupPlanState();
       } catch (err) {
         pushLog(`config error: ${err.message}`);
       }
@@ -811,6 +876,23 @@ INDEX_HTML = """<!doctype html>
       }
     }
 
+    async function sendCupGraspPlan() {
+      const eligibility = cupPlanEligibility();
+      if (!eligibility.ok) {
+        pushLog(`cup dry-run blocked: ${eligibility.reason}`);
+        return;
+      }
+
+      try {
+        const data = await postJson("/api/cup_grasp_plan", { confirmDryRun: true });
+        const sequence = (data.plannedSequence || []).map((step) => `${step.joint}.${step.action}:${step.ms}ms`).join(", ");
+        pushLog(`cup dry-run ready: ${data.target} ${data.alignment} conf=${fmtNum(data.confidence, 2)} sequence=${sequence}`);
+        refresh();
+      } catch (err) {
+        pushLog(`cup dry-run error: ${err.message}`);
+      }
+    }
+
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden) {
         refresh();
@@ -856,6 +938,47 @@ def post_motionbrain(base_url: str, path: str, timeout: float, token: str = "") 
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
+
+
+def normalized_target_label(value: Any) -> str:
+    return str(value or "").strip().lower()
+
+
+def detection_label(payload: dict[str, Any]) -> str:
+    return normalized_target_label(payload.get("label") or payload.get("color"))
+
+
+def build_grasp_dry_run_plan(
+    detection: dict[str, Any],
+    *,
+    target_label: str = "cup",
+    min_confidence: float = 0.5,
+) -> dict[str, Any]:
+    required_label = normalized_target_label(target_label) or "cup"
+    label = detection_label(detection)
+    confidence = detection.get("confidence")
+    alignment = str(detection.get("alignment", "LOST")).upper()
+    if not detection.get("detected"):
+        return {"ok": False, "error": "target_not_detected", "target": required_label}
+    if label != required_label:
+        return {"ok": False, "error": f"target_mismatch:{label or '-'}", "target": required_label}
+    if not isinstance(confidence, (int, float)) or float(confidence) < min_confidence:
+        return {"ok": False, "error": "confidence_below_threshold", "target": required_label}
+    if alignment != "CENTER":
+        return {"ok": False, "error": f"alignment_not_center:{alignment}", "target": required_label}
+
+    return {
+        "ok": True,
+        "success": True,
+        "dryRun": True,
+        "target": required_label,
+        "label": label,
+        "confidence": float(confidence),
+        "alignment": alignment,
+        "reason": "operator_confirmed_dry_run",
+        "plannedSequence": [dict(step) for step in DEFAULT_GRASP_SEQUENCE],
+        "detection": detection,
+    }
 
 
 def execute_base_nudge(
@@ -924,6 +1047,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                         "alignMode": "nudge",
                         "alignNudgeMs": self.server.align_nudge_ms,
                         "alignPercent": self.server.align_percent,
+                        "graspTargetLabel": self.server.grasp_target_label,
+                        "graspMinConfidence": self.server.grasp_min_confidence,
                     }
                 )
             elif parsed.path == "/api/status":
@@ -952,6 +1077,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.handle_light()
         elif parsed.path == "/api/align_nudge":
             self.handle_align_nudge()
+        elif parsed.path == "/api/cup_grasp_plan":
+            self.handle_cup_grasp_plan()
         else:
             self.send_error_json(HTTPStatus.NOT_FOUND, "not_found")
             return
@@ -1024,6 +1151,44 @@ class DashboardHandler(BaseHTTPRequestHandler):
             result["alignment"] = alignment
             result["detection"] = detection
             self.send_json(result)
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError, OSError) as exc:
+            self.send_error_json(HTTPStatus.BAD_GATEWAY, str(exc))
+
+    def handle_cup_grasp_plan(self) -> None:
+        try:
+            if not self.server.http_token:
+                self.send_error_json(HTTPStatus.FORBIDDEN, "http_token_required")
+                return
+
+            body = self.read_json_body()
+            if body.get("confirmDryRun") is not True:
+                self.send_error_json(HTTPStatus.BAD_REQUEST, "confirmDryRun_required")
+                return
+            if not self.server.camera_url and not self.server.perception_url:
+                self.send_error_json(HTTPStatus.BAD_REQUEST, "camera_url_not_configured")
+                return
+
+            detection = self.server.get_detection()
+            plan = build_grasp_dry_run_plan(
+                detection,
+                target_label=self.server.grasp_target_label,
+                min_confidence=self.server.grasp_min_confidence,
+            )
+            if not plan.get("ok"):
+                self.send_json(plan, HTTPStatus.CONFLICT)
+                return
+
+            status = fetch_json(f"{self.server.motion_base_url}/status", self.server.timeout)
+            allowed, reason = self.server.status_allows_grasp_plan(status)
+            if not allowed:
+                self.send_error_json(HTTPStatus.CONFLICT, f"grasp_plan_not_allowed:{reason}")
+                return
+
+            plan["status"] = {
+                "state": status.get("state", "UNKNOWN"),
+                "baseActive": bool(status.get("baseAngle", {}).get("active", False)),
+            }
+            self.send_json(plan)
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError, OSError) as exc:
             self.send_error_json(HTTPStatus.BAD_GATEWAY, str(exc))
 
@@ -1103,6 +1268,8 @@ class DashboardServer(ThreadingHTTPServer):
         dashboard_token: str,
         align_nudge_ms: int,
         align_percent: int,
+        grasp_target_label: str,
+        grasp_min_confidence: float,
     ) -> None:
         super().__init__(server_address, handler_class)
         self.motion_base_url = motion_base_url
@@ -1115,6 +1282,8 @@ class DashboardServer(ThreadingHTTPServer):
         self.dashboard_token = dashboard_token
         self.align_nudge_ms = align_nudge_ms
         self.align_percent = align_percent
+        self.grasp_target_label = normalized_target_label(grasp_target_label) or "cup"
+        self.grasp_min_confidence = grasp_min_confidence
         self.camera_cache_lock = threading.Lock()
         self.camera_cache: tuple[float, bytes, str] | None = None
         self.camera_cache_seconds = 0.25
@@ -1131,6 +1300,9 @@ class DashboardServer(ThreadingHTTPServer):
         if base.get("active", False):
             return False, "base_busy"
         return True, "ok"
+
+    def status_allows_grasp_plan(self, status: dict[str, Any]) -> tuple[bool, str]:
+        return self.status_allows_align_nudge(status)
 
     def get_camera_frame(self) -> tuple[bytes, str]:
         if self.perception_url:
@@ -1178,6 +1350,8 @@ def run(args: argparse.Namespace) -> int:
         args.dashboard_token,
         args.align_nudge_ms,
         args.align_percent,
+        args.grasp_target_label,
+        args.grasp_min_confidence,
     )
     print(f"MotionBrain ops dashboard: http://{args.host}:{args.port}")
     print(f"motion={motion_base_url}")
@@ -1214,6 +1388,17 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--align-nudge-ms", type=int, default=250, help="Dashboard vision nudge duration in milliseconds")
     parser.add_argument("--align-percent", type=int, default=25, help="Dashboard vision nudge base speed percent")
+    parser.add_argument(
+        "--grasp-target-label",
+        default=os.environ.get("MOTIONBRAIN_GRASP_TARGET_LABEL", "cup"),
+        help="Required selected target label for the dry-run grasp plan",
+    )
+    parser.add_argument(
+        "--grasp-min-confidence",
+        type=float,
+        default=float(os.environ.get("MOTIONBRAIN_GRASP_MIN_CONFIDENCE", "0.5")),
+        help="Minimum selected-target confidence for the dry-run grasp plan",
+    )
     args = parser.parse_args()
     if not args.dashboard_token:
         args.dashboard_token = secrets.token_urlsafe(24)
@@ -1221,6 +1406,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("--align-nudge-ms must be between 50 and 2000")
     if args.align_percent < 1 or args.align_percent > 100:
         parser.error("--align-percent must be between 1 and 100")
+    if args.grasp_min_confidence < 0.0 or args.grasp_min_confidence > 1.0:
+        parser.error("--grasp-min-confidence must be between 0 and 1")
     return args
 
 

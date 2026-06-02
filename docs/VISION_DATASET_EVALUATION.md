@@ -152,6 +152,10 @@ Interpretation: confidence `0.5` is a reasonable first live threshold for the
 cup demo. Avoid lowering the threshold unless the target object is explicitly
 filtered and the background false-positive set is rechecked.
 
+The active dashboard dry-run path uses this same cup target and threshold. It
+requires `label=cup`, confidence at least `0.5`, and `alignment=CENTER` before
+returning a proposed gripper open/close sequence.
+
 On the same day, a 50-frame black unlabeled cola bottle dataset with a red cap
 was captured on the dark cloth background:
 

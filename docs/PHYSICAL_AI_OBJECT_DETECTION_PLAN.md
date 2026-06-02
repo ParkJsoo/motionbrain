@@ -456,22 +456,26 @@ colcon test-result --verbose
 
 Scope:
 
-- Add a dry-run grasp planner that only emits proposed steps.
-- Require centered stable target and calibrated workcell assumptions.
-- No controller POSTs in the first pass.
+- Dashboard exposes an operator-confirmed dry-run plan through
+  `/api/cup_grasp_plan`.
+- Require selected target `cup`, confidence at least `0.5`, centered alignment,
+  a clear ARMED controller state, and base idle.
+- No gripper or arm controller POSTs in the first pass.
 
 Output example:
 
 ```json
 {
-  "ready": true,
+  "ok": true,
+  "success": true,
   "target": "cup",
   "alignment": "CENTER",
-  "rangeBand": "near",
+  "dryRun": true,
   "plannedSequence": [
     {"joint": "gripper", "action": "open", "percent": 35, "ms": 300},
-    {"joint": "shoulder", "action": "down", "percent": 25, "ms": 450},
-    {"joint": "gripper", "action": "close", "percent": 35, "ms": 550}
+    {"joint": "gripper", "action": "stop", "percent": 0, "ms": 0},
+    {"joint": "gripper", "action": "close", "percent": 35, "ms": 450},
+    {"joint": "gripper", "action": "stop", "percent": 0, "ms": 0}
   ]
 }
 ```
@@ -480,7 +484,8 @@ Output example:
 
 Scope:
 
-- Run one calibrated sequence after explicit operator confirm.
+- Later, run one calibrated sequence after explicit operator confirm and an
+  extra execution enable.
 - Low speed, short duration, immediate stop/status verification.
 - No continuous servoing.
 

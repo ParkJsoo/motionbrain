@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 from tools import motionbrain_dashboard as dashboard
 from tools.motionbrain_dashboard import DashboardServer
+from tools.motionbrain_dashboard import build_grasp_dry_run_plan
 
 
 class DashboardAlignmentTest(unittest.TestCase):
@@ -86,6 +87,63 @@ class DashboardAlignmentTest(unittest.TestCase):
         self.assertEqual(
             calls,
             ["/joint?joint=base&action=left&percent=25", "/joint?joint=base&action=stop"],
+        )
+
+    def test_grasp_dry_run_plan_requires_centered_cup(self) -> None:
+        detection = {
+            "detected": True,
+            "targetType": "object",
+            "label": "cup",
+            "confidence": 0.82,
+            "alignment": "CENTER",
+        }
+
+        plan = build_grasp_dry_run_plan(detection, target_label="cup", min_confidence=0.5)
+
+        self.assertTrue(plan["ok"])
+        self.assertTrue(plan["dryRun"])
+        self.assertEqual(plan["target"], "cup")
+        self.assertEqual(plan["alignment"], "CENTER")
+        self.assertGreaterEqual(len(plan["plannedSequence"]), 4)
+        self.assertEqual(plan["plannedSequence"][0]["joint"], "gripper")
+
+    def test_grasp_dry_run_plan_blocks_non_cup_targets(self) -> None:
+        detection = {
+            "detected": True,
+            "targetType": "object",
+            "label": "cell phone",
+            "confidence": 0.9,
+            "alignment": "CENTER",
+        }
+
+        plan = build_grasp_dry_run_plan(detection, target_label="cup", min_confidence=0.5)
+
+        self.assertFalse(plan["ok"])
+        self.assertEqual(plan["error"], "target_mismatch:cell phone")
+
+    def test_grasp_dry_run_plan_blocks_low_confidence_or_off_center(self) -> None:
+        low_confidence = {
+            "detected": True,
+            "targetType": "object",
+            "label": "cup",
+            "confidence": 0.3,
+            "alignment": "CENTER",
+        }
+        off_center = {
+            "detected": True,
+            "targetType": "object",
+            "label": "cup",
+            "confidence": 0.8,
+            "alignment": "LEFT",
+        }
+
+        self.assertEqual(
+            build_grasp_dry_run_plan(low_confidence, target_label="cup", min_confidence=0.5)["error"],
+            "confidence_below_threshold",
+        )
+        self.assertEqual(
+            build_grasp_dry_run_plan(off_center, target_label="cup", min_confidence=0.5)["error"],
+            "alignment_not_center:LEFT",
         )
 
 

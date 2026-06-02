@@ -157,6 +157,24 @@ objects, including the Z Flip phone target and the label-less dark cola bottle,
 are deferred until after one reliable cup perception/alignment sequence is
 captured. See `docs/VISION_DATASET_EVALUATION.md` for the saved-frame results.
 
+Launch the dashboard against the cup perception service so `Nudge Once` uses
+the selected cup target and `Confirm Cup Dry Run` only produces a gripper plan
+when the cup is centered:
+
+```bash
+python3 tools/motionbrain_dashboard.py \
+  --host 0.0.0.0 \
+  --motion-host <controller-ip> \
+  --perception-url http://127.0.0.1:8766 \
+  --grasp-target-label cup \
+  --grasp-min-confidence 0.5
+```
+
+The cup dry-run button does not send gripper commands. It revalidates the
+selected target, confidence, centered alignment, controller state, and safety
+status, then returns the proposed gripper open/close sequence for operator
+review.
+
 The ESP32-hosted `MotionBrain Control` page also uses this dashboard for
 `TRACKED` camera mode. Its default dashboard API is
 `http://motionbrain-pi.local:8765`; if mDNS is unreliable, set the page's `API`

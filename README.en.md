@@ -32,7 +32,7 @@ Important current limits:
 - Red target tracking is the reliable demo path.
 - The general object-detection pipeline is implemented on the Pi, and constrained known-object detection has been validated with ESP32-CAM VGA plus YOLOv5s. The current physical-AI demo uses only the most reliable active target: `cup`.
 - A label-less dark bottle, a sticker-heavy iPhone back side, and the secondary Z Flip phone target are out of scope for the current demo. Describe this as constrained workcell known-object detection/alignment, not arbitrary object recognition.
-- Autonomous grasping is not enabled. The next physical-AI step is connecting selected-object perception to safety-gated alignment, operator confirmation, and a constrained gripper sequence.
+- Autonomous grasping is not enabled. The current cup dry-run path revalidates safety state and CENTER alignment, then returns a gripper open/close plan for operator review only.
 
 ## System Layout
 
