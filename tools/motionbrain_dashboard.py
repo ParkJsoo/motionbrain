@@ -1316,9 +1316,9 @@ class DashboardServer(ThreadingHTTPServer):
         return self.status_allows_align_nudge(status)
 
     def get_camera_frame(self) -> tuple[bytes, str]:
-        if self.perception_url:
-            return fetch_bytes(f"{self.perception_url}/api/vision_frame", self.timeout)
         if not self.camera_url:
+            if self.perception_url:
+                return fetch_bytes(f"{self.perception_url}/api/vision_frame", self.timeout)
             raise ValueError("camera_url_not_configured")
 
         now = time.monotonic()
