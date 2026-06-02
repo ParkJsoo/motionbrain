@@ -80,6 +80,14 @@ As of 2026-06-01 on `feature/pi-object-detection-mvp`:
   and `YOLOv5s` returned `label=cup` with confidence around `0.80-0.90` and
   detector latency around `120ms` on the Mac host. Pi latency still needs to be
   measured.
+- Live Pi validation on 2026-06-02 KST corrected the YOLO preprocessing path to
+  preserve aspect ratio with letterbox padding before OpenCV DNN inference. On
+  the current low-angle ESP32-CAM bench, `vga` / JPEG quality `18` captured
+  reliably but often mislabeled the cup body as `microwave` or `toilet`.
+  Switching the camera profile to `qvga` / JPEG quality `4` produced the
+  current physical success case: `YOLOv5s`, `--object-target cup`,
+  `--object-min-confidence 0.5`, class id `41`, confidence about `0.55-0.59`,
+  `alignment=CENTER`, and area ratio about `0.287` from the Pi dashboard API.
 - Background-only evaluation on 2026-06-02 KST produced `0/50` false positives
   at confidence `0.5` and `0.25` with `YOLOv5s`; lowering to `0.1` introduced a
   low-confidence `boat` false positive. Keep the first live cup demo at
@@ -172,6 +180,9 @@ Recommended first live model path:
 - Start with `--object-input-size 640` for correctness, then benchmark 416/320
   if Pi CPU load is too high.
 - Start `--object-min-confidence` at `0.5` for the cup.
+- For the current live Pi bench, set the ESP32-CAM to `qvga` / JPEG quality `4`
+  before starting perception. The saved-frame cup dataset used VGA, but the live
+  low-angle scene currently labels the cup more reliably at high-quality QVGA.
 - Current active semantic target: `cup` only.
 - Defer the tested Z Flip phone target and avoid presenting the tested dark
   bottle as `bottle`; it only works as a `vase` proxy target.
@@ -401,6 +412,8 @@ Scope:
 Validation:
 
 ```bash
+curl -sS -X POST "http://<camera-ip>/camera?framesize=qvga&quality=4"
+
 python3 tools/motionbrain_perception_service.py \
   --camera-url http://<camera-ip> \
   --detector-mode object \

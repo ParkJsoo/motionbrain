@@ -140,6 +140,8 @@ Pi live check, use the OpenCV-DNN-compatible YOLOv5s detect ONNX file with
 `config/coco80.labels`:
 
 ```bash
+curl -sS -X POST "http://<camera-ip>/camera?framesize=qvga&quality=4"
+
 ~/.cache/motionbrain/opencv-venv/bin/python tools/motionbrain_perception_service.py \
   --host 0.0.0.0 \
   --camera-url http://<camera-ip> \
@@ -151,6 +153,11 @@ Pi live check, use the OpenCV-DNN-compatible YOLOv5s detect ONNX file with
   --object-min-confidence 0.5 \
   --object-input-size 640
 ```
+
+The saved-frame cup dataset used VGA, but the current live Pi/ESP32-CAM bench
+is more reliable at QVGA quality `4`: it returns the centered cup above
+confidence `0.5`. VGA quality `18` captures reliably but can mislabel the live
+cup body in this low-angle scene.
 
 For the current physical-AI demo, keep object mode cup-only. Other tested
 objects, including the Z Flip phone target and the label-less dark cola bottle,

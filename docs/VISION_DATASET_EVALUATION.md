@@ -41,12 +41,14 @@ curl -sS http://<camera-ip>/camera
 curl -sS -X POST "http://<camera-ip>/camera?framesize=vga&quality=12"
 ```
 
-Current practical baseline:
+Current practical baselines:
 
-- `vga`, JPEG quality `12`: stable enough for offline cup detection tests.
-- `qvga`, JPEG quality `15`: fallback for low bandwidth or unstable networks.
-- `svga`, JPEG quality `12`: observed capture failures on the current board, so
-  do not use it as the default.
+- Saved-frame evaluation baseline: `vga`, JPEG quality `12`.
+- Live Pi/ESP32-CAM cup demo baseline: `qvga`, JPEG quality `4`.
+- `vga`, JPEG quality `18`: captured reliably on the current board, but the
+  low-angle live cup scene often mislabeled the cup body.
+- `svga`: observed capture failures on the current board, so do not use it as
+  the default.
 
 Check `/status` after a profile change and watch `captureFailures`,
 `lastCaptureMs`, and `lastFrameBytes`.
@@ -61,7 +63,7 @@ python3 tools/capture_vision_dataset.py \
   --label cup \
   --count 50 \
   --interval 0.08 \
-  --notes "white cup on desk, ESP32-CAM VGA quality=12"
+  --notes "white cup on desk, ESP32-CAM QVGA quality=4"
 ```
 
 If only the dashboard is running, pass its frame endpoint directly:
@@ -155,6 +157,29 @@ filtered and the background false-positive set is rechecked.
 The active dashboard dry-run path uses this same cup target and threshold. It
 requires `label=cup`, confidence at least `0.5`, and `alignment=CENTER` before
 returning a proposed gripper open/close sequence.
+
+Live Pi validation on 2026-06-02 KST used Raspberry Pi
+`192.168.219.115`, controller `192.168.219.113`, and ESP32-CAM
+`192.168.219.114`. The Pi service was updated to the letterbox YOLO
+preprocessing path and launched with `YOLOv5s`, `--object-target cup`,
+`--object-min-confidence 0.5`, and `--object-input-size 640`.
+
+Camera-profile sweep on the live bench showed:
+
+- `qvga`, JPEG quality `4`: `cup` confidence about `0.55-0.60`, centered.
+- `qvga`, JPEG quality `6`: `cup` confidence about `0.56`, centered.
+- `qvga`, JPEG quality `8`: `cup` confidence about `0.46`, below the dry-run
+  threshold.
+- `qvga`, JPEG quality `10` and higher: cup confidence degraded or the cup body
+  was mislabeled.
+- `vga`, JPEG quality `18`: captured reliably, but the cup body was often
+  labeled as `microwave` or `toilet`; only a weak partial `cup` candidate
+  appeared.
+
+With `qvga` / JPEG quality `4`, the live dashboard/perception API returned
+`label=cup`, class id `41`, confidence about `0.55-0.59`,
+`alignment=CENTER`, and an area ratio about `0.287`. This is the current
+physical cup success profile.
 
 On the same day, a 50-frame black unlabeled cola bottle dataset with a red cap
 was captured on the dark cloth background:

@@ -173,6 +173,9 @@ def _scaled_box(
     *,
     input_width: int | None = None,
     input_height: int | None = None,
+    input_scale: float | None = None,
+    pad_x: float = 0.0,
+    pad_y: float = 0.0,
 ) -> tuple[float, float, float, float]:
     x1, y1, x2, y2 = [float(value) for value in values[:4]]
     if max(abs(x1), abs(y1), abs(x2), abs(y2)) <= 1.5:
@@ -180,6 +183,11 @@ def _scaled_box(
         x2 *= frame_width
         y1 *= frame_height
         y2 *= frame_height
+    elif input_scale and input_scale > 0.0:
+        x1 = (x1 - pad_x) / input_scale
+        x2 = (x2 - pad_x) / input_scale
+        y1 = (y1 - pad_y) / input_scale
+        y2 = (y2 - pad_y) / input_scale
     elif input_width and input_height:
         x_scale = frame_width / max(float(input_width), 1.0)
         y_scale = frame_height / max(float(input_height), 1.0)
@@ -202,6 +210,9 @@ def _scaled_center_box(
     *,
     input_width: int | None = None,
     input_height: int | None = None,
+    input_scale: float | None = None,
+    pad_x: float = 0.0,
+    pad_y: float = 0.0,
 ) -> tuple[float, float, float, float]:
     center_x, center_y, width, height = [float(value) for value in values[:4]]
     return _scaled_box(
@@ -215,6 +226,9 @@ def _scaled_center_box(
         frame_height,
         input_width=input_width,
         input_height=input_height,
+        input_scale=input_scale,
+        pad_x=pad_x,
+        pad_y=pad_y,
     )
 
 
@@ -263,6 +277,9 @@ def decode_dnn_detections(
     nms_threshold: float,
     input_width: int | None = None,
     input_height: int | None = None,
+    input_scale: float | None = None,
+    pad_x: float = 0.0,
+    pad_y: float = 0.0,
 ) -> list[DetectionCandidate]:
     try:
         import numpy as np  # type: ignore
@@ -291,6 +308,9 @@ def decode_dnn_detections(
                     frame_height,
                     input_width=input_width,
                     input_height=input_height,
+                    input_scale=input_scale,
+                    pad_x=pad_x,
+                    pad_y=pad_y,
                 )
                 if width <= 0.0 or height <= 0.0:
                     continue
@@ -340,6 +360,9 @@ def decode_dnn_detections(
                         frame_height,
                         input_width=input_width,
                         input_height=input_height,
+                        input_scale=input_scale,
+                        pad_x=pad_x,
+                        pad_y=pad_y,
                     )
                     if width <= 0.0 or height <= 0.0:
                         continue
@@ -372,6 +395,9 @@ def decode_dnn_detections(
                     frame_height,
                     input_width=input_width,
                     input_height=input_height,
+                    input_scale=input_scale,
+                    pad_x=pad_x,
+                    pad_y=pad_y,
                 )
                 if width <= 0.0 or height <= 0.0:
                     continue
@@ -440,8 +466,16 @@ class OpenCvDnnObjectDetector:
 
         frame_height, frame_width = image.shape[:2]
         input_size = max(int(config.object_input_size or self.input_size), 32)
+        input_scale = min(input_size / max(frame_width, 1), input_size / max(frame_height, 1))
+        resized_width = max(int(round(frame_width * input_scale)), 1)
+        resized_height = max(int(round(frame_height * input_scale)), 1)
+        resized = cv2.resize(image, (resized_width, resized_height), interpolation=cv2.INTER_LINEAR)
+        letterboxed = np.full((input_size, input_size, 3), 114, dtype=np.uint8)
+        pad_x = max((input_size - resized_width) // 2, 0)
+        pad_y = max((input_size - resized_height) // 2, 0)
+        letterboxed[pad_y : pad_y + resized_height, pad_x : pad_x + resized_width] = resized
         blob = cv2.dnn.blobFromImage(
-            image,
+            letterboxed,
             scalefactor=1.0 / 255.0,
             size=(input_size, input_size),
             mean=(0.0, 0.0, 0.0),
@@ -459,6 +493,9 @@ class OpenCvDnnObjectDetector:
             nms_threshold=config.object_nms_threshold,
             input_width=input_size,
             input_height=input_size,
+            input_scale=input_scale,
+            pad_x=float(pad_x),
+            pad_y=float(pad_y),
         )
 
 

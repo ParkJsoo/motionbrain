@@ -177,6 +177,27 @@ class VisionObjectBackendTest(unittest.TestCase):
         self.assertEqual(payload["targetBox"], {"x": 88, "y": 30, "width": 56, "height": 72})
         self.assertEqual(len(payload["objects"]), 2)
 
+    def test_opencv_dnn_detector_maps_letterboxed_yolo_boxes_to_original_frame(self) -> None:
+        output = np.zeros((1, 7, 2), dtype=np.float32)
+        output[0, :, 0] = [48, 48, 48, 36, 0.10, 0.20, 0.80]
+        output[0, :, 1] = [24, 24, 12, 12, 0.10, 0.40, 0.20]
+        net = FakeNet(output)
+        detector = OpenCvDnnObjectDetector(net=net, labels=["person", "bottle", "cup"], input_size=96)
+        config = DetectionConfig(
+            mode="object",
+            object_backend="opencv-dnn",
+            object_target="cup",
+            object_min_confidence=0.5,
+            object_input_size=96,
+        )
+
+        payload = detect_frame(make_jpeg(), config, detector)
+
+        self.assertEqual(net.input_shape, (1, 3, 96, 96))
+        self.assertTrue(payload["detected"])
+        self.assertEqual(payload["label"], "cup")
+        self.assertEqual(payload["targetBox"], {"x": 40, "y": 30, "width": 80, "height": 60})
+
     def test_object_payload_limits_candidate_list_size(self) -> None:
         candidates = []
         for index in range(60):
