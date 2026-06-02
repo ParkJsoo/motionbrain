@@ -176,16 +176,10 @@ when the cup is centered:
 python3 tools/motionbrain_dashboard.py \
   --host 0.0.0.0 \
   --motion-host <controller-ip> \
-  --camera-url http://<camera-ip> \
   --perception-url http://127.0.0.1:8766 \
   --grasp-target-label cup \
   --grasp-min-confidence 0.5
 ```
-
-When both `--camera-url` and `--perception-url` are set, the dashboard and
-`motionbrain.local` tracked frame endpoint use direct ESP32-CAM captures for a
-more responsive video feed, while `/api/detection` still comes from the Pi
-object detector.
 
 The cup dry-run button does not send gripper commands. It revalidates the
 selected target, confidence, centered alignment, controller state, and safety

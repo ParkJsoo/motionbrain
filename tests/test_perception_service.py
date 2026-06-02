@@ -1,4 +1,3 @@
-import threading
 import unittest
 from unittest.mock import patch
 
@@ -169,9 +168,6 @@ class DashboardPerceptionProxyTest(unittest.TestCase):
         server.camera_url = ""
         server.detect_color = "red"
         server.timeout = 1.0
-        server.camera_cache_lock = threading.Lock()
-        server.camera_cache = None
-        server.camera_cache_seconds = 0.25
         return server
 
     def test_get_detection_uses_perception_service_when_configured(self) -> None:
@@ -193,17 +189,6 @@ class DashboardPerceptionProxyTest(unittest.TestCase):
 
         self.assertEqual(result, (frame, "image/jpeg"))
         fetch_bytes.assert_called_once_with("http://perception.local:8766/api/vision_frame", 1.0)
-
-    def test_get_camera_frame_prefers_camera_url_for_smoother_video(self) -> None:
-        server = self.make_server()
-        server.camera_url = "http://camera.local"
-        frame = b"jpeg"
-
-        with patch.object(dashboard, "fetch_bytes", return_value=(frame, "image/jpeg")) as fetch_bytes:
-            result = server.get_camera_frame()
-
-        self.assertEqual(result, (frame, "image/jpeg"))
-        fetch_bytes.assert_called_once_with("http://camera.local/capture", 1.0)
 
     def test_capture_handler_allows_perception_only_mode(self) -> None:
         server = self.make_server()
