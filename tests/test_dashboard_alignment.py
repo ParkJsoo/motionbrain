@@ -146,6 +146,21 @@ class DashboardAlignmentTest(unittest.TestCase):
             "alignment_not_center:LEFT",
         )
 
+    def test_grasp_dry_run_plan_blocks_display_held_detection(self) -> None:
+        held = {
+            "detected": True,
+            "held": True,
+            "targetType": "object",
+            "label": "cup",
+            "confidence": 0.8,
+            "alignment": "CENTER",
+        }
+
+        plan = build_grasp_dry_run_plan(held, target_label="cup", min_confidence=0.5)
+
+        self.assertFalse(plan["ok"])
+        self.assertEqual(plan["error"], "held_detection")
+
 
 if __name__ == "__main__":
     unittest.main()

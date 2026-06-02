@@ -45,6 +45,7 @@ class PerceptionState:
         timeout: float = 2.0,
         interval: float = 0.35,
         stale_seconds: float = 2.0,
+        display_hold_seconds: float = 0.0,
     ) -> None:
         self.camera_url = camera_url.rstrip("/")
         self.config = config
@@ -52,13 +53,62 @@ class PerceptionState:
         self.timeout = timeout
         self.interval = interval
         self.stale_seconds = stale_seconds
+        self.display_hold_seconds = display_hold_seconds
         self.lock = threading.Lock()
         self.latest_frame: tuple[float, bytes, str] | None = None
         self.latest_detection: dict[str, Any] | None = None
+        self.last_live_detection: dict[str, Any] | None = None
+        self.last_live_detection_ts = 0.0
+        self.stable_frames = 0
         self.last_error = ""
         self.frames_total = 0
         self.detect_total = 0
         self.error_total = 0
+
+    def target_key(self, detection: dict[str, Any]) -> tuple[str, str, int | None]:
+        return (
+            str(detection.get("targetType", "")),
+            str(detection.get("label") or detection.get("color") or ""),
+            detection.get("classId") if isinstance(detection.get("classId"), int) else None,
+        )
+
+    def prepare_detection(self, detection: dict[str, Any], now: float, content_type: str, frame_bytes: int) -> dict[str, Any]:
+        if detection.get("detected"):
+            previous_key = self.target_key(self.last_live_detection) if self.last_live_detection else None
+            current_key = self.target_key(detection)
+            self.stable_frames = self.stable_frames + 1 if previous_key == current_key else 1
+            detection["held"] = False
+            detection["liveDetected"] = True
+            detection["holdAgeMs"] = 0.0
+            detection["stableFrames"] = self.stable_frames
+            self.last_live_detection = dict(detection)
+            self.last_live_detection_ts = now
+            return detection
+
+        hold_age = now - self.last_live_detection_ts
+        if (
+            self.display_hold_seconds > 0.0
+            and self.last_live_detection is not None
+            and hold_age <= self.display_hold_seconds
+        ):
+            held = dict(self.last_live_detection)
+            held["held"] = True
+            held["liveDetected"] = False
+            held["holdAgeMs"] = max(hold_age * 1000.0, 0.0)
+            held["reason"] = "held_last_detection"
+            held["cameraUrl"] = self.camera_url
+            held["ts"] = now
+            held["contentType"] = content_type
+            held["frameBytes"] = frame_bytes
+            held["stableFrames"] = self.stable_frames
+            return held
+
+        self.stable_frames = 0
+        detection["held"] = False
+        detection["liveDetected"] = False
+        detection["holdAgeMs"] = None
+        detection["stableFrames"] = 0
+        return detection
 
     def run_once(self) -> None:
         frame, content_type = fetch_bytes(f"{self.camera_url}/capture", self.timeout)
@@ -67,6 +117,7 @@ class PerceptionState:
         detection["cameraUrl"] = self.camera_url
         detection["ts"] = now
         detection["contentType"] = content_type
+        detection = self.prepare_detection(detection, now, content_type, len(frame))
         with self.lock:
             self.latest_frame = (now, frame, content_type)
             self.latest_detection = detection
@@ -145,6 +196,7 @@ class PerceptionState:
             "objectModel": self.config.object_model,
             "objectLabels": self.config.object_labels,
             "targetPolicy": self.config.target_policy,
+            "displayHoldSeconds": self.display_hold_seconds,
             "fresh": fresh,
             "frameAgeMs": frame_age_ms,
             "framesTotal": frames_total,
@@ -262,6 +314,7 @@ class PerceptionServer(ThreadingHTTPServer):
             "objectMinConfidence": config.object_min_confidence,
             "objectNmsThreshold": config.object_nms_threshold,
             "objectInputSize": config.object_input_size,
+            "displayHoldSeconds": self.state.display_hold_seconds,
             "targetPolicy": config.target_policy,
             "detectorConfigured": self.state.detector is not None,
         }
@@ -312,6 +365,7 @@ def run(args: argparse.Namespace) -> int:
         timeout=args.timeout,
         interval=args.interval,
         stale_seconds=args.stale_seconds,
+        display_hold_seconds=args.display_hold_seconds,
     )
     stop_event = threading.Event()
     worker = threading.Thread(target=state.run_loop, args=(stop_event,), daemon=True)
@@ -352,6 +406,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--interval", type=float, default=0.35, help="Camera/detection loop interval in seconds")
     parser.add_argument("--stale-seconds", type=float, default=2.0, help="Freshness window for health and action gates")
     parser.add_argument(
+        "--display-hold-seconds",
+        type=float,
+        default=0.0,
+        help="Seconds to keep showing the last live detection after a transient miss; held detections are marked held=true",
+    )
+    parser.add_argument(
         "--detector-mode",
         choices=("color", "object"),
         default=os.environ.get("MOTIONBRAIN_DETECTOR_MODE", "color"),
@@ -383,6 +443,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("--timeout must be > 0")
     if args.stale_seconds <= 0:
         parser.error("--stale-seconds must be > 0")
+    if args.display_hold_seconds < 0:
+        parser.error("--display-hold-seconds must be >= 0")
     if args.align_deadband < 0.0 or args.align_deadband >= 1.0:
         parser.error("--align-deadband must be >= 0.0 and < 1.0")
     if args.object_min_confidence < 0.0 or args.object_min_confidence > 1.0:

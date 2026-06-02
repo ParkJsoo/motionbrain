@@ -53,6 +53,51 @@ class PerceptionServiceTest(unittest.TestCase):
         self.assertEqual(health["detectTotal"], 1)
         self.assertEqual(health["errorTotal"], 0)
 
+    def test_detection_payload_can_hold_recent_live_detection_for_display(self) -> None:
+        state = PerceptionState(
+            "http://camera.local",
+            DetectionConfig(mode="object", object_target="cup"),
+            timeout=0.2,
+            interval=0.1,
+            stale_seconds=10.0,
+            display_hold_seconds=5.0,
+        )
+        live_detection = {
+            "available": True,
+            "detected": True,
+            "targetType": "object",
+            "label": "cup",
+            "classId": 41,
+            "confidence": 0.58,
+            "alignment": "CENTER",
+            "targetBox": {"x": 10, "y": 10, "width": 40, "height": 30},
+            "frameBytes": 4,
+            "stableFrames": 0,
+        }
+        miss = {
+            "available": True,
+            "detected": False,
+            "targetType": "object",
+            "label": "cup",
+            "reason": "no_objects",
+            "alignment": "LOST",
+            "frameBytes": 4,
+            "stableFrames": 0,
+        }
+
+        with patch.object(service, "fetch_bytes", return_value=(b"jpeg", "image/jpeg")):
+            with patch.object(service, "detect_frame", side_effect=[dict(live_detection), dict(miss)]):
+                state.run_once()
+                state.run_once()
+
+        detection = state.detection_payload()
+        self.assertTrue(detection["detected"])
+        self.assertTrue(detection["held"])
+        self.assertFalse(detection["liveDetected"])
+        self.assertEqual(detection["reason"], "held_last_detection")
+        self.assertEqual(detection["label"], "cup")
+        self.assertEqual(detection["stableFrames"], 1)
+
     def test_detection_payload_reports_no_frame_before_first_capture(self) -> None:
         state = self.make_state()
 

@@ -741,6 +741,9 @@ INDEX_HTML = """<!doctype html>
       if (base.active) {
         return { ok: false, reason: "base busy" };
       }
+      if (detection.held) {
+        return { ok: false, reason: "held target" };
+      }
       if (!detection.detected || !["LEFT", "RIGHT"].includes(alignment)) {
         return { ok: false, reason: `alignment ${alignment}` };
       }
@@ -779,6 +782,9 @@ INDEX_HTML = """<!doctype html>
       }
       if (base.active) {
         return { ok: false, reason: "base busy" };
+      }
+      if (detection.held) {
+        return { ok: false, reason: "held target" };
       }
       if (!detection.detected) {
         return { ok: false, reason: "target not detected" };
@@ -960,6 +966,8 @@ def build_grasp_dry_run_plan(
     alignment = str(detection.get("alignment", "LOST")).upper()
     if not detection.get("detected"):
         return {"ok": False, "error": "target_not_detected", "target": required_label}
+    if detection.get("held"):
+        return {"ok": False, "error": "held_detection", "target": required_label}
     if label != required_label:
         return {"ok": False, "error": f"target_mismatch:{label or '-'}", "target": required_label}
     if not isinstance(confidence, (int, float)) or float(confidence) < min_confidence:
@@ -1131,6 +1139,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if not detection.get("detected") or detection.get("alignment") != alignment:
                 detected_alignment = str(detection.get("alignment", "LOST"))
                 self.send_error_json(HTTPStatus.CONFLICT, f"alignment_changed:{detected_alignment}")
+                return
+            if detection.get("held"):
+                self.send_error_json(HTTPStatus.CONFLICT, "alignment_held_detection")
                 return
 
             status = fetch_json(f"{self.server.motion_base_url}/status", self.server.timeout)

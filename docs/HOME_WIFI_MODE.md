@@ -151,13 +151,17 @@ curl -sS -X POST "http://<camera-ip>/camera?framesize=qvga&quality=4"
   --object-labels config/coco80.labels \
   --object-target cup \
   --object-min-confidence 0.5 \
-  --object-input-size 640
+  --object-input-size 640 \
+  --display-hold-seconds 1.5
 ```
 
 The saved-frame cup dataset used VGA, but the current live Pi/ESP32-CAM bench
 is more reliable at QVGA quality `4`: it returns the centered cup above
 confidence `0.5`. VGA quality `18` captures reliably but can mislabel the live
 cup body in this low-angle scene.
+`--display-hold-seconds` only smooths the UI overlay after transient misses;
+held detections are marked `held:true` and are blocked from nudge/dry-run
+actions.
 
 For the current physical-AI demo, keep object mode cup-only. Other tested
 objects, including the Z Flip phone target and the label-less dark cola bottle,
