@@ -56,6 +56,12 @@ service, set a value such as
 the original bridge behavior, where ROS2 polls `MOTIONBRAIN_CAMERA_URL/capture`
 directly and runs color detection.
 
+This systemd service covers the ROS2 bridge. For the current demo, the
+Pi-hosted dashboard and perception service run as separate terminal or cmux tab
+processes. Manual operation uses the ESP32-hosted `MotionBrain Control`
+`STREAM` camera by default; `TRACKED` is only for recognition checks through the
+Pi dashboard/perception API.
+
 ## Install Service
 
 ```bash
@@ -245,6 +251,26 @@ the systemd service was running.
 - Final result: `Result: OK`
 - Pi repo state: clean at `99154d2`
 - `motionbrain-ros-bridge.service`: `active`
+
+## 2026-06-04 Pi Dashboard / Perception Validation Result
+
+The Raspberry Pi dashboard and perception service were validated as companion
+processes next to the ROS2 bridge for the current camera-mode split.
+
+- Controller: `192.168.219.111`
+- ESP32-CAM: `192.168.219.113`
+- Raspberry Pi: `192.168.219.114`
+- ESP32-CAM profile: `qvga`, JPEG quality `4`
+- Perception service: Pi port `8766`, object mode, OpenCV DNN YOLOv5s, target
+  `cup`, confidence gate `0.5`, display hold `1.5s`
+- Dashboard: Pi port `8765`, `--perception-url http://127.0.0.1:8766`
+- Result: dashboard `/api/detection` returned `label=cup` above the `0.5`
+  threshold in the current scene.
+- Browser check: `motionbrain.local`, the controller IP page, and
+  `http://192.168.219.114:8765` were opened and visible to the operator.
+
+This validates the current operating split: `STREAM` for responsive manual
+camera feedback, `TRACKED` for slower fixed/slow-target recognition checks.
 
 ## Operations
 

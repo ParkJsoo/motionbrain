@@ -55,6 +55,11 @@ DHCP IP가 바뀌면 `.local`이 되는 환경에서는 hostname을 쓰고, Pi�
 이 값을 비워두면 ROS2 bridge가 기존처럼 `MOTIONBRAIN_CAMERA_URL/capture`를 직접
 폴링해서 색상 감지를 수행한다.
 
+이 문서의 systemd 서비스는 ROS2 bridge 운영 기준이다. Pi-hosted dashboard와
+perception service는 현재 데모에서는 별도 terminal 또는 cmux tab에서 실행한다.
+수동 조작 중 카메라는 ESP32-hosted `MotionBrain Control`의 `STREAM`을 기본으로
+보고, `TRACKED`는 Pi dashboard/perception API를 통한 인식 확인용으로만 쓴다.
+
 ## 서비스 설치
 
 ```bash
@@ -236,6 +241,26 @@ Raspberry Pi 4에서 public-safe ROS2 evidence helper를 systemd 서비스가 �
 - 최종 결과: `Result: OK`
 - Pi repo 상태: `99154d2`, clean
 - `motionbrain-ros-bridge.service`: `active`
+
+## 2026-06-04 Pi Dashboard / Perception 검증 결과
+
+Raspberry Pi에서 dashboard와 perception service를 ROS2 bridge와 별도
+운영 프로세스로 실행해 현재 camera-mode split을 확인했다.
+
+- Controller: `192.168.219.111`
+- ESP32-CAM: `192.168.219.113`
+- Raspberry Pi: `192.168.219.114`
+- ESP32-CAM profile: `qvga`, JPEG quality `4`
+- Perception service: Pi port `8766`, object mode, OpenCV DNN YOLOv5s,
+  target `cup`, confidence gate `0.5`, display hold `1.5s`
+- Dashboard: Pi port `8765`, `--perception-url http://127.0.0.1:8766`
+- Result: dashboard `/api/detection` returned `label=cup` above the `0.5`
+  threshold in the current scene.
+- Browser check: `motionbrain.local`, controller IP page, and
+  `http://192.168.219.114:8765` were opened and visible to the operator.
+
+This validates the current operating split: `STREAM` for responsive manual
+camera feedback, `TRACKED` for slower fixed/slow-target recognition checks.
 
 ## 운영 명령
 

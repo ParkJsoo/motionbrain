@@ -83,7 +83,7 @@ ROS2 does not replace the embedded controller. It promotes ESP32 status/events/c
 
 ### Demo-Ready Scope
 
-The reliable demo path is red target tracking, target overlay, Pi-hosted dashboard, ROS2 typed topics, a safety-gated short nudge, and a token-gated command path to physical hardware. Autonomous grasping remains out of scope for the current hardware state.
+The reliable demo path is `STREAM`-based manual camera feedback, Pi-hosted dashboard, red-target or known-object overlay, ROS2 typed topics, a safety-gated short nudge, and a token-gated command path to physical hardware. Autonomous grasping remains out of scope for the current hardware state.
 
 ## Validation
 
@@ -95,6 +95,7 @@ The reliable demo path is red target tracking, target overlay, Pi-hosted dashboa
 - Home Wi-Fi operation was validated across ESP32 controller, ESP32-CAM, and Raspberry Pi.
 - The ESP32-hosted `MotionBrain Control` page accepted a runtime token and executed state-changing commands.
 - The Pi dashboard showed the camera feed, red target box, and physical nudge behavior.
+- The Pi perception service recognized the `cup` target with ESP32-CAM `qvga` / JPEG quality `4` and YOLOv5s.
 - Raspberry Pi 4 + Ubuntu 24.04 + ROS2 Jazzy `colcon build/test` passed.
 - Health checks passed for `/motionbrain/status_typed`, `/camera/detection_typed`, `/joint_states`, `/motionbrain/kinematics_typed`, `/motionbrain/control_guard_typed`, and `/motionbrain/mission_state_typed`.
 - Pi perception service output was verified through ROS2 `/camera/detection_typed`.
@@ -104,13 +105,13 @@ The reliable demo path is red target tracking, target overlay, Pi-hosted dashboa
 
 The Pi object-detection path exists: OpenCV DNN/ONNX backend loading, explicit model/label paths, selected-target JSON, dashboard overlay, and ROS2 typed detection publishing. Model weights are intentionally not committed.
 
-However, the current ESP32-CAM QVGA input and tested YOLO-family models did not reliably classify the white cup as `cup`. The model returned false positives such as `person`, `skateboard`, and `suitcase`.
+The current reliable known-object bench path is ESP32-CAM `qvga` / JPEG quality `4`, YOLOv5s, `--object-target cup`, and confidence `0.5`. This path returned `cup` through the Pi dashboard/perception API. Manual camera operation is separated into `STREAM`, while `TRACKED` is used as the slower recognition/confirmation view.
 
 Current honest positioning:
 
-- Implemented: Pi-hosted object-detection pipeline and selected-target contract
-- Stable demo: red target tracking and overlay
-- Not yet solved: reliable arbitrary-object detection, cup detection on the current camera feed, and autonomous grasping
+- Implemented: Pi-hosted object-detection pipeline, selected-target contract, ROS2/dashboard integration, constrained `cup` recognition
+- Stable demo: red target tracking/overlay, `STREAM` manual camera feedback, cup recognition checks
+- Not yet solved: arbitrary-object recognition, marker/object-assisted automatic grasping, and continuous visual servoing without richer feedback
 
 ## Current Limitations
 
@@ -122,11 +123,11 @@ Current honest positioning:
 
 ## Next Steps
 
-1. Capture demo media for red target tracking, dashboard overlay, ROS2 topics, and safety-gated nudge behavior.
-2. Build a deterministic marker or known-object constrained grasp dry run.
-3. Improve object detection with a better camera or a validated edge-runtime model.
-4. Add range/contact sensing before attempting more autonomous grasp sequences.
-5. Keep physical motion operator-confirmed until richer feedback exists.
+1. Capture demo media showing `STREAM` manual camera feedback, the Pi dashboard, and ROS2 typed topics together.
+2. Capture red-target or `cup` recognition plus safety-gated short nudge behavior.
+3. Design marker- or fixed-known-object-assisted grasping as a separate plan.
+4. Improve object detection with a better camera or a validated edge-runtime model.
+5. Add range/contact sensing before attempting more autonomous grasp sequences.
 
 ## Related Documents
 

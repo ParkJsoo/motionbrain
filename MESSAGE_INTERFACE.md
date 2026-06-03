@@ -433,9 +433,12 @@ base 상대각 제어는 다음 종료 이유를 가진다.
 - 이벤트 스트림은 `GET /events` 구조를 기반으로 확장하고, 종료 이유 문자열은 위 enum 이름을 유지한다.
 - `schemaVersion` 과 `messageType` 는 Phase 4에서도 유지한다.
 
-## 9. ROS2 Bridge MVP
+## 9. ROS2 Bridge Interface
 
-ROS2 MVP는 커스텀 메시지 정의 없이 `std_msgs/String` JSON payload를 사용한다. 목적은 메시지 설계보다 먼저 기존 HTTP 경계를 ROS2 graph에 노출해, Raspberry Pi/ROS2 상위 제어로 넘어갈 수 있는 최소 연결을 만드는 것이다.
+ROS2 bridge는 원래 `std_msgs/String` JSON payload로 시작했지만, 현재는
+JSON 호환 topic과 `motionbrain_msgs` typed topic을 병행 publish한다. 목적은
+기존 ESP32 HTTP 경계를 유지하면서 Raspberry Pi/ROS2 상위 제어, typed 상태
+관측, guard/mission 판단을 같은 command boundary 뒤에 두는 것이다.
 
 패키지:
 
@@ -455,7 +458,8 @@ motionbrain_status_node
 - `pub /motionbrain/status_typed` -> `motionbrain_msgs/msg/MotionStatus`
 - `pub /motionbrain/events` -> raw `GET /events?limit=N` JSON
 - `pub /motionbrain/events_typed` -> `motionbrain_msgs/msg/MotionEvent`
-- `pub /camera/detection` -> ESP32-CAM `/capture` 기반 색상 감지 JSON
+- `pub /camera/detection` -> ESP32-CAM `/capture` 기반 색상 감지 JSON, 또는
+  `perception_url`이 설정된 경우 Pi perception `/api/detection` JSON
 - `pub /camera/detection_typed` -> `motionbrain_msgs/msg/CameraDetection`
 - `sub /motionbrain/light_cmd` -> `on|off|toggle` 또는 `{"action":"toggle"}`
 - `sub /motionbrain/light_cmd_typed` -> `motionbrain_msgs/msg/LightCommand`
@@ -478,6 +482,17 @@ motionbrain_status_node
 - controller `192.168.219.109`, ESP32-CAM `192.168.219.110` 기준 `/motionbrain/status_typed --once`와 `/camera/detection_typed --once`에서 실제 payload를 확인했다.
 
 JSON topic은 디버깅과 호환성을 위해 유지하고, stable field는 typed topic으로 병행 publish한다.
+
+2026-06-01 perception URL 연동:
+
+- `perception_url` launch parameter와 `MOTIONBRAIN_PERCEPTION_URL` systemd
+  환경 변수를 추가했다.
+- 값이 있으면 ROS2 bridge가 ESP32-CAM을 직접 다시 열지 않고 Pi perception
+  service의 `/api/detection`을 사용한다.
+- `CameraDetection`은 기존 availability/alignment 필드와 함께
+  `target_type`, `label`, `class_id`, `confidence`, `raw_json`을 publish한다.
+- 값이 비어 있으면 기존 직접 ESP32-CAM polling/color detection 경로를
+  유지하고, 빈 launch argument는 전달하지 않는다.
 
 2026-05-27 URDF / joint state 추가 및 Pi 검증:
 

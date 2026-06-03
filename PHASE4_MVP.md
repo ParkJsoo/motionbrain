@@ -217,6 +217,9 @@ http://127.0.0.1:8765
 Home Wi-Fi + command token 구성에서도 실제 수동 조작은 ESP32가 직접 제공하는
 `MotionBrain Control`을 사용한다. Local ops dashboard는 상태, 이벤트,
 ESP32-CAM, vision alignment 관찰용으로 두고, 조작 UI를 중복 구현하지 않는다.
+현재 `MotionBrain Control`의 camera panel은 수동 조작 반응성을 위해
+`STREAM`으로 시작한다. `TRACKED`는 Pi dashboard/perception API를 통해
+고정되었거나 천천히 움직이는 target을 인식/확인할 때만 선택한다.
 2026-05-25 bench에서 phone browser로 `MotionBrain Control`에 접속해 token
 prompt 표시, token 입력, command 동작을 확인했다.
 
@@ -227,7 +230,9 @@ prompt 표시, token 입력, command 동작을 확인했다.
 - `http://192.168.4.1/status`가 Mac에서 열리는지 확인한다.
 - `/stream`을 장시간 열어둔 뒤 `/status`나 `/capture`가 timeout되면 ESP32-CAM을 reset하거나 최신 펌웨어를 다시 올린다. 최신 펌웨어는 stream을 시간 제한으로 끊어 HTTP 서버가 회복되게 한다.
 - `/capture`가 느리거나 실패하면 `/status`의 `captures`, `captureFailures`, `clientWriteFailures`, `lastCaptureMs`, `maxCaptureMs`, `lastFrameBytes`를 먼저 확인한다.
-- 반복 timeout이면 최신 ESP32-CAM 펌웨어를 다시 올린다. vision용 기본 카메라 프로파일은 QVGA/JPEG quality 15이며 host loop 기본값은 timeout 6초, interval 3초, capture retry 2회다.
+- 반복 timeout이면 최신 ESP32-CAM 펌웨어를 다시 올린다. 현재 live cup 인식
+  bench는 QVGA/JPEG quality 4를 사용한다. color/debug host loop 기본값은
+  timeout 6초, interval 3초, capture retry 2회다.
 - 최신 펌웨어에서도 `/capture`가 회복되지 않으면 ESP32-CAM 전원을 다시 연결한다.
 - `brownout` 또는 반복 reboot가 보이면 ESP32-CAM 전원 부족으로 본다.
 - 업로드가 실패하면 다른 serial monitor가 포트를 잡고 있는지 확인한다.

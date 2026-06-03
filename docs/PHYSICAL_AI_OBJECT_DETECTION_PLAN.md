@@ -1,6 +1,9 @@
 # Physical AI Object Detection MVP Plan
 
-Branch: `feature/pi-object-detection-mvp`
+Status: implemented through `main`; the original
+`feature/pi-object-detection-mvp` work and follow-up stream/tracked mode split
+have been merged. Latest mode-split commit: `179be79 Default control camera to
+stream mode`.
 
 This plan scopes a Raspberry Pi 4B 8GB object-detection and constrained-grasp
 upgrade for MotionBrain. The goal is to make the current color-target demo grow
@@ -9,30 +12,32 @@ hardware can safely do.
 
 ## Target Outcome
 
-Build a constrained workcell demo:
+Build a constrained perception and alignment demo:
 
 ```text
 ESP32-CAM frame
   -> Raspberry Pi perception
   -> selected object target and overlay
   -> timed base alignment
-  -> operator-confirmed calibrated grasp sequence
   -> stop/status verification
+  -> operator-reviewed dry-run plan only
 ```
 
 The demo should be framed as:
 
-> Pi-hosted edge-AI perception with safety-gated robotic manipulation in a
+> Pi-hosted edge-AI perception with safety-gated robotic alignment in a
 > constrained workcell.
 
-Do not describe this as a general-purpose autonomous grasping system.
+Do not describe this as a general-purpose autonomous grasping system. Physical
+object- or marker-assisted grasping is a separate future plan.
 
 ## Hardware Assumptions
 
 - Raspberry Pi 4B 8GB runs the perception workload.
-- ESP32-CAM provides JPEG frames via `/capture`; `vga` with JPEG quality `12`
-  is the current object-detection baseline, with `qvga` quality `15` as the
-  low-bandwidth fallback.
+- ESP32-CAM provides JPEG frames via `/capture` and MJPEG via `/stream`.
+  Saved-frame evaluation used `vga` with JPEG quality `12`; the current live
+  cup bench uses `qvga` with JPEG quality `4` for better semantic stability in
+  the low-angle scene.
 - ESP32 motion controller remains the actuator and safety boundary.
 - STM32 handheld teleop sends embedded sensor/safety telemetry.
 - The current HC-SR04 is in the handheld teleop path, not mounted as a robot
@@ -54,20 +59,30 @@ Do not describe this as a general-purpose autonomous grasping system.
 
 ## Current Branch Status
 
-As of 2026-06-01 on `feature/pi-object-detection-mvp`:
+As of 2026-06-04 on `main`:
 
 - Milestone 1 is implemented: shared detection contract, selected-target JSON,
   fake object backend contract tests, and color compatibility.
 - Milestone 2 is implemented: Pi perception service with cached frame,
   `/api/detection`, `/api/perception`, `/api/vision_frame`, `/health`, and
   dashboard `--perception-url` proxy mode.
-- Milestone 3 is in progress: the first real object backend path exists through
-  OpenCV DNN/ONNX model loading, label-map loading, SSD-style and Ultralytics
-  YOLO raw-output decoding, confidence filtering, NMS, and detector injection
-  into the Pi perception service. Model weights are intentionally not
-  committed.
+- Milestone 3 is implemented for the explicit local-model path: OpenCV DNN/ONNX
+  model loading, label-map loading, SSD-style and Ultralytics YOLO raw-output
+  decoding, confidence filtering, NMS, and detector injection into the Pi
+  perception service. Model weights are intentionally not committed.
+- Milestone 4 is implemented for the dashboard and embedded display: the
+  dashboard proxies Pi perception, the embedded `TRACKED` view reads the same
+  dashboard API, and `STREAM` is now the default manual camera mode.
+- Milestone 5 is implemented: ROS2 can consume Pi perception through
+  `perception_url` and publish the selected target through JSON and typed
+  detection topics.
+- Milestone 6 is implemented as dry-run only: `/api/cup_grasp_plan` validates
+  selected `cup`, confidence, CENTER alignment, controller state, safety, base
+  idle, token availability, and explicit confirmation, then returns a proposed
+  gripper sequence without sending gripper commands.
 - Live hardware validation confirms the Pi perception service and dashboard can
-  track red color targets reliably with the ESP32-CAM QVGA feed.
+  track red color targets and the constrained `cup` object target with the
+  ESP32-CAM QVGA feed.
 - Earlier live object-mode validation on the QVGA feed loaded YOLOv5n, YOLOv5s,
   and a YOLOv8n ONNX candidate through the Pi OpenCV DNN path, but a white cup
   target was not detected reliably.
@@ -76,10 +91,11 @@ As of 2026-06-01 on `feature/pi-object-detection-mvp`:
   in `50/50` saved frames at confidence `0.5`; `YOLOv5n` remained too weak for
   this scene. Keep this as a constrained-object MVP path, not a guaranteed
   arbitrary-object demo.
-- A local live perception-service smoke test using the same ESP32-CAM profile
-  and `YOLOv5s` returned `label=cup` with confidence around `0.80-0.90` and
-  detector latency around `120ms` on the Mac host. Pi latency still needs to be
-  measured.
+- A local live perception-service smoke test using the saved-frame ESP32-CAM
+  profile and `YOLOv5s` returned `label=cup` with confidence around
+  `0.80-0.90` and detector latency around `120ms` on the Mac host. On the Pi
+  live bench, end-to-end object detection is slow enough that it belongs in
+  `TRACKED` recognition/confirmation mode, not in the manual driving camera.
 - Live Pi validation on 2026-06-02 KST corrected the YOLO preprocessing path to
   preserve aspect ratio with letterbox padding before OpenCV DNN inference. On
   the current low-angle ESP32-CAM bench, `vga` / JPEG quality `18` captured
@@ -122,6 +138,11 @@ As of 2026-06-01 on `feature/pi-object-detection-mvp`:
   `/camera/detection` and `/camera/detection_typed` can publish the same
   selected target used by the dashboard without opening an additional
   ESP32-CAM connection.
+- 2026-06-04 KST validation after the stream/tracked mode split used
+  controller `192.168.219.111`, ESP32-CAM `192.168.219.113`, and Pi
+  `192.168.219.114`. The controller page started in `STREAM`, the Pi
+  perception/dashboard stack was reachable, and dashboard detection returned a
+  `cup` above the `0.5` threshold in the current scene.
 
 ## Perception Design
 
@@ -310,14 +331,14 @@ Embedded `motionbrain.local`:
 
 ## Motion And Grasp Scope
 
-Allowed MVP motion:
+Allowed current MVP motion:
 
 1. Detect a selected object class or color target.
 2. Require multiple fresh consistent frames.
 3. Use timed base nudge only until target is centered.
-4. Require operator confirmation before any grasp sequence.
-5. Run short, low-speed, pre-calibrated sequence steps.
-6. Stop and verify `/status` after each sequence.
+4. Stop and verify `/status` after each nudge.
+5. Return an operator-reviewed dry-run grasp plan only; do not send gripper or
+   arm sequence commands from the object path.
 
 Do not automate yet:
 
@@ -353,8 +374,10 @@ Alignment action:
 Grasp action:
 
 - Start as dry-run/log-only.
-- Then run one calibrated low-speed sequence in an empty work area.
-- Then run with one known object in one known position.
+- Physical execution is deferred to a separate object/marker-assisted grasp
+  plan.
+- When revived later, start with one calibrated low-speed sequence in an empty
+  work area, then one known object in one known position.
 
 ## Implementation Milestones
 
@@ -512,26 +535,23 @@ Validation:
 - One known target object.
 - Stop command tested before recording.
 
-## First Commit Recommendation
+## Current Merge Status
 
-First commit on this branch should be:
+Implemented and merged to `main`:
 
-```text
-Extract shared vision detection contract
-```
+- Shared detection contract and compatibility tests.
+- Pi perception service and dashboard proxy mode.
+- OpenCV DNN/ONNX object backend with explicit model/label paths.
+- ROS2 `perception_url` bridge and selected object fields in
+  `CameraDetection`.
+- Cup dataset/evaluation tooling and summarized results.
+- Cup dry-run grasp plan endpoint.
+- Embedded `MotionBrain Control` defaulting to `STREAM` for manual operation,
+  with `TRACKED` kept as an opt-in recognition/confirmation view.
 
-Included:
+Still deferred:
 
-- `vision_detection.py`
-- CLI/dashboard/ROS2 bridge import changes
-- color-mode compatibility tests
-- fake object backend contract tests
-
-Excluded:
-
-- Real object model runtime
-- systemd service
-- grasp motion
-- ROS2 message schema changes
-
-This reduces risk before adding model/runtime dependencies on the Raspberry Pi.
+- Marker-assisted or object-assisted physical grasp execution.
+- Continuous visual servoing.
+- General arbitrary-object recognition.
+- Better camera/runtime work beyond the constrained cup path.

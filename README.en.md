@@ -25,14 +25,16 @@ Validated:
 - Raspberry Pi 4 + Ubuntu 24.04 + ROS2 Jazzy bridge
 - ROS2 typed topics for status, events, camera detection, joint states, kinematics, control guard, and mission state
 - Pi perception service feeding `/camera/detection(_typed)`
+- ESP32-hosted camera mode split: `STREAM` for manual operation, `TRACKED` for recognition checks
 - GitHub Actions checks for PlatformIO builds, Python tests, and ROS2 `colcon build/test`
 
 Important current limits:
 
 - Red target tracking is the reliable demo path.
-- The general object-detection pipeline is implemented on the Pi, and constrained known-object detection has been validated with ESP32-CAM VGA plus YOLOv5s. The current physical-AI demo uses only the most reliable active target: `cup`.
+- The general object-detection pipeline is implemented on the Pi, and the current bench validates constrained known-object `cup` detection with ESP32-CAM `qvga` / JPEG quality `4` plus YOLOv5s. The current physical-AI demo uses only `cup` as the active target.
 - A label-less dark bottle, a sticker-heavy iPhone back side, and the secondary Z Flip phone target are out of scope for the current demo. Describe this as constrained workcell known-object detection/alignment, not arbitrary object recognition.
 - Autonomous grasping is not enabled. The current cup dry-run path revalidates safety state and CENTER alignment, then returns a gripper open/close plan for operator review only.
+- Manual arm operation uses `STREAM` by default. `TRACKED` is a slower Pi-recognition view for checking fixed or slow-moving targets.
 
 ## System Layout
 
@@ -129,6 +131,10 @@ python3 tools/motionbrain_dashboard.py \
   --perception-url http://127.0.0.1:8766 \
   --timeout 6
 ```
+
+The current cup known-object demo uses ESP32-CAM `qvga` / JPEG quality `4`, Pi
+YOLOv5s object mode, and dashboard proxy mode. Use `docs/HOME_WIFI_MODE.md` and
+`docs/DEMO_RUNBOOK.en.md` for the exact run commands.
 
 ## Documentation
 

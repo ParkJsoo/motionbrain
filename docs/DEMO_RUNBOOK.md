@@ -396,6 +396,51 @@ http://<pi-ip>:8765
 로봇팔을 수동 조종하면서 카메라를 볼 때는 `STREAM`을 사용한다. `TRACKED`는
 고정되었거나 천천히 움직이는 target을 인식/확인할 때만 사용한다.
 
+현재 cup known-object 확인을 찍을 때는 Pi에서 인식 서비스를 따로 띄우고
+dashboard가 그 결과를 proxy하게 한다. 먼저 ESP32-CAM을 현재 bench profile로
+설정한다.
+
+```bash
+curl -sS -X POST "http://<camera-ip>/camera?framesize=qvga&quality=4"
+```
+
+Pi에서:
+
+```bash
+~/.cache/motionbrain/opencv-venv/bin/python tools/motionbrain_perception_service.py \
+  --host 0.0.0.0 \
+  --port 8766 \
+  --camera-url http://<camera-ip> \
+  --detector-mode object \
+  --object-backend opencv-dnn \
+  --object-model ~/.cache/motionbrain/models/yolov5s.onnx \
+  --object-labels config/coco80.labels \
+  --object-target cup \
+  --object-min-confidence 0.5 \
+  --object-input-size 640 \
+  --display-hold-seconds 1.5
+```
+
+다른 Pi terminal에서:
+
+```bash
+export MOTIONBRAIN_HTTP_TOKEN="<local-controller-token>"
+python3 tools/motionbrain_dashboard.py \
+  --host 0.0.0.0 \
+  --motion-host <controller-ip> \
+  --camera-url http://<camera-ip> \
+  --perception-url http://127.0.0.1:8766 \
+  --grasp-target-label cup \
+  --grasp-min-confidence 0.5
+```
+
+캡처 포인트:
+
+- `MotionBrain Control` 첫 화면이 `RAW STREAM` / `STREAM` 경로로 뜬다.
+- `TRACKED`를 눌렀을 때 Pi API의 `cup` label/confidence가 overlay에 보인다.
+- Dashboard `/api/detection`이 `label=cup`, `confidence >= 0.5`를 반환한다.
+- Controller status는 motion 명령 전 `IDLE`, safety clear, motors off다.
+
 ## Segment 4: Timed Vision Nudge
 
 로봇 주변이 비어 있고 시스템 상태가 안전할 때만 실행한다.

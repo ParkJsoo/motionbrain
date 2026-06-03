@@ -81,7 +81,7 @@ ROS2는 ESP32 내부 제어를 대체하지 않는다. 대신 `/status`, `/event
 
 ### 검증 가능한 데모 경계
 
-현재 안정 데모는 빨간 타겟 추적, 타겟 오버레이, Pi 호스트 대시보드, ROS2 타입 지정 토픽, 안전 게이트 기반 짧은 보정 동작, search light 명령 경로다. 자동 집기는 아직 활성화하지 않는다.
+현재 안정 데모는 `STREAM` 기반 수동 카메라 확인, Pi 호스트 대시보드, 빨간 타겟/known-object 타겟 오버레이, ROS2 타입 지정 토픽, 안전 게이트 기반 짧은 보정 동작, search light 명령 경로다. 자동 집기는 아직 활성화하지 않는다.
 
 ## 검증 결과
 
@@ -93,6 +93,7 @@ ROS2는 ESP32 내부 제어를 대체하지 않는다. 대신 `/status`, `/event
 - 홈 Wi-Fi에서 ESP32 제어기, ESP32-CAM, Raspberry Pi 동시 연결 확인
 - `MotionBrain Control` 웹 UI에서 토큰 입력 후 상태 변경 명령 확인
 - Pi 대시보드에서 카메라 feed, 빨간 타겟 박스, 보정 동작 확인
+- Pi 인식 서비스에서 ESP32-CAM `qvga` / JPEG quality `4`와 YOLOv5s로 `cup` 타겟 확인
 - Raspberry Pi 4 + Ubuntu 24.04 + ROS2 Jazzy에서 `colcon build/test` 통과
 - `/motionbrain/status_typed`, `/camera/detection_typed`, `/joint_states`, `/motionbrain/kinematics_typed`, `/motionbrain/control_guard_typed`, `/motionbrain/mission_state_typed` 상태 점검 통과
 - Pi 인식 서비스 결과가 ROS2 `/camera/detection_typed`까지 전달되는 것 확인
@@ -102,13 +103,13 @@ ROS2는 ESP32 내부 제어를 대체하지 않는다. 대신 `/status`, `/event
 
 Pi에서 OpenCV DNN/ONNX 기반 객체 인식 경로는 구현했다. `config/coco80.labels`와 명시적 모델 경로를 사용하고, 모델 weight는 repository에 넣지 않는다.
 
-다만 현재 ESP32-CAM QVGA 입력과 테스트한 YOLO 계열 모델 조합으로는 흰 컵을 안정적으로 `cup`으로 인식하지 못했다. 컵 대신 `person`, `skateboard`, `suitcase` 같은 오검출이 발생했다.
+현재 물리 bench에서 가장 신뢰할 수 있는 known-object 경로는 ESP32-CAM `qvga` / JPEG quality `4`, YOLOv5s, `--object-target cup`, confidence `0.5` 조합이다. 이 경로는 Pi 대시보드/인식 API에서 `cup`을 반환했고, 수동 조작용 카메라 확인은 `STREAM`, 인식 확인은 `TRACKED`로 분리했다.
 
 따라서 현재 문서와 데모에서는 다음처럼 표현한다.
 
-- 가능: Pi 호스트 객체 인식 흐름, 선택 타겟 계약, ROS2/대시보드 연동
-- 안정 검증 완료: 빨간 타겟 추적과 오버레이
-- 아직 미완료: 임의 물체, 특히 현재 컵의 안정 인식과 자동 집기
+- 가능: Pi 호스트 객체 인식 흐름, 선택 타겟 계약, ROS2/대시보드 연동, 제한된 `cup` 인식 확인
+- 안정 검증 완료: 빨간 타겟 추적/오버레이, `STREAM` 기반 수동 카메라 확인, cup 인식 확인
+- 아직 미완료: 임의 물체 인식, 마커/물체 기반 자동 집기, 피드백 없는 연속 visual servoing
 
 ## 현재 한계
 
@@ -120,9 +121,9 @@ Pi에서 OpenCV DNN/ONNX 기반 객체 인식 경로는 구현했다. `config/co
 
 ## 다음 단계
 
-1. 빨간 타겟 기반 안정 데모 영상 캡처
-2. ROS2 타입 지정 토픽, 대시보드, 임베디드 UI를 함께 보여주는 데모 구성
-3. 결정론적 마커 또는 고정된 known-object 기반 제한 집기 dry-run
+1. `STREAM` 수동 조작 화면, Pi 대시보드, ROS2 타입 지정 토픽을 함께 보여주는 데모 캡처
+2. 빨간 타겟 또는 `cup` 인식 확인과 안전 게이트 기반 짧은 보정 동작 캡처
+3. 마커 또는 고정 known-object 기반 제한 집기 계획을 별도 설계
 4. 더 좋은 카메라나 검증된 edge detector runtime으로 객체 인식 개선
 5. 추가 센서 장착 후 거리/접촉 기반 집기 안전성 강화
 

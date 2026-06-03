@@ -25,14 +25,16 @@ MotionBrain은 ESP32 기반 5축 로봇팔 제어기에서 시작해 STM32 센�
 - Raspberry Pi 4 + Ubuntu 24.04 + ROS2 Jazzy 브리지
 - ROS2 타입 지정 토픽: 상태, 이벤트, 카메라 감지, 조인트 상태, 기구학, 제어 guard, mission 상태
 - Pi 인식 서비스를 통한 `/camera/detection(_typed)` 연동
+- ESP32 내장 제어 페이지의 카메라 모드 분리: 수동 조작은 `STREAM`, 인식 확인은 `TRACKED`
 - GitHub Actions 기반 PlatformIO 빌드, Python 테스트, ROS2 `colcon build/test`
 
 현재 주의점:
 
 - 빨간 타겟 추적은 데모 가능한 안정 경로다.
-- 일반 객체 인식 흐름은 Pi에서 구현됐고, ESP32-CAM VGA + YOLOv5s 조합으로 제한된 known-object 인식이 검증됐다. 현재 물리 AI 데모는 가장 신뢰도가 높은 `cup` 하나만 활성 타겟으로 사용한다.
+- 일반 객체 인식 흐름은 Pi에서 구현됐고, 현재 bench에서는 ESP32-CAM `qvga` / JPEG quality `4` + YOLOv5s 조합으로 제한된 known-object `cup` 인식이 검증됐다. 현재 물리 AI 데모는 `cup` 하나만 활성 타겟으로 사용한다.
 - 검은 라벨 없는 병, 스티커가 큰 아이폰 뒷면, Z Flip 보조 phone 타겟은 현재 데모 범위에서 제외한다. 이 결과는 임의 객체 인식이 아니라 제한된 작업공간의 known-object 인식/정렬 데모로 설명해야 한다.
 - 자동 grasp는 아직 하지 않는다. 현재 cup dry-run 경로는 안전 상태와 CENTER 정렬을 재확인한 뒤 작업자 확인용 그리퍼 open/close 계획만 반환한다.
+- 로봇팔을 조종하면서 카메라를 보는 작업은 `STREAM`이 기본이다. `TRACKED`는 Pi 인식 결과를 확인하는 느린 뷰로만 쓴다.
 
 ## 시스템 구성
 
@@ -129,6 +131,10 @@ python3 tools/motionbrain_dashboard.py \
   --perception-url http://127.0.0.1:8766 \
   --timeout 6
 ```
+
+현재 cup known-object demo는 ESP32-CAM `qvga` / JPEG quality `4`, Pi
+YOLOv5s object mode, dashboard proxy 조합을 사용한다. 자세한 실행 명령은
+`docs/HOME_WIFI_MODE.md`와 `docs/DEMO_RUNBOOK.md`를 기준으로 한다.
 
 ## 문서
 

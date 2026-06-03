@@ -198,6 +198,19 @@ camera responsiveness through the ESP32-CAM stream. Use `TRACKED` only when the
 target is fixed or moving slowly and the goal is object/marker recognition
 confirmation through the Pi perception path.
 
+2026-06-04 KST bench check:
+
+- Controller `192.168.219.111` served the updated `MotionBrain Control` page
+  with `cameraMode = 'stream'` and `startCameraStream()` on startup.
+- ESP32-CAM `192.168.219.113` was set to `qvga` / JPEG quality `4`; both
+  `/capture` and `/stream` responded.
+- Raspberry Pi `192.168.219.114` ran the cup perception service on `8766` and
+  the dashboard on `8765`.
+- Dashboard `/api/detection` returned `label=cup` above the `0.5` threshold in
+  the current scene.
+- Browser checks opened `motionbrain.local`, the controller IP page, and
+  `http://192.168.219.114:8765`; the operator confirmed the pages were visible.
+
 If `.local` names do not resolve, use the IP addresses printed in serial logs or
 reserve fixed IP addresses in the router.
 

@@ -392,6 +392,52 @@ Confirm that the on-page `API` field is `http://motionbrain-pi.local:8765` or
 Use `STREAM` when manually controlling the arm and watching the camera. Use
 `TRACKED` only for recognizing or confirming fixed or slow-moving targets.
 
+For the current cup known-object check, run the Pi perception service
+separately and let the dashboard proxy its result. First set the ESP32-CAM to
+the current bench profile:
+
+```bash
+curl -sS -X POST "http://<camera-ip>/camera?framesize=qvga&quality=4"
+```
+
+On the Pi:
+
+```bash
+~/.cache/motionbrain/opencv-venv/bin/python tools/motionbrain_perception_service.py \
+  --host 0.0.0.0 \
+  --port 8766 \
+  --camera-url http://<camera-ip> \
+  --detector-mode object \
+  --object-backend opencv-dnn \
+  --object-model ~/.cache/motionbrain/models/yolov5s.onnx \
+  --object-labels config/coco80.labels \
+  --object-target cup \
+  --object-min-confidence 0.5 \
+  --object-input-size 640 \
+  --display-hold-seconds 1.5
+```
+
+In another Pi terminal:
+
+```bash
+export MOTIONBRAIN_HTTP_TOKEN="<local-controller-token>"
+python3 tools/motionbrain_dashboard.py \
+  --host 0.0.0.0 \
+  --motion-host <controller-ip> \
+  --camera-url http://<camera-ip> \
+  --perception-url http://127.0.0.1:8766 \
+  --grasp-target-label cup \
+  --grasp-min-confidence 0.5
+```
+
+Capture points:
+
+- `MotionBrain Control` initially opens the `RAW STREAM` / `STREAM` path.
+- Pressing `TRACKED` shows the Pi API's `cup` label/confidence overlay.
+- Dashboard `/api/detection` returns `label=cup` and `confidence >= 0.5`.
+- Controller status is `IDLE`, safety clear, and motors off before any motion
+  command.
+
 ## Segment 4: Timed Vision Nudge
 
 Use this only if the robot area is clear and the system is in a known safe

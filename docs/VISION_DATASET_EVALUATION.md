@@ -13,9 +13,14 @@ prototype.
 
 Current conclusion:
 
-- ESP32-CAM remains usable after removing the lens film and switching to VGA.
+- ESP32-CAM remains usable after removing the lens film. Saved-frame cup
+  evaluation worked best at VGA, while the current live bench recognizes the
+  cup more reliably at QVGA quality `4`.
 - Use `YOLOv5s` through OpenCV DNN as the first practical model baseline.
 - Active semantic target: `cup`, confidence `0.5`.
+- Use `STREAM` for manual camera feedback and `TRACKED` only for slower
+  recognition/confirmation. Do not tune the current Pi object path as if it
+  were a responsive driving camera.
 - Defer the Samsung Z Flip `cell phone` target until after one reliable cup
   perception/alignment sequence is captured.
 - Do not present the tested dark bottle or sticker-heavy iPhone back side as
@@ -180,6 +185,15 @@ With `qvga` / JPEG quality `4`, the live dashboard/perception API returned
 `label=cup`, class id `41`, confidence about `0.55-0.59`,
 `alignment=CENTER`, and an area ratio about `0.287`. This is the current
 physical cup success profile.
+
+On 2026-06-04 KST, the same live bench direction was rechecked after the
+embedded control page was changed to default to `STREAM`. The active setup was
+controller `192.168.219.111`, ESP32-CAM `192.168.219.113`, and Raspberry Pi
+`192.168.219.114`. ESP32-CAM stayed at `qvga` / JPEG quality `4`, the Pi
+perception service and dashboard were reachable on ports `8766` and `8765`,
+and `/api/detection` returned `label=cup` above the `0.5` threshold in the
+current scene. Treat this as a recognition/confirmation path for fixed or
+slow-moving targets, not a high-FPS teleoperation view.
 
 On the same day, a 50-frame black unlabeled cola bottle dataset with a red cap
 was captured on the dark cloth background:

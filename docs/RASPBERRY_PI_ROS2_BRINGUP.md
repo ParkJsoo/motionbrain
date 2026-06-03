@@ -674,16 +674,23 @@ For the portfolio demo, the Raspberry Pi host is responsible for:
 
 - Running ROS2 Jazzy
 - Polling the ESP32 motion controller over HTTP
-- Polling ESP32-CAM capture frames over HTTP
+- Polling ESP32-CAM capture frames over HTTP when no Pi perception URL is
+  configured
+- Running the Pi perception service when object detection or the embedded
+  `TRACKED` recognition view should share one selected-target API
+- Hosting the dashboard on the LAN when another browser should inspect status,
+  camera, and detection without running host tools on the Mac
 - Publishing robot status, events, and camera detection as JSON and typed ROS2
   topics
 - Publishing `/joint_states` for the URDF/TF visualization path
 - Accepting JSON and typed ROS2 command messages and forwarding safe HTTP
   commands to ESP32
 
-Keep the Mac as the development/dashboard machine during early validation. Move
-dashboard or additional vision loops to the Pi only after the bridge path is
-stable.
+Keep the Mac as the development machine and browser/viewer. The current demo
+can run Pi perception and dashboard as separate terminal or cmux processes next
+to the ROS2 bridge. Manual arm operation should still use the ESP32-hosted
+`MotionBrain Control` `STREAM` view; `TRACKED` is for slower recognition checks
+against fixed or slow-moving targets.
 
 ## Troubleshooting
 
