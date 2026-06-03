@@ -301,6 +301,9 @@ Dashboard:
 Embedded `motionbrain.local`:
 
 - Keep existing `TRACKED`, `STREAM`, and `SNAPSHOT` modes.
+- Default manual operation to `STREAM` for responsive camera feedback.
+- Treat `TRACKED` as a slower recognition/confirmation view for fixed or
+  slow-moving objects or future markers.
 - No new firmware endpoint is required.
 - Read the same `/api/detection` payload from the Pi dashboard/perception API.
 - Overlay label should display object label and confidence when present.

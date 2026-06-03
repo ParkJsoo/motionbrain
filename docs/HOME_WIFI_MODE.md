@@ -193,6 +193,11 @@ field to `http://<pi-ip>:8765`. Older browser storage pointing to the
 Mac-hosted `127.0.0.1:8765` dashboard is automatically migrated to the Pi
 default.
 
+Use `STREAM` while manually controlling the arm because it prioritizes live
+camera responsiveness through the ESP32-CAM stream. Use `TRACKED` only when the
+target is fixed or moving slowly and the goal is object/marker recognition
+confirmation through the Pi perception path.
+
 If `.local` names do not resolve, use the IP addresses printed in serial logs or
 reserve fixed IP addresses in the router.
 

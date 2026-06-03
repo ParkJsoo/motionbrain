@@ -393,6 +393,8 @@ http://<pi-ip>:8765
 `motionbrain.local`의 `TRACKED` camera mode도 이 dashboard API를 사용한다.
 화면의 `API` 입력칸이 `http://motionbrain-pi.local:8765` 또는
 `http://<pi-ip>:8765`인지 확인한다.
+로봇팔을 수동 조종하면서 카메라를 볼 때는 `STREAM`을 사용한다. `TRACKED`는
+고정되었거나 천천히 움직이는 target을 인식/확인할 때만 사용한다.
 
 ## Segment 4: Timed Vision Nudge
 

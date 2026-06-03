@@ -389,6 +389,8 @@ http://<pi-ip>:8765
 The `TRACKED` camera mode in `motionbrain.local` uses this dashboard API too.
 Confirm that the on-page `API` field is `http://motionbrain-pi.local:8765` or
 `http://<pi-ip>:8765`.
+Use `STREAM` when manually controlling the arm and watching the camera. Use
+`TRACKED` only for recognizing or confirming fixed or slow-moving targets.
 
 ## Segment 4: Timed Vision Nudge
 
