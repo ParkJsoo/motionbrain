@@ -104,8 +104,12 @@ subnet만 스캔하려면 `MOTIONBRAIN_DISCOVERY_CIDR=192.168.219.0/24`처럼 �
 
 현재 cup known-object 데모에서는 `MOTIONBRAIN_OBJECT_TARGET=cup`,
 `MOTIONBRAIN_OBJECT_MIN_CONFIDENCE=0.5`, `MOTIONBRAIN_DISPLAY_HOLD_SECONDS=1.5`
-를 기준으로 한다. 현재 구도에서 흰 컵이 인접 COCO label로 흔들릴 때만
-`MOTIONBRAIN_OBJECT_TARGET_ALIASES=toilet`처럼 alias를 추가한다.
+를 기준으로 한다. 또한 ESP32-CAM은 `MOTIONBRAIN_CAMERA_FRAMESIZE=qvga`,
+`MOTIONBRAIN_CAMERA_QUALITY=4`로 맞춘다. service wrapper는 시작 시 이 profile을
+적용하고, reconcile timer는 ESP32-CAM 재부팅으로 profile이 초기화되면 다시 적용한
+뒤 dashboard/perception을 재시작한다. 다른 카메라를 쓸 때는
+`MOTIONBRAIN_CAMERA_PROFILE=0`으로 끈다. 현재 구도에서 흰 컵이 인접 COCO label로
+흔들릴 때만 `MOTIONBRAIN_OBJECT_TARGET_ALIASES=toilet`처럼 alias를 추가한다.
 
 ## ROS2 Bridge 서비스 설치
 

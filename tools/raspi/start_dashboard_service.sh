@@ -4,6 +4,7 @@ set -euo pipefail
 REPO="${MOTIONBRAIN_REPO:-/home/motionbrain/develop/arduino/motionbrain}"
 PYTHON="${MOTIONBRAIN_DASHBOARD_PYTHON:-/usr/bin/python3}"
 DISCOVERY_PYTHON="${MOTIONBRAIN_DISCOVERY_PYTHON:-/usr/bin/python3}"
+CAMERA_PROFILE_PYTHON="${MOTIONBRAIN_CAMERA_PROFILE_PYTHON:-${DISCOVERY_PYTHON}}"
 MOTION_HOST="${MOTIONBRAIN_MOTION_HOST:-${MOTIONBRAIN_HOST:-motionbrain.local}}"
 MOTION_PORT="${MOTIONBRAIN_MOTION_PORT:-80}"
 CAMERA_URL="${MOTIONBRAIN_CAMERA_URL-http://motionbrain-cam.local}"
@@ -51,6 +52,18 @@ else
 fi
 
 CAMERA_URL="$(discover_device_url camera "${CAMERA_URL}")"
+
+if [[ "${MOTIONBRAIN_CAMERA_PROFILE:-1}" != "0" ]]; then
+  profile_args=(
+    --camera-url "${CAMERA_URL}"
+    --framesize "${MOTIONBRAIN_CAMERA_FRAMESIZE:-qvga}"
+    --quality "${MOTIONBRAIN_CAMERA_QUALITY:-4}"
+    --timeout "${MOTIONBRAIN_CAMERA_PROFILE_TIMEOUT:-3.0}"
+  )
+  if ! "${CAMERA_PROFILE_PYTHON}" "${REPO}/tools/raspi/apply_camera_profile.py" "${profile_args[@]}" >&2; then
+    echo "Warning: ESP32-CAM profile could not be applied for ${CAMERA_URL}" >&2
+  fi
+fi
 
 args=(
   "${REPO}/tools/motionbrain_dashboard.py"

@@ -20,6 +20,7 @@ if [[ -f "${PERCEPTION_ENV}" ]]; then
 fi
 
 DISCOVERY_PYTHON="${MOTIONBRAIN_DISCOVERY_PYTHON:-/usr/bin/python3}"
+CAMERA_PROFILE_PYTHON="${MOTIONBRAIN_CAMERA_PROFILE_PYTHON:-${DISCOVERY_PYTHON}}"
 DASHBOARD_URL="${MOTIONBRAIN_DASHBOARD_URL:-http://127.0.0.1:${MOTIONBRAIN_DASHBOARD_PORT:-8765}}"
 PERCEPTION_URL="${MOTIONBRAIN_PERCEPTION_URL:-http://127.0.0.1:8766}"
 MOTION_HOST="${MOTIONBRAIN_MOTION_HOST:-${MOTIONBRAIN_HOST:-motionbrain.local}}"
@@ -83,11 +84,28 @@ if [[ -z "${controller_url}" && -z "${camera_url}" ]]; then
   exit 0
 fi
 
-dashboard_config="$(curl -fsS --max-time "${MOTIONBRAIN_RECONCILE_TIMEOUT:-4}" "${DASHBOARD_URL}/api/config" 2>/dev/null || true)"
-perception_health="$(curl -fsS --max-time "${MOTIONBRAIN_RECONCILE_TIMEOUT:-4}" "${PERCEPTION_URL}/health" 2>/dev/null || true)"
-
 restart_needed=0
 reasons=()
+camera_profile_result=""
+if [[ -n "${camera_url}" && "${MOTIONBRAIN_CAMERA_PROFILE:-1}" != "0" ]]; then
+  profile_args=(
+    --camera-url "${camera_url}"
+    --framesize "${MOTIONBRAIN_CAMERA_FRAMESIZE:-qvga}"
+    --quality "${MOTIONBRAIN_CAMERA_QUALITY:-4}"
+    --timeout "${MOTIONBRAIN_CAMERA_PROFILE_TIMEOUT:-3.0}"
+  )
+  if camera_profile_result="$("${CAMERA_PROFILE_PYTHON}" "${REPO}/tools/raspi/apply_camera_profile.py" "${profile_args[@]}" 2>/dev/null)"; then
+    if [[ "${camera_profile_result}" == "updated" ]]; then
+      restart_needed=1
+      reasons+=("camera_profile_updated")
+    fi
+  else
+    echo "Warning: ESP32-CAM profile could not be applied for ${camera_url}" >&2
+  fi
+fi
+
+dashboard_config="$(curl -fsS --max-time "${MOTIONBRAIN_RECONCILE_TIMEOUT:-4}" "${DASHBOARD_URL}/api/config" 2>/dev/null || true)"
+perception_health="$(curl -fsS --max-time "${MOTIONBRAIN_RECONCILE_TIMEOUT:-4}" "${PERCEPTION_URL}/health" 2>/dev/null || true)"
 
 if [[ -z "${dashboard_config}" ]]; then
   restart_needed=1

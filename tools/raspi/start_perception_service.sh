@@ -4,6 +4,7 @@ set -euo pipefail
 REPO="${MOTIONBRAIN_REPO:-/home/motionbrain/develop/arduino/motionbrain}"
 PYTHON="${MOTIONBRAIN_PERCEPTION_PYTHON:-${MOTIONBRAIN_OPENCV_PYTHON:-/home/motionbrain/.cache/motionbrain/opencv-venv/bin/python}}"
 DISCOVERY_PYTHON="${MOTIONBRAIN_DISCOVERY_PYTHON:-/usr/bin/python3}"
+CAMERA_PROFILE_PYTHON="${MOTIONBRAIN_CAMERA_PROFILE_PYTHON:-${DISCOVERY_PYTHON}}"
 CAMERA_URL="${MOTIONBRAIN_CAMERA_URL:-http://motionbrain-cam.local}"
 
 cd "${REPO}"
@@ -22,6 +23,18 @@ if [[ "${MOTIONBRAIN_DISCOVERY:-1}" != "0" ]]; then
     "${DISCOVERY_PYTHON}" "${REPO}/tools/raspi/discover_device_url.py" "${discovery_args[@]}" 2>/dev/null
   )"; then
     CAMERA_URL="${resolved_camera_url}"
+  fi
+fi
+
+if [[ "${MOTIONBRAIN_CAMERA_PROFILE:-1}" != "0" ]]; then
+  profile_args=(
+    --camera-url "${CAMERA_URL}"
+    --framesize "${MOTIONBRAIN_CAMERA_FRAMESIZE:-qvga}"
+    --quality "${MOTIONBRAIN_CAMERA_QUALITY:-4}"
+    --timeout "${MOTIONBRAIN_CAMERA_PROFILE_TIMEOUT:-3.0}"
+  )
+  if ! "${CAMERA_PROFILE_PYTHON}" "${REPO}/tools/raspi/apply_camera_profile.py" "${profile_args[@]}" >&2; then
+    echo "Warning: ESP32-CAM profile could not be applied for ${CAMERA_URL}" >&2
   fi
 fi
 
