@@ -421,6 +421,18 @@ Pi에서:
   --display-hold-seconds 1.5
 ```
 
+현재 구도에서 흰 컵이 `toilet` 같은 인접 COCO label로 흔들리면, 고정된
+known-object 데모에 한해서 아래 옵션을 추가한다. 이 옵션은 선택된 target을
+canonical `cup`으로 보고하고 원본 label은 `sourceLabel`에 남긴다.
+
+```bash
+--object-target-alias toilet
+```
+
+alias 후보의 confidence가 낮아 `0.5` gate를 넘지 못하면 target-filtered
+background false-positive 확인 후에만 threshold를 낮춘다. 임의로 낮추지 말고
+해당 구도와 배경에서 다시 확인한다.
+
 다른 Pi terminal에서:
 
 ```bash

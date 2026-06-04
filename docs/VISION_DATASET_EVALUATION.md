@@ -195,6 +195,23 @@ and `/api/detection` returned `label=cup` above the `0.5` threshold in the
 current scene. Treat this as a recognition/confirmation path for fixed or
 slow-moving targets, not a high-FPS teleoperation view.
 
+Later on 2026-06-04 KST, the documentation screenshots were recaptured from the
+user's adjusted camera angle. That view produced a better operator-facing frame,
+but the plain white mug also flickered between `cup` and nearby COCO labels such
+as `toilet` in adjacent frames. For this constrained workcell case, the
+perception service now supports explicit target aliases:
+
+```bash
+--object-target cup --object-target-alias toilet
+```
+
+Alias detections are reported as the canonical target label and include
+`sourceLabel` in the JSON payload. Use aliases only when the physical target,
+camera pose, and background are fixed and documented. They should not be used to
+claim general semantic object recognition. If alias matching requires lowering
+`--object-min-confidence`, rerun the matching background-only check with the
+same alias and threshold before using it in a public run.
+
 On the same day, a 50-frame black unlabeled cola bottle dataset with a red cap
 was captured on the dark cloth background:
 

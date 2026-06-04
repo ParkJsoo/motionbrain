@@ -30,6 +30,7 @@ class DetectionConfig:
     object_backend: str = "fake"
     object_model: str = ""
     object_labels: str = ""
+    object_target_aliases: tuple[str, ...] = ()
     target_policy: str = "largest"
 
 
@@ -91,9 +92,10 @@ def candidate_payload(candidate: DetectionCandidate, config: DetectionConfig) ->
     offset_x, offset_y = _candidate_offsets(candidate)
     area_ratio = _candidate_area_ratio(candidate)
     alignment = classify_alignment(offset_x, config.align_deadband)
+    label = display_label_for_candidate(candidate, config)
     payload: dict[str, Any] = {
         "targetType": candidate.target_type,
-        "label": candidate.label,
+        "label": label,
         "classId": candidate.class_id,
         "confidence": candidate.confidence,
         "targetBox": _box_payload(candidate),
@@ -111,9 +113,36 @@ def candidate_payload(candidate: DetectionCandidate, config: DetectionConfig) ->
         "alignment": alignment,
         "commandSuggestion": command_suggestion_for_alignment(alignment),
     }
+    if label != candidate.label:
+        payload["sourceLabel"] = candidate.label
     if candidate.color:
         payload["color"] = candidate.color
     return payload
+
+
+def normalized_label(value: str) -> str:
+    return " ".join(value.strip().lower().replace("_", " ").split())
+
+
+def target_labels(config: DetectionConfig) -> set[str]:
+    wanted = normalized_label(config.object_target)
+    labels = {wanted} if wanted else set()
+    labels.update(normalized_label(alias) for alias in config.object_target_aliases if normalized_label(alias))
+    return labels
+
+
+def candidate_matches_target(candidate: DetectionCandidate, config: DetectionConfig) -> bool:
+    labels = target_labels(config)
+    if not labels:
+        return True
+    return normalized_label(candidate.label) in labels
+
+
+def display_label_for_candidate(candidate: DetectionCandidate, config: DetectionConfig) -> str:
+    wanted = config.object_target.strip()
+    if wanted and normalized_label(candidate.label) != normalized_label(wanted) and candidate_matches_target(candidate, config):
+        return wanted
+    return candidate.label
 
 
 def select_target(
@@ -121,11 +150,10 @@ def select_target(
     config: DetectionConfig,
 ) -> DetectionCandidate | None:
     filtered: list[DetectionCandidate] = []
-    wanted = config.object_target.strip().lower()
     for candidate in candidates:
         if candidate.confidence is not None and candidate.confidence < config.object_min_confidence:
             continue
-        if wanted and candidate.label.strip().lower() != wanted:
+        if not candidate_matches_target(candidate, config):
             continue
         filtered.append(candidate)
 

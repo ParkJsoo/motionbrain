@@ -115,6 +115,51 @@ class VisionDetectionContractTest(unittest.TestCase):
         self.assertEqual(len(payload["objects"]), 2)
         self.assertEqual(payload["target"]["label"], "cup")
 
+    def test_object_mode_accepts_target_alias_and_reports_canonical_label(self) -> None:
+        candidates = [
+            DetectionCandidate(
+                target_type="object",
+                label="toilet",
+                class_id=61,
+                confidence=0.32,
+                x=65,
+                y=16,
+                width=240,
+                height=170,
+                frame_width=320,
+                frame_height=240,
+            ),
+            DetectionCandidate(
+                target_type="object",
+                label="keyboard",
+                class_id=66,
+                confidence=0.55,
+                x=0,
+                y=61,
+                width=80,
+                height=63,
+                frame_width=320,
+                frame_height=240,
+            ),
+        ]
+        config = DetectionConfig(
+            mode="object",
+            object_backend="fake",
+            object_target="cup",
+            object_target_aliases=("toilet",),
+            object_min_confidence=0.15,
+        )
+
+        payload = detect_frame(b"fake-jpeg", config, FakeObjectDetector(candidates))
+
+        self.assertTrue(payload["detected"])
+        self.assertEqual(payload["label"], "cup")
+        self.assertEqual(payload["sourceLabel"], "toilet")
+        self.assertEqual(payload["target"]["label"], "cup")
+        self.assertEqual(payload["target"]["sourceLabel"], "toilet")
+        self.assertEqual(payload["objects"][0]["sourceLabel"], "toilet")
+        self.assertEqual(payload["classId"], 61)
+
     def test_object_mode_reports_unconfigured_backend_without_model_dependency(self) -> None:
         config = DetectionConfig(mode="object", object_target="cup")
 

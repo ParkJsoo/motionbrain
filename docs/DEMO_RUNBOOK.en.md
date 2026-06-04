@@ -417,6 +417,19 @@ On the Pi:
   --display-hold-seconds 1.5
 ```
 
+If the current white cup view flickers into a nearby COCO label such as
+`toilet`, add this option only for the fixed known-object demo. It reports the
+selected target as canonical `cup` and leaves the original label in
+`sourceLabel`.
+
+```bash
+--object-target-alias toilet
+```
+
+If the alias candidate does not clear the `0.5` gate, lower the threshold only
+after rechecking target-filtered background false positives for that same camera
+pose and background. Do not lower it as a generic default.
+
 In another Pi terminal:
 
 ```bash

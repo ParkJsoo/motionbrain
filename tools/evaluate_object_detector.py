@@ -58,6 +58,16 @@ def is_positive_label(label: str) -> bool:
     return label.strip().lower() not in NEGATIVE_LABELS
 
 
+def parse_label_list(values: list[str] | tuple[str, ...]) -> list[str]:
+    labels: list[str] = []
+    for value in values:
+        for item in str(value).split(","):
+            label = " ".join(item.strip().lower().replace("_", " ").split())
+            if label and label not in labels:
+                labels.append(label)
+    return labels
+
+
 def load_dataset_entries(dataset_dir: Path) -> list[dict[str, Any]]:
     labels_path = dataset_dir / "labels.jsonl"
     if not labels_path.exists():
@@ -197,6 +207,7 @@ def evaluate_dataset(
                 object_backend=base_config.object_backend,
                 object_model=base_config.object_model,
                 object_labels=base_config.object_labels,
+                object_target_aliases=base_config.object_target_aliases,
                 target_policy=base_config.target_policy,
             )
             started = time.monotonic()
@@ -220,6 +231,7 @@ def evaluate_dataset(
             "objectModel": base_config.object_model,
             "objectLabels": base_config.object_labels,
             "objectTarget": object_target,
+            "objectTargetAliases": list(base_config.object_target_aliases),
             "filterTargetFromLabel": filter_target_from_label,
             "objectMinConfidence": base_config.object_min_confidence,
             "objectInputSize": base_config.object_input_size,
@@ -247,6 +259,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--object-labels", default=str(ROOT / "config" / "coco80.labels"))
     parser.add_argument("--object-target", default="", help="Optional fixed target label, e.g. cup")
     parser.add_argument(
+        "--object-target-alias",
+        action="append",
+        default=[],
+        help="Additional labels accepted as the selected target, comma-separated or repeatable.",
+    )
+    parser.add_argument(
         "--filter-target-from-label",
         action="store_true",
         help="Use each positive frame label as the detector target filter when --object-target is empty.",
@@ -273,6 +291,7 @@ def main() -> int:
         object_model=args.object_model,
         object_labels=args.object_labels,
         object_target=args.object_target,
+        object_target_aliases=tuple(parse_label_list(args.object_target_alias)),
         object_min_confidence=args.object_min_confidence,
         object_nms_threshold=args.object_nms_threshold,
         object_input_size=args.object_input_size,

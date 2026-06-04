@@ -108,6 +108,28 @@ class PerceptionServiceTest(unittest.TestCase):
         self.assertEqual(detection["reason"], "no_frame")
         self.assertEqual(detection["alignment"], "LOST")
 
+    def test_parse_args_accepts_object_target_aliases(self) -> None:
+        with patch(
+            "sys.argv",
+            [
+                "motionbrain_perception_service.py",
+                "--camera-url",
+                "http://camera.local",
+                "--object-target",
+                "cup",
+                "--object-target-alias",
+                "toilet,microwave",
+                "--object-target-alias",
+                "coffee_mug",
+            ],
+        ):
+            args = service.parse_args()
+
+        config = service.build_detection_config(args)
+
+        self.assertEqual(config.object_target, "cup")
+        self.assertEqual(config.object_target_aliases, ("toilet", "microwave", "coffee mug"))
+
     def test_handler_routes_detection_health_and_frame_paths(self) -> None:
         state = self.make_state()
         frame = make_jpeg_with_red_target()

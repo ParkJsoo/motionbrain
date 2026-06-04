@@ -195,6 +195,7 @@ class PerceptionState:
             "objectBackend": self.config.object_backend,
             "objectModel": self.config.object_model,
             "objectLabels": self.config.object_labels,
+            "objectTargetAliases": list(self.config.object_target_aliases),
             "targetPolicy": self.config.target_policy,
             "displayHoldSeconds": self.display_hold_seconds,
             "fresh": fresh,
@@ -311,6 +312,7 @@ class PerceptionServer(ThreadingHTTPServer):
             "objectModel": config.object_model,
             "objectLabels": config.object_labels,
             "objectTarget": config.object_target,
+            "objectTargetAliases": list(config.object_target_aliases),
             "objectMinConfidence": config.object_min_confidence,
             "objectNmsThreshold": config.object_nms_threshold,
             "objectInputSize": config.object_input_size,
@@ -329,11 +331,22 @@ def build_detection_config(args: argparse.Namespace) -> DetectionConfig:
         object_model=args.object_model,
         object_labels=args.object_labels,
         object_target=args.object_target,
+        object_target_aliases=tuple(args.object_target_aliases),
         object_min_confidence=args.object_min_confidence,
         object_nms_threshold=args.object_nms_threshold,
         object_input_size=args.object_input_size,
         target_policy=args.target_policy,
     )
+
+
+def parse_label_list(values: list[str] | tuple[str, ...]) -> list[str]:
+    labels: list[str] = []
+    for value in values:
+        for item in str(value).split(","):
+            label = " ".join(item.strip().lower().replace("_", " ").split())
+            if label and label not in labels:
+                labels.append(label)
+    return labels
 
 
 def build_detector(config: DetectionConfig) -> DetectorBackend | None:
@@ -426,6 +439,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--object-model", default=os.environ.get("MOTIONBRAIN_OBJECT_MODEL", ""))
     parser.add_argument("--object-labels", default=os.environ.get("MOTIONBRAIN_OBJECT_LABELS", ""))
     parser.add_argument("--object-target", default=os.environ.get("MOTIONBRAIN_OBJECT_TARGET", ""))
+    parser.add_argument(
+        "--object-target-alias",
+        action="append",
+        default=[os.environ.get("MOTIONBRAIN_OBJECT_TARGET_ALIASES", "")],
+        help="Additional labels accepted as the selected target, comma-separated or repeatable; reports the canonical target label.",
+    )
     parser.add_argument("--object-min-confidence", type=float, default=float(os.environ.get("MOTIONBRAIN_OBJECT_MIN_CONFIDENCE", "0.45")))
     parser.add_argument("--object-nms-threshold", type=float, default=0.45)
     parser.add_argument("--object-input-size", type=int, default=640)
@@ -453,6 +472,7 @@ def parse_args() -> argparse.Namespace:
         parser.error("--object-nms-threshold must be between 0 and 1")
     if args.object_input_size < 32:
         parser.error("--object-input-size must be >= 32")
+    args.object_target_aliases = parse_label_list(args.object_target_alias)
     return args
 
 

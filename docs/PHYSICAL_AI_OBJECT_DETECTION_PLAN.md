@@ -104,6 +104,17 @@ As of 2026-06-04 on `main`:
   current physical success case: `YOLOv5s`, `--object-target cup`,
   `--object-min-confidence 0.5`, class id `41`, confidence about `0.55-0.59`,
   `alignment=CENTER`, and area ratio about `0.287` from the Pi dashboard API.
+- On 2026-06-04 KST, after the camera angle was adjusted for documentation
+  screenshots, the same white mug remained visible and could be detected as
+  `cup`, but adjacent frames also classified the mug body as visually similar
+  COCO labels such as `toilet`. The current runtime now supports explicit
+  target aliases for this constrained known-object case; when a user opts into
+  `--object-target cup --object-target-alias toilet`, matching alias detections
+  are selected as the canonical target label while preserving `sourceLabel` in
+  the payload. Use this only as a documented workcell-specific stabilization
+  aid, not as evidence of general cup recognition. If the alias requires a
+  lower confidence threshold, re-run a background-only false-positive check with
+  the same alias and threshold before using it publicly.
 - Background-only evaluation on 2026-06-02 KST produced `0/50` false positives
   at confidence `0.5` and `0.25` with `YOLOv5s`; lowering to `0.1` introduced a
   low-confidence `boat` false positive. Keep the first live cup demo at
@@ -285,6 +296,7 @@ Current Pi perception service options:
 --object-model PATH
 --object-labels PATH
 --object-target LABEL
+--object-target-alias LABEL[,LABEL...]  # repeatable; reports canonical target
 --object-min-confidence 0.45
 --object-nms-threshold 0.45
 --object-input-size 640
@@ -304,6 +316,7 @@ MOTIONBRAIN_OBJECT_BACKEND
 MOTIONBRAIN_OBJECT_MODEL
 MOTIONBRAIN_OBJECT_LABELS
 MOTIONBRAIN_OBJECT_TARGET
+MOTIONBRAIN_OBJECT_TARGET_ALIASES
 MOTIONBRAIN_OBJECT_MIN_CONFIDENCE
 ```
 
