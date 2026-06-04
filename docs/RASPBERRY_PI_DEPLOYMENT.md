@@ -89,8 +89,10 @@ sudo nano /etc/motionbrain/dashboard.env
 기본 구성은 `motionbrain.local`, `motionbrain-cam.local`,
 `motionbrain-pi.local`을 우선 사용한다. mDNS가 흔들리면 service wrapper가 같은
 LAN의 `/status` endpoint를 스캔해서 controller와 ESP32-CAM의 현재 IP를 자동으로
-찾는다. 따라서 ESP32와 ESP32-CAM을 매일 껐다 켜도 env 파일을 매번 수정하지
-않는다.
+찾는다. 또한 reconcile timer가 1분마다 dashboard/perception이 현재 발견된 장치
+IP와 맞는지 확인하고, Pi가 켜진 상태에서 ESP32를 껐다 켜 IP가 바뀐 경우 서비스를
+재시작해 다시 붙인다. 따라서 ESP32와 ESP32-CAM을 매일 껐다 켜도 env 파일을 매번
+수정하지 않는다.
 
 perception API는 Pi 내부 `127.0.0.1:8766`에만 bind하고, dashboard만 LAN에
 `0.0.0.0:8765`로 공개한다. 브라우저에서는 `http://motionbrain-pi.local:8765`를
@@ -122,9 +124,14 @@ sudo cp ~/develop/arduino/motionbrain/deploy/systemd/motionbrain-perception.serv
   /etc/systemd/system/motionbrain-perception.service
 sudo cp ~/develop/arduino/motionbrain/deploy/systemd/motionbrain-dashboard.service \
   /etc/systemd/system/motionbrain-dashboard.service
+sudo cp ~/develop/arduino/motionbrain/deploy/systemd/motionbrain-dashboard-reconcile.service \
+  /etc/systemd/system/motionbrain-dashboard-reconcile.service
+sudo cp ~/develop/arduino/motionbrain/deploy/systemd/motionbrain-dashboard-reconcile.timer \
+  /etc/systemd/system/motionbrain-dashboard-reconcile.timer
 sudo systemctl daemon-reload
 sudo systemctl enable --now motionbrain-perception.service
 sudo systemctl enable --now motionbrain-dashboard.service
+sudo systemctl enable --now motionbrain-dashboard-reconcile.timer
 ```
 
 `motionbrain-dashboard.service`는 `motionbrain-perception.service` 뒤에 시작된다.
@@ -136,9 +143,11 @@ perception이 일시 실패해도 dashboard는 재시작 정책으로 복구를 
 systemctl status motionbrain-ros-bridge.service --no-pager
 systemctl status motionbrain-perception.service --no-pager
 systemctl status motionbrain-dashboard.service --no-pager
+systemctl status motionbrain-dashboard-reconcile.timer --no-pager
 journalctl -u motionbrain-ros-bridge.service -n 80 --no-pager
 journalctl -u motionbrain-perception.service -n 80 --no-pager
 journalctl -u motionbrain-dashboard.service -n 80 --no-pager
+journalctl -u motionbrain-dashboard-reconcile.service -n 80 --no-pager
 ```
 
 ROS2 health check:
@@ -338,12 +347,15 @@ camera feedback, `TRACKED` for slower fixed/slow-target recognition checks.
 sudo systemctl restart motionbrain-ros-bridge.service
 sudo systemctl restart motionbrain-perception.service
 sudo systemctl restart motionbrain-dashboard.service
+sudo systemctl restart motionbrain-dashboard-reconcile.timer
 sudo systemctl stop motionbrain-ros-bridge.service
 sudo systemctl stop motionbrain-perception.service
 sudo systemctl stop motionbrain-dashboard.service
+sudo systemctl stop motionbrain-dashboard-reconcile.timer
 sudo systemctl disable motionbrain-ros-bridge.service
 sudo systemctl disable motionbrain-perception.service
 sudo systemctl disable motionbrain-dashboard.service
+sudo systemctl disable motionbrain-dashboard-reconcile.timer
 ```
 
 ## 문제 해결
@@ -354,6 +366,7 @@ sudo systemctl disable motionbrain-dashboard.service
 sudo systemctl restart motionbrain-ros-bridge.service
 sudo systemctl restart motionbrain-perception.service
 sudo systemctl restart motionbrain-dashboard.service
+sudo systemctl restart motionbrain-dashboard-reconcile.timer
 ```
 
 서비스가 시작되지 않으면:
@@ -362,6 +375,7 @@ sudo systemctl restart motionbrain-dashboard.service
 journalctl -u motionbrain-ros-bridge.service -n 120 --no-pager
 journalctl -u motionbrain-perception.service -n 120 --no-pager
 journalctl -u motionbrain-dashboard.service -n 120 --no-pager
+journalctl -u motionbrain-dashboard-reconcile.service -n 120 --no-pager
 ```
 
 토큰 오류는 `/motionbrain/light_result`에서 `HTTP Error 403: Forbidden`으로

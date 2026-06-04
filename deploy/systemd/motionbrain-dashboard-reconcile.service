@@ -1,0 +1,8 @@
+[Unit]
+Description=MotionBrain dashboard/perception device reconcile
+Wants=network-online.target
+After=network-online.target motionbrain-perception.service motionbrain-dashboard.service
+
+[Service]
+Type=oneshot
+ExecStart=/home/motionbrain/develop/arduino/motionbrain/tools/raspi/reconcile_dashboard_services.sh

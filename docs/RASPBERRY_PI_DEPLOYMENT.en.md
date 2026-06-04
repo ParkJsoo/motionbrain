@@ -90,8 +90,11 @@ Set:
 The default setup prefers `motionbrain.local`, `motionbrain-cam.local`, and
 `motionbrain-pi.local`. If mDNS is unstable, the service wrappers scan local
 `/status` endpoints and automatically resolve the current controller and
-ESP32-CAM IPs. This avoids editing env files every time the ESP32 boards are
-power-cycled and receive new DHCP addresses.
+ESP32-CAM IPs. A reconcile timer also checks once per minute that
+dashboard/perception still match the currently discovered device IPs, and
+restarts those services when the ESP32 boards are power-cycled while the Pi
+stays online. This avoids editing env files every time the ESP32 boards receive
+new DHCP addresses.
 
 The perception API binds to Pi-local `127.0.0.1:8766`; only the dashboard is
 exposed on the LAN as `0.0.0.0:8765`. Open
@@ -125,9 +128,14 @@ sudo cp ~/develop/arduino/motionbrain/deploy/systemd/motionbrain-perception.serv
   /etc/systemd/system/motionbrain-perception.service
 sudo cp ~/develop/arduino/motionbrain/deploy/systemd/motionbrain-dashboard.service \
   /etc/systemd/system/motionbrain-dashboard.service
+sudo cp ~/develop/arduino/motionbrain/deploy/systemd/motionbrain-dashboard-reconcile.service \
+  /etc/systemd/system/motionbrain-dashboard-reconcile.service
+sudo cp ~/develop/arduino/motionbrain/deploy/systemd/motionbrain-dashboard-reconcile.timer \
+  /etc/systemd/system/motionbrain-dashboard-reconcile.timer
 sudo systemctl daemon-reload
 sudo systemctl enable --now motionbrain-perception.service
 sudo systemctl enable --now motionbrain-dashboard.service
+sudo systemctl enable --now motionbrain-dashboard-reconcile.timer
 ```
 
 `motionbrain-dashboard.service` starts after `motionbrain-perception.service`.
@@ -140,9 +148,11 @@ restart policy recovers the companion service.
 systemctl status motionbrain-ros-bridge.service --no-pager
 systemctl status motionbrain-perception.service --no-pager
 systemctl status motionbrain-dashboard.service --no-pager
+systemctl status motionbrain-dashboard-reconcile.timer --no-pager
 journalctl -u motionbrain-ros-bridge.service -n 80 --no-pager
 journalctl -u motionbrain-perception.service -n 80 --no-pager
 journalctl -u motionbrain-dashboard.service -n 80 --no-pager
+journalctl -u motionbrain-dashboard-reconcile.service -n 80 --no-pager
 ```
 
 ROS2 health check:
@@ -350,12 +360,15 @@ camera feedback, `TRACKED` for slower fixed/slow-target recognition checks.
 sudo systemctl restart motionbrain-ros-bridge.service
 sudo systemctl restart motionbrain-perception.service
 sudo systemctl restart motionbrain-dashboard.service
+sudo systemctl restart motionbrain-dashboard-reconcile.timer
 sudo systemctl stop motionbrain-ros-bridge.service
 sudo systemctl stop motionbrain-perception.service
 sudo systemctl stop motionbrain-dashboard.service
+sudo systemctl stop motionbrain-dashboard-reconcile.timer
 sudo systemctl disable motionbrain-ros-bridge.service
 sudo systemctl disable motionbrain-perception.service
 sudo systemctl disable motionbrain-dashboard.service
+sudo systemctl disable motionbrain-dashboard-reconcile.timer
 ```
 
 ## Troubleshooting
@@ -366,6 +379,7 @@ Restart after editing the environment file:
 sudo systemctl restart motionbrain-ros-bridge.service
 sudo systemctl restart motionbrain-perception.service
 sudo systemctl restart motionbrain-dashboard.service
+sudo systemctl restart motionbrain-dashboard-reconcile.timer
 ```
 
 If startup fails:
@@ -374,6 +388,7 @@ If startup fails:
 journalctl -u motionbrain-ros-bridge.service -n 120 --no-pager
 journalctl -u motionbrain-perception.service -n 120 --no-pager
 journalctl -u motionbrain-dashboard.service -n 120 --no-pager
+journalctl -u motionbrain-dashboard-reconcile.service -n 120 --no-pager
 ```
 
 Token errors appear as `HTTP Error 403: Forbidden` on `/motionbrain/light_result`.
