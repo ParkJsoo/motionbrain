@@ -402,6 +402,21 @@ curl -sS -X POST "http://<camera-ip>/camera?framesize=qvga&quality=4"
 
 On the Pi:
 
+On a Pi with the systemd services installed, confirm the env files and restart
+the services:
+
+```bash
+sudo nano /etc/motionbrain/perception.env
+sudo nano /etc/motionbrain/dashboard.env
+sudo systemctl restart motionbrain-perception.service
+sudo systemctl restart motionbrain-dashboard.service
+CHECK_SERVICE=1 tools/raspi/check_dashboard_health.sh
+```
+
+Open `http://<pi-ip>:8765` in the browser. The command below is the manual
+fallback for a Pi without the systemd services installed, or when temporary
+demo options need to be changed at the terminal.
+
 ```bash
 ~/.cache/motionbrain/opencv-venv/bin/python tools/motionbrain_perception_service.py \
   --host 0.0.0.0 \

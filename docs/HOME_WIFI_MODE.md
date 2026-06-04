@@ -118,6 +118,18 @@ visible demo nudge after confirming clearance and stop behavior, restart with
 If the Pi should own camera polling and detection, run the perception service
 next to the dashboard and point the dashboard at `--perception-url`:
 
+For normal demo operations, install the systemd services in
+`docs/RASPBERRY_PI_DEPLOYMENT.en.md`, then use:
+
+```bash
+sudo systemctl restart motionbrain-perception.service
+sudo systemctl restart motionbrain-dashboard.service
+CHECK_SERVICE=1 tools/raspi/check_dashboard_health.sh
+```
+
+The manual commands below are fallback commands for temporary options or a Pi
+that has not installed the services yet.
+
 ```bash
 python3 tools/motionbrain_perception_service.py \
   --host 0.0.0.0 \

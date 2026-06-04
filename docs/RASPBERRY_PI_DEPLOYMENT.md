@@ -2,9 +2,9 @@
 
 [English](RASPBERRY_PI_DEPLOYMENT.en.md)
 
-이 문서는 Raspberry Pi에서 MotionBrain ROS2 bridge를 systemd 서비스로 운영하는
-절차다. 실제 Wi-Fi 비밀번호와 `MOTIONBRAIN_HTTP_TOKEN` 값은 repo에 저장하지
-않는다.
+이 문서는 Raspberry Pi에서 MotionBrain ROS2 bridge, perception service,
+dashboard를 systemd 서비스로 운영하는 절차다. 실제 Wi-Fi 비밀번호와
+`MOTIONBRAIN_HTTP_TOKEN` 값은 repo에 저장하지 않는다.
 
 ## 목표
 
@@ -12,10 +12,19 @@
 
 ```text
 systemd
-  -> /etc/motionbrain/ros-bridge.env
-  -> tools/raspi/start_ros_bridge.sh
-  -> ros2 launch motionbrain_ros_bridge motionbrain_home_wifi.launch.py
-  -> JSON/typed topics + /joint_states + TF + kinematics + C++ guard + mission state
+  -> motionbrain-ros-bridge.service
+     -> /etc/motionbrain/ros-bridge.env
+     -> tools/raspi/start_ros_bridge.sh
+     -> ros2 launch motionbrain_ros_bridge motionbrain_home_wifi.launch.py
+     -> JSON/typed topics + /joint_states + TF + kinematics + C++ guard + mission state
+  -> motionbrain-perception.service
+     -> /etc/motionbrain/perception.env
+     -> tools/raspi/start_perception_service.sh
+     -> ESP32-CAM capture + target detection API
+  -> motionbrain-dashboard.service
+     -> /etc/motionbrain/dashboard.env
+     -> tools/raspi/start_dashboard_service.sh
+     -> LAN dashboard at http://<pi-ip>:8765
 ```
 
 ## 사전 조건
@@ -55,12 +64,38 @@ DHCP IP가 바뀌면 `.local`이 되는 환경에서는 hostname을 쓰고, Pi�
 이 값을 비워두면 ROS2 bridge가 기존처럼 `MOTIONBRAIN_CAMERA_URL/capture`를 직접
 폴링해서 색상 감지를 수행한다.
 
-이 문서의 systemd 서비스는 ROS2 bridge 운영 기준이다. Pi-hosted dashboard와
-perception service는 현재 데모에서는 별도 terminal 또는 cmux tab에서 실행한다.
-수동 조작 중 카메라는 ESP32-hosted `MotionBrain Control`의 `STREAM`을 기본으로
-보고, `TRACKED`는 Pi dashboard/perception API를 통한 인식 확인용으로만 쓴다.
+## Dashboard / Perception 환경 파일 설치
 
-## 서비스 설치
+```bash
+sudo mkdir -p /etc/motionbrain
+sudo cp ~/develop/arduino/motionbrain/deploy/systemd/motionbrain-perception.env.example \
+  /etc/motionbrain/perception.env
+sudo cp ~/develop/arduino/motionbrain/deploy/systemd/motionbrain-dashboard.env.example \
+  /etc/motionbrain/dashboard.env
+sudo chmod 600 /etc/motionbrain/perception.env /etc/motionbrain/dashboard.env
+sudo nano /etc/motionbrain/perception.env
+sudo nano /etc/motionbrain/dashboard.env
+```
+
+설정해야 하는 값:
+
+- `MOTIONBRAIN_CAMERA_URL`
+- `MOTIONBRAIN_MOTION_HOST`
+- `MOTIONBRAIN_HTTP_TOKEN`
+- `MOTIONBRAIN_OBJECT_MODEL`
+- `MOTIONBRAIN_OBJECT_LABELS`
+- `MOTIONBRAIN_OBJECT_TARGET`
+
+기본 구성은 perception API를 Pi 내부 `127.0.0.1:8766`에만 bind하고, dashboard만
+LAN에 `0.0.0.0:8765`로 공개한다. 브라우저에서는 `http://<pi-ip>:8765` 또는
+`http://motionbrain-pi.local:8765`를 연다.
+
+현재 cup known-object 데모에서는 `MOTIONBRAIN_OBJECT_TARGET=cup`,
+`MOTIONBRAIN_OBJECT_MIN_CONFIDENCE=0.5`, `MOTIONBRAIN_DISPLAY_HOLD_SECONDS=1.5`
+를 기준으로 한다. 현재 구도에서 흰 컵이 인접 COCO label로 흔들릴 때만
+`MOTIONBRAIN_OBJECT_TARGET_ALIASES=toilet`처럼 alias를 추가한다.
+
+## ROS2 Bridge 서비스 설치
 
 ```bash
 sudo cp ~/develop/arduino/motionbrain/deploy/systemd/motionbrain-ros-bridge.service \
@@ -70,17 +105,42 @@ sudo systemctl enable motionbrain-ros-bridge.service
 sudo systemctl start motionbrain-ros-bridge.service
 ```
 
+## Dashboard / Perception 서비스 설치
+
+```bash
+sudo cp ~/develop/arduino/motionbrain/deploy/systemd/motionbrain-perception.service \
+  /etc/systemd/system/motionbrain-perception.service
+sudo cp ~/develop/arduino/motionbrain/deploy/systemd/motionbrain-dashboard.service \
+  /etc/systemd/system/motionbrain-dashboard.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now motionbrain-perception.service
+sudo systemctl enable --now motionbrain-dashboard.service
+```
+
+`motionbrain-dashboard.service`는 `motionbrain-perception.service` 뒤에 시작된다.
+perception이 일시 실패해도 dashboard는 재시작 정책으로 복구를 기다린다.
+
 ## 상태 확인
 
 ```bash
 systemctl status motionbrain-ros-bridge.service --no-pager
+systemctl status motionbrain-perception.service --no-pager
+systemctl status motionbrain-dashboard.service --no-pager
 journalctl -u motionbrain-ros-bridge.service -n 80 --no-pager
+journalctl -u motionbrain-perception.service -n 80 --no-pager
+journalctl -u motionbrain-dashboard.service -n 80 --no-pager
 ```
 
-Health check:
+ROS2 health check:
 
 ```bash
 ~/develop/arduino/motionbrain/tools/raspi/check_ros_bridge_health.sh
+```
+
+Dashboard/perception health check:
+
+```bash
+CHECK_SERVICE=1 ~/develop/arduino/motionbrain/tools/raspi/check_dashboard_health.sh
 ```
 
 공개용 terminal evidence를 한 번에 남기려면:
@@ -266,8 +326,14 @@ camera feedback, `TRACKED` for slower fixed/slow-target recognition checks.
 
 ```bash
 sudo systemctl restart motionbrain-ros-bridge.service
+sudo systemctl restart motionbrain-perception.service
+sudo systemctl restart motionbrain-dashboard.service
 sudo systemctl stop motionbrain-ros-bridge.service
+sudo systemctl stop motionbrain-perception.service
+sudo systemctl stop motionbrain-dashboard.service
 sudo systemctl disable motionbrain-ros-bridge.service
+sudo systemctl disable motionbrain-perception.service
+sudo systemctl disable motionbrain-dashboard.service
 ```
 
 ## 문제 해결
@@ -276,16 +342,21 @@ sudo systemctl disable motionbrain-ros-bridge.service
 
 ```bash
 sudo systemctl restart motionbrain-ros-bridge.service
+sudo systemctl restart motionbrain-perception.service
+sudo systemctl restart motionbrain-dashboard.service
 ```
 
 서비스가 시작되지 않으면:
 
 ```bash
 journalctl -u motionbrain-ros-bridge.service -n 120 --no-pager
+journalctl -u motionbrain-perception.service -n 120 --no-pager
+journalctl -u motionbrain-dashboard.service -n 120 --no-pager
 ```
 
 토큰 오류는 `/motionbrain/light_result`에서 `HTTP Error 403: Forbidden`으로
 보인다. 이 경우 `/etc/motionbrain/ros-bridge.env`의
+`MOTIONBRAIN_HTTP_TOKEN`과 `/etc/motionbrain/dashboard.env`의
 `MOTIONBRAIN_HTTP_TOKEN`이 ESP32에 provision된 token과 같은지 확인한다.
 ESP32 쪽 token만 바꿔 Pi env와 맞추려면 controller serial monitor에서
 `wifi token <new-command-token>`을 실행한다. 이 명령은 Wi-Fi SSID/password를

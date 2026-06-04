@@ -2,9 +2,9 @@
 
 [한국어](RASPBERRY_PI_DEPLOYMENT.md)
 
-This document describes how to run the MotionBrain ROS2 bridge on the Raspberry
-Pi as a systemd service. Do not store real Wi-Fi passwords or the real
-`MOTIONBRAIN_HTTP_TOKEN` in the repository.
+This document describes how to run the MotionBrain ROS2 bridge, perception
+service, and dashboard on the Raspberry Pi as systemd services. Do not store
+real Wi-Fi passwords or the real `MOTIONBRAIN_HTTP_TOKEN` in the repository.
 
 ## Goal
 
@@ -12,10 +12,19 @@ Replace manual terminal launch with an operational boundary:
 
 ```text
 systemd
-  -> /etc/motionbrain/ros-bridge.env
-  -> tools/raspi/start_ros_bridge.sh
-  -> ros2 launch motionbrain_ros_bridge motionbrain_home_wifi.launch.py
-  -> JSON/typed topics + /joint_states + TF + kinematics + C++ guard + mission state
+  -> motionbrain-ros-bridge.service
+     -> /etc/motionbrain/ros-bridge.env
+     -> tools/raspi/start_ros_bridge.sh
+     -> ros2 launch motionbrain_ros_bridge motionbrain_home_wifi.launch.py
+     -> JSON/typed topics + /joint_states + TF + kinematics + C++ guard + mission state
+  -> motionbrain-perception.service
+     -> /etc/motionbrain/perception.env
+     -> tools/raspi/start_perception_service.sh
+     -> ESP32-CAM capture + target detection API
+  -> motionbrain-dashboard.service
+     -> /etc/motionbrain/dashboard.env
+     -> tools/raspi/start_dashboard_service.sh
+     -> LAN dashboard at http://<pi-ip>:8765
 ```
 
 ## Prerequisites
@@ -56,13 +65,39 @@ service, set a value such as
 the original bridge behavior, where ROS2 polls `MOTIONBRAIN_CAMERA_URL/capture`
 directly and runs color detection.
 
-This systemd service covers the ROS2 bridge. For the current demo, the
-Pi-hosted dashboard and perception service run as separate terminal or cmux tab
-processes. Manual operation uses the ESP32-hosted `MotionBrain Control`
-`STREAM` camera by default; `TRACKED` is only for recognition checks through the
-Pi dashboard/perception API.
+## Install Dashboard / Perception Environment Files
 
-## Install Service
+```bash
+sudo mkdir -p /etc/motionbrain
+sudo cp ~/develop/arduino/motionbrain/deploy/systemd/motionbrain-perception.env.example \
+  /etc/motionbrain/perception.env
+sudo cp ~/develop/arduino/motionbrain/deploy/systemd/motionbrain-dashboard.env.example \
+  /etc/motionbrain/dashboard.env
+sudo chmod 600 /etc/motionbrain/perception.env /etc/motionbrain/dashboard.env
+sudo nano /etc/motionbrain/perception.env
+sudo nano /etc/motionbrain/dashboard.env
+```
+
+Set:
+
+- `MOTIONBRAIN_CAMERA_URL`
+- `MOTIONBRAIN_MOTION_HOST`
+- `MOTIONBRAIN_HTTP_TOKEN`
+- `MOTIONBRAIN_OBJECT_MODEL`
+- `MOTIONBRAIN_OBJECT_LABELS`
+- `MOTIONBRAIN_OBJECT_TARGET`
+
+The default setup binds the perception API to Pi-local `127.0.0.1:8766` and
+only exposes the dashboard on the LAN as `0.0.0.0:8765`. Open
+`http://<pi-ip>:8765` or `http://motionbrain-pi.local:8765` in the browser.
+
+For the current cup known-object demo, use `MOTIONBRAIN_OBJECT_TARGET=cup`,
+`MOTIONBRAIN_OBJECT_MIN_CONFIDENCE=0.5`, and
+`MOTIONBRAIN_DISPLAY_HOLD_SECONDS=1.5`. Add an alias such as
+`MOTIONBRAIN_OBJECT_TARGET_ALIASES=toilet` only when the current white-cup view
+flickers into a nearby COCO label.
+
+## Install ROS2 Bridge Service
 
 ```bash
 sudo cp ~/develop/arduino/motionbrain/deploy/systemd/motionbrain-ros-bridge.service \
@@ -72,17 +107,43 @@ sudo systemctl enable motionbrain-ros-bridge.service
 sudo systemctl start motionbrain-ros-bridge.service
 ```
 
+## Install Dashboard / Perception Services
+
+```bash
+sudo cp ~/develop/arduino/motionbrain/deploy/systemd/motionbrain-perception.service \
+  /etc/systemd/system/motionbrain-perception.service
+sudo cp ~/develop/arduino/motionbrain/deploy/systemd/motionbrain-dashboard.service \
+  /etc/systemd/system/motionbrain-dashboard.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now motionbrain-perception.service
+sudo systemctl enable --now motionbrain-dashboard.service
+```
+
+`motionbrain-dashboard.service` starts after `motionbrain-perception.service`.
+If perception temporarily fails, the dashboard remains available while the
+restart policy recovers the companion service.
+
 ## Check Status
 
 ```bash
 systemctl status motionbrain-ros-bridge.service --no-pager
+systemctl status motionbrain-perception.service --no-pager
+systemctl status motionbrain-dashboard.service --no-pager
 journalctl -u motionbrain-ros-bridge.service -n 80 --no-pager
+journalctl -u motionbrain-perception.service -n 80 --no-pager
+journalctl -u motionbrain-dashboard.service -n 80 --no-pager
 ```
 
-Health check:
+ROS2 health check:
 
 ```bash
 ~/develop/arduino/motionbrain/tools/raspi/check_ros_bridge_health.sh
+```
+
+Dashboard/perception health check:
+
+```bash
+CHECK_SERVICE=1 ~/develop/arduino/motionbrain/tools/raspi/check_dashboard_health.sh
 ```
 
 To capture public-safe terminal evidence in one pass:
@@ -276,8 +337,14 @@ camera feedback, `TRACKED` for slower fixed/slow-target recognition checks.
 
 ```bash
 sudo systemctl restart motionbrain-ros-bridge.service
+sudo systemctl restart motionbrain-perception.service
+sudo systemctl restart motionbrain-dashboard.service
 sudo systemctl stop motionbrain-ros-bridge.service
+sudo systemctl stop motionbrain-perception.service
+sudo systemctl stop motionbrain-dashboard.service
 sudo systemctl disable motionbrain-ros-bridge.service
+sudo systemctl disable motionbrain-perception.service
+sudo systemctl disable motionbrain-dashboard.service
 ```
 
 ## Troubleshooting
@@ -286,17 +353,21 @@ Restart after editing the environment file:
 
 ```bash
 sudo systemctl restart motionbrain-ros-bridge.service
+sudo systemctl restart motionbrain-perception.service
+sudo systemctl restart motionbrain-dashboard.service
 ```
 
 If startup fails:
 
 ```bash
 journalctl -u motionbrain-ros-bridge.service -n 120 --no-pager
+journalctl -u motionbrain-perception.service -n 120 --no-pager
+journalctl -u motionbrain-dashboard.service -n 120 --no-pager
 ```
 
 Token errors appear as `HTTP Error 403: Forbidden` on `/motionbrain/light_result`.
-Verify that `MOTIONBRAIN_HTTP_TOKEN` in `/etc/motionbrain/ros-bridge.env`
-matches the token provisioned on the ESP32.
+Verify that `MOTIONBRAIN_HTTP_TOKEN` in `/etc/motionbrain/ros-bridge.env` and
+`/etc/motionbrain/dashboard.env` match the token provisioned on the ESP32.
 To rotate only the ESP32-side token to match the Pi environment, run
 `wifi token <new-command-token>` in the controller serial monitor. The command
 preserves the stored Wi-Fi SSID/password, updates only the NVS token field, and

@@ -113,7 +113,10 @@ colcon test --packages-select motionbrain_msgs motionbrain_control motionbrain_m
 colcon test-result --verbose
 ```
 
-Pi 대시보드 예시:
+Pi 대시보드/인식 서비스는 systemd로 부팅 자동 실행할 수 있다. 설치 절차는
+`docs/RASPBERRY_PI_DEPLOYMENT.md`를 기준으로 한다.
+
+수동 fallback 대시보드 예시:
 
 ```bash
 export MOTIONBRAIN_HTTP_TOKEN="<local-controller-token>"
@@ -125,7 +128,7 @@ python3 tools/motionbrain_dashboard.py \
   --timeout 6
 ```
 
-Pi 인식 서비스를 분리해서 쓰는 예시:
+Pi 인식 서비스를 분리해서 쓰는 수동 fallback 예시:
 
 ```bash
 python3 tools/motionbrain_perception_service.py \

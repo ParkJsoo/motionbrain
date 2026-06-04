@@ -406,6 +406,19 @@ curl -sS -X POST "http://<camera-ip>/camera?framesize=qvga&quality=4"
 
 Pi에서:
 
+systemd 설치가 끝난 Pi에서는 아래처럼 env를 확인한 뒤 서비스를 재시작한다.
+
+```bash
+sudo nano /etc/motionbrain/perception.env
+sudo nano /etc/motionbrain/dashboard.env
+sudo systemctl restart motionbrain-perception.service
+sudo systemctl restart motionbrain-dashboard.service
+CHECK_SERVICE=1 tools/raspi/check_dashboard_health.sh
+```
+
+브라우저에서는 `http://<pi-ip>:8765`를 연다. 아래 명령은 systemd를 설치하지
+않았거나 현장에서 임시 옵션을 바꿔야 할 때 쓰는 수동 fallback이다.
+
 ```bash
 ~/.cache/motionbrain/opencv-venv/bin/python tools/motionbrain_perception_service.py \
   --host 0.0.0.0 \

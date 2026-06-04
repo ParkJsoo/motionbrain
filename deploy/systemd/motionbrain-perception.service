@@ -1,0 +1,18 @@
+[Unit]
+Description=MotionBrain Pi perception service
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=motionbrain
+WorkingDirectory=/home/motionbrain/develop/arduino/motionbrain
+EnvironmentFile=/etc/motionbrain/perception.env
+ExecStart=/home/motionbrain/develop/arduino/motionbrain/tools/raspi/start_perception_service.sh
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+KillSignal=SIGINT
+
+[Install]
+WantedBy=multi-user.target

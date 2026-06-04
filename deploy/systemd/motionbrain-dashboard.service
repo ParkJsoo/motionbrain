@@ -1,0 +1,18 @@
+[Unit]
+Description=MotionBrain Pi dashboard
+Wants=network-online.target motionbrain-perception.service
+After=network-online.target motionbrain-perception.service
+
+[Service]
+Type=simple
+User=motionbrain
+WorkingDirectory=/home/motionbrain/develop/arduino/motionbrain
+EnvironmentFile=/etc/motionbrain/dashboard.env
+ExecStart=/home/motionbrain/develop/arduino/motionbrain/tools/raspi/start_dashboard_service.sh
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+KillSignal=SIGINT
+
+[Install]
+WantedBy=multi-user.target

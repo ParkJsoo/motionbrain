@@ -686,11 +686,12 @@ For the portfolio demo, the Raspberry Pi host is responsible for:
 - Accepting JSON and typed ROS2 command messages and forwarding safe HTTP
   commands to ESP32
 
-Keep the Mac as the development machine and browser/viewer. The current demo
-can run Pi perception and dashboard as separate terminal or cmux processes next
-to the ROS2 bridge. Manual arm operation should still use the ESP32-hosted
-`MotionBrain Control` `STREAM` view; `TRACKED` is for slower recognition checks
-against fixed or slow-moving targets.
+Keep the Mac as the development machine and browser/viewer. For normal demo
+operation, run the ROS2 bridge, Pi perception service, and Pi dashboard as
+systemd services as described in `docs/RASPBERRY_PI_DEPLOYMENT.en.md`. Manual
+arm operation should still use the ESP32-hosted `MotionBrain Control` `STREAM`
+view; `TRACKED` is for slower recognition checks against fixed or slow-moving
+targets.
 
 ## Troubleshooting
 

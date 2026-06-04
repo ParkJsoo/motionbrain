@@ -113,7 +113,10 @@ colcon test --packages-select motionbrain_msgs motionbrain_control motionbrain_m
 colcon test-result --verbose
 ```
 
-Start the Pi dashboard:
+The Pi dashboard and perception service can run as boot-time systemd services.
+Use `docs/RASPBERRY_PI_DEPLOYMENT.en.md` for the install procedure.
+
+Manual fallback dashboard command:
 
 ```bash
 export MOTIONBRAIN_HTTP_TOKEN="<local-controller-token>"
@@ -125,7 +128,8 @@ python3 tools/motionbrain_dashboard.py \
   --timeout 6
 ```
 
-Run the Pi perception service separately and proxy it through the dashboard:
+Manual fallback command for running the Pi perception service separately and
+proxying it through the dashboard:
 
 ```bash
 python3 tools/motionbrain_perception_service.py \
