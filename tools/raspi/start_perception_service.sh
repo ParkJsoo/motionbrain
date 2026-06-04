@@ -3,9 +3,27 @@ set -euo pipefail
 
 REPO="${MOTIONBRAIN_REPO:-/home/motionbrain/develop/arduino/motionbrain}"
 PYTHON="${MOTIONBRAIN_PERCEPTION_PYTHON:-${MOTIONBRAIN_OPENCV_PYTHON:-/home/motionbrain/.cache/motionbrain/opencv-venv/bin/python}}"
+DISCOVERY_PYTHON="${MOTIONBRAIN_DISCOVERY_PYTHON:-/usr/bin/python3}"
 CAMERA_URL="${MOTIONBRAIN_CAMERA_URL:-http://motionbrain-cam.local}"
 
 cd "${REPO}"
+
+if [[ "${MOTIONBRAIN_DISCOVERY:-1}" != "0" ]]; then
+  discovery_args=(
+    --kind camera
+    --preferred "${CAMERA_URL}"
+    --timeout "${MOTIONBRAIN_DISCOVERY_TIMEOUT:-0.35}"
+    --workers "${MOTIONBRAIN_DISCOVERY_WORKERS:-64}"
+  )
+  if [[ -n "${MOTIONBRAIN_DISCOVERY_CIDR:-}" ]]; then
+    discovery_args+=(--cidr "${MOTIONBRAIN_DISCOVERY_CIDR}")
+  fi
+  if resolved_camera_url="$(
+    "${DISCOVERY_PYTHON}" "${REPO}/tools/raspi/discover_device_url.py" "${discovery_args[@]}" 2>/dev/null
+  )"; then
+    CAMERA_URL="${resolved_camera_url}"
+  fi
+fi
 
 args=(
   "${REPO}/tools/motionbrain_perception_service.py"

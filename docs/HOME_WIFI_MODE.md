@@ -130,6 +130,10 @@ CHECK_SERVICE=1 tools/raspi/check_dashboard_health.sh
 The manual commands below are fallback commands for temporary options or a Pi
 that has not installed the services yet.
 
+The systemd path uses `motionbrain.local` and `motionbrain-cam.local` first. If
+mDNS lookup is unavailable, the service wrappers scan the local LAN `/status`
+endpoints and use the discovered current IPs for that boot.
+
 ```bash
 python3 tools/motionbrain_perception_service.py \
   --host 0.0.0.0 \
