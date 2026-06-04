@@ -38,6 +38,18 @@ I designed and implemented:
 - Raspberry Pi systemd deployment and health checks
 - GitHub Actions quality gates for PlatformIO, Python tests, and ROS2 build/test
 
+## Operator Screens
+
+The final public demo video is still pending. The images below are static documentation captures from the current controller and dashboard path, showing that MotionBrain includes operator-facing and observability surfaces rather than only firmware code.
+
+![MotionBrain Control web console](docs/assets/motionbrain-control-stream.png)
+
+The ESP32-hosted control console provides `STREAM` camera feedback, token-gated state-changing commands, manual motor/joint control, and current system state in one local surface.
+
+![MotionBrain Pi dashboard](docs/assets/motionbrain-dashboard.png)
+
+The Pi dashboard observes status, safety, teleop, events, camera frames, and detection/alignment results. Physical action buttons remain constrained by token and safety-state checks.
+
 ## System Architecture
 
 ```text

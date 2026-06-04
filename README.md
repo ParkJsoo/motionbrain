@@ -10,6 +10,18 @@ MotionBrain은 ESP32 기반 5축 로봇팔 제어기에서 시작해 STM32 센�
 입력 -> 판단 -> 상태 -> 움직임 -> 피드백
 ```
 
+## 운영 화면
+
+아래 이미지는 최종 데모 영상이 아니라, 제어기와 Pi 대시보드가 제공하는 실제 운영 UI를 문서용 정적 상태로 캡처한 것이다.
+
+![MotionBrain Control 웹 콘솔](docs/assets/motionbrain-control-stream.png)
+
+ESP32 내장 `MotionBrain Control`은 수동 조작, 토큰 기반 명령 경계, `STREAM` 카메라 피드백, 모터/조인트 조작 표면을 한 화면에 모은다.
+
+![MotionBrain Pi 대시보드](docs/assets/motionbrain-dashboard.png)
+
+Pi 호스트 대시보드는 제어기 상태, 텔레오퍼레이션, 이벤트, 카메라 프레임, 타겟 감지 상태를 관찰하고 안전 게이트 기반 보정 명령을 제한적으로 노출한다.
+
 ## 현재 상태
 
 검증 완료:

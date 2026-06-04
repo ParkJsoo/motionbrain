@@ -36,6 +36,18 @@ MotionBrain은 ESP32 모션 제어기, STM32 센서/텔레오퍼레이션 계층
 - Raspberry Pi systemd 배포와 상태 점검
 - GitHub Actions 기반 PlatformIO/Python/ROS2 품질 게이트
 
+## 운영 화면
+
+최종 공개 데모 영상은 아직 별도로 캡처하지 않았다. 아래 이미지는 현재 하드웨어/대시보드 경로에서 얻은 문서용 정적 UI 캡처로, MotionBrain이 단순 펌웨어 코드가 아니라 작업자 화면과 관찰 화면까지 갖춘 시스템이라는 점을 보여준다.
+
+![MotionBrain Control 웹 콘솔](docs/assets/motionbrain-control-stream.png)
+
+ESP32 내장 제어 콘솔은 `STREAM` 기반 카메라 확인, 토큰 기반 상태 변경 명령, 수동 모터/조인트 제어, 현재 시스템 상태를 한 화면에서 제공한다.
+
+![MotionBrain Pi 대시보드](docs/assets/motionbrain-dashboard.png)
+
+Pi 대시보드는 상태, safety, teleop, 이벤트, 카메라 프레임, detection/alignment 결과를 관찰하는 운영 화면이다. 물리 동작 버튼은 토큰과 안전 상태를 다시 확인하는 제한된 경로로만 쓰인다.
+
 ## 시스템 구조
 
 ```text

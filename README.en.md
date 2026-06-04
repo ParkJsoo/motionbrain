@@ -10,6 +10,18 @@ The project is not just a motor demo. It is structured around safety state manag
 input -> decision -> state -> motion -> feedback
 ```
 
+## Operator Screens
+
+These are documentation captures of the real controller and Pi dashboard UI surfaces, not the final public demo video.
+
+![MotionBrain Control web console](docs/assets/motionbrain-control-stream.png)
+
+The ESP32-hosted `MotionBrain Control` page brings manual operation, token-gated command boundaries, `STREAM` camera feedback, and motor/joint controls into one local operator surface.
+
+![MotionBrain Pi dashboard](docs/assets/motionbrain-dashboard.png)
+
+The Pi-hosted dashboard observes controller state, teleop, events, camera frames, and target detection while exposing only safety-gated corrective actions.
+
 ## Current Status
 
 Validated:
