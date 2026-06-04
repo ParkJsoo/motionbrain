@@ -106,14 +106,14 @@ Set `MOTIONBRAIN_DISCOVERY=0` in `/etc/motionbrain/perception.env` and
 scan subnet with a value such as `MOTIONBRAIN_DISCOVERY_CIDR=192.168.219.0/24`.
 
 For the current cup known-object demo, use `MOTIONBRAIN_OBJECT_TARGET=cup`,
-`MOTIONBRAIN_OBJECT_MIN_CONFIDENCE=0.5`, and
+`MOTIONBRAIN_OBJECT_MIN_CONFIDENCE=0.25`, and
 `MOTIONBRAIN_DISPLAY_HOLD_SECONDS=1.5`. The ESP32-CAM profile should also stay
 at `MOTIONBRAIN_CAMERA_FRAMESIZE=qvga` and `MOTIONBRAIN_CAMERA_QUALITY=4`. The
 service wrappers apply this profile on startup, and the reconcile timer
 re-applies it and restarts dashboard/perception when an ESP32-CAM reboot resets
 the profile. Set `MOTIONBRAIN_CAMERA_PROFILE=0` when using another camera. Add
-an alias such as `MOTIONBRAIN_OBJECT_TARGET_ALIASES=toilet` only when the
-current white-cup view flickers into a nearby COCO label.
+an alias such as `MOTIONBRAIN_OBJECT_TARGET_ALIASES=toilet` or `chair` only
+when the current white-cup view flickers into a nearby COCO label.
 
 ## Install ROS2 Bridge Service
 
