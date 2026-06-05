@@ -175,8 +175,9 @@ CAPTURE_MISSION_BOUNDARY=1 tools/raspi/capture_ros2_evidence.sh
 
 4. Vision 증거
    - ESP32-CAM capture 또는 dashboard camera view
-   - red target detection
+   - Pi dashboard의 cup known-object detection
    - `LEFT`, `CENTER`, `RIGHT`, `LOST` alignment state
+   - 선택: red target detection fallback
    - 선택: timed nudge와 즉시 stop
 
 ## Segment 1: ROS2 Bridge + Light Command
@@ -421,7 +422,7 @@ CHECK_SERVICE=1 tools/raspi/check_dashboard_health.sh
 
 ```bash
 ~/.cache/motionbrain/opencv-venv/bin/python tools/motionbrain_perception_service.py \
-  --host 0.0.0.0 \
+  --host 127.0.0.1 \
   --port 8766 \
   --camera-url http://<camera-ip> \
   --detector-mode object \
@@ -429,20 +430,20 @@ CHECK_SERVICE=1 tools/raspi/check_dashboard_health.sh
   --object-model ~/.cache/motionbrain/models/yolov5s.onnx \
   --object-labels config/coco80.labels \
   --object-target cup \
-  --object-min-confidence 0.5 \
+  --object-min-confidence 0.25 \
   --object-input-size 640 \
   --display-hold-seconds 1.5
 ```
 
-현재 구도에서 흰 컵이 `toilet` 같은 인접 COCO label로 흔들리면, 고정된
-known-object 데모에 한해서 아래 옵션을 추가한다. 이 옵션은 선택된 target을
+현재 구도에서 흰 컵이 인접 COCO label로 흔들리면, 고정된 known-object 데모에
+한해서 known-mislabel alias 옵션을 추가한다. 이 옵션은 선택된 target을
 canonical `cup`으로 보고하고 원본 label은 `sourceLabel`에 남긴다.
 
 ```bash
---object-target-alias toilet
+--object-target-alias <known-mislabel>
 ```
 
-alias 후보의 confidence가 낮아 `0.5` gate를 넘지 못하면 target-filtered
+alias 후보의 confidence가 낮아 설정된 gate를 넘지 못하면 target-filtered
 background false-positive 확인 후에만 threshold를 낮춘다. 임의로 낮추지 말고
 해당 구도와 배경에서 다시 확인한다.
 
@@ -456,14 +457,14 @@ python3 tools/motionbrain_dashboard.py \
   --camera-url http://<camera-ip> \
   --perception-url http://127.0.0.1:8766 \
   --grasp-target-label cup \
-  --grasp-min-confidence 0.5
+  --grasp-min-confidence 0.25
 ```
 
 캡처 포인트:
 
 - `MotionBrain Control` 첫 화면이 `RAW STREAM` / `STREAM` 경로로 뜬다.
 - `TRACKED`를 눌렀을 때 Pi API의 `cup` label/confidence가 overlay에 보인다.
-- Dashboard `/api/detection`이 `label=cup`, `confidence >= 0.5`를 반환한다.
+- Dashboard `/api/detection`이 `label=cup`을 반환하고 설정된 confidence gate를 통과한다.
 - Controller status는 motion 명령 전 `IDLE`, safety clear, motors off다.
 
 ## Segment 4: Timed Vision Nudge
@@ -483,6 +484,10 @@ python3 tools/motionbrain_dashboard.py \
 
 ```bash
 export MOTIONBRAIN_HTTP_TOKEN="<local-controller-token>"
+curl -sS -X POST -H "X-MotionBrain: 1" -H "X-MotionBrain-Token: $MOTIONBRAIN_HTTP_TOKEN" \
+  "http://<controller-ip>/command?cmd=stop"
+curl -sS "http://<controller-ip>/status"
+
 python3 tools/vision_host_mvp.py \
   --motion-host <controller-ip> \
   --camera-url http://<camera-ip> \

@@ -174,8 +174,9 @@ Capture these short clips or screenshots:
 
 4. Vision evidence
    - ESP32-CAM capture or dashboard camera view
-   - red target detection
+   - Pi dashboard cup known-object detection
    - `LEFT`, `CENTER`, `RIGHT`, or `LOST` alignment state
+   - optional red target detection fallback
    - optional timed nudge with immediate stop
 
 ## Segment 1: ROS2 Bridge And Light Command
@@ -419,7 +420,7 @@ demo options need to be changed at the terminal.
 
 ```bash
 ~/.cache/motionbrain/opencv-venv/bin/python tools/motionbrain_perception_service.py \
-  --host 0.0.0.0 \
+  --host 127.0.0.1 \
   --port 8766 \
   --camera-url http://<camera-ip> \
   --detector-mode object \
@@ -427,23 +428,23 @@ demo options need to be changed at the terminal.
   --object-model ~/.cache/motionbrain/models/yolov5s.onnx \
   --object-labels config/coco80.labels \
   --object-target cup \
-  --object-min-confidence 0.5 \
+  --object-min-confidence 0.25 \
   --object-input-size 640 \
   --display-hold-seconds 1.5
 ```
 
-If the current white cup view flickers into a nearby COCO label such as
-`toilet`, add this option only for the fixed known-object demo. It reports the
+If the current white cup view flickers into a nearby COCO label, add a
+known-mislabel alias only for the fixed known-object demo. It reports the
 selected target as canonical `cup` and leaves the original label in
 `sourceLabel`.
 
 ```bash
---object-target-alias toilet
+--object-target-alias <known-mislabel>
 ```
 
-If the alias candidate does not clear the `0.5` gate, lower the threshold only
-after rechecking target-filtered background false positives for that same camera
-pose and background. Do not lower it as a generic default.
+If the alias candidate does not clear the configured gate, lower the threshold
+only after rechecking target-filtered background false positives for that same
+camera pose and background. Do not lower it as a generic default.
 
 In another Pi terminal:
 
@@ -455,14 +456,14 @@ python3 tools/motionbrain_dashboard.py \
   --camera-url http://<camera-ip> \
   --perception-url http://127.0.0.1:8766 \
   --grasp-target-label cup \
-  --grasp-min-confidence 0.5
+  --grasp-min-confidence 0.25
 ```
 
 Capture points:
 
 - `MotionBrain Control` initially opens the `RAW STREAM` / `STREAM` path.
 - Pressing `TRACKED` shows the Pi API's `cup` label/confidence overlay.
-- Dashboard `/api/detection` returns `label=cup` and `confidence >= 0.5`.
+- Dashboard `/api/detection` returns `label=cup` and clears the configured confidence gate.
 - Controller status is `IDLE`, safety clear, and motors off before any motion
   command.
 
@@ -484,6 +485,10 @@ Command:
 
 ```bash
 export MOTIONBRAIN_HTTP_TOKEN="<local-controller-token>"
+curl -sS -X POST -H "X-MotionBrain: 1" -H "X-MotionBrain-Token: $MOTIONBRAIN_HTTP_TOKEN" \
+  "http://<controller-ip>/command?cmd=stop"
+curl -sS "http://<controller-ip>/status"
+
 python3 tools/vision_host_mvp.py \
   --motion-host <controller-ip> \
   --camera-url http://<camera-ip> \

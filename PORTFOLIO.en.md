@@ -117,7 +117,7 @@ The reliable demo path is `STREAM`-based manual camera feedback, Pi-hosted dashb
 
 The Pi object-detection path exists: OpenCV DNN/ONNX backend loading, explicit model/label paths, selected-target JSON, dashboard overlay, and ROS2 typed detection publishing. Model weights are intentionally not committed.
 
-The current reliable known-object bench path is ESP32-CAM `qvga` / JPEG quality `4`, YOLOv5s, `--object-target cup`, and confidence `0.5`. This path returned `cup` through the Pi dashboard/perception API. Manual camera operation is separated into `STREAM`, while `TRACKED` is used as the slower recognition/confirmation view.
+The current reliable known-object bench path is constrained `cup` recognition with ESP32-CAM `qvga` / JPEG quality `4`, YOLOv5s, `--object-target cup`, and a confidence baseline of `0.25`. This path returned `cup` through the Pi dashboard/perception API. Manual camera operation is separated into `STREAM`, while `TRACKED` is used as the slower recognition/confirmation view.
 
 Current honest positioning:
 

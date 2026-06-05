@@ -30,6 +30,9 @@ systemd
 ## 사전 조건
 
 Pi에서 ROS2 workspace가 build되어 있어야 한다.
+이 문서의 systemd unit은 기본적으로 `motionbrain` 사용자와
+`/home/motionbrain/develop/arduino/motionbrain` checkout 경로를 사용한다. 다른
+사용자나 경로를 쓰면 unit과 env 파일의 경로를 같이 수정한다.
 
 ```bash
 cd ~/develop/arduino/motionbrain/ros2_ws
@@ -53,16 +56,19 @@ sudo nano /etc/motionbrain/ros-bridge.env
 - `MOTIONBRAIN_HOST`
 - `MOTIONBRAIN_CAMERA_URL`
 - `MOTIONBRAIN_HTTP_TOKEN`
-- `MOTIONBRAIN_PERCEPTION_URL` if the Pi perception service should provide
+- `MOTIONBRAIN_PERCEPTION_URL` if the same Pi perception service should provide
   `/camera/detection` instead of direct ESP32-CAM polling
 
 DHCP IP가 바뀌면 `.local`이 되는 환경에서는 hostname을 쓰고, Pi에서 `.local`이
 불안정하면 router DHCP reservation을 잡은 IP를 쓴다.
 
 객체 인식 또는 tracked camera overlay를 Pi perception service로 운영할 때는
-예를 들어 `MOTIONBRAIN_PERCEPTION_URL=http://192.168.219.114:8766`을 설정한다.
+같은 Pi 내부 endpoint인 `MOTIONBRAIN_PERCEPTION_URL=http://127.0.0.1:8766`을
+설정한다.
 이 값을 비워두면 ROS2 bridge가 기존처럼 `MOTIONBRAIN_CAMERA_URL/capture`를 직접
 폴링해서 색상 감지를 수행한다.
+다른 LAN host에서 perception API를 직접 호출해야 할 때만
+`MOTIONBRAIN_PERCEPTION_HOST=0.0.0.0`으로 공개하고 Pi LAN IP를 사용한다.
 
 ## Dashboard / Perception 환경 파일 설치
 
@@ -109,8 +115,8 @@ subnet만 스캔하려면 `MOTIONBRAIN_DISCOVERY_CIDR=192.168.219.0/24`처럼 �
 적용하고, reconcile timer는 ESP32-CAM 재부팅으로 profile이 초기화되면 다시 적용한
 뒤 dashboard/perception을 재시작한다. 다른 카메라를 쓸 때는
 `MOTIONBRAIN_CAMERA_PROFILE=0`으로 끈다. 현재 구도에서 흰 컵이 인접 COCO label로
-흔들릴 때만 `MOTIONBRAIN_OBJECT_TARGET_ALIASES=toilet` 또는 `chair`처럼 alias를
-추가한다.
+흔들릴 때만 known-mislabel alias를 추가한다. 기본 env example처럼 alias는 비워두는
+것이 기준이다.
 
 ## ROS2 Bridge 서비스 설치
 
@@ -336,10 +342,10 @@ Raspberry Pi에서 dashboard와 perception service를 ROS2 bridge와 별도
 - Raspberry Pi: `192.168.219.114`
 - ESP32-CAM profile: `qvga`, JPEG quality `4`
 - Perception service: Pi port `8766`, object mode, OpenCV DNN YOLOv5s,
-  target `cup`, confidence gate `0.5`, display hold `1.5s`
+  target `cup`, 당시 confidence gate `0.5`, display hold `1.5s`
 - Dashboard: Pi port `8765`, `--perception-url http://127.0.0.1:8766`
-- Result: dashboard `/api/detection` returned `label=cup` above the `0.5`
-  threshold in the current scene.
+- Result: dashboard `/api/detection`이 그 구도에서 당시 설정된 threshold 이상으로
+  `label=cup`을 반환했다.
 - Browser check: `motionbrain.local`, controller IP page, and
   `http://192.168.219.114:8765` were opened and visible to the operator.
 

@@ -115,7 +115,7 @@ ROS2는 ESP32 내부 제어를 대체하지 않는다. 대신 `/status`, `/event
 
 Pi에서 OpenCV DNN/ONNX 기반 객체 인식 경로는 구현했다. `config/coco80.labels`와 명시적 모델 경로를 사용하고, 모델 weight는 repository에 넣지 않는다.
 
-현재 물리 bench에서 가장 신뢰할 수 있는 known-object 경로는 ESP32-CAM `qvga` / JPEG quality `4`, YOLOv5s, `--object-target cup`, confidence `0.5` 조합이다. 이 경로는 Pi 대시보드/인식 API에서 `cup`을 반환했고, 수동 조작용 카메라 확인은 `STREAM`, 인식 확인은 `TRACKED`로 분리했다.
+현재 물리 bench에서 가장 신뢰할 수 있는 known-object 경로는 ESP32-CAM `qvga` / JPEG quality `4`, YOLOv5s, `--object-target cup`, confidence `0.25` 기준의 제한된 `cup` 확인이다. 이 경로는 Pi 대시보드/인식 API에서 `cup`을 반환했고, 수동 조작용 카메라 확인은 `STREAM`, 인식 확인은 `TRACKED`로 분리했다.
 
 따라서 현재 문서와 데모에서는 다음처럼 표현한다.
 

@@ -30,6 +30,9 @@ systemd
 ## Prerequisites
 
 Build the ROS2 workspace on the Pi:
+The systemd units in this document assume the `motionbrain` user and a checkout
+at `/home/motionbrain/develop/arduino/motionbrain`. If you use another user or
+path, update the units and env-file paths together.
 
 ```bash
 cd ~/develop/arduino/motionbrain/ros2_ws
@@ -53,17 +56,19 @@ Set:
 - `MOTIONBRAIN_HOST`
 - `MOTIONBRAIN_CAMERA_URL`
 - `MOTIONBRAIN_HTTP_TOKEN`
-- `MOTIONBRAIN_PERCEPTION_URL` if the Pi perception service should provide
+- `MOTIONBRAIN_PERCEPTION_URL` if the same Pi perception service should provide
   `/camera/detection` instead of direct ESP32-CAM polling
 
 Use hostnames when `.local` works. If mDNS is unstable on the Pi, reserve stable
 DHCP addresses in the router and use those IPs.
 
 For object detection or tracked camera overlay through the Pi perception
-service, set a value such as
-`MOTIONBRAIN_PERCEPTION_URL=http://192.168.219.114:8766`. Leave it empty to keep
-the original bridge behavior, where ROS2 polls `MOTIONBRAIN_CAMERA_URL/capture`
-directly and runs color detection.
+service, use the same-Pi endpoint
+`MOTIONBRAIN_PERCEPTION_URL=http://127.0.0.1:8766`. Leave it empty to keep the
+original bridge behavior, where ROS2 polls `MOTIONBRAIN_CAMERA_URL/capture`
+directly and runs color detection. Use the Pi LAN IP only when
+`MOTIONBRAIN_PERCEPTION_HOST=0.0.0.0` is intentionally enabled for direct LAN
+clients.
 
 ## Install Dashboard / Perception Environment Files
 
@@ -111,9 +116,9 @@ For the current cup known-object demo, use `MOTIONBRAIN_OBJECT_TARGET=cup`,
 at `MOTIONBRAIN_CAMERA_FRAMESIZE=qvga` and `MOTIONBRAIN_CAMERA_QUALITY=4`. The
 service wrappers apply this profile on startup, and the reconcile timer
 re-applies it and restarts dashboard/perception when an ESP32-CAM reboot resets
-the profile. Set `MOTIONBRAIN_CAMERA_PROFILE=0` when using another camera. Add
-an alias such as `MOTIONBRAIN_OBJECT_TARGET_ALIASES=toilet` or `chair` only
-when the current white-cup view flickers into a nearby COCO label.
+the profile. Set `MOTIONBRAIN_CAMERA_PROFILE=0` when using another camera. Keep
+aliases empty as the baseline; add a known-mislabel alias only when the current
+white-cup view flickers into a nearby COCO label.
 
 ## Install ROS2 Bridge Service
 
@@ -348,10 +353,10 @@ processes next to the ROS2 bridge for the current camera-mode split.
 - Raspberry Pi: `192.168.219.114`
 - ESP32-CAM profile: `qvga`, JPEG quality `4`
 - Perception service: Pi port `8766`, object mode, OpenCV DNN YOLOv5s, target
-  `cup`, confidence gate `0.5`, display hold `1.5s`
+  `cup`, then-current confidence gate `0.5`, display hold `1.5s`
 - Dashboard: Pi port `8765`, `--perception-url http://127.0.0.1:8766`
-- Result: dashboard `/api/detection` returned `label=cup` above the `0.5`
-  threshold in the current scene.
+- Result: dashboard `/api/detection` returned `label=cup` above the configured
+  threshold in that scene.
 - Browser check: `motionbrain.local`, the controller IP page, and
   `http://192.168.219.114:8765` were opened and visible to the operator.
 

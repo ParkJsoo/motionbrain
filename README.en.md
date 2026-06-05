@@ -133,7 +133,7 @@ proxying it through the dashboard:
 
 ```bash
 python3 tools/motionbrain_perception_service.py \
-  --host 0.0.0.0 \
+  --host 127.0.0.1 \
   --port 8766 \
   --camera-url http://<camera-ip> \
   --detector-mode color \
@@ -149,8 +149,8 @@ python3 tools/motionbrain_dashboard.py \
 ```
 
 The current cup known-object demo uses ESP32-CAM `qvga` / JPEG quality `4`, Pi
-YOLOv5s object mode, confidence `0.25`, and dashboard proxy mode. The systemd
-wrappers re-apply this camera profile after an ESP32-CAM reboot. Use
+YOLOv5s object mode, confidence gate `0.25`, and dashboard proxy mode. The
+systemd wrappers re-apply this camera profile after an ESP32-CAM reboot. Use
 `docs/HOME_WIFI_MODE.md` and `docs/DEMO_RUNBOOK.en.md` for the exact run
 commands.
 

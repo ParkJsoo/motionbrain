@@ -560,16 +560,20 @@ Expected topics:
 /camera/detection_typed
 /joint_states
 /motionbrain/control_guard
+/motionbrain/control_guard_typed
 /motionbrain/events
 /motionbrain/events_typed
 /motionbrain/end_effector_pose
 /motionbrain/kinematics
+/motionbrain/kinematics_typed
 /motionbrain/light_cmd
 /motionbrain/light_cmd_typed
 /motionbrain/light_result
 /motionbrain/light_result_typed
 /motionbrain/mission_cmd
+/motionbrain/mission_cmd_typed
 /motionbrain/mission_state
+/motionbrain/mission_state_typed
 /motionbrain/status
 /motionbrain/status_typed
 ```
@@ -652,6 +656,13 @@ by default, also starts the joint-state bridge:
 
 ```bash
 ros2 launch motionbrain_description display.launch.py
+```
+
+If `motionbrain_home_wifi.launch.py` is already running, avoid starting a second
+joint-state bridge:
+
+```bash
+ros2 launch motionbrain_description display.launch.py start_joint_state_bridge:=false
 ```
 
 On a desktop machine with RViz2 installed:

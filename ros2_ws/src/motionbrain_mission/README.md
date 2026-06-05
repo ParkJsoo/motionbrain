@@ -13,6 +13,8 @@ detect -> align -> operator confirm -> act
 The supervisor never publishes live motion commands. It watches typed detection
 and the C++ control guard, publishes `/motionbrain/mission_state_typed`, and
 only publishes a typed light command after an operator sends `confirm`.
+`confirm` can actuate the ESP32 search light, so run it only when that hardware
+side effect is expected.
 
 ## Topics
 

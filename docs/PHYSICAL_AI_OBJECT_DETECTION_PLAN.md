@@ -99,26 +99,26 @@ As of 2026-06-04 on `main`:
 - Live Pi validation on 2026-06-02 KST corrected the YOLO preprocessing path to
   preserve aspect ratio with letterbox padding before OpenCV DNN inference. On
   the current low-angle ESP32-CAM bench, `vga` / JPEG quality `18` captured
-  reliably but often mislabeled the cup body as `microwave` or `toilet`.
+  reliably but often assigned visually adjacent COCO labels to the cup body.
   Switching the camera profile to `qvga` / JPEG quality `4` produced the
-  current physical success case: `YOLOv5s`, `--object-target cup`,
+  then-current physical success case: `YOLOv5s`, `--object-target cup`,
   `--object-min-confidence 0.5`, class id `41`, confidence about `0.55-0.59`,
   `alignment=CENTER`, and area ratio about `0.287` from the Pi dashboard API.
 - On 2026-06-04 KST, after the camera angle was adjusted for documentation
   screenshots, the same white mug remained visible and could be detected as
-  `cup`, but adjacent frames also classified the mug body as visually similar
-  COCO labels such as `toilet`. The current runtime now supports explicit
-  target aliases for this constrained known-object case; when a user opts into
-  `--object-target cup --object-target-alias toilet`, matching alias detections
-  are selected as the canonical target label while preserving `sourceLabel` in
-  the payload. Use this only as a documented workcell-specific stabilization
-  aid, not as evidence of general cup recognition. If the alias requires a
+  `cup`, but adjacent frames also classified the mug body as visually adjacent
+  COCO labels. The current runtime now supports explicit
+  target aliases for this constrained known-object case; when a user opts into a
+  known-mislabel alias, matching alias detections are selected as the canonical
+  target label while preserving `sourceLabel` in the payload. Use this only as a
+  documented workcell-specific stabilization aid, not as evidence of general cup
+  recognition. If the alias requires a
   lower confidence threshold, re-run a background-only false-positive check with
   the same alias and threshold before using it publicly.
 - Background-only evaluation on 2026-06-02 KST produced `0/50` false positives
   at confidence `0.5` and `0.25` with `YOLOv5s`; lowering to `0.1` introduced a
-  low-confidence `boat` false positive. Keep the first live cup demo at
-  confidence `0.5`.
+  low-confidence `boat` false positive. Use `0.25` as the current live baseline
+  for the cup demo, and lower it only after target-filtered background checks.
 - A label-less dark cola bottle with a red cap on the same dark background was
   not recognized as COCO `bottle` (`0/50` at confidence `0.05` to `0.5`), but it
   was consistently detected as `vase` (`49/50` at confidence `0.5`, `50/50` at
@@ -153,7 +153,7 @@ As of 2026-06-04 on `main`:
   controller `192.168.219.111`, ESP32-CAM `192.168.219.113`, and Pi
   `192.168.219.114`. The controller page started in `STREAM`, the Pi
   perception/dashboard stack was reachable, and dashboard detection returned a
-  `cup` above the `0.5` threshold in the current scene.
+  `cup` above the then-current `0.5` threshold in that scene.
 
 ## Perception Design
 
@@ -211,7 +211,7 @@ Recommended first live model path:
 - Use `config/coco80.labels` for COCO class names.
 - Start with `--object-input-size 640` for correctness, then benchmark 416/320
   if Pi CPU load is too high.
-- Start `--object-min-confidence` at `0.5` for the cup.
+- Start `--object-min-confidence` at `0.25` for the current live cup baseline.
 - For the current live Pi bench, set the ESP32-CAM to `qvga` / JPEG quality `4`
   before starting perception. The saved-frame cup dataset used VGA, but the live
   low-angle scene currently labels the cup more reliably at high-quality QVGA.
@@ -221,14 +221,20 @@ Recommended first live model path:
 - Avoid open-vocabulary prompts for the MVP. This phase detects known COCO
   classes; arbitrary text-described object search is a later model family.
 
-Preferred runtime path:
+Current deployed runtime path:
 
-- Primary: small int8 TFLite/LiteRT object detector such as EfficientDet-Lite0
-  or SSD MobileNet.
-- Fallback: ONNX Runtime CPU in a dedicated venv if TFLite packaging is painful
-  on Ubuntu/Python 3.12.
-- Avoid making PyTorch/Ultralytics a Pi runtime dependency for the MVP. If a
-  YOLO model is used, export offline and run a small exported model.
+- Primary deployed path: exported YOLOv5s ONNX through OpenCV DNN, loaded by the
+  Pi perception service from an explicit local model path.
+- Keep the runtime dependency small: do not require PyTorch/Ultralytics on the
+  Pi. If a YOLO-family model is used, export it offline and run the exported
+  artifact.
+
+Future preferred runtime path:
+
+- Evaluate a small int8 TFLite/LiteRT object detector such as EfficientDet-Lite0
+  or SSD MobileNet if the project needs lower Pi CPU load.
+- Consider ONNX Runtime CPU in a dedicated venv if TFLite packaging is painful
+  on Ubuntu/Python 3.12 and OpenCV DNN becomes limiting.
 
 Expected Pi 4B performance:
 
@@ -459,7 +465,7 @@ python3 tools/motionbrain_perception_service.py \
   --object-backend opencv-dnn \
   --object-model ~/.cache/motionbrain/models/yolov5s.onnx \
   --object-labels config/coco80.labels \
-  --object-min-confidence 0.5 \
+  --object-min-confidence 0.25 \
   --object-target cup
 curl -sS http://127.0.0.1:<port>/api/detection
 ```
@@ -510,8 +516,8 @@ Scope:
 
 - Dashboard exposes an operator-confirmed dry-run plan through
   `/api/cup_grasp_plan`.
-- Require selected target `cup`, confidence at least `0.5`, centered alignment,
-  a clear ARMED controller state, and base idle.
+- Require selected target `cup`, the configured confidence gate, centered
+  alignment, a clear ARMED controller state, and base idle.
 - No gripper or arm controller POSTs in the first pass.
 
 Output example:

@@ -132,7 +132,7 @@ Pi 인식 서비스를 분리해서 쓰는 수동 fallback 예시:
 
 ```bash
 python3 tools/motionbrain_perception_service.py \
-  --host 0.0.0.0 \
+  --host 127.0.0.1 \
   --port 8766 \
   --camera-url http://<camera-ip> \
   --detector-mode color \
@@ -148,8 +148,8 @@ python3 tools/motionbrain_dashboard.py \
 ```
 
 현재 cup known-object demo는 ESP32-CAM `qvga` / JPEG quality `4`, Pi
-YOLOv5s object mode, confidence `0.25`, dashboard proxy 조합을 사용한다. systemd wrapper는
-ESP32-CAM 재부팅 후에도 이 카메라 프로필을 다시 적용한다. 자세한 실행 명령은
+YOLOv5s object mode, confidence gate `0.25`, dashboard proxy 조합을 사용한다.
+systemd wrapper는 ESP32-CAM 재부팅 후에도 이 카메라 프로필을 다시 적용한다. 자세한 실행 명령은
 `docs/HOME_WIFI_MODE.md`와 `docs/DEMO_RUNBOOK.md`를 기준으로 한다.
 
 ## 문서

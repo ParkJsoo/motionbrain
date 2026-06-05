@@ -136,7 +136,7 @@ endpoints and use the discovered current IPs for that boot.
 
 ```bash
 python3 tools/motionbrain_perception_service.py \
-  --host 0.0.0.0 \
+  --host 127.0.0.1 \
   --port 8766 \
   --camera-url http://<camera-ip> \
   --detector-mode color \
@@ -159,22 +159,22 @@ Pi live check, use the OpenCV-DNN-compatible YOLOv5s detect ONNX file with
 curl -sS -X POST "http://<camera-ip>/camera?framesize=qvga&quality=4"
 
 ~/.cache/motionbrain/opencv-venv/bin/python tools/motionbrain_perception_service.py \
-  --host 0.0.0.0 \
+  --host 127.0.0.1 \
   --camera-url http://<camera-ip> \
   --detector-mode object \
   --object-backend opencv-dnn \
   --object-model ~/.cache/motionbrain/models/yolov5s.onnx \
   --object-labels config/coco80.labels \
   --object-target cup \
-  --object-min-confidence 0.5 \
+  --object-min-confidence 0.25 \
   --object-input-size 640 \
   --display-hold-seconds 1.5
 ```
 
 The saved-frame cup dataset used VGA, but the current live Pi/ESP32-CAM bench
-is more reliable at QVGA quality `4`: it returns the centered cup above
-confidence `0.5`. VGA quality `18` captures reliably but can mislabel the live
-cup body in this low-angle scene.
+is more reliable at QVGA quality `4` with a `cup` target confidence baseline of
+`0.25`. VGA captures can work, but the live low-angle scene has shown more
+label flicker at VGA than at the current QVGA profile.
 `--display-hold-seconds` only smooths the UI overlay after transient misses;
 held detections are marked `held:true` and are blocked from nudge/dry-run
 actions.
@@ -194,7 +194,7 @@ python3 tools/motionbrain_dashboard.py \
   --motion-host <controller-ip> \
   --perception-url http://127.0.0.1:8766 \
   --grasp-target-label cup \
-  --grasp-min-confidence 0.5
+  --grasp-min-confidence 0.25
 ```
 
 The cup dry-run button does not send gripper commands. It revalidates the
@@ -222,8 +222,8 @@ confirmation through the Pi perception path.
   `/capture` and `/stream` responded.
 - Raspberry Pi `192.168.219.114` ran the cup perception service on `8766` and
   the dashboard on `8765`.
-- Dashboard `/api/detection` returned `label=cup` above the `0.5` threshold in
-  the current scene.
+- Dashboard `/api/detection` returned `label=cup` above the then-current `0.5`
+  threshold in that scene. Current operating docs use a `0.25` baseline gate.
 - Browser checks opened `motionbrain.local`, the controller IP page, and
   `http://192.168.219.114:8765`; the operator confirmed the pages were visible.
 

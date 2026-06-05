@@ -17,7 +17,7 @@ Current conclusion:
   evaluation worked best at VGA, while the current live bench recognizes the
   cup more reliably at QVGA quality `4`.
 - Use `YOLOv5s` through OpenCV DNN as the first practical model baseline.
-- Active semantic target: `cup`, confidence `0.5`.
+- Active semantic target: `cup`, current live confidence gate `0.25`.
 - Use `STREAM` for manual camera feedback and `TRACKED` only for slower
   recognition/confirmation. Do not tune the current Pi object path as if it
   were a responsive driving camera.
@@ -104,7 +104,7 @@ python3 tools/evaluate_object_detector.py \
   --object-model ~/.cache/motionbrain/models/yolov5s.onnx \
   --object-labels config/coco80.labels \
   --object-input-size 640 \
-  --object-min-confidence 0.5
+  --object-min-confidence 0.25
 ```
 
 For target-filtered recall, add:
@@ -155,13 +155,13 @@ Offline `YOLOv5s` false-positive results on the background-only frames:
 - Any object, confidence `0.05`: `2/50` false positives, labeled `boat`.
 - `cup` target only, confidence `0.05` or higher: `0/50` false positives.
 
-Interpretation: confidence `0.5` is a reasonable first live threshold for the
-cup demo. Avoid lowering the threshold unless the target object is explicitly
+Interpretation: confidence gate `0.25` is the current live baseline for the cup
+demo. Avoid lowering the threshold unless the target object is explicitly
 filtered and the background false-positive set is rechecked.
 
 The active dashboard dry-run path uses this same cup target and threshold. It
-requires `label=cup`, confidence at least `0.5`, and `alignment=CENTER` before
-returning a proposed gripper open/close sequence.
+requires `label=cup`, the configured confidence gate, and `alignment=CENTER`
+before returning a proposed gripper open/close sequence.
 
 Live Pi validation on 2026-06-02 KST used Raspberry Pi
 `192.168.219.115`, controller `192.168.219.113`, and ESP32-CAM
@@ -173,18 +173,19 @@ Camera-profile sweep on the live bench showed:
 
 - `qvga`, JPEG quality `4`: `cup` confidence about `0.55-0.60`, centered.
 - `qvga`, JPEG quality `6`: `cup` confidence about `0.56`, centered.
-- `qvga`, JPEG quality `8`: `cup` confidence about `0.46`, below the dry-run
-  threshold.
+- `qvga`, JPEG quality `8`: `cup` confidence about `0.46`, below the
+  then-current `0.5` gate.
 - `qvga`, JPEG quality `10` and higher: cup confidence degraded or the cup body
   was mislabeled.
 - `vga`, JPEG quality `18`: captured reliably, but the cup body was often
-  labeled as `microwave` or `toilet`; only a weak partial `cup` candidate
+  assigned visually adjacent COCO labels; only a weak partial `cup` candidate
   appeared.
 
 With `qvga` / JPEG quality `4`, the live dashboard/perception API returned
 `label=cup`, class id `41`, confidence about `0.55-0.59`,
-`alignment=CENTER`, and an area ratio about `0.287`. This is the current
-physical cup success profile.
+`alignment=CENTER`, and an area ratio about `0.287`. This is the dated
+2026-06-02 physical cup success profile; current operating docs keep the same
+camera profile and use a `0.25` confidence gate.
 
 On 2026-06-04 KST, the same live bench direction was rechecked after the
 embedded control page was changed to default to `STREAM`. The active setup was
@@ -192,17 +193,17 @@ controller `192.168.219.111`, ESP32-CAM `192.168.219.113`, and Raspberry Pi
 `192.168.219.114`. ESP32-CAM stayed at `qvga` / JPEG quality `4`, the Pi
 perception service and dashboard were reachable on ports `8766` and `8765`,
 and `/api/detection` returned `label=cup` above the `0.5` threshold in the
-current scene. Treat this as a recognition/confirmation path for fixed or
+then-current scene. Treat this as a recognition/confirmation path for fixed or
 slow-moving targets, not a high-FPS teleoperation view.
 
 Later on 2026-06-04 KST, the documentation screenshots were recaptured from the
 user's adjusted camera angle. That view produced a better operator-facing frame,
-but the plain white mug also flickered between `cup` and nearby COCO labels such
-as `toilet` in adjacent frames. For this constrained workcell case, the
+but the plain white mug also flickered between `cup` and nearby COCO labels in
+adjacent frames. For this constrained workcell case, the
 perception service now supports explicit target aliases:
 
 ```bash
---object-target cup --object-target-alias toilet
+--object-target cup --object-target-alias <known-mislabel>
 ```
 
 Alias detections are reported as the canonical target label and include

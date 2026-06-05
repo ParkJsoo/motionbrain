@@ -31,6 +31,13 @@ Then start the robot model and TF publisher:
 ros2 launch motionbrain_description display.launch.py
 ```
 
+If `motionbrain_home_wifi.launch.py` is already running, avoid launching a
+second joint-state bridge:
+
+```bash
+ros2 launch motionbrain_description display.launch.py start_joint_state_bridge:=false
+```
+
 On a desktop with RViz2 installed:
 
 ```bash

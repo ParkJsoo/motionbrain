@@ -409,7 +409,7 @@ base 상대각 제어는 다음 종료 이유를 가진다.
 
 - 기본은 최근 전체 이벤트를 반환하고, `limit` 쿼리로 마지막 N개만 잘라 받을 수 있다.
 - `severity` 는 `INFO|WARN|ERROR`
-- `category` 는 현재 `system|safety|base_angle` 를 사용한다.
+- `category` 는 현재 `system|safety|base_angle|teleop` 를 사용한다.
 - `code` 는 상위 호스트에서 문자열 비교가 가능하도록 안정적인 식별자 이름을 유지한다.
 - `detail` 은 짧은 설명 문자열이며, 상위 호스트 UI 표시나 디버그 로그 연결 용도다.
 
@@ -424,6 +424,7 @@ base 상대각 제어는 다음 종료 이유를 가진다.
 - `BASE_ANGLE_START`
 - `BASE_ANGLE_TARGET_REACHED`
 - `BASE_ANGLE_STOP`
+- teleop 연결/상태 변경 이벤트
 
 ## 8. Phase 4로 넘길 때 유지할 약속
 
@@ -466,6 +467,15 @@ motionbrain_status_node
 - `pub /motionbrain/light_result` -> raw `POST /light` command result JSON
 - `pub /motionbrain/light_result_typed` -> `motionbrain_msgs/msg/LightResult`
 - `pub /joint_states` -> `sensor_msgs/msg/JointState`
+- `pub /motionbrain/end_effector_pose` -> FK pose JSON
+- `pub /motionbrain/kinematics` -> FK/IK diagnostic JSON
+- `pub /motionbrain/kinematics_typed` -> `motionbrain_msgs/msg/KinematicsState`
+- `pub /motionbrain/control_guard` -> guard state JSON
+- `pub /motionbrain/control_guard_typed` -> `motionbrain_msgs/msg/ControlGuard`
+- `sub /motionbrain/mission_cmd` -> mission command string/JSON compatibility
+- `sub /motionbrain/mission_cmd_typed` -> `motionbrain_msgs/msg/MissionCommand`
+- `pub /motionbrain/mission_state` -> mission state JSON
+- `pub /motionbrain/mission_state_typed` -> `motionbrain_msgs/msg/MissionState`
 
 2026-05-26 실기 검증:
 
