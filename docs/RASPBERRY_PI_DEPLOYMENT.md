@@ -93,20 +93,21 @@ sudo nano /etc/motionbrain/dashboard.env
 - `MOTIONBRAIN_OBJECT_TARGET`
 
 기본 구성은 `motionbrain.local`, `motionbrain-cam.local`,
-`motionbrain-pi.local`을 우선 사용한다. mDNS가 흔들리면 service wrapper가 같은
-LAN의 `/status` endpoint를 스캔해서 controller와 ESP32-CAM의 현재 IP를 자동으로
-찾는다. 또한 reconcile timer가 1분마다 dashboard/perception이 현재 발견된 장치
-IP와 맞는지 확인하고, Pi가 켜진 상태에서 ESP32를 껐다 켜 IP가 바뀐 경우 서비스를
-재시작해 다시 붙인다. 따라서 ESP32와 ESP32-CAM을 매일 껐다 켜도 env 파일을 매번
-수정하지 않는다.
+`motionbrain-pi.local`을 우선 사용한다. mDNS가 흔들리면 ROS2 bridge,
+dashboard, perception service wrapper가 같은 LAN의 `/status` endpoint를 스캔해서
+controller와 ESP32-CAM의 현재 IP를 자동으로 찾는다. 또한 reconcile timer가 1분마다
+dashboard/perception이 현재 발견된 장치 IP와 맞는지 확인하고, Pi가 켜진 상태에서
+ESP32를 껐다 켜 IP가 바뀐 경우 서비스를 재시작해 다시 붙인다. 따라서 ESP32와
+ESP32-CAM을 매일 껐다 켜도 env 파일을 매번 수정하지 않는다.
 
 perception API는 Pi 내부 `127.0.0.1:8766`에만 bind하고, dashboard만 LAN에
 `0.0.0.0:8765`로 공개한다. 브라우저에서는 `http://motionbrain-pi.local:8765`를
 열고, mDNS가 안 잡히는 환경에서만 `http://<pi-ip>:8765`를 쓴다.
 
-discovery fallback을 끄려면 `/etc/motionbrain/perception.env`와
-`/etc/motionbrain/dashboard.env`에 `MOTIONBRAIN_DISCOVERY=0`을 설정한다. 특정
-subnet만 스캔하려면 `MOTIONBRAIN_DISCOVERY_CIDR=192.168.219.0/24`처럼 지정한다.
+discovery fallback을 끄려면 `/etc/motionbrain/ros-bridge.env`,
+`/etc/motionbrain/perception.env`, `/etc/motionbrain/dashboard.env`에
+`MOTIONBRAIN_DISCOVERY=0`을 설정한다. 특정 subnet만 스캔하려면
+`MOTIONBRAIN_DISCOVERY_CIDR=192.168.219.0/24`처럼 지정한다.
 
 현재 cup known-object 데모에서는 `MOTIONBRAIN_OBJECT_TARGET=cup`,
 `MOTIONBRAIN_OBJECT_MIN_CONFIDENCE=0.25`, `MOTIONBRAIN_DISPLAY_HOLD_SECONDS=1.5`

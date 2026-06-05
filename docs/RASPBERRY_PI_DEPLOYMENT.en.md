@@ -93,22 +93,23 @@ Set:
 - `MOTIONBRAIN_OBJECT_TARGET`
 
 The default setup prefers `motionbrain.local`, `motionbrain-cam.local`, and
-`motionbrain-pi.local`. If mDNS is unstable, the service wrappers scan local
-`/status` endpoints and automatically resolve the current controller and
-ESP32-CAM IPs. A reconcile timer also checks once per minute that
-dashboard/perception still match the currently discovered device IPs, and
-restarts those services when the ESP32 boards are power-cycled while the Pi
-stays online. This avoids editing env files every time the ESP32 boards receive
-new DHCP addresses.
+`motionbrain-pi.local`. If mDNS is unstable, the ROS2 bridge, dashboard, and
+perception service wrappers scan local `/status` endpoints and automatically
+resolve the current controller and ESP32-CAM IPs. A reconcile timer also checks
+once per minute that dashboard/perception still match the currently discovered
+device IPs, and restarts those services when the ESP32 boards are power-cycled
+while the Pi stays online. This avoids editing env files every time the ESP32
+boards receive new DHCP addresses.
 
 The perception API binds to Pi-local `127.0.0.1:8766`; only the dashboard is
 exposed on the LAN as `0.0.0.0:8765`. Open
 `http://motionbrain-pi.local:8765` in the browser, and use
 `http://<pi-ip>:8765` only when mDNS is unavailable.
 
-Set `MOTIONBRAIN_DISCOVERY=0` in `/etc/motionbrain/perception.env` and
-`/etc/motionbrain/dashboard.env` to disable discovery fallback. Set a specific
-scan subnet with a value such as `MOTIONBRAIN_DISCOVERY_CIDR=192.168.219.0/24`.
+Set `MOTIONBRAIN_DISCOVERY=0` in `/etc/motionbrain/ros-bridge.env`,
+`/etc/motionbrain/perception.env`, and `/etc/motionbrain/dashboard.env` to
+disable discovery fallback. Set a specific scan subnet with a value such as
+`MOTIONBRAIN_DISCOVERY_CIDR=192.168.219.0/24`.
 
 For the current cup known-object demo, use `MOTIONBRAIN_OBJECT_TARGET=cup`,
 `MOTIONBRAIN_OBJECT_MIN_CONFIDENCE=0.25`, and
