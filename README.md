@@ -10,6 +10,12 @@ MotionBrain은 ESP32 기반 5축 로봇팔 제어기에서 시작해 STM32 센�
 입력 -> 판단 -> 상태 -> 움직임 -> 피드백
 ```
 
+## 데모 영상
+
+아래 썸네일을 클릭하면 최종 데모 영상을 볼 수 있다. 영상은 물리 텔레오퍼레이션 데모와 `MotionBrain Control` UI 확인까지만 포함한다.
+
+[![MotionBrain 데모 영상](docs/assets/demo/motionbrain-demo-preview.jpg)](docs/assets/demo/motionbrain-demo.mp4)
+
 ## 운영 화면
 
 아래 이미지는 최종 데모 영상이 아니라, 제어기와 Pi 대시보드가 제공하는 실제 운영 UI를 문서용 정적 상태로 캡처한 것이다.

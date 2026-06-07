@@ -10,6 +10,12 @@ The project is not just a motor demo. It is structured around safety state manag
 input -> decision -> state -> motion -> feedback
 ```
 
+## Demo Video
+
+Click the thumbnail below to open the final demo video. It includes the physical teleoperation demos and the `MotionBrain Control` UI check, then stops there.
+
+[![MotionBrain demo video](docs/assets/demo/motionbrain-demo-preview.jpg)](docs/assets/demo/motionbrain-demo.mp4)
+
 ## Operator Screens
 
 These are documentation captures of the real controller and Pi dashboard UI surfaces, not the final public demo video.
