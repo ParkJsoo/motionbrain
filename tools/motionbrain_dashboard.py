@@ -1043,22 +1043,22 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if parsed.path == "/":
                 self.send_html(INDEX_HTML)
             elif parsed.path == "/api/config":
-                self.send_json(
-                    {
-                        "ok": True,
-                        "motionBaseUrl": self.server.motion_base_url,
-                        "cameraUrl": self.server.camera_url,
-                        "perceptionUrl": self.server.perception_url,
-                        "detectColor": self.server.detect_color,
-                        "hasHttpToken": bool(self.server.http_token),
-                        "dashboardToken": self.server.dashboard_token,
-                        "alignMode": "nudge",
-                        "alignNudgeMs": self.server.align_nudge_ms,
-                        "alignPercent": self.server.align_percent,
-                        "graspTargetLabel": self.server.grasp_target_label,
-                        "graspMinConfidence": self.server.grasp_min_confidence,
-                    }
-                )
+                payload = {
+                    "ok": True,
+                    "motionBaseUrl": self.server.motion_base_url,
+                    "cameraUrl": self.server.camera_url,
+                    "perceptionUrl": self.server.perception_url,
+                    "detectColor": self.server.detect_color,
+                    "hasHttpToken": bool(self.server.http_token),
+                    "alignMode": "nudge",
+                    "alignNudgeMs": self.server.align_nudge_ms,
+                    "alignPercent": self.server.align_percent,
+                    "graspTargetLabel": self.server.grasp_target_label,
+                    "graspMinConfidence": self.server.grasp_min_confidence,
+                }
+                if not self.headers.get("Origin"):
+                    payload["dashboardToken"] = self.server.dashboard_token
+                self.send_json(payload, allow_cross_origin=True)
             elif parsed.path == "/api/status":
                 self.send_json(fetch_json(f"{self.server.motion_base_url}/status", self.server.timeout))
             elif parsed.path == "/api/events":

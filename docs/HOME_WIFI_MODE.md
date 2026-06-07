@@ -205,14 +205,18 @@ review.
 The ESP32-hosted `MotionBrain Control` page also uses this dashboard for
 `TRACKED` camera mode. Its default dashboard API is
 `http://motionbrain-pi.local:8765`; if mDNS is unreliable, set the page's `API`
-field to `http://<pi-ip>:8765`. Older browser storage pointing to the
-Mac-hosted `127.0.0.1:8765` dashboard is automatically migrated to the Pi
-default.
+field to router DNS or `http://<pi-ip>:8765`. Older browser storage pointing
+to the Mac-hosted `127.0.0.1:8765` dashboard is automatically migrated to the
+Pi default.
 
 Use `STREAM` while manually controlling the arm because it prioritizes live
 camera responsiveness through the ESP32-CAM stream. Use `TRACKED` only when the
 target is fixed or moving slowly and the goal is object/marker recognition
-confirmation through the Pi perception path.
+confirmation through the Pi perception path. If browser `.local` lookup sends
+`motionbrain-cam.local` to the wrong IP, `STREAM` asks the Pi dashboard
+`/api/config` for the currently discovered camera URL, updates the `CAM` field,
+and retries the raw ESP32-CAM stream. This requires the Pi dashboard service to
+be running and the ESP32 controller firmware to include the Control UI fallback.
 
 2026-06-04 KST bench check:
 

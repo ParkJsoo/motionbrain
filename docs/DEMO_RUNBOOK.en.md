@@ -85,6 +85,14 @@ curl -sS http://<controller-ip>/status
 curl -I http://<camera-ip>/capture
 ```
 
+If browser or Mac DNS resolves `.local` to a wrong public IP, use router DNS or
+the current DHCP IP. When the Pi dashboard is healthy, its config endpoint shows
+the resolved controller and camera URLs:
+
+```bash
+curl -sS -H 'Origin: http://motionbrain.local' http://<pi-ip>:8765/api/config
+```
+
 From the Pi, confirm ROS2 and the workspace:
 
 ```bash
@@ -389,7 +397,7 @@ http://<pi-ip>:8765
 
 The `TRACKED` camera mode in `motionbrain.local` uses this dashboard API too.
 Confirm that the on-page `API` field is `http://motionbrain-pi.local:8765` or
-`http://<pi-ip>:8765`.
+router DNS/`http://<pi-ip>:8765`.
 Use `STREAM` when manually controlling the arm and watching the camera. Use
 `TRACKED` only for recognizing or confirming fixed or slow-moving targets.
 
@@ -462,6 +470,8 @@ python3 tools/motionbrain_dashboard.py \
 Capture points:
 
 - `MotionBrain Control` initially opens the `RAW STREAM` / `STREAM` path.
+- If the `.local` camera name fails, the `CAM` field is corrected from the Pi
+  dashboard's current camera URL and `STREAM` retries.
 - Pressing `TRACKED` shows the Pi API's `cup` label/confidence overlay.
 - Dashboard `/api/detection` returns `label=cup` and clears the configured confidence gate.
 - Controller status is `IDLE`, safety clear, and motors off before any motion

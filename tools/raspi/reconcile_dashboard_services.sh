@@ -4,6 +4,8 @@ set -euo pipefail
 REPO="${MOTIONBRAIN_REPO:-/home/motionbrain/develop/arduino/motionbrain}"
 DASHBOARD_ENV="${MOTIONBRAIN_DASHBOARD_ENV:-/etc/motionbrain/dashboard.env}"
 PERCEPTION_ENV="${MOTIONBRAIN_PERCEPTION_ENV:-/etc/motionbrain/perception.env}"
+ROS_BRIDGE_SERVICE="${MOTIONBRAIN_ROS_BRIDGE_SERVICE:-motionbrain-ros-bridge.service}"
+RECONCILE_ROS_BRIDGE="${MOTIONBRAIN_RECONCILE_ROS_BRIDGE:-1}"
 
 if [[ -f "${DASHBOARD_ENV}" ]]; then
   set -a
@@ -67,6 +69,20 @@ else:
 ' "${field}"
 }
 
+launch_arg() {
+  local name="$1"
+  "${DISCOVERY_PYTHON}" -c '
+import re
+import sys
+
+name = sys.argv[1]
+text = sys.stdin.read()
+match = re.search(r"(?:^|\s)" + re.escape(name) + r":=([^\s]+)", text)
+if match:
+    print(match.group(1))
+' "${name}"
+}
+
 url_host() {
   "${DISCOVERY_PYTHON}" -c '
 import sys
@@ -77,6 +93,26 @@ print(parsed.hostname or "")
 ' "$1"
 }
 
+service_command_line() {
+  local service="$1"
+  local main_pid
+  main_pid="$(systemctl show -P MainPID "${service}" 2>/dev/null || true)"
+  if [[ -n "${main_pid}" && "${main_pid}" != "0" && -r "/proc/${main_pid}/cmdline" ]]; then
+    tr '\0' ' ' <"/proc/${main_pid}/cmdline"
+  fi
+}
+
+add_restart_service() {
+  local service="$1"
+  local existing
+  for existing in "${restart_services[@]}"; do
+    if [[ "${existing}" == "${service}" ]]; then
+      return 0
+    fi
+  done
+  restart_services+=("${service}")
+}
+
 controller_url="$(discover_device_url controller "http://${MOTION_HOST}:${MOTION_PORT}")"
 camera_url="$(discover_device_url camera "${CAMERA_URL}")"
 if [[ -z "${controller_url}" && -z "${camera_url}" ]]; then
@@ -85,6 +121,7 @@ if [[ -z "${controller_url}" && -z "${camera_url}" ]]; then
 fi
 
 restart_needed=0
+restart_services=()
 reasons=()
 camera_profile_result=""
 if [[ -n "${camera_url}" && "${MOTIONBRAIN_CAMERA_PROFILE:-1}" != "0" ]]; then
@@ -97,6 +134,8 @@ if [[ -n "${camera_url}" && "${MOTIONBRAIN_CAMERA_PROFILE:-1}" != "0" ]]; then
   if camera_profile_result="$("${CAMERA_PROFILE_PYTHON}" "${REPO}/tools/raspi/apply_camera_profile.py" "${profile_args[@]}" 2>/dev/null)"; then
     if [[ "${camera_profile_result}" == "updated" ]]; then
       restart_needed=1
+      add_restart_service motionbrain-perception.service
+      add_restart_service motionbrain-dashboard.service
       reasons+=("camera_profile_updated")
     fi
   else
@@ -115,27 +154,70 @@ else
   dashboard_camera_url="$(printf "%s" "${dashboard_config}" | json_field cameraUrl || true)"
   if [[ -n "${controller_url}" && "$(url_host "${dashboard_motion_url}")" != "$(url_host "${controller_url}")" ]]; then
     restart_needed=1
+    add_restart_service motionbrain-dashboard.service
     reasons+=("controller_url_changed")
   fi
   if [[ -n "${camera_url}" && "${dashboard_camera_url}" != "${camera_url}" ]]; then
     restart_needed=1
+    add_restart_service motionbrain-dashboard.service
     reasons+=("dashboard_camera_url_changed")
   fi
 fi
 
 if [[ -z "${perception_health}" ]]; then
   restart_needed=1
+  add_restart_service motionbrain-perception.service
+  add_restart_service motionbrain-dashboard.service
   reasons+=("perception_health_unavailable")
 else
   perception_ok="$(printf "%s" "${perception_health}" | json_field ok || true)"
   perception_camera_url="$(printf "%s" "${perception_health}" | json_field cameraUrl || true)"
   if [[ -n "${camera_url}" && "${perception_camera_url}" != "${camera_url}" ]]; then
     restart_needed=1
+    add_restart_service motionbrain-perception.service
+    add_restart_service motionbrain-dashboard.service
     reasons+=("perception_camera_url_changed")
   fi
   if [[ "${perception_ok}" != "true" && -n "${camera_url}" ]]; then
     restart_needed=1
+    add_restart_service motionbrain-perception.service
+    add_restart_service motionbrain-dashboard.service
     reasons+=("perception_not_ok")
+  fi
+fi
+
+if [[ "${RECONCILE_ROS_BRIDGE}" != "0" ]]; then
+  ros_bridge_state="$(systemctl is-active "${ROS_BRIDGE_SERVICE}" 2>/dev/null || true)"
+  ros_bridge_command="$(service_command_line "${ROS_BRIDGE_SERVICE}")"
+  if [[ "${ros_bridge_state}" != "active" ]]; then
+    restart_needed=1
+    add_restart_service "${ROS_BRIDGE_SERVICE}"
+    reasons+=("ros_bridge_not_active")
+  elif [[ -z "${ros_bridge_command}" ]]; then
+    restart_needed=1
+    add_restart_service "${ROS_BRIDGE_SERVICE}"
+    reasons+=("ros_bridge_command_unavailable")
+  else
+    ros_motion_host="$(printf "%s" "${ros_bridge_command}" | launch_arg motion_host || true)"
+    ros_camera_url="$(printf "%s" "${ros_bridge_command}" | launch_arg camera_url || true)"
+    if [[ -n "${controller_url}" && -z "${ros_motion_host}" ]]; then
+      restart_needed=1
+      add_restart_service "${ROS_BRIDGE_SERVICE}"
+      reasons+=("ros_bridge_controller_arg_missing")
+    elif [[ -n "${controller_url}" && "${ros_motion_host}" != "$(url_host "${controller_url}")" ]]; then
+      restart_needed=1
+      add_restart_service "${ROS_BRIDGE_SERVICE}"
+      reasons+=("ros_bridge_controller_url_changed")
+    fi
+    if [[ -n "${camera_url}" && -z "${ros_camera_url}" ]]; then
+      restart_needed=1
+      add_restart_service "${ROS_BRIDGE_SERVICE}"
+      reasons+=("ros_bridge_camera_arg_missing")
+    elif [[ -n "${camera_url}" && "${ros_camera_url}" != "${camera_url}" ]]; then
+      restart_needed=1
+      add_restart_service "${ROS_BRIDGE_SERVICE}"
+      reasons+=("ros_bridge_camera_url_changed")
+    fi
   fi
 fi
 
@@ -144,5 +226,8 @@ if [[ "${restart_needed}" == "0" ]]; then
   exit 0
 fi
 
-echo "Restarting MotionBrain dashboard services: ${reasons[*]}"
-systemctl restart motionbrain-perception.service motionbrain-dashboard.service
+echo "Restarting MotionBrain services: ${reasons[*]}"
+if [[ "${#restart_services[@]}" == "0" ]]; then
+  restart_services=(motionbrain-perception.service motionbrain-dashboard.service)
+fi
+systemctl restart "${restart_services[@]}"

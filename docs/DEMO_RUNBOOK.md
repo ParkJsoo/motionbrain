@@ -84,6 +84,14 @@ curl -sS http://<controller-ip>/status
 curl -I http://<camera-ip>/capture
 ```
 
+브라우저나 Mac DNS가 `.local`을 잘못된 공인 IP로 해석하면 router DNS 또는 현재
+DHCP IP를 쓴다. 현재 Pi dashboard가 정상이라면 아래 config에서 실제
+controller/camera URL을 확인할 수 있다.
+
+```bash
+curl -sS -H 'Origin: http://motionbrain.local' http://<pi-ip>:8765/api/config
+```
+
 Pi에서 ROS2와 workspace를 확인한다.
 
 ```bash
@@ -393,7 +401,7 @@ http://<pi-ip>:8765
 
 `motionbrain.local`의 `TRACKED` camera mode도 이 dashboard API를 사용한다.
 화면의 `API` 입력칸이 `http://motionbrain-pi.local:8765` 또는
-`http://<pi-ip>:8765`인지 확인한다.
+router DNS/`http://<pi-ip>:8765`인지 확인한다.
 로봇팔을 수동 조종하면서 카메라를 볼 때는 `STREAM`을 사용한다. `TRACKED`는
 고정되었거나 천천히 움직이는 target을 인식/확인할 때만 사용한다.
 
@@ -463,6 +471,8 @@ python3 tools/motionbrain_dashboard.py \
 캡처 포인트:
 
 - `MotionBrain Control` 첫 화면이 `RAW STREAM` / `STREAM` 경로로 뜬다.
+- `.local` 카메라 이름이 실패해도 `CAM` 필드가 Pi dashboard의 현재 camera URL로
+  보정되고 `STREAM`이 재시도된다.
 - `TRACKED`를 눌렀을 때 Pi API의 `cup` label/confidence가 overlay에 보인다.
 - Dashboard `/api/detection`이 `label=cup`을 반환하고 설정된 confidence gate를 통과한다.
 - Controller status는 motion 명령 전 `IDLE`, safety clear, motors off다.

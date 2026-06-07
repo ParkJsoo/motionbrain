@@ -96,15 +96,20 @@ The default setup prefers `motionbrain.local`, `motionbrain-cam.local`, and
 `motionbrain-pi.local`. If mDNS is unstable, the ROS2 bridge, dashboard, and
 perception service wrappers scan local `/status` endpoints and automatically
 resolve the current controller and ESP32-CAM IPs. A reconcile timer also checks
-once per minute that dashboard/perception still match the currently discovered
-device IPs, and restarts those services when the ESP32 boards are power-cycled
-while the Pi stays online. This avoids editing env files every time the ESP32
-boards receive new DHCP addresses.
+once per minute that dashboard/perception/ROS2 bridge still match the currently
+discovered device IPs, and restarts the required services when the ESP32 boards
+are power-cycled while the Pi stays online. This avoids editing env files or
+RViz bridge inputs every time the ESP32 boards receive new DHCP addresses.
 
 The perception API binds to Pi-local `127.0.0.1:8766`; only the dashboard is
 exposed on the LAN as `0.0.0.0:8765`. Open
 `http://motionbrain-pi.local:8765` in the browser, and use
-`http://<pi-ip>:8765` only when mDNS is unavailable.
+router DNS or `http://<pi-ip>:8765` only when mDNS is unavailable. If
+Mac/browser `.local` lookup is polluted by a public IP result, open the
+dashboard by Pi IP and set the ESP32 Control `API` field to the Pi IP or router
+DNS. Control `STREAM` reads the current camera URL from the Pi dashboard
+`/api/config` endpoint and automatically corrects the default
+`motionbrain-cam.local` value.
 
 Set `MOTIONBRAIN_DISCOVERY=0` in `/etc/motionbrain/ros-bridge.env`,
 `/etc/motionbrain/perception.env`, and `/etc/motionbrain/dashboard.env` to

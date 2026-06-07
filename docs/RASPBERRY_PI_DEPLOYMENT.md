@@ -96,13 +96,18 @@ sudo nano /etc/motionbrain/dashboard.env
 `motionbrain-pi.local`을 우선 사용한다. mDNS가 흔들리면 ROS2 bridge,
 dashboard, perception service wrapper가 같은 LAN의 `/status` endpoint를 스캔해서
 controller와 ESP32-CAM의 현재 IP를 자동으로 찾는다. 또한 reconcile timer가 1분마다
-dashboard/perception이 현재 발견된 장치 IP와 맞는지 확인하고, Pi가 켜진 상태에서
-ESP32를 껐다 켜 IP가 바뀐 경우 서비스를 재시작해 다시 붙인다. 따라서 ESP32와
-ESP32-CAM을 매일 껐다 켜도 env 파일을 매번 수정하지 않는다.
+dashboard/perception/ROS2 bridge가 현재 발견된 장치 IP와 맞는지 확인하고, Pi가
+켜진 상태에서 ESP32를 껐다 켜 IP가 바뀐 경우 필요한 서비스를 재시작해 다시
+붙인다. 따라서 ESP32와 ESP32-CAM을 매일 껐다 켜도 env 파일이나 RViz bridge
+입력값을 매번 수정하지 않는다.
 
 perception API는 Pi 내부 `127.0.0.1:8766`에만 bind하고, dashboard만 LAN에
 `0.0.0.0:8765`로 공개한다. 브라우저에서는 `http://motionbrain-pi.local:8765`를
-열고, mDNS가 안 잡히는 환경에서만 `http://<pi-ip>:8765`를 쓴다.
+열고, mDNS가 안 잡히는 환경에서만 router DNS나 `http://<pi-ip>:8765`를 쓴다.
+Mac/browser에서 `.local`이 공인 IP로 잘못 해석되면 dashboard 자체는 Pi IP로 열고,
+ESP32 Control의 `API` 필드도 Pi IP 또는 router DNS로 맞춘다. Control `STREAM`은
+Pi dashboard `/api/config`의 현재 camera URL을 읽어 기본 `motionbrain-cam.local`
+값을 자동 보정한다.
 
 discovery fallback을 끄려면 `/etc/motionbrain/ros-bridge.env`,
 `/etc/motionbrain/perception.env`, `/etc/motionbrain/dashboard.env`에
