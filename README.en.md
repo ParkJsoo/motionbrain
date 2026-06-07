@@ -14,7 +14,7 @@ input -> decision -> state -> motion -> feedback
 
 Click the thumbnail below to open the final demo video. It includes only the physical teleoperation demos.
 
-[![MotionBrain demo video](docs/assets/demo/motionbrain-demo-preview.jpg)](docs/assets/demo/motionbrain-demo.mp4?raw=1)
+[![MotionBrain demo video](docs/assets/demo/motionbrain-demo-preview.jpg)](https://raw.githubusercontent.com/ParkJsoo/motionbrain/main/docs/assets/demo/motionbrain-demo.mp4)
 
 ## Operator Screens
 
