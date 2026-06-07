@@ -22,6 +22,10 @@ The ESP32-hosted `MotionBrain Control` page brings manual operation, token-gated
 
 The Pi-hosted dashboard observes controller state, teleop, events, camera frames, and target detection while exposing only safety-gated corrective actions.
 
+![MotionBrain RViz RobotModel](docs/assets/motionbrain-rviz-robotmodel.png)
+
+The Docker/noVNC RViz view mirrors Pi dashboard status and detection through read-only HTTP polling into ROS2 topics, then visualizes the `RobotModel` and TF path.
+
 ## Current Status
 
 Validated:
@@ -38,6 +42,7 @@ Validated:
 - ROS2 typed topics for status, events, camera detection, joint states, kinematics, control guard, and mission state
 - Pi perception service feeding `/camera/detection(_typed)`
 - ESP32-hosted camera mode split: `STREAM` for manual operation, `TRACKED` for recognition checks
+- Mac Docker/noVNC RViz visualization for RobotModel/TF and live ROS2 topics mirrored from the Pi dashboard
 - GitHub Actions checks for PlatformIO builds, Python tests, and ROS2 `colcon build/test`
 
 Important current limits:

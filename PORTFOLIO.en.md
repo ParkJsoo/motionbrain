@@ -40,7 +40,7 @@ I designed and implemented:
 
 ## Operator Screens
 
-The final public demo video is still pending. The images below are static documentation captures from the current controller and dashboard path, showing that MotionBrain includes operator-facing and observability surfaces rather than only firmware code.
+The final public video with physical action still needs a separate opt-in capture. The images below are non-motion documentation captures from the current controller, dashboard, and RViz path, showing that MotionBrain includes operator-facing surfaces, observability, and ROS2 visualization rather than only firmware code.
 
 ![MotionBrain Control web console](docs/assets/motionbrain-control-stream.png)
 
@@ -49,6 +49,10 @@ The ESP32-hosted control console provides `STREAM` camera feedback, token-gated 
 ![MotionBrain Pi dashboard](docs/assets/motionbrain-dashboard.png)
 
 The Pi dashboard observes status, safety, teleop, events, camera frames, and detection/alignment results. Physical action buttons remain constrained by token and safety-state checks.
+
+![MotionBrain RViz RobotModel](docs/assets/motionbrain-rviz-robotmodel.png)
+
+The RViz view shows the visualization path for live ROS2 topics mirrored from the Pi dashboard, plus `RobotModel` and TF.
 
 ## System Architecture
 
@@ -111,6 +115,7 @@ The reliable demo path is `STREAM`-based manual camera feedback, Pi-hosted dashb
 - Raspberry Pi 4 + Ubuntu 24.04 + ROS2 Jazzy `colcon build/test` passed.
 - Health checks passed for `/motionbrain/status_typed`, `/camera/detection_typed`, `/joint_states`, `/motionbrain/kinematics_typed`, `/motionbrain/control_guard_typed`, and `/motionbrain/mission_state_typed`.
 - Pi perception service output was verified through ROS2 `/camera/detection_typed`.
+- Mac Docker/noVNC RViz visualized RobotModel/TF and live ROS2 topics mirrored from the Pi dashboard.
 - GitHub Actions validates PlatformIO firmware builds and ROS2 workspace build/test.
 
 ## Object Detection Status
@@ -131,12 +136,12 @@ Current honest positioning:
 - HC-SR04 is currently part of the teleop/safety layer, not a gripper-mounted range sensor
 - ESP32-CAM QVGA input limits general object detection quality
 - No general text-prompt object search
-- Public photos and videos still need final capture
+- Non-motion public screenshots/evidence are captured; SearchLight or motion video still needs separate opt-in capture
 
 ## Next Steps
 
-1. Capture demo media showing `STREAM` manual camera feedback, the Pi dashboard, and ROS2 typed topics together.
-2. Capture red-target or `cup` recognition plus safety-gated short nudge behavior.
+1. Maintain the selected non-motion screenshots/evidence in README and portfolio material.
+2. Capture red-target or `cup` recognition plus safety-gated short nudge behavior as video.
 3. Design marker- or fixed-known-object-assisted grasping as a separate plan.
 4. Improve object detection with a better camera or a validated edge-runtime model.
 5. Add range/contact sensing before attempting more autonomous grasp sequences.

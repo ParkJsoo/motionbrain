@@ -38,7 +38,7 @@ MotionBrain은 ESP32 모션 제어기, STM32 센서/텔레오퍼레이션 계층
 
 ## 운영 화면
 
-최종 공개 데모 영상은 아직 별도로 캡처하지 않았다. 아래 이미지는 현재 하드웨어/대시보드 경로에서 얻은 문서용 정적 UI 캡처로, MotionBrain이 단순 펌웨어 코드가 아니라 작업자 화면과 관찰 화면까지 갖춘 시스템이라는 점을 보여준다.
+실제 동작을 포함한 최종 공개 영상은 별도 opt-in 촬영이 필요하다. 아래 이미지는 현재 하드웨어/대시보드/RViz 경로에서 얻은 비동작 정적 캡처로, MotionBrain이 단순 펌웨어 코드가 아니라 작업자 화면, 관찰 화면, ROS2 시각화까지 갖춘 시스템이라는 점을 보여준다.
 
 ![MotionBrain Control 웹 콘솔](docs/assets/motionbrain-control-stream.png)
 
@@ -47,6 +47,10 @@ ESP32 내장 제어 콘솔은 `STREAM` 기반 카메라 확인, 토큰 기반 �
 ![MotionBrain Pi 대시보드](docs/assets/motionbrain-dashboard.png)
 
 Pi 대시보드는 상태, safety, teleop, 이벤트, 카메라 프레임, detection/alignment 결과를 관찰하는 운영 화면이다. 물리 동작 버튼은 토큰과 안전 상태를 다시 확인하는 제한된 경로로만 쓰인다.
+
+![MotionBrain RViz RobotModel](docs/assets/motionbrain-rviz-robotmodel.png)
+
+RViz 화면은 Pi dashboard mirror가 publish한 live ROS2 topic, `RobotModel`, TF를 한 화면에서 확인하는 시각화 경로다.
 
 ## 시스템 구조
 
@@ -109,6 +113,7 @@ ROS2는 ESP32 내부 제어를 대체하지 않는다. 대신 `/status`, `/event
 - Raspberry Pi 4 + Ubuntu 24.04 + ROS2 Jazzy에서 `colcon build/test` 통과
 - `/motionbrain/status_typed`, `/camera/detection_typed`, `/joint_states`, `/motionbrain/kinematics_typed`, `/motionbrain/control_guard_typed`, `/motionbrain/mission_state_typed` 상태 점검 통과
 - Pi 인식 서비스 결과가 ROS2 `/camera/detection_typed`까지 전달되는 것 확인
+- Mac Docker/noVNC RViz에서 RobotModel/TF와 Pi dashboard mirror 기반 live ROS2 topic 시각화 확인
 - GitHub Actions에서 PlatformIO와 ROS2 workspace 검증
 
 ## 객체 인식 현황
@@ -129,12 +134,12 @@ Pi에서 OpenCV DNN/ONNX 기반 객체 인식 경로는 구현했다. `config/co
 - HC-SR04는 현재 gripper 장착 거리 센서가 아니라 텔레오퍼레이션/안전 입력 계층에 가깝다.
 - ESP32-CAM QVGA 입력은 일반 객체 인식에는 품질 한계가 있다.
 - 일반 텍스트 명령으로 임의 물체를 찾아 집는 수준은 아직 아니다.
-- 공개용 사진/영상 증거는 별도 캡처가 필요하다.
+- 비동작 공개용 screenshot/evidence는 캡처됐다. 실제 SearchLight 또는 motion 영상은 별도 opt-in 촬영이 필요하다.
 
 ## 다음 단계
 
-1. `STREAM` 수동 조작 화면, Pi 대시보드, ROS2 타입 지정 토픽을 함께 보여주는 데모 캡처
-2. 빨간 타겟 또는 `cup` 인식 확인과 안전 게이트 기반 짧은 보정 동작 캡처
+1. 선별된 비동작 screenshot/evidence를 README/포트폴리오 자료로 유지 관리
+2. 빨간 타겟 또는 `cup` 인식 확인과 안전 게이트 기반 짧은 보정 동작 영상 캡처
 3. 마커 또는 고정 known-object 기반 제한 집기 계획을 별도 설계
 4. 더 좋은 카메라나 검증된 edge detector runtime으로 객체 인식 개선
 5. 추가 센서 장착 후 거리/접촉 기반 집기 안전성 강화

@@ -22,6 +22,10 @@ ESP32 내장 `MotionBrain Control`은 수동 조작, 토큰 기반 명령 경계
 
 Pi 호스트 대시보드는 제어기 상태, 텔레오퍼레이션, 이벤트, 카메라 프레임, 타겟 감지 상태를 관찰하고 안전 게이트 기반 보정 명령을 제한적으로 노출한다.
 
+![MotionBrain RViz RobotModel](docs/assets/motionbrain-rviz-robotmodel.png)
+
+Docker/noVNC RViz 화면은 Pi 대시보드 상태와 감지 결과를 읽기 전용 HTTP mirror로 받아 ROS2 topic, `RobotModel`, TF 시각화까지 이어지는 경로를 보여준다.
+
 ## 현재 상태
 
 검증 완료:
@@ -38,6 +42,7 @@ Pi 호스트 대시보드는 제어기 상태, 텔레오퍼레이션, 이벤트,
 - ROS2 타입 지정 토픽: 상태, 이벤트, 카메라 감지, 조인트 상태, 기구학, 제어 guard, mission 상태
 - Pi 인식 서비스를 통한 `/camera/detection(_typed)` 연동
 - ESP32 내장 제어 페이지의 카메라 모드 분리: 수동 조작은 `STREAM`, 인식 확인은 `TRACKED`
+- Mac Docker/noVNC RViz에서 RobotModel/TF와 Pi dashboard mirror 기반 live ROS2 topic 시각화
 - GitHub Actions 기반 PlatformIO 빌드, Python 테스트, ROS2 `colcon build/test`
 
 현재 주의점:
