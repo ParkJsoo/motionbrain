@@ -131,8 +131,10 @@
 
 #define TELEOP_ANGLE_DEADZONE_DEG 6.0f
 #define TELEOP_ANGLE_FULL_SCALE_DEG 45.0f
-#define TELEOP_TWIST_DEADZONE_DPS 18.0f
-#define TELEOP_TWIST_FULL_SCALE_DPS 180.0f
+#define TELEOP_TWIST_RATE_DEADZONE_DPS 2.0f
+#define TELEOP_TWIST_ANGLE_DEADZONE_DEG 6.0f
+#define TELEOP_TWIST_ANGLE_FULL_SCALE_DEG 35.0f
+#define TELEOP_TWIST_ANGLE_LIMIT_DEG 60.0f
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -184,6 +186,7 @@ static uint8_t g_prev_deadman_pressed = 0;
 static uint8_t g_prev_led_button_pressed = 0;
 static float g_teleop_neutral_roll_deg = 0.0f;
 static float g_teleop_neutral_pitch_deg = 0.0f;
+static float g_teleop_twist_angle_deg = 0.0f;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -545,6 +548,39 @@ static float NormalizeAxis(float value, float deadzone, float fullScale)
     return (value >= 0.0f) ? normalized : -normalized;
 }
 
+static void UpdateTeleopTwistAngle(float dt_sec)
+{
+#if APP_MODE == APP_MODE_TELEOP_REMOTE
+    if (!g_deadman_active || !g_imu_ok) {
+        if (!g_deadman_active) {
+            g_teleop_twist_angle_deg = 0.0f;
+        }
+        return;
+    }
+
+    float twist_rate_dps = g_gyro_z_dps * TELEOP_TWIST_SIGN;
+    if (fabsf(twist_rate_dps) <= TELEOP_TWIST_RATE_DEADZONE_DPS) {
+        return;
+    }
+
+    g_teleop_twist_angle_deg += twist_rate_dps * dt_sec;
+    if (g_teleop_twist_angle_deg > TELEOP_TWIST_ANGLE_LIMIT_DEG) {
+        g_teleop_twist_angle_deg = TELEOP_TWIST_ANGLE_LIMIT_DEG;
+    } else if (g_teleop_twist_angle_deg < -TELEOP_TWIST_ANGLE_LIMIT_DEG) {
+        g_teleop_twist_angle_deg = -TELEOP_TWIST_ANGLE_LIMIT_DEG;
+    }
+#else
+    (void)dt_sec;
+#endif
+}
+
+static float GetTeleopTwistCommand(void)
+{
+    return NormalizeAxis(g_teleop_twist_angle_deg,
+                         TELEOP_TWIST_ANGLE_DEADZONE_DEG,
+                         TELEOP_TWIST_ANGLE_FULL_SCALE_DEG);
+}
+
 static void UpdateTeleopState(void)
 {
 #if TELEOP_DIAGNOSTIC_BUTTON_SCAN
@@ -563,6 +599,7 @@ static void UpdateTeleopState(void)
         g_teleop_session++;
         g_teleop_neutral_roll_deg = g_roll_deg;
         g_teleop_neutral_pitch_deg = g_pitch_deg;
+        g_teleop_twist_angle_deg = 0.0f;
         g_deadman_active = 1U;
         printf("Teleop session=%lu ", (unsigned long)g_teleop_session);
         PrintFixed3("neutral_roll", g_teleop_neutral_roll_deg);
@@ -571,6 +608,7 @@ static void UpdateTeleopState(void)
         printf("\r\n");
     } else if (!deadman_pressed) {
         g_deadman_active = 0U;
+        g_teleop_twist_angle_deg = 0.0f;
     }
 
     if (led_pressed && !g_prev_led_button_pressed) {
@@ -622,10 +660,7 @@ static void SendTeleopPacket(void)
         lift = NormalizeAxis((g_roll_deg - g_teleop_neutral_roll_deg) * TELEOP_LIFT_SIGN,
                              TELEOP_ANGLE_DEADZONE_DEG,
                              TELEOP_ANGLE_FULL_SCALE_DEG);
-        // TODO: 센서 장착 방향이 바뀌면 twist 축 부호/축 자체를 다시 맞춘다.
-        twist = NormalizeAxis(g_gyro_z_dps * TELEOP_TWIST_SIGN,
-                              TELEOP_TWIST_DEADZONE_DPS,
-                              TELEOP_TWIST_FULL_SCALE_DPS);
+        twist = GetTeleopTwistCommand();
     }
 #endif
 
@@ -705,9 +740,7 @@ static void PrintTeleopToSwv(void)
         lift = NormalizeAxis((g_roll_deg - g_teleop_neutral_roll_deg) * TELEOP_LIFT_SIGN,
                              TELEOP_ANGLE_DEADZONE_DEG,
                              TELEOP_ANGLE_FULL_SCALE_DEG);
-        twist = NormalizeAxis(g_gyro_z_dps * TELEOP_TWIST_SIGN,
-                              TELEOP_TWIST_DEADZONE_DPS,
-                              TELEOP_TWIST_FULL_SCALE_DPS);
+        twist = GetTeleopTwistCommand();
     }
 #endif
 
@@ -860,6 +893,8 @@ static HAL_StatusTypeDef ProcessMpu6050Sample(I2C_HandleTypeDef *hi2c)
     g_vibe = sqrtf((g_gyro_x_dps * g_gyro_x_dps) +
                    (g_gyro_y_dps * g_gyro_y_dps) +
                    (g_gyro_z_dps * g_gyro_z_dps));
+
+    UpdateTeleopTwistAngle(dt_sec);
 
     if (!g_attitude_ready) {
         g_roll_deg = sample.roll_acc;

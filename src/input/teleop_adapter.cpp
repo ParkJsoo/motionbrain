@@ -25,7 +25,8 @@ constexpr float LIFT_TO_SHOULDER_WEIGHT     = 0.70f;
 constexpr float LIFT_TO_ELBOW_WEIGHT        = 0.30f;
 constexpr float WRIST_BLEND_START           = 0.30f;
 constexpr float WRIST_BLEND_MAX             = 0.25f;
-constexpr float TWIST_TO_BASE_WEIGHT        = 1.00f;
+constexpr float TWIST_TO_BASE_WEIGHT        = 1.25f;
+constexpr uint8_t BASE_OUTPUT_CAP_PERCENT   = 50;
 
 // 실제 기구 방향은 실기에서 맞춘다. 지금은 teleop 골격용 기본 부호다.
 constexpr float REACH_TO_ELBOW_SIGN         = 1.0f;
@@ -565,7 +566,7 @@ void TeleopAdapter::applyContinuousOutputs() {
   int8_t wristPercent = quantizeNormalized(wrist);
   int8_t elbowPercent = quantizeNormalized(elbow);
   int8_t shoulderPercent = quantizeNormalized(shoulder);
-  int8_t basePercent = quantizeNormalized(base);
+  int8_t basePercent = quantizeNormalized(base, BASE_OUTPUT_CAP_PERCENT);
 
   if (basePercent != 0 && angleController_ != nullptr && angleController_->isActive()) {
     angleController_->cancel(AngleControllerStopReason::OVERRIDDEN, "teleop twist");
@@ -656,7 +657,7 @@ float TeleopAdapter::absf(float value) {
   return value < 0.0f ? -value : value;
 }
 
-int8_t TeleopAdapter::quantizeNormalized(float value) {
+int8_t TeleopAdapter::quantizeNormalized(float value, uint8_t capPercent) {
   float clamped = clampUnit(value);
   float magnitude = absf(clamped);
   if (magnitude < 0.05f) {
@@ -664,8 +665,8 @@ int8_t TeleopAdapter::quantizeNormalized(float value) {
   }
 
   uint8_t percent = static_cast<uint8_t>(magnitude * 100.0f + 0.5f);
-  if (percent > CONTINUOUS_OUTPUT_CAP_PERCENT) {
-    percent = CONTINUOUS_OUTPUT_CAP_PERCENT;
+  if (percent > capPercent) {
+    percent = capPercent;
   }
   uint8_t quantized = quantizePercentMagnitude(percent);
   if (quantized == 0) {

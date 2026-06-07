@@ -150,7 +150,7 @@ private:
 
   static float clampUnit(float value);
   static float absf(float value);
-  static int8_t quantizeNormalized(float value);
+  static int8_t quantizeNormalized(float value, uint8_t capPercent = CONTINUOUS_OUTPUT_CAP_PERCENT);
   static int8_t quantizePercentMagnitude(uint8_t percent);
   void warnParserDrop(const char* reason, const char* line = nullptr);
 };
