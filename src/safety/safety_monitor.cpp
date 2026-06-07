@@ -78,7 +78,7 @@ void SafetyMonitor::update(const SensorSnapshot& snapshot) {
     nextReason = SafetyBlockReason::SENSOR_STALE;
   } else if (!snapshot.imuOk) {
     nextReason = SafetyBlockReason::IMU_FAULT;
-  } else if (!snapshot.rangeOk) {
+  } else if (snapshot.obstacleSafetyEnabled && !snapshot.rangeOk) {
     nextReason = SafetyBlockReason::RANGE_FAULT;
   } else if (vibrationActive_) {
     nextReason = SafetyBlockReason::VIBRATION;

@@ -49,6 +49,7 @@
 #define TELEOP_TX_RATE_HZ 25U
 #define MPU_CALIBRATION_SAMPLES 400U
 #define MPU_FILTER_TAU_SEC 0.5f
+#define HCSR04_ENABLED 0U
 #define HCSR04_TRIGGER_INTERVAL_MS 100U
 #define HCSR04_TIMEOUT_US 30000U
 #define HCSR04_MAX_VALID_CM 400.0f
@@ -169,14 +170,16 @@ static uint32_t g_last_teleop_tx_ms = 0;
 #endif
 #if SAFETY_TELEMETRY_ENABLED
 static float g_distance_cm = 0.0f;
-static uint8_t g_range_ok = 0;
+static uint8_t g_range_ok = HCSR04_ENABLED ? 0U : 1U;
 static uint32_t g_last_hcsr04_trigger_ms = 0;
+#if HCSR04_ENABLED
 static uint32_t g_hcsr04_trigger_started_us = 0;
 static volatile uint32_t g_hcsr04_rise_us = 0;
 static volatile uint32_t g_hcsr04_echo_width_us = 0;
-static volatile uint8_t g_hcsr04_echo_pending = 0;
 static volatile uint8_t g_hcsr04_waiting_for_fall = 0;
 static volatile uint8_t g_hcsr04_measurement_ready = 0;
+#endif
+static volatile uint8_t g_hcsr04_echo_pending = 0;
 #endif
 static uint32_t g_teleop_session = 0;
 static uint32_t g_teleop_sequence = 0;
@@ -214,7 +217,7 @@ static void EnableCycleCounter(void)
     DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
 }
 
-#if SAFETY_TELEMETRY_ENABLED
+#if SAFETY_TELEMETRY_ENABLED && HCSR04_ENABLED
 static uint32_t Micros(void)
 {
     return DWT->CYCCNT / (HAL_RCC_GetHCLKFreq() / 1000000UL);
@@ -365,6 +368,7 @@ static void TransmitFormattedPacket(char *buffer, size_t size, int length)
 #if SAFETY_TELEMETRY_ENABLED
 static void TriggerHcsr04(void)
 {
+#if HCSR04_ENABLED
     HAL_GPIO_WritePin(HCSR04_TRIG_GPIO_Port, HCSR04_TRIG_Pin, GPIO_PIN_RESET);
     DelayUs(2U);
     HAL_GPIO_WritePin(HCSR04_TRIG_GPIO_Port, HCSR04_TRIG_Pin, GPIO_PIN_SET);
@@ -374,10 +378,15 @@ static void TriggerHcsr04(void)
     g_hcsr04_trigger_started_us = Micros();
     g_hcsr04_echo_pending = 1U;
     g_hcsr04_waiting_for_fall = 0U;
+#else
+    g_distance_cm = 0.0f;
+    g_range_ok = 1U;
+#endif
 }
 
 static void UpdateRangeMeasurement(void)
 {
+#if HCSR04_ENABLED
     uint8_t measurement_ready = 0U;
     uint32_t pulse_width_us = 0U;
 
@@ -402,6 +411,10 @@ static void UpdateRangeMeasurement(void)
         g_distance_cm = 0.0f;
         printf("HC-SR04 timeout\r\n");
     }
+#else
+    g_distance_cm = 0.0f;
+    g_range_ok = 1U;
+#endif
 }
 #endif
 
@@ -1097,7 +1110,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   }
 }
 
-#if SAFETY_TELEMETRY_ENABLED
+#if SAFETY_TELEMETRY_ENABLED && HCSR04_ENABLED
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
     if (GPIO_Pin == HCSR04_ECHO_Pin) {
