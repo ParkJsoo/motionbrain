@@ -126,6 +126,9 @@ private:
   uint32_t    lastParserWarningMs_;
   uint32_t    suppressedParserWarnings_;
   TeleopStopReason lastStopReason_;
+  uint32_t    rollLiftSession_;
+  float       rollLiftNeutralDeg_;
+  bool        rollLiftNeutralValid_;
 
   int8_t appliedGripPercent_;
   int8_t appliedWristPercent_;
@@ -150,6 +153,7 @@ private:
 
   static float clampUnit(float value);
   static float absf(float value);
+  static float normalizeAxis(float value, float deadzone, float fullScale);
   static int8_t quantizeNormalized(float value, uint8_t capPercent = CONTINUOUS_OUTPUT_CAP_PERCENT);
   static int8_t quantizePercentMagnitude(uint8_t percent);
   void warnParserDrop(const char* reason, const char* line = nullptr);

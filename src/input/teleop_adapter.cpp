@@ -21,11 +21,17 @@ namespace {
 
 constexpr float REACH_TO_ELBOW_WEIGHT       = 0.65f;
 constexpr float REACH_TO_SHOULDER_WEIGHT    = 0.35f;
-constexpr float LIFT_TO_SHOULDER_WEIGHT     = 0.70f;
-constexpr float LIFT_TO_ELBOW_WEIGHT        = 0.30f;
+constexpr float LIFT_TO_SHOULDER_WEIGHT     = 1.00f;
+constexpr float LIFT_TO_ELBOW_WEIGHT        = 0.00f;
+constexpr float LIFT_RESPONSE_GAIN          = 2.00f;
+constexpr float LIFT_ROLL_DEADZONE_DEG      = 2.0f;
+constexpr float LIFT_ROLL_FULL_SCALE_DEG    = 14.0f;
+constexpr float LIFT_REACH_SUPPRESSION_START = 0.05f;
+constexpr float LIFT_REACH_SUPPRESSION_MAX   = 1.00f;
 constexpr float WRIST_BLEND_START           = 0.30f;
 constexpr float WRIST_BLEND_MAX             = 0.25f;
 constexpr float TWIST_TO_BASE_WEIGHT        = 1.25f;
+constexpr uint8_t LIFT_OUTPUT_CAP_PERCENT   = 100;
 constexpr uint8_t BASE_OUTPUT_CAP_PERCENT   = 50;
 
 // 실제 기구 방향은 실기에서 맞춘다. 지금은 teleop 골격용 기본 부호다.
@@ -154,6 +160,9 @@ TeleopAdapter::TeleopAdapter()
   , lastParserWarningMs_(0)
   , suppressedParserWarnings_(0)
   , lastStopReason_(TeleopStopReason::NONE)
+  , rollLiftSession_(0)
+  , rollLiftNeutralDeg_(0.0f)
+  , rollLiftNeutralValid_(false)
   , appliedGripPercent_(0)
   , appliedWristPercent_(0)
   , appliedElbowPercent_(0)
@@ -541,17 +550,42 @@ void TeleopAdapter::applyContinuousOutputs() {
   float lift = clampUnit(lastFrame_.lift);
   float twist = clampUnit(lastFrame_.twist);
 
-  float shoulder = clampUnit((lift * LIFT_TO_SHOULDER_SIGN * LIFT_TO_SHOULDER_WEIGHT) +
-                             (reach * REACH_TO_SHOULDER_SIGN * REACH_TO_SHOULDER_WEIGHT));
-  float elbow = clampUnit((lift * LIFT_TO_ELBOW_SIGN * LIFT_TO_ELBOW_WEIGHT) +
-                          (reach * REACH_TO_ELBOW_SIGN * REACH_TO_ELBOW_WEIGHT));
+  if (lastFrame_.hasSafetySnapshot) {
+    if (!rollLiftNeutralValid_ || rollLiftSession_ != lastFrame_.session) {
+      rollLiftSession_ = lastFrame_.session;
+      rollLiftNeutralDeg_ = lastFrame_.safetySnapshot.roll;
+      rollLiftNeutralValid_ = true;
+    }
+
+    float rawRollLift = normalizeAxis((lastFrame_.safetySnapshot.roll - rollLiftNeutralDeg_) * LIFT_TO_SHOULDER_SIGN,
+                                      LIFT_ROLL_DEADZONE_DEG,
+                                      LIFT_ROLL_FULL_SCALE_DEG);
+    if (absf(rawRollLift) > absf(lift)) {
+      lift = rawRollLift;
+    }
+  }
+
+  float liftCommand = clampUnit(lift * LIFT_RESPONSE_GAIN);
+  float reachForArm = reach;
+  float absLiftCommand = absf(liftCommand);
+  if (absLiftCommand > LIFT_REACH_SUPPRESSION_START) {
+    float suppression = (absLiftCommand - LIFT_REACH_SUPPRESSION_START) / (1.0f - LIFT_REACH_SUPPRESSION_START);
+    if (suppression > 1.0f) suppression = 1.0f;
+    reachForArm *= (1.0f - (suppression * LIFT_REACH_SUPPRESSION_MAX));
+    twist = 0.0f;
+  }
+
+  float shoulder = clampUnit((liftCommand * LIFT_TO_SHOULDER_SIGN * LIFT_TO_SHOULDER_WEIGHT) +
+                             (reachForArm * REACH_TO_SHOULDER_SIGN * REACH_TO_SHOULDER_WEIGHT));
+  float elbow = clampUnit((liftCommand * LIFT_TO_ELBOW_SIGN * LIFT_TO_ELBOW_WEIGHT) +
+                          (reachForArm * REACH_TO_ELBOW_SIGN * REACH_TO_ELBOW_WEIGHT));
 
   float wrist = 0.0f;
-  float absReach = absf(reach);
+  float absReach = absf(reachForArm);
   if (absReach > WRIST_BLEND_START) {
     float wristBlend = (absReach - WRIST_BLEND_START) / (1.0f - WRIST_BLEND_START);
     if (wristBlend > 1.0f) wristBlend = 1.0f;
-    wrist = (reach >= 0.0f ? 1.0f : -1.0f) * wristBlend * WRIST_BLEND_MAX * REACH_TO_WRIST_SIGN;
+    wrist = (reachForArm >= 0.0f ? 1.0f : -1.0f) * wristBlend * WRIST_BLEND_MAX * REACH_TO_WRIST_SIGN;
   }
 
   float base = clampUnit(twist * TWIST_TO_BASE_SIGN * TWIST_TO_BASE_WEIGHT);
@@ -564,8 +598,9 @@ void TeleopAdapter::applyContinuousOutputs() {
   }
 
   int8_t wristPercent = quantizeNormalized(wrist);
-  int8_t elbowPercent = quantizeNormalized(elbow);
-  int8_t shoulderPercent = quantizeNormalized(shoulder);
+  uint8_t armOutputCapPercent = absLiftCommand >= 0.05f ? LIFT_OUTPUT_CAP_PERCENT : CONTINUOUS_OUTPUT_CAP_PERCENT;
+  int8_t elbowPercent = quantizeNormalized(elbow, armOutputCapPercent);
+  int8_t shoulderPercent = quantizeNormalized(shoulder, armOutputCapPercent);
   int8_t basePercent = quantizeNormalized(base, BASE_OUTPUT_CAP_PERCENT);
 
   if (basePercent != 0 && angleController_ != nullptr && angleController_->isActive()) {
@@ -655,6 +690,24 @@ float TeleopAdapter::clampUnit(float value) {
 
 float TeleopAdapter::absf(float value) {
   return value < 0.0f ? -value : value;
+}
+
+float TeleopAdapter::normalizeAxis(float value, float deadzone, float fullScale) {
+  if (fullScale <= deadzone) {
+    return 0.0f;
+  }
+
+  float magnitude = absf(value);
+  if (magnitude <= deadzone) {
+    return 0.0f;
+  }
+
+  float normalized = (magnitude - deadzone) / (fullScale - deadzone);
+  if (normalized > 1.0f) {
+    normalized = 1.0f;
+  }
+
+  return value >= 0.0f ? normalized : -normalized;
 }
 
 int8_t TeleopAdapter::quantizeNormalized(float value, uint8_t capPercent) {
