@@ -1,6 +1,6 @@
 # MotionBrain Portfolio One-Pager
 
-[Korean README](README.md) | [Roadmap](ROADMAP.en.md) | [English README](README.en.md) | [Korean Portfolio](PORTFOLIO.md)
+[Korean README](README.md) | [English README](README.en.md) | [Korean Portfolio](PORTFOLIO.md)
 
 ## Summary
 
@@ -152,7 +152,6 @@ Current honest positioning:
 ## Related Documents
 
 - [README.en.md](README.en.md): project entry point
-- [ROADMAP.en.md](ROADMAP.en.md): current roadmap
 - [MESSAGE_INTERFACE.md](MESSAGE_INTERFACE.md): command and status boundary
 - [docs/DEMO_RUNBOOK.en.md](docs/DEMO_RUNBOOK.en.md): demo capture runbook
 - [docs/RASPBERRY_PI_DEPLOYMENT.en.md](docs/RASPBERRY_PI_DEPLOYMENT.en.md): Pi systemd deployment

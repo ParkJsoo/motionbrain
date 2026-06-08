@@ -1,6 +1,6 @@
 # MotionBrain 포트폴리오 요약
 
-[README](README.md) | [로드맵](ROADMAP.md) | [영어 README](README.en.md) | [영어 포트폴리오 요약](PORTFOLIO.en.md)
+[README](README.md) | [영어 README](README.en.md) | [영어 포트폴리오 요약](PORTFOLIO.en.md)
 
 ## 개요
 
@@ -150,7 +150,6 @@ Pi에서 OpenCV DNN/ONNX 기반 객체 인식 경로는 구현했다. `config/co
 ## 관련 문서
 
 - [README.md](README.md): 프로젝트 진입점
-- [ROADMAP.md](ROADMAP.md): 현재 로드맵
 - [MESSAGE_INTERFACE.md](MESSAGE_INTERFACE.md): 명령/상태 메시지 경계
 - [docs/DEMO_RUNBOOK.md](docs/DEMO_RUNBOOK.md): 데모 촬영 절차
 - [docs/RASPBERRY_PI_DEPLOYMENT.md](docs/RASPBERRY_PI_DEPLOYMENT.md): Pi systemd 배포
