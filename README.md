@@ -60,6 +60,7 @@ Docker/noVNC RViz 화면은 Pi 대시보드 상태와 감지 결과를 읽기 �
 - 검은 라벨 없는 병, 스티커가 큰 아이폰 뒷면, Z Flip 보조 phone 타겟은 현재 데모 범위에서 제외한다. 이 결과는 임의 객체 인식이 아니라 제한된 작업공간의 known-object 인식/정렬 데모로 설명해야 한다.
 - 자동 grasp는 아직 하지 않는다. 현재 cup dry-run 경로는 안전 상태와 CENTER 정렬을 재확인한 뒤 작업자 확인용 그리퍼 open/close 계획만 반환한다.
 - 로봇팔을 조종하면서 카메라를 보는 작업은 `STREAM`이 기본이다. `TRACKED`는 Pi 인식 결과를 확인하는 느린 뷰로만 쓴다.
+- HC-SR04는 최종 물리 데모에서 장착하지 않았고, range telemetry는 disabled/nonblocking demo state로 처리한다.
 
 ## 시스템 구성
 

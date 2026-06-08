@@ -40,7 +40,7 @@ I designed and implemented:
 
 ## Operator Screens
 
-The final public video with physical action still needs a separate opt-in capture. The images below are non-motion documentation captures from the current controller, dashboard, and RViz path, showing that MotionBrain includes operator-facing surfaces, observability, and ROS2 visualization rather than only firmware code.
+The final physical teleoperation video is published as the README GIF/MP4. The images below are separate static evidence from the controller, dashboard, and RViz path, showing that MotionBrain includes operator-facing surfaces, observability, and ROS2 visualization rather than only firmware code.
 
 ![MotionBrain Control web console](docs/assets/motionbrain-control-stream.png)
 
@@ -99,7 +99,7 @@ ROS2 does not replace the embedded controller. It promotes ESP32 status/events/c
 
 ### Demo-Ready Scope
 
-The reliable demo path is `STREAM`-based manual camera feedback, Pi-hosted dashboard, red-target or known-object overlay, ROS2 typed topics, a safety-gated short nudge, and a token-gated command path to physical hardware. Autonomous grasping remains out of scope for the current hardware state.
+The public demo is physical teleoperation. Supporting evidence covers `STREAM`-based manual camera feedback, Pi-hosted dashboard, red-target or known-object overlay, ROS2 typed topics, a safety-gated short nudge, and a token-gated command path to physical hardware. Autonomous grasping remains out of scope for the current hardware state.
 
 ## Validation
 
@@ -107,6 +107,7 @@ The reliable demo path is `STREAM`-based manual camera feedback, Pi-hosted dashb
 - `TB6612FNG x3` and `M1~M5` motor outputs were physically tested.
 - STM32 `MPU-6050 + HC-SR04 + UART` bench path was validated.
 - Wired teleop produced real motor output under deadman control and stopped on release.
+- The final physical teleoperation demo was captured and published as README GIF/MP4 assets.
 - ESP32-CAM `/status`, `/capture`, and `/stream` were verified.
 - Home Wi-Fi operation was validated across ESP32 controller, ESP32-CAM, and Raspberry Pi.
 - The ESP32-hosted `MotionBrain Control` page accepted a runtime token and executed state-changing commands.
@@ -133,18 +134,18 @@ Current honest positioning:
 ## Current Limitations
 
 - No joint encoders, force feedback, or reliable absolute joint pose
-- HC-SR04 is currently part of the teleop/safety layer, not a gripper-mounted range sensor
+- HC-SR04 is removed for the final physical demo, with range telemetry handled as disabled/nonblocking
 - ESP32-CAM QVGA input limits general object detection quality
 - No general text-prompt object search
-- Non-motion public screenshots/evidence are captured; SearchLight or motion video still needs separate opt-in capture
+- The README physical teleop video and non-motion screenshots/evidence are captured; additional SearchLight or object-correction video should be captured only for a specific follow-up goal
 
 ## Next Steps
 
-1. Maintain the selected non-motion screenshots/evidence in README and portfolio material.
-2. Capture red-target or `cup` recognition plus safety-gated short nudge behavior as video.
-3. Design marker- or fixed-known-object-assisted grasping as a separate plan.
-4. Improve object detection with a better camera or a validated edge-runtime model.
-5. Add range/contact sensing before attempting more autonomous grasp sequences.
+1. Verify GitHub README GIF playback and the MP4 download link.
+2. Prepare a 3-5 line resume/application summary and interview talking points.
+3. Create a demo-ready release/tag if a stable portfolio snapshot is needed.
+4. Design marker- or fixed-known-object-assisted grasping as a separate plan.
+5. Revisit autonomy only after adding a better camera, range/contact sensing, or a validated edge runtime.
 
 ## Related Documents
 

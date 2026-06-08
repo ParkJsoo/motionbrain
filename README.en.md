@@ -60,6 +60,7 @@ Important current limits:
 - A label-less dark bottle, a sticker-heavy iPhone back side, and the secondary Z Flip phone target are out of scope for the current demo. Describe this as constrained workcell known-object detection/alignment, not arbitrary object recognition.
 - Autonomous grasping is not enabled. The current cup dry-run path revalidates safety state and CENTER alignment, then returns a gripper open/close plan for operator review only.
 - Manual arm operation uses `STREAM` by default. `TRACKED` is a slower Pi-recognition view for checking fixed or slow-moving targets.
+- HC-SR04 is not installed for the final physical demo, and range telemetry is handled as a disabled/nonblocking demo state.
 
 ## System Layout
 

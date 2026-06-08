@@ -38,7 +38,7 @@ MotionBrain은 ESP32 모션 제어기, STM32 센서/텔레오퍼레이션 계층
 
 ## 운영 화면
 
-실제 동작을 포함한 최종 공개 영상은 별도 opt-in 촬영이 필요하다. 아래 이미지는 현재 하드웨어/대시보드/RViz 경로에서 얻은 비동작 정적 캡처로, MotionBrain이 단순 펌웨어 코드가 아니라 작업자 화면, 관찰 화면, ROS2 시각화까지 갖춘 시스템이라는 점을 보여준다.
+최종 물리 텔레오퍼레이션 영상은 README 상단 GIF/MP4로 공개했다. 아래 이미지는 영상과 별도로 캡처한 운영 UI/RViz 정적 증거로, MotionBrain이 단순 펌웨어 코드가 아니라 작업자 화면, 관찰 화면, ROS2 시각화까지 갖춘 시스템이라는 점을 보여준다.
 
 ![MotionBrain Control 웹 콘솔](docs/assets/motionbrain-control-stream.png)
 
@@ -97,7 +97,7 @@ ROS2는 ESP32 내부 제어를 대체하지 않는다. 대신 `/status`, `/event
 
 ### 검증 가능한 데모 경계
 
-현재 안정 데모는 `STREAM` 기반 수동 카메라 확인, Pi 호스트 대시보드, 빨간 타겟/known-object 타겟 오버레이, ROS2 타입 지정 토픽, 안전 게이트 기반 짧은 보정 동작, search light 명령 경로다. 자동 집기는 아직 활성화하지 않는다.
+현재 공개 데모는 실물 텔레오퍼레이션이다. 지원 증거로는 `STREAM` 기반 수동 카메라 확인, Pi 호스트 대시보드, 빨간 타겟/known-object 타겟 오버레이, ROS2 타입 지정 토픽, 안전 게이트 기반 짧은 보정 동작, search light 명령 경로가 있다. 자동 집기는 아직 활성화하지 않는다.
 
 ## 검증 결과
 
@@ -105,6 +105,7 @@ ROS2는 ESP32 내부 제어를 대체하지 않는다. 대신 `/status`, `/event
 - `TB6612FNG x3`와 `M1~M5` 실제 모터 출력 확인
 - STM32 `MPU-6050 + HC-SR04 + UART` bench 검증
 - 유선 텔레오퍼레이션 데드맨 입력으로 실제 모터 출력 및 release 정지 확인
+- 최종 물리 텔레오퍼레이션 데모 영상 캡처와 README GIF/MP4 반영
 - ESP32-CAM `/status`, `/capture`, `/stream` 확인
 - 홈 Wi-Fi에서 ESP32 제어기, ESP32-CAM, Raspberry Pi 동시 연결 확인
 - `MotionBrain Control` 웹 UI에서 토큰 입력 후 상태 변경 명령 확인
@@ -131,18 +132,18 @@ Pi에서 OpenCV DNN/ONNX 기반 객체 인식 경로는 구현했다. `config/co
 ## 현재 한계
 
 - 로봇팔에 엔코더, 힘 피드백, 신뢰할 수 있는 절대 관절 위치가 없다.
-- HC-SR04는 현재 gripper 장착 거리 센서가 아니라 텔레오퍼레이션/안전 입력 계층에 가깝다.
+- HC-SR04는 최종 물리 데모에서 제거됐고, range telemetry는 disabled/nonblocking 상태로 처리한다.
 - ESP32-CAM QVGA 입력은 일반 객체 인식에는 품질 한계가 있다.
 - 일반 텍스트 명령으로 임의 물체를 찾아 집는 수준은 아직 아니다.
-- 비동작 공개용 screenshot/evidence는 캡처됐다. 실제 SearchLight 또는 motion 영상은 별도 opt-in 촬영이 필요하다.
+- README용 물리 텔레오퍼레이션 영상과 비동작 screenshot/evidence는 캡처됐다. 추가 SearchLight/객체 보정 영상은 별도 목적이 있을 때만 새로 촬영한다.
 
 ## 다음 단계
 
-1. 선별된 비동작 screenshot/evidence를 README/포트폴리오 자료로 유지 관리
-2. 빨간 타겟 또는 `cup` 인식 확인과 안전 게이트 기반 짧은 보정 동작 영상 캡처
-3. 마커 또는 고정 known-object 기반 제한 집기 계획을 별도 설계
-4. 더 좋은 카메라나 검증된 edge detector runtime으로 객체 인식 개선
-5. 추가 센서 장착 후 거리/접촉 기반 집기 안전성 강화
+1. GitHub README의 GIF 표시와 MP4 다운로드 링크를 최종 확인
+2. 이력서/지원용 3-5줄 요약과 면접 설명 포인트 정리
+3. 포트폴리오 스냅샷이 필요하면 demo-ready release/tag 생성
+4. 마커 또는 고정 known-object 기반 제한 집기 계획을 별도 설계
+5. 더 좋은 카메라, 거리/접촉 센서, 검증된 edge runtime을 추가한 뒤 자율 동작 범위 재검토
 
 ## 관련 문서
 
