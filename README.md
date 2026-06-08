@@ -1,6 +1,6 @@
 # MotionBrain
 
-[영어 README](README.en.md) | [포트폴리오 요약](PORTFOLIO.md) | [영어 포트폴리오 요약](PORTFOLIO.en.md)
+[영어 README](README.en.md) | [로드맵](ROADMAP.md) | [포트폴리오 요약](PORTFOLIO.md) | [영어 포트폴리오 요약](PORTFOLIO.en.md)
 
 MotionBrain은 ESP32 기반 5축 로봇팔 제어기에서 시작해 STM32 센서/텔레오퍼레이션 계층, ESP32-CAM 비전 입력, Raspberry Pi + ROS2 호스트 브리지까지 확장한 임베디드 로보틱스 포트폴리오 프로젝트다.
 
@@ -176,12 +176,12 @@ systemd wrapper는 ESP32-CAM 재부팅 후에도 이 카메라 프로필을 다�
 
 - [PORTFOLIO.md](PORTFOLIO.md): 한국어 포트폴리오 요약
 - [PORTFOLIO.en.md](PORTFOLIO.en.md): 영어 포트폴리오 요약
+- [ROADMAP.md](ROADMAP.md): 현재 로드맵
 - [MESSAGE_INTERFACE.md](MESSAGE_INTERFACE.md): 시리얼/HTTP/ROS2 명령과 상태 경계
 - [PIN_MAP.md](PIN_MAP.md): 핀과 배선 기준
 - [docs/DEMO_RUNBOOK.md](docs/DEMO_RUNBOOK.md): 데모 캡처 절차
 - [docs/RASPBERRY_PI_DEPLOYMENT.md](docs/RASPBERRY_PI_DEPLOYMENT.md): Raspberry Pi systemd 배포
 - [docs/RASPBERRY_PI_ROS2_BRINGUP.md](docs/RASPBERRY_PI_ROS2_BRINGUP.md): Raspberry Pi ROS2 bring-up 기록
-- [docs/PHYSICAL_AI_OBJECT_DETECTION_PLAN.md](docs/PHYSICAL_AI_OBJECT_DETECTION_PLAN.md): 객체 인식과 제한된 물리 AI 계획
 - [docs/VISION_DATASET_EVALUATION.md](docs/VISION_DATASET_EVALUATION.md): 물체 인식 frame capture와 offline 평가 절차
 - [docs/EMBEDDED_FIRMWARE_EVIDENCE.md](docs/EMBEDDED_FIRMWARE_EVIDENCE.md): 임베디드 펌웨어 검증 근거
 
