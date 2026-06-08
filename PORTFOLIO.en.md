@@ -8,6 +8,8 @@ MotionBrain is an embedded robotics portfolio project that integrates an ESP32 m
 
 The project is designed to demonstrate reliable embedded control, not just motor movement. The main engineering signal is the separation between low-level motion execution, safety state, structured sensor feedback, host-side perception, and ROS2 orchestration.
 
+The stable portfolio snapshot is tagged as `demo-ready-20260608`.
+
 ## Engineering Problem
 
 The current arm is a low-cost 5-axis DC motor platform without encoders, force feedback, or reliable absolute joint pose. Claiming fully autonomous grasping on this hardware would be misleading.
@@ -28,7 +30,7 @@ I designed and implemented:
 - `BOOT -> IDLE -> ARMED -> FAULT` safety state machine
 - Shared serial/HTTP command dispatch
 - Token-gated HTTP state-changing commands
-- STM32 `MPU-6050 + HC-SR04 + UART` sensor/teleop firmware
+- STM32 `MPU-6050 + UART` sensor/teleop firmware and bench-validated HC-SR04 path
 - Deadman handling, frame freshness timeout, and sensor fault latching
 - ESP32-CAM capture/stream firmware
 - Raspberry Pi dashboard and perception service
@@ -99,25 +101,25 @@ ROS2 does not replace the embedded controller. It promotes ESP32 status/events/c
 
 ### Demo-Ready Scope
 
-The public demo is physical teleoperation. Supporting evidence covers `STREAM`-based manual camera feedback, Pi-hosted dashboard, red-target or known-object overlay, ROS2 typed topics, a safety-gated short nudge, and a token-gated command path to physical hardware. Autonomous grasping remains out of scope for the current hardware state.
+The public demo is physical teleoperation. Supporting evidence covers `STREAM`-based manual camera feedback, Pi-hosted dashboard, red-target or known-object overlay, ROS2 typed topics, a safety-gated nudge path, and token-gated light/search commands. Autonomous grasping remains out of scope for the current hardware state.
 
 ## Validation
 
 - ESP32 controller and ESP32-CAM PlatformIO builds pass.
 - `TB6612FNG x3` and `M1~M5` motor outputs were physically tested.
-- STM32 `MPU-6050 + HC-SR04 + UART` bench path was validated.
+- STM32 `MPU-6050 + UART` teleop and the HC-SR04 bench path were validated.
 - Wired teleop produced real motor output under deadman control and stopped on release.
 - The final physical teleoperation demo was captured and published as README GIF/MP4 assets.
 - ESP32-CAM `/status`, `/capture`, and `/stream` were verified.
 - Home Wi-Fi operation was validated across ESP32 controller, ESP32-CAM, and Raspberry Pi.
 - The ESP32-hosted `MotionBrain Control` page accepted a runtime token and executed state-changing commands.
-- The Pi dashboard showed the camera feed, red target box, and physical nudge behavior.
+- The Pi dashboard verified the camera feed, red target box, and safety-gated nudge path.
 - The Pi perception service recognized the `cup` target with ESP32-CAM `qvga` / JPEG quality `4` and YOLOv5s.
 - Raspberry Pi 4 + Ubuntu 24.04 + ROS2 Jazzy `colcon build/test` passed.
 - Health checks passed for `/motionbrain/status_typed`, `/camera/detection_typed`, `/joint_states`, `/motionbrain/kinematics_typed`, `/motionbrain/control_guard_typed`, and `/motionbrain/mission_state_typed`.
 - Pi perception service output was verified through ROS2 `/camera/detection_typed`.
 - Mac Docker/noVNC RViz visualized RobotModel/TF and live ROS2 topics mirrored from the Pi dashboard.
-- GitHub Actions validates PlatformIO firmware builds and ROS2 workspace build/test.
+- GitHub Actions validates PlatformIO firmware builds, Python tests, and ROS2 workspace build/test.
 
 ## Object Detection Status
 
@@ -141,11 +143,11 @@ Current honest positioning:
 
 ## Next Steps
 
-1. Verify GitHub README GIF playback and the MP4 download link.
-2. Prepare a 3-5 line resume/application summary and interview talking points.
-3. Create a demo-ready release/tag if a stable portfolio snapshot is needed.
-4. Design marker- or fixed-known-object-assisted grasping as a separate plan.
-5. Revisit autonomy only after adding a better camera, range/contact sensing, or a validated edge runtime.
+1. Use the `demo-ready-20260608` snapshot and README GIF/MP4 as the reference links for applications.
+2. Tune the emphasis per role: embedded safety, multi-MCU teleop, Pi perception/dashboard, or ROS2 bridge.
+3. Design marker- or fixed-known-object-assisted grasping as a separate plan.
+4. Revisit autonomy only after adding a better camera, range/contact sensing, or a validated edge runtime.
+5. Do not expand arbitrary-object recognition or autonomous grasping claims without new hardware validation.
 
 ## Related Documents
 

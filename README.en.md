@@ -14,9 +14,11 @@ input -> decision -> state -> motion -> feedback
 
 The GIF below shows the final physical teleoperation demo directly in the README.
 
-![MotionBrain demo video](docs/assets/demo/motionbrain-demo.gif)
+![MotionBrain demo video](https://raw.githubusercontent.com/ParkJsoo/motionbrain/demo-ready-20260608/docs/assets/demo/motionbrain-demo.gif)
 
-[Download the MP4 file](https://raw.githubusercontent.com/ParkJsoo/motionbrain/main/docs/assets/demo/motionbrain-demo.mp4)
+[Download the MP4 file](https://raw.githubusercontent.com/ParkJsoo/motionbrain/demo-ready-20260608/docs/assets/demo/motionbrain-demo.mp4)
+
+Stable portfolio snapshot: `demo-ready-20260608`
 
 ## Operator Screens
 
@@ -40,7 +42,7 @@ Validated:
 
 - ESP32 5-axis DC motor control and `BOOT -> IDLE -> ARMED -> FAULT` safety state machine
 - Shared serial/HTTP command path through `Dispatcher` and `SafetyGate`
-- STM32 `MPU-6050 + HC-SR04 + UART` sensor and teleop stream
+- STM32 `MPU-6050 + UART` sensor/teleop stream and bench-validated HC-SR04 path
 - Wired handheld teleop with deadman, frame timeout, and embedded safety telemetry
 - ESP32-CAM `/status`, `/capture`, `/stream`, and `/camera` profile control
 - Home Wi-Fi operation across the ESP32 controller, ESP32-CAM, and Raspberry Pi
@@ -55,8 +57,8 @@ Validated:
 
 Important current limits:
 
-- Red target tracking is the reliable demo path.
-- The general object-detection pipeline is implemented on the Pi, and the current bench validates constrained known-object `cup` detection with ESP32-CAM `qvga` / JPEG quality `4` plus YOLOv5s. The current physical-AI demo uses only `cup` as the active target.
+- Red target tracking is a separate reliable vision/alignment validation path.
+- The object-detection pipeline is implemented on the Pi, and the current bench validates constrained known-object `cup` detection with ESP32-CAM `qvga` / JPEG quality `4` plus YOLOv5s. The current perception demo uses only `cup` as the active target.
 - A label-less dark bottle, a sticker-heavy iPhone back side, and the secondary Z Flip phone target are out of scope for the current demo. Describe this as constrained workcell known-object detection/alignment, not arbitrary object recognition.
 - Autonomous grasping is not enabled. The current cup dry-run path revalidates safety state and CENTER alignment, then returns a gripper open/close plan for operator review only.
 - Manual arm operation uses `STREAM` by default. `TRACKED` is a slower Pi-recognition view for checking fixed or slow-moving targets.
@@ -66,7 +68,8 @@ Important current limits:
 
 ```text
 [STM32 Sensor / Teleop]
-  MPU-6050, HC-SR04, UART frames
+  MPU-6050, UART frames
+  HC-SR04 firmware path bench-validated, not installed in the final demo
         ->
 [ESP32 Motion Controller]
   SafetyMonitor, Dispatcher, SafetyGate
@@ -131,6 +134,9 @@ The Pi dashboard and perception service can run as boot-time systemd services.
 Use `docs/RASPBERRY_PI_DEPLOYMENT.en.md` for the install procedure.
 
 Manual fallback dashboard command:
+
+The real `MOTIONBRAIN_HTTP_TOKEN` is a local device command token. Do not expose
+the real value in the repository, logs, or screen captures.
 
 ```bash
 export MOTIONBRAIN_HTTP_TOKEN="<local-controller-token>"

@@ -14,9 +14,11 @@ MotionBrain은 ESP32 기반 5축 로봇팔 제어기에서 시작해 STM32 센�
 
 아래 GIF는 최종 물리 텔레오퍼레이션 데모를 README 안에서 바로 보여준다.
 
-![MotionBrain 데모 영상](docs/assets/demo/motionbrain-demo.gif)
+![MotionBrain 데모 영상](https://raw.githubusercontent.com/ParkJsoo/motionbrain/demo-ready-20260608/docs/assets/demo/motionbrain-demo.gif)
 
-[MP4 파일 다운로드](https://raw.githubusercontent.com/ParkJsoo/motionbrain/main/docs/assets/demo/motionbrain-demo.mp4)
+[MP4 파일 다운로드](https://raw.githubusercontent.com/ParkJsoo/motionbrain/demo-ready-20260608/docs/assets/demo/motionbrain-demo.mp4)
+
+안정 포트폴리오 스냅샷: `demo-ready-20260608`
 
 ## 운영 화면
 
@@ -40,7 +42,7 @@ Docker/noVNC RViz 화면은 Pi 대시보드 상태와 감지 결과를 읽기 �
 
 - ESP32 5축 DC 모터 제어와 `BOOT -> IDLE -> ARMED -> FAULT` 안전 상태 머신
 - `Dispatcher` + `SafetyGate` 기반 시리얼/HTTP 공통 명령 경로
-- STM32 `MPU-6050 + HC-SR04 + UART` 센서/텔레오퍼레이션 스트림
+- STM32 `MPU-6050 + UART` 센서/텔레오퍼레이션 스트림과 HC-SR04 bench 검증 경로
 - 유선 핸드헬드 텔레오퍼레이션: 데드맨, 프레임 타임아웃, 안전 텔레메트리
 - ESP32-CAM `/status`, `/capture`, `/stream`, `/camera` 프로필 제어
 - 홈 Wi-Fi 기반 ESP32 제어기, ESP32-CAM, Raspberry Pi 연결
@@ -55,8 +57,8 @@ Docker/noVNC RViz 화면은 Pi 대시보드 상태와 감지 결과를 읽기 �
 
 현재 주의점:
 
-- 빨간 타겟 추적은 데모 가능한 안정 경로다.
-- 일반 객체 인식 흐름은 Pi에서 구현됐고, 현재 bench에서는 ESP32-CAM `qvga` / JPEG quality `4` + YOLOv5s 조합으로 제한된 known-object `cup` 인식이 검증됐다. 현재 물리 AI 데모는 `cup` 하나만 활성 타겟으로 사용한다.
+- 빨간 타겟 추적은 별도 비전/정렬 검증에서 안정적으로 동작한 경로다.
+- 객체 인식 흐름은 Pi에서 구현됐고, 현재 bench에서는 ESP32-CAM `qvga` / JPEG quality `4` + YOLOv5s 조합으로 제한된 known-object `cup` 인식이 검증됐다. 현재 인식 데모는 `cup` 하나만 활성 타겟으로 사용한다.
 - 검은 라벨 없는 병, 스티커가 큰 아이폰 뒷면, Z Flip 보조 phone 타겟은 현재 데모 범위에서 제외한다. 이 결과는 임의 객체 인식이 아니라 제한된 작업공간의 known-object 인식/정렬 데모로 설명해야 한다.
 - 자동 grasp는 아직 하지 않는다. 현재 cup dry-run 경로는 안전 상태와 CENTER 정렬을 재확인한 뒤 작업자 확인용 그리퍼 open/close 계획만 반환한다.
 - 로봇팔을 조종하면서 카메라를 보는 작업은 `STREAM`이 기본이다. `TRACKED`는 Pi 인식 결과를 확인하는 느린 뷰로만 쓴다.
@@ -66,7 +68,8 @@ Docker/noVNC RViz 화면은 Pi 대시보드 상태와 감지 결과를 읽기 �
 
 ```text
 [STM32 센서/텔레오퍼레이션]
-  MPU-6050, HC-SR04, UART 프레임
+  MPU-6050, UART 프레임
+  HC-SR04 펌웨어 경로는 bench 검증됨, 최종 데모 미장착
         ->
 [ESP32 모션 제어기]
   SafetyMonitor, Dispatcher, SafetyGate
@@ -131,6 +134,9 @@ Pi 대시보드/인식 서비스는 systemd로 부팅 자동 실행할 수 있�
 `docs/RASPBERRY_PI_DEPLOYMENT.md`를 기준으로 한다.
 
 수동 fallback 대시보드 예시:
+
+실제 `MOTIONBRAIN_HTTP_TOKEN`은 로컬 장비용 명령 토큰이다. 실제 값을 repo,
+로그, 화면 캡처에 노출하지 않는다.
 
 ```bash
 export MOTIONBRAIN_HTTP_TOKEN="<local-controller-token>"

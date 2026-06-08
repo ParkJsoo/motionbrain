@@ -8,6 +8,8 @@ MotionBrain은 ESP32 모션 제어기, STM32 센서/텔레오퍼레이션 계층
 
 프로젝트의 핵심은 “모터를 움직였다”가 아니라, 실제 하드웨어에서 안전 상태, 명령 경계, 센서 피드백, 비전 입력, ROS2 토픽, 호스트 측 판단을 분리된 계층으로 설계하고 검증했다는 점이다.
 
+안정 포트폴리오 스냅샷은 `demo-ready-20260608` 태그로 고정했다.
+
 ## 문제 정의
 
 저가형 5축 DC 모터 로봇팔은 엔코더, 힘 센서, 절대 위치 피드백이 부족하다. 이 조건에서 무리하게 완전 자율 집기를 주장하면 시스템 신뢰도가 떨어진다.
@@ -26,7 +28,7 @@ MotionBrain은 ESP32 모션 제어기, STM32 센서/텔레오퍼레이션 계층
 - `BOOT -> IDLE -> ARMED -> FAULT` 안전 상태 머신
 - 시리얼/HTTP 공통 명령 처리 구조
 - 토큰 기반 HTTP 상태 변경 명령
-- STM32 `MPU-6050 + HC-SR04 + UART` 센서/텔레오퍼레이션 펌웨어
+- STM32 `MPU-6050 + UART` 센서/텔레오퍼레이션 펌웨어와 HC-SR04 bench 검증 경로
 - 데드맨, 프레임 최신성 타임아웃, 센서 고장 래치
 - ESP32-CAM 캡처/스트림 펌웨어
 - Raspberry Pi 대시보드와 인식 서비스
@@ -46,11 +48,11 @@ ESP32 내장 제어 콘솔은 `STREAM` 기반 카메라 확인, 토큰 기반 �
 
 ![MotionBrain Pi 대시보드](docs/assets/motionbrain-dashboard.png)
 
-Pi 대시보드는 상태, safety, teleop, 이벤트, 카메라 프레임, detection/alignment 결과를 관찰하는 운영 화면이다. 물리 동작 버튼은 토큰과 안전 상태를 다시 확인하는 제한된 경로로만 쓰인다.
+Pi 대시보드는 상태, 안전, 텔레오퍼레이션, 이벤트, 카메라 프레임, 감지/정렬 결과를 관찰하는 운영 화면이다. 물리 동작 버튼은 토큰과 안전 상태를 다시 확인하는 제한된 경로로만 쓰인다.
 
 ![MotionBrain RViz RobotModel](docs/assets/motionbrain-rviz-robotmodel.png)
 
-RViz 화면은 Pi dashboard mirror가 publish한 live ROS2 topic, `RobotModel`, TF를 한 화면에서 확인하는 시각화 경로다.
+RViz 화면은 Pi dashboard mirror가 게시한 live ROS2 topic, `RobotModel`, TF를 한 화면에서 확인하는 시각화 경로다.
 
 ## 시스템 구조
 
@@ -91,31 +93,31 @@ ESP32는 모터 출력과 안전 상태를 담당하고, STM32는 센서/텔레�
 
 ESP32-CAM은 카메라 노드로만 두고, Raspberry Pi에서 감지와 오버레이를 처리한다. 대시보드와 ROS2 브리지는 같은 선택 타겟 payload를 소비한다.
 
-### ROS2 host boundary
+### ROS2 호스트 경계
 
 ROS2는 ESP32 내부 제어를 대체하지 않는다. 대신 `/status`, `/events`, `/camera/detection`을 타입 지정 토픽으로 승격하고, C++ 제어 guard와 mission supervisor가 현재 상태와 타겟 정렬을 판단한다.
 
 ### 검증 가능한 데모 경계
 
-현재 공개 데모는 실물 텔레오퍼레이션이다. 지원 증거로는 `STREAM` 기반 수동 카메라 확인, Pi 호스트 대시보드, 빨간 타겟/known-object 타겟 오버레이, ROS2 타입 지정 토픽, 안전 게이트 기반 짧은 보정 동작, search light 명령 경로가 있다. 자동 집기는 아직 활성화하지 않는다.
+현재 공개 데모는 실물 텔레오퍼레이션이다. 지원 증거로는 `STREAM` 기반 수동 카메라 확인, Pi 호스트 대시보드, 빨간 타겟/known-object 타겟 오버레이, ROS2 타입 지정 토픽, 안전 게이트 기반 nudge 경로, 토큰 기반 조명/search 명령 경로가 있다. 자동 집기는 아직 활성화하지 않는다.
 
 ## 검증 결과
 
 - ESP32 제어기와 ESP32-CAM PlatformIO 빌드 통과
 - `TB6612FNG x3`와 `M1~M5` 실제 모터 출력 확인
-- STM32 `MPU-6050 + HC-SR04 + UART` bench 검증
+- STM32 `MPU-6050 + UART` 텔레오퍼레이션과 HC-SR04 bench 경로 검증
 - 유선 텔레오퍼레이션 데드맨 입력으로 실제 모터 출력 및 release 정지 확인
 - 최종 물리 텔레오퍼레이션 데모 영상 캡처와 README GIF/MP4 반영
 - ESP32-CAM `/status`, `/capture`, `/stream` 확인
 - 홈 Wi-Fi에서 ESP32 제어기, ESP32-CAM, Raspberry Pi 동시 연결 확인
 - `MotionBrain Control` 웹 UI에서 토큰 입력 후 상태 변경 명령 확인
-- Pi 대시보드에서 카메라 feed, 빨간 타겟 박스, 보정 동작 확인
+- Pi 대시보드에서 카메라 feed, 빨간 타겟 박스, 안전 게이트 기반 nudge 경로 확인
 - Pi 인식 서비스에서 ESP32-CAM `qvga` / JPEG quality `4`와 YOLOv5s로 `cup` 타겟 확인
 - Raspberry Pi 4 + Ubuntu 24.04 + ROS2 Jazzy에서 `colcon build/test` 통과
 - `/motionbrain/status_typed`, `/camera/detection_typed`, `/joint_states`, `/motionbrain/kinematics_typed`, `/motionbrain/control_guard_typed`, `/motionbrain/mission_state_typed` 상태 점검 통과
 - Pi 인식 서비스 결과가 ROS2 `/camera/detection_typed`까지 전달되는 것 확인
 - Mac Docker/noVNC RViz에서 RobotModel/TF와 Pi dashboard mirror 기반 live ROS2 topic 시각화 확인
-- GitHub Actions에서 PlatformIO와 ROS2 workspace 검증
+- GitHub Actions에서 PlatformIO, Python 테스트, ROS2 workspace 검증
 
 ## 객체 인식 현황
 
@@ -139,11 +141,11 @@ Pi에서 OpenCV DNN/ONNX 기반 객체 인식 경로는 구현했다. `config/co
 
 ## 다음 단계
 
-1. GitHub README의 GIF 표시와 MP4 다운로드 링크를 최종 확인
-2. 이력서/지원용 3-5줄 요약과 면접 설명 포인트 정리
-3. 포트폴리오 스냅샷이 필요하면 demo-ready release/tag 생성
-4. 마커 또는 고정 known-object 기반 제한 집기 계획을 별도 설계
-5. 더 좋은 카메라, 거리/접촉 센서, 검증된 edge runtime을 추가한 뒤 자율 동작 범위 재검토
+1. 지원 시 `demo-ready-20260608` 스냅샷과 README 데모 GIF/MP4를 기준 링크로 사용
+2. 직무별로 embedded safety, multi-MCU teleop, Pi perception/dashboard, ROS2 bridge 중 강조점을 선택
+3. 마커 또는 고정 known-object 기반 제한 집기 계획을 별도 설계
+4. 더 좋은 카메라, 거리/접촉 센서, 검증된 edge runtime을 추가한 뒤 자율 동작 범위 재검토
+5. 새 하드웨어 검증 없이 임의 객체 인식이나 자율 집기 범위를 확장하지 않기
 
 ## 관련 문서
 
