@@ -1,4 +1,7 @@
 #include "web_server.h"
+
+#include <string.h>
+
 #include "bridge/stm32_bridge.h"
 #include "control/angle_controller.h"
 #include "control/command.h"
@@ -1483,6 +1486,14 @@ void MotionBrainWebServer::handleRoutine() {
   Command command;
   command.source = CommandSource::WEB_INPUT;
   strlcpy(command.routineName, name.c_str(), sizeof(command.routineName));
+  String confirmCode = server_.arg("confirmCode");
+  if (confirmCode.length() == 0) {
+    confirmCode = server_.arg("confirm");
+  }
+  strlcpy(command.routineConfirmCode, confirmCode.c_str(), sizeof(command.routineConfirmCode));
+
+  GuardedRoutinePlan plan;
+  const bool hasPlan = GuardedRoutine::getPlan(command.routineName, plan);
 
   if (action == "dry_run" || action == "dry-run" || action == "plan" ||
       dryRun == "1" || dryRun == "true") {
@@ -1499,6 +1510,12 @@ void MotionBrainWebServer::handleRoutine() {
   CommandResult result;
   submitCommand(command, result);
 
+  const bool operatorConfirmed = hasPlan && plan.requiresOperatorConfirm &&
+                                 strcmp(command.routineConfirmCode, plan.confirmationCode) == 0;
+  const char* preflightResult = "dry_run_only";
+  if (command.type == CommandType::ROUTINE_RUN) {
+    preflightResult = operatorConfirmed ? "execute_blocked" : "confirm_required";
+  }
   String extra = "\"routineAction\":\"";
   extra += command.type == CommandType::ROUTINE_DRY_RUN ? "dry_run" : "run";
   extra += "\",\"executeImplemented\":false";
@@ -1513,10 +1530,13 @@ void MotionBrainWebServer::handleRoutine() {
   extra += safetyMonitor.getBlockReasonString();
   extra += "\",\"faultLatched\":";
   extra += safetyMonitor.hasLatchedFault() ? "true" : "false";
-  extra += ",\"result\":\"dry_run_only\"}";
+  extra += ",\"operatorConfirmed\":";
+  extra += operatorConfirmed ? "true" : "false";
+  extra += ",\"result\":\"";
+  extra += preflightResult;
+  extra += "\"}";
 
-  GuardedRoutinePlan plan;
-  if (GuardedRoutine::getPlan(command.routineName, plan)) {
+  if (hasPlan) {
     extra += ",";
     GuardedRoutine::appendPlanJson(extra, plan);
   }

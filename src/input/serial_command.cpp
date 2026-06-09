@@ -398,7 +398,8 @@ void SerialCommand::handleHelp() {
   DebugLog::info("=== Guarded Routine Commands ===");
   DebugLog::info("  routine list                 - Show available routine plans");
   DebugLog::info("  routine dry-run <name>       - Build a dry-run plan and log event");
-  DebugLog::info("  routine run <name>           - Rejected in v0; dry-run only");
+  DebugLog::info("  routine run <name> confirm=<code> - Validate confirmation, then reject in v0");
+  DebugLog::info("  example: routine run inspect confirm=confirm-inspect");
   DebugLog::info("  routines: inspect, open_gripper_check, stow, center_target_dry_run");
   DebugLog::info("");
   DebugLog::info("=== Search Light Commands ===");
@@ -1384,16 +1385,56 @@ void SerialCommand::handleRoutine(const char* args) {
   action[i] = '\0';
 
   while (args[i] == ' ' || args[i] == '\t') i++;
-  const char* name = &args[i];
-  if (name[0] == '\0') {
+  const char* routineArgs = &args[i];
+  if (routineArgs[0] == '\0') {
     DebugLog::warn("routine: missing name");
     DebugLog::info("Use: routine dry-run <name>");
     return;
   }
 
+  char routineName[CMD_NAME_SIZE] = {0};
+  size_t nameIndex = 0;
+  while (routineArgs[nameIndex] != '\0' &&
+         routineArgs[nameIndex] != ' ' &&
+         routineArgs[nameIndex] != '\t' &&
+         nameIndex < sizeof(routineName) - 1) {
+    routineName[nameIndex] = routineArgs[nameIndex];
+    nameIndex++;
+  }
+  routineName[nameIndex] = '\0';
+
+  while (routineArgs[nameIndex] == ' ' || routineArgs[nameIndex] == '\t') {
+    nameIndex++;
+  }
+  const char* optionArgs = &routineArgs[nameIndex];
+
   Command command;
   command.source = CommandSource::SERIAL_INPUT;
-  strlcpy(command.routineName, name, sizeof(command.routineName));
+  strlcpy(command.routineName, routineName, sizeof(command.routineName));
+
+  while (optionArgs[0] != '\0') {
+    char option[48] = {0};
+    size_t optionIndex = 0;
+    while (optionArgs[optionIndex] != '\0' &&
+           optionArgs[optionIndex] != ' ' &&
+           optionArgs[optionIndex] != '\t' &&
+           optionIndex < sizeof(option) - 1) {
+      option[optionIndex] = optionArgs[optionIndex];
+      optionIndex++;
+    }
+    option[optionIndex] = '\0';
+
+    if (strncasecmp(option, "confirm=", 8) == 0) {
+      strlcpy(command.routineConfirmCode, option + 8, sizeof(command.routineConfirmCode));
+    } else if (strncasecmp(option, "confirmCode=", 12) == 0) {
+      strlcpy(command.routineConfirmCode, option + 12, sizeof(command.routineConfirmCode));
+    }
+
+    while (optionArgs[optionIndex] == ' ' || optionArgs[optionIndex] == '\t') {
+      optionIndex++;
+    }
+    optionArgs += optionIndex;
+  }
 
   if (strcasecmp(action, "dry-run") == 0 || strcasecmp(action, "dry_run") == 0 ||
       strcasecmp(action, "plan") == 0) {
@@ -1419,6 +1460,7 @@ void SerialCommand::handleRoutine(const char* args) {
   DebugLog::info("Routine: %s", plan.name);
   DebugLog::info("Summary: %s", plan.summary);
   DebugLog::info("Dry-run only: YES");
+  DebugLog::info("Confirm code: %s", plan.confirmationCode);
   DebugLog::info("Steps: %u", plan.stepCount);
   for (uint8_t stepIndex = 0; stepIndex < plan.stepCount; ++stepIndex) {
     const GuardedRoutineStep& step = plan.steps[stepIndex];

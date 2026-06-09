@@ -66,18 +66,30 @@ const GuardedRoutineStep CENTER_TARGET_DRY_RUN_STEPS[] = {
 };
 
 const GuardedRoutinePlan ROUTINES[] = {
-  {"inspect", "Low-speed visual inspection routine.", INSPECT_STEPS,
+  {"inspect", "Low-speed visual inspection routine.", "confirm-inspect",
+   "state_armed|motion_clear|fault_clear|operator_confirmed|no_active_sequence",
+   INSPECT_STEPS,
    static_cast<uint8_t>(sizeof(INSPECT_STEPS) / sizeof(INSPECT_STEPS[0])),
-   true, true, true, false},
-  {"open_gripper_check", "Open gripper with a bounded pulse and verify stop.", OPEN_GRIPPER_CHECK_STEPS,
+   15000, 1000, 3000,
+   true, true, true, false, true, true},
+  {"open_gripper_check", "Open gripper with a bounded pulse and verify stop.", "confirm-open-gripper-check",
+   "state_armed|motion_clear|fault_clear|operator_confirmed|no_active_sequence",
+   OPEN_GRIPPER_CHECK_STEPS,
    static_cast<uint8_t>(sizeof(OPEN_GRIPPER_CHECK_STEPS) / sizeof(OPEN_GRIPPER_CHECK_STEPS[0])),
-   true, true, true, false},
-  {"stow", "Move toward a compact stow pose using short relative pulses.", STOW_STEPS,
+   15000, 1000, 2500,
+   true, true, true, false, true, true},
+  {"stow", "Move toward a compact stow pose using short relative pulses.", "confirm-stow",
+   "state_armed|motion_clear|fault_clear|operator_confirmed|no_active_sequence",
+   STOW_STEPS,
    static_cast<uint8_t>(sizeof(STOW_STEPS) / sizeof(STOW_STEPS[0])),
-   true, true, true, false},
-  {"center_target_dry_run", "Plan a target-centering action without physical execution.", CENTER_TARGET_DRY_RUN_STEPS,
+   15000, 1000, 4500,
+   true, true, true, false, true, true},
+  {"center_target_dry_run", "Plan a target-centering action without physical execution.", "confirm-center-target",
+   "state_armed|motion_clear|fault_clear|operator_confirmed|perception_fresh|target_alignment_fresh",
+   CENTER_TARGET_DRY_RUN_STEPS,
    static_cast<uint8_t>(sizeof(CENTER_TARGET_DRY_RUN_STEPS) / sizeof(CENTER_TARGET_DRY_RUN_STEPS[0])),
-   true, true, true, true},
+   15000, 1000, 2500,
+   true, true, true, true, true, true},
 };
 
 void appendEscaped(String& json, const char* raw) {
@@ -99,6 +111,36 @@ bool isCenterTargetAlias(const char* name) {
   return strcasecmp(name, "center_target") == 0 ||
          strcasecmp(name, "center-target") == 0 ||
          strcasecmp(name, "center_target_dry_run") == 0;
+}
+
+void appendStringArrayFromPipes(String& json, const char* values) {
+  json += "[";
+  if (values != nullptr && values[0] != '\0') {
+    const char* segmentStart = values;
+    bool first = true;
+    for (const char* cursor = values; ; ++cursor) {
+      if (*cursor == '|' || *cursor == '\0') {
+        if (!first) {
+          json += ",";
+        }
+        first = false;
+        json += "\"";
+        for (const char* c = segmentStart; c < cursor; ++c) {
+          switch (*c) {
+            case '\\': json += "\\\\"; break;
+            case '"':  json += "\\\""; break;
+            default:   json += *c; break;
+          }
+        }
+        json += "\"";
+        if (*cursor == '\0') {
+          break;
+        }
+        segmentStart = cursor + 1;
+      }
+    }
+  }
+  json += "]";
 }
 
 } // namespace
@@ -134,6 +176,28 @@ void GuardedRoutine::appendPlanJson(String& json, const GuardedRoutinePlan& plan
   json += "\",\"summary\":\"";
   appendEscaped(json, plan.summary);
   json += "\",\"dryRunOnly\":true";
+  json += ",\"preconditions\":";
+  appendStringArrayFromPipes(json, plan.preconditionIds);
+  json += ",\"operatorConfirmation\":{";
+  json += "\"required\":";
+  json += plan.requiresOperatorConfirm ? "true" : "false";
+  json += ",\"code\":\"";
+  appendEscaped(json, plan.confirmationCode);
+  json += "\",\"ttlMs\":";
+  json += String(plan.confirmationTtlMs);
+  json += "}";
+  json += ",\"executionPolicy\":{";
+  json += "\"mode\":\"dry_run_only\"";
+  json += ",\"stepTimeoutMs\":";
+  json += String(plan.stepTimeoutMs);
+  json += ",\"totalTimeoutMs\":";
+  json += String(plan.totalTimeoutMs);
+  json += ",\"stopAfterEachMotionStep\":";
+  json += plan.stopAfterEachMotionStep ? "true" : "false";
+  json += ",\"statusCheckAfterEachStep\":";
+  json += plan.statusCheckAfterEachStep ? "true" : "false";
+  json += ",\"abortCommand\":\"stop\"";
+  json += "}";
   json += ",\"requiresOperatorConfirm\":";
   json += plan.requiresOperatorConfirm ? "true" : "false";
   json += ",\"requiresArmedForExecute\":";
@@ -190,6 +254,8 @@ void GuardedRoutine::appendRoutineListJson(String& json) {
     json += "\",\"summary\":\"";
     appendEscaped(json, ROUTINES[i].summary);
     json += "\",\"dryRunOnly\":true";
+    json += ",\"confirmRequired\":";
+    json += ROUTINES[i].requiresOperatorConfirm ? "true" : "false";
     json += ",\"stepCount\":";
     json += String(ROUTINES[i].stepCount);
     json += "}";

@@ -26,12 +26,19 @@ struct GuardedRoutineStep {
 struct GuardedRoutinePlan {
   const char* name;
   const char* summary;
+  const char* confirmationCode;
+  const char* preconditionIds;
   const GuardedRoutineStep* steps;
   uint8_t stepCount;
+  uint32_t confirmationTtlMs;
+  uint32_t stepTimeoutMs;
+  uint32_t totalTimeoutMs;
   bool requiresOperatorConfirm;
   bool requiresArmedForExecute;
   bool requiresMotionClearForExecute;
   bool perceptionRequired;
+  bool stopAfterEachMotionStep;
+  bool statusCheckAfterEachStep;
 };
 
 class GuardedRoutine {

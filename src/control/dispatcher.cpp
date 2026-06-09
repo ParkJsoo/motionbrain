@@ -2,6 +2,7 @@
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <string.h>
 #include "control/angle_controller.h"
 #include "control/command_bus.h"
 #include "control/event_log.h"
@@ -404,8 +405,19 @@ bool Dispatcher::execute(const Command& command, CommandResult& result) {
         break;
       }
 
+      if (plan.requiresOperatorConfirm &&
+          strcmp(command.routineConfirmCode, plan.confirmationCode) != 0) {
+        char detail[96] = {0};
+        snprintf(detail, sizeof(detail), "name=%s confirm=missing_or_mismatch", plan.name);
+        eventLog.push("routine", "ROUTINE_CONFIRM_REQ", EventSeverity::WARN, detail);
+        success = false;
+        setResult(result, command.id, false,
+                  "Routine '%s' requires operator confirmation code", plan.name);
+        break;
+      }
+
       char detail[96] = {0};
-      snprintf(detail, sizeof(detail), "name=%s blocked=dry_run_only", plan.name);
+      snprintf(detail, sizeof(detail), "name=%s confirm=accepted blocked=dry_run_only", plan.name);
       eventLog.push("routine", "ROUTINE_EXECUTE_BLOCKED", EventSeverity::WARN, detail);
       success = false;
       setResult(result, command.id, false,

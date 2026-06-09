@@ -48,6 +48,7 @@ struct Command {
   uint32_t        durationMs;
   float           targetDegrees;
   char            routineName[24];
+  char            routineConfirmCode[32];
 
   Command()
     : id(0)
@@ -62,7 +63,8 @@ struct Command {
     , direction(MotionDirection::OPEN)
     , durationMs(0)
     , targetDegrees(0.0f)
-    , routineName{0} {
+    , routineName{0}
+    , routineConfirmCode{0} {
   }
 };
 
