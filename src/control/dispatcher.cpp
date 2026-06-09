@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include "control/angle_controller.h"
 #include "control/command_bus.h"
+#include "control/event_log.h"
+#include "control/guarded_routine.h"
 #include "control/safety_gate.h"
 #include "debug/debug_log.h"
 #include "motion/robot_arm.h"
@@ -14,6 +16,7 @@
 #include "system/system_init.h"
 
 extern SafetyMonitor safetyMonitor;
+extern EventLog eventLog;
 
 namespace {
 
@@ -34,6 +37,8 @@ const char* commandTypeToString(CommandType type) {
     case CommandType::SEQUENCE_RUN:            return "sequence run";
     case CommandType::SEQUENCE_STOP:           return "sequence stop";
     case CommandType::SEQUENCE_CLEAR:          return "sequence clear";
+    case CommandType::ROUTINE_DRY_RUN:         return "routine dry-run";
+    case CommandType::ROUTINE_RUN:             return "routine run";
     case CommandType::LIGHT_ON:                return "light on";
     case CommandType::LIGHT_OFF:               return "light off";
     case CommandType::LIGHT_TOGGLE:            return "light toggle";
@@ -368,6 +373,45 @@ bool Dispatcher::execute(const Command& command, CommandResult& result) {
       success = true;
       setResult(result, command.id, true, "Sequence cleared");
       break;
+
+    case CommandType::ROUTINE_DRY_RUN: {
+      GuardedRoutinePlan plan;
+      if (!GuardedRoutine::getPlan(command.routineName, plan)) {
+        setResult(result, command.id, false, "Unknown routine '%s'", command.routineName);
+        break;
+      }
+
+      char detail[96] = {0};
+      snprintf(detail, sizeof(detail), "name=%s steps=%u state=%s blocked=%s",
+               plan.name,
+               plan.stepCount,
+               systemState_ != nullptr ? systemState_->getStateString() : "UNKNOWN",
+               safetyMonitor.isMotionBlocked() ? safetyMonitor.getBlockReasonString() : "NONE");
+      eventLog.push("routine", "ROUTINE_DRY_RUN", safetyMonitor.isMotionBlocked()
+                      ? EventSeverity::WARN
+                      : EventSeverity::INFO,
+                    detail);
+      success = true;
+      setResult(result, command.id, true, "Routine '%s' dry-run plan ready (%u steps)",
+                plan.name, plan.stepCount);
+      break;
+    }
+
+    case CommandType::ROUTINE_RUN: {
+      GuardedRoutinePlan plan;
+      if (!GuardedRoutine::getPlan(command.routineName, plan)) {
+        setResult(result, command.id, false, "Unknown routine '%s'", command.routineName);
+        break;
+      }
+
+      char detail[96] = {0};
+      snprintf(detail, sizeof(detail), "name=%s blocked=dry_run_only", plan.name);
+      eventLog.push("routine", "ROUTINE_EXECUTE_BLOCKED", EventSeverity::WARN, detail);
+      success = false;
+      setResult(result, command.id, false,
+                "Routine execute is not implemented in guarded routine v0; use dry-run");
+      break;
+    }
 
     case CommandType::LIGHT_ON:
       searchLight_->on();

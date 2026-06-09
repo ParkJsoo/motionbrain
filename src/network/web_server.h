@@ -169,6 +169,18 @@ private:
   void handleSequenceStatus();
 
   /**
+   * POST /routine 처리
+   * guarded routine dry-run 계획 생성
+   */
+  void handleRoutine();
+
+  /**
+   * GET /routine 처리
+   * 사용 가능한 guarded routine 목록 반환
+   */
+  void handleRoutineStatus();
+
+  /**
    * 공통 favicon 응답
    */
   void handleFavicon();

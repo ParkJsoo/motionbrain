@@ -5,6 +5,7 @@
 #include "control/command.h"
 #include "control/command_bus.h"
 #include "control/dispatcher.h"
+#include "control/guarded_routine.h"
 #include "input/teleop_adapter.h"
 #include "safety/safety_monitor.h"
 #include "system/system_init.h"
@@ -316,6 +317,9 @@ void SerialCommand::processCommand(const char* cmdName, const char* args) {
   else if (strcasecmp(cmdName, "light") == 0) {
     handleLight(args);
   }
+  else if (strcasecmp(cmdName, "routine") == 0) {
+    handleRoutine(args);
+  }
   else if (strcasecmp(cmdName, "sensor") == 0) {
     handleSensor(args);
   }
@@ -390,6 +394,12 @@ void SerialCommand::handleHelp() {
   DebugLog::info("  sequence add gripper open 80 1000 - Gripper open 80%% for 1 sec");
   DebugLog::info("  sequence add base left 40 angle=45 - Base relative left 45 deg");
   DebugLog::info("  sequence run");
+  DebugLog::info("");
+  DebugLog::info("=== Guarded Routine Commands ===");
+  DebugLog::info("  routine list                 - Show available routine plans");
+  DebugLog::info("  routine dry-run <name>       - Build a dry-run plan and log event");
+  DebugLog::info("  routine run <name>           - Rejected in v0; dry-run only");
+  DebugLog::info("  routines: inspect, open_gripper_check, stow, center_target_dry_run");
   DebugLog::info("");
   DebugLog::info("=== Search Light Commands ===");
   DebugLog::info("  light on      - Turn on search light");
@@ -1352,6 +1362,83 @@ void SerialCommand::handleSequence(const char* args) {
   }
 
   DebugLog::warn("sequence: unknown action '%s' (add/run/stop/clear/status)", action);
+}
+
+void SerialCommand::handleRoutine(const char* args) {
+  if (args == nullptr || strlen(args) == 0 || strcasecmp(args, "list") == 0 ||
+      strcasecmp(args, "status") == 0) {
+    DebugLog::info("=== Guarded Routines ===");
+    for (uint8_t i = 0; i < GuardedRoutine::routineCount(); ++i) {
+      DebugLog::info("  %s", GuardedRoutine::routineNameAt(i));
+    }
+    DebugLog::info("Use: routine dry-run <name>");
+    return;
+  }
+
+  char action[CMD_NAME_SIZE];
+  size_t i = 0;
+  while (args[i] != '\0' && args[i] != ' ' && args[i] != '\t' && i < CMD_NAME_SIZE - 1) {
+    action[i] = args[i];
+    i++;
+  }
+  action[i] = '\0';
+
+  while (args[i] == ' ' || args[i] == '\t') i++;
+  const char* name = &args[i];
+  if (name[0] == '\0') {
+    DebugLog::warn("routine: missing name");
+    DebugLog::info("Use: routine dry-run <name>");
+    return;
+  }
+
+  Command command;
+  command.source = CommandSource::SERIAL_INPUT;
+  strlcpy(command.routineName, name, sizeof(command.routineName));
+
+  if (strcasecmp(action, "dry-run") == 0 || strcasecmp(action, "dry_run") == 0 ||
+      strcasecmp(action, "plan") == 0) {
+    command.type = CommandType::ROUTINE_DRY_RUN;
+  } else if (strcasecmp(action, "run") == 0 || strcasecmp(action, "execute") == 0) {
+    command.type = CommandType::ROUTINE_RUN;
+  } else {
+    DebugLog::warn("routine: unknown action '%s' (list/dry-run/run)", action);
+    return;
+  }
+
+  GuardedRoutinePlan plan;
+  const bool hasPlan = GuardedRoutine::getPlan(command.routineName, plan);
+
+  CommandResult result;
+  submitCommand(command, result);
+  logCommandResult(result);
+
+  if (!hasPlan) {
+    return;
+  }
+
+  DebugLog::info("Routine: %s", plan.name);
+  DebugLog::info("Summary: %s", plan.summary);
+  DebugLog::info("Dry-run only: YES");
+  DebugLog::info("Steps: %u", plan.stepCount);
+  for (uint8_t stepIndex = 0; stepIndex < plan.stepCount; ++stepIndex) {
+    const GuardedRoutineStep& step = plan.steps[stepIndex];
+    if (step.kind == GuardedRoutineStepKind::MOTION) {
+      DebugLog::info("  %u. [%s] %s - %s %s %u%% %lums",
+                     stepIndex + 1,
+                     GuardedRoutine::stepKindToString(step.kind),
+                     step.label,
+                     GuardedRoutine::jointToString(step.joint),
+                     GuardedRoutine::directionToString(step.direction),
+                     step.percent,
+                     step.durationMs);
+    } else {
+      DebugLog::info("  %u. [%s] %s - %s",
+                     stepIndex + 1,
+                     GuardedRoutine::stepKindToString(step.kind),
+                     step.label,
+                     step.detail);
+    }
+  }
 }
 
 /**

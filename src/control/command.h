@@ -21,6 +21,8 @@ enum class CommandType : uint8_t {
   SEQUENCE_RUN,
   SEQUENCE_STOP,
   SEQUENCE_CLEAR,
+  ROUTINE_DRY_RUN,
+  ROUTINE_RUN,
   LIGHT_ON,
   LIGHT_OFF,
   LIGHT_TOGGLE
@@ -45,6 +47,7 @@ struct Command {
   MotionDirection direction;
   uint32_t        durationMs;
   float           targetDegrees;
+  char            routineName[24];
 
   Command()
     : id(0)
@@ -58,7 +61,8 @@ struct Command {
     , joint(MotionJoint::GRIPPER)
     , direction(MotionDirection::OPEN)
     , durationMs(0)
-    , targetDegrees(0.0f) {
+    , targetDegrees(0.0f)
+    , routineName{0} {
   }
 };
 

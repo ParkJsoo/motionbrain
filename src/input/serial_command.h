@@ -184,6 +184,12 @@ private:
   void handleLight(const char* args);
 
   /**
+   * routine 명령어 처리
+   * guarded routine 목록과 dry-run 계획 출력
+   */
+  void handleRoutine(const char* args);
+
+  /**
    * sensor 명령어 처리
    * 센서 상태 조회 및 simulation 주입
    */

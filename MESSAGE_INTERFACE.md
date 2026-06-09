@@ -24,6 +24,11 @@ base angle left 45 40
 base angle right 30
 base stop
 sequence add base left 40 angle=45
+routine list
+routine dry-run inspect
+routine dry-run open_gripper_check
+routine dry-run stow
+routine dry-run center_target_dry_run
 ```
 
 규칙:
@@ -32,6 +37,10 @@ sequence add base left 40 angle=45
 - `base angle ...` 는 센서 기반 상대각 폐루프 구동이다.
 - `base stop` 은 현재 base 상대각 제어를 취소하고 base 모터를 정지한다.
 - `sequence add base ... angle=...` 는 시퀀스 안에 base 상대각 폐루프 step을 추가한다.
+- `routine dry-run ...` 은 named guarded routine 계획과 preflight 판단을 출력하고
+  이벤트를 남긴다.
+- `routine run ...` 은 guarded routine v0에서 의도적으로 거절된다. 실제 물리 루틴
+  실행은 별도 operator-confirmed execute 경계가 구현되기 전까지 제공하지 않는다.
 
 ### HTTP
 
@@ -42,6 +51,8 @@ sequence add base left 40 angle=45
 - `POST /joint`
 - `POST /base`
 - `POST /sequence`
+- `GET /routine`
+- `POST /routine`
 - `POST /light`
 - `GET /status`
 - `GET /events`
@@ -76,6 +87,29 @@ X-MotionBrain: 1
 - `percent` 는 `1 .. 100`, 생략 시 기본값 `40`
 - `/sequence?action=add` 는 `duration` 또는 `degrees` 중 하나를 사용한다.
 - `degrees` 는 `joint=base` 일 때만 허용한다.
+
+guarded routine dry-run:
+
+```http
+GET /routine
+```
+
+```http
+POST /routine?action=dry_run&name=inspect
+X-MotionBrain: 1
+```
+
+규칙:
+
+- `GET /routine` 은 사용 가능한 routine 목록을 반환하는 읽기 전용 API다.
+- `POST /routine` 은 command token이 필요한 command boundary를 사용한다.
+- v0에서 허용되는 의미 있는 action은 `dry_run|dry-run|plan` 이다.
+- `run|execute` 는 route와 command type만 존재하고, 실제 모터 출력 없이
+  `ROUTINE_EXECUTE_BLOCKED` 이벤트와 실패 응답을 반환한다.
+- 현재 routine 이름은 `inspect`, `open_gripper_check`, `stow`,
+  `center_target_dry_run` 이다.
+- dry-run 응답은 계획과 preflight 상태를 보여주지만, 모터/라이트/그리퍼를
+  움직이지 않는다.
 
 ### Wired Handheld Teleop
 
@@ -360,7 +394,79 @@ base 상대각 제어는 다음 종료 이유를 가진다.
 }
 ```
 
-## 7. 이벤트 응답 경계
+## 7. Guarded Routine 응답
+
+`GET /routine` 은 사용 가능한 dry-run routine 목록을 반환한다.
+
+```json
+{
+  "schemaVersion": "phase3.v1",
+  "messageType": "routine_list",
+  "state": "IDLE",
+  "sensorBlocked": false,
+  "blockReason": "NONE",
+  "faultLatched": false,
+  "faultReason": "NONE",
+  "baseAngleActive": false,
+  "baseAngleReason": "NONE",
+  "dryRunOnly": true,
+  "executeImplemented": false,
+  "routines": [
+    {"name": "inspect", "summary": "Low-speed visual inspection routine.", "dryRunOnly": true, "stepCount": 4}
+  ]
+}
+```
+
+`POST /routine?action=dry_run&name=inspect` 는 공통 `command_result`
+envelope에 routine 계획과 execute preflight 요약을 덧붙인다.
+
+```json
+{
+  "schemaVersion": "phase3.v1",
+  "messageType": "command_result",
+  "success": true,
+  "commandId": 43,
+  "message": "Routine 'inspect' dry-run plan ready (4 steps)",
+  "state": "IDLE",
+  "sensorBlocked": false,
+  "blockReason": "NONE",
+  "faultLatched": false,
+  "faultReason": "NONE",
+  "baseAngleActive": false,
+  "baseAngleReason": "NONE",
+  "routineAction": "dry_run",
+  "executeImplemented": false,
+  "executePreflight": {
+    "state": "IDLE",
+    "stateAllowsExecute": false,
+    "motionClear": true,
+    "blockReason": "NONE",
+    "faultLatched": false,
+    "result": "dry_run_only"
+  },
+  "routine": {
+    "name": "inspect",
+    "summary": "Low-speed visual inspection routine.",
+    "dryRunOnly": true,
+    "requiresOperatorConfirm": true,
+    "requiresArmedForExecute": true,
+    "requiresMotionClearForExecute": true,
+    "perceptionRequired": false,
+    "stepCount": 4,
+    "steps": []
+  }
+}
+```
+
+규칙:
+
+- `routine.steps` 는 `check|motion|verify` step을 순서대로 담는다.
+- `motion` step은 `joint`, `direction`, `percent`, `durationMs`,
+  `targetDegrees` 를 포함한다.
+- dry-run은 성공하더라도 `executeImplemented=false` 이다.
+- 실제 execute path는 v0에서 실패해야 하며 모터 출력으로 이어지면 안 된다.
+
+## 8. 이벤트 응답 경계
 
 `GET /events` 는 최근 시스템 이벤트를 oldest-first 배열로 반환한다.
 
@@ -424,9 +530,11 @@ base 상대각 제어는 다음 종료 이유를 가진다.
 - `BASE_ANGLE_START`
 - `BASE_ANGLE_TARGET_REACHED`
 - `BASE_ANGLE_STOP`
+- `ROUTINE_DRY_RUN`
+- `ROUTINE_EXECUTE_BLOCKED`
 - teleop 연결/상태 변경 이벤트
 
-## 8. Phase 4로 넘길 때 유지할 약속
+## 9. Phase 4로 넘길 때 유지할 약속
 
 - 센서 상태는 `sensor` 객체 안에 계속 둔다.
 - 폐루프 base 상태는 `baseAngle` 객체로 분리 유지한다.
@@ -434,7 +542,7 @@ base 상대각 제어는 다음 종료 이유를 가진다.
 - 이벤트 스트림은 `GET /events` 구조를 기반으로 확장하고, 종료 이유 문자열은 위 enum 이름을 유지한다.
 - `schemaVersion` 과 `messageType` 는 Phase 4에서도 유지한다.
 
-## 9. ROS2 Bridge Interface
+## 10. ROS2 Bridge Interface
 
 ROS2 bridge는 원래 `std_msgs/String` JSON payload로 시작했지만, 현재는
 JSON 호환 topic과 `motionbrain_msgs` typed topic을 병행 publish한다. 목적은

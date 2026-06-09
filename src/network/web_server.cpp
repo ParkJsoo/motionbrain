@@ -5,6 +5,7 @@
 #include "control/command_bus.h"
 #include "control/event_log.h"
 #include "control/dispatcher.h"
+#include "control/guarded_routine.h"
 #include "safety/safety_monitor.h"
 #include "input/teleop_adapter.h"
 #include "system/system_init.h"       // SystemStateManager 사용
@@ -107,6 +108,8 @@ bool MotionBrainWebServer::init(SystemStateManager* systemState, MotorControl* m
   server_.on("/base", HTTP_POST, [this]() { this->handleBase(); });
   server_.on("/sequence", HTTP_POST, [this]() { this->handleSequence(); });
   server_.on("/sequence", HTTP_GET,  [this]() { this->handleSequenceStatus(); });
+  server_.on("/routine", HTTP_POST,  [this]() { this->handleRoutine(); });
+  server_.on("/routine", HTTP_GET,   [this]() { this->handleRoutineStatus(); });
   server_.on("/light",    HTTP_POST, [this]() { this->handleLight(); });
   server_.on("/favicon.ico", HTTP_GET, [this]() { this->handleFavicon(); });
   server_.on("/apple-touch-icon.png", HTTP_GET, [this]() { this->handleAppleTouchIcon(); });
@@ -132,6 +135,8 @@ bool MotionBrainWebServer::init(SystemStateManager* systemState, MotorControl* m
   DebugLog::debug("  POST /base      -> Base angle control");
   DebugLog::debug("  POST /sequence  -> Sequence control");
   DebugLog::debug("  GET  /sequence  -> Sequence status");
+  DebugLog::debug("  POST /routine   -> Guarded routine dry-run");
+  DebugLog::debug("  GET  /routine   -> Guarded routine list");
   DebugLog::debug("  POST /light     -> Search light control");
 
   active_ = true;
@@ -1452,6 +1457,85 @@ void MotionBrainWebServer::handleSequenceStatus() {
   json += motionSequence_->isFull() ? "true" : "false";
   json += "}";
   json += "}";
+
+  server_.send(200, "application/json", json);
+}
+
+void MotionBrainWebServer::handleRoutine() {
+  DebugLog::debug("Web Server: POST /routine requested");
+
+  if (!requireCommandAuth()) {
+    return;
+  }
+
+  String name = server_.arg("name");
+  if (name.length() == 0) {
+    sendErrorJson(400, "Missing 'name' parameter");
+    return;
+  }
+
+  String action = server_.arg("action");
+  String dryRun = server_.arg("dryRun");
+  if (action.length() == 0) {
+    action = "dry_run";
+  }
+
+  Command command;
+  command.source = CommandSource::WEB_INPUT;
+  strlcpy(command.routineName, name.c_str(), sizeof(command.routineName));
+
+  if (action == "dry_run" || action == "dry-run" || action == "plan" ||
+      dryRun == "1" || dryRun == "true") {
+    command.type = CommandType::ROUTINE_DRY_RUN;
+  }
+  else if (action == "run" || action == "execute") {
+    command.type = CommandType::ROUTINE_RUN;
+  }
+  else {
+    sendErrorJson(400, "Unknown routine action", action);
+    return;
+  }
+
+  CommandResult result;
+  submitCommand(command, result);
+
+  String extra = "\"routineAction\":\"";
+  extra += command.type == CommandType::ROUTINE_DRY_RUN ? "dry_run" : "run";
+  extra += "\",\"executeImplemented\":false";
+  extra += ",\"executePreflight\":{";
+  extra += "\"state\":\"";
+  extra += systemState_ != nullptr ? systemState_->getStateString() : "UNKNOWN";
+  extra += "\",\"stateAllowsExecute\":";
+  extra += (systemState_ != nullptr && systemState_->getState() == SystemState::ARMED) ? "true" : "false";
+  extra += ",\"motionClear\":";
+  extra += safetyMonitor.isMotionBlocked() ? "false" : "true";
+  extra += ",\"blockReason\":\"";
+  extra += safetyMonitor.getBlockReasonString();
+  extra += "\",\"faultLatched\":";
+  extra += safetyMonitor.hasLatchedFault() ? "true" : "false";
+  extra += ",\"result\":\"dry_run_only\"}";
+
+  GuardedRoutinePlan plan;
+  if (GuardedRoutine::getPlan(command.routineName, plan)) {
+    extra += ",";
+    GuardedRoutine::appendPlanJson(extra, plan);
+  }
+
+  sendCommandResult(result, extra);
+}
+
+void MotionBrainWebServer::handleRoutineStatus() {
+  DebugLog::debug("Web Server: GET /routine requested");
+
+  String json = "{\"schemaVersion\":\"";
+  json += MESSAGE_SCHEMA_VERSION;
+  json += "\",\"messageType\":\"routine_list\",";
+  appendStateSummaryJson(json);
+  json += ",\"dryRunOnly\":true";
+  json += ",\"executeImplemented\":false";
+  json += ",\"routines\":[";
+  GuardedRoutine::appendRoutineListJson(json);
+  json += "]}";
 
   server_.send(200, "application/json", json);
 }
