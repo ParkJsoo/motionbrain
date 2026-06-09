@@ -405,8 +405,27 @@ bool Dispatcher::execute(const Command& command, CommandResult& result) {
         break;
       }
 
-      if (plan.requiresOperatorConfirm &&
-          strcmp(command.routineConfirmCode, plan.confirmationCode) != 0) {
+      const bool operatorConfirmed =
+        !plan.requiresOperatorConfirm ||
+        strcmp(command.routineConfirmCode, plan.confirmationCode) == 0;
+      const bool stateAllowsExecute =
+        systemState_ != nullptr && systemState_->getState() == SystemState::ARMED;
+      const bool motionClear = !safetyMonitor.isMotionBlocked();
+      const bool faultClear = !safetyMonitor.hasLatchedFault();
+      const bool noActiveSequence =
+        motionSequence_ == nullptr || motionSequence_->getState() != SequenceState::RUNNING;
+      const bool perceptionReady = !plan.perceptionRequired;
+      const GuardedRoutineExecutePreflight preflight =
+        GuardedRoutine::evaluateExecutePreflight(plan,
+                                                 operatorConfirmed,
+                                                 stateAllowsExecute,
+                                                 motionClear,
+                                                 faultClear,
+                                                 noActiveSequence,
+                                                 perceptionReady);
+      const char* preflightResult = GuardedRoutine::preflightResultToString(preflight.result);
+
+      if (preflight.result == GuardedRoutinePreflightResult::CONFIRM_REQUIRED) {
         char detail[96] = {0};
         snprintf(detail, sizeof(detail), "name=%s confirm=missing_or_mismatch", plan.name);
         eventLog.push("routine", "ROUTINE_CONFIRM_REQ", EventSeverity::WARN, detail);
@@ -416,12 +435,25 @@ bool Dispatcher::execute(const Command& command, CommandResult& result) {
         break;
       }
 
+      if (!preflight.executeReady) {
+        char detail[96] = {0};
+        snprintf(detail, sizeof(detail), "name=%s result=%s state=%s",
+                 plan.name,
+                 preflightResult,
+                 systemState_ != nullptr ? systemState_->getStateString() : "UNKNOWN");
+        eventLog.push("routine", "ROUTINE_PREFLIGHT_BLOCK", EventSeverity::WARN, detail);
+        success = false;
+        setResult(result, command.id, false,
+                  "Routine '%s' preflight blocked: %s", plan.name, preflightResult);
+        break;
+      }
+
       char detail[96] = {0};
       snprintf(detail, sizeof(detail), "name=%s confirm=accepted blocked=dry_run_only", plan.name);
       eventLog.push("routine", "ROUTINE_EXECUTE_BLOCKED", EventSeverity::WARN, detail);
       success = false;
       setResult(result, command.id, false,
-                "Routine execute is not implemented in guarded routine v0; use dry-run");
+                "Routine execute is not implemented in guarded routine v1 skeleton; use dry-run");
       break;
     }
 

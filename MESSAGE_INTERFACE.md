@@ -40,10 +40,12 @@ routine run inspect confirm=confirm-inspect
 - `sequence add base ... angle=...` 는 시퀀스 안에 base 상대각 폐루프 step을 추가한다.
 - `routine dry-run ...` 은 named guarded routine 계획과 preflight 판단을 출력하고
   이벤트를 남긴다.
-- `routine run ...` 은 guarded routine v0에서 의도적으로 거절된다. 실제 물리 루틴
-  실행은 별도 operator-confirmed execute 경계가 구현되기 전까지 제공하지 않는다.
-- `confirm=...` 값은 비밀 토큰이 아니라 operator confirmation code다. v0에서는
-  확인 값이 맞아도 `executionPolicy.mode=dry_run_only` 이고 execute 응답은
+- `routine run ...` 은 guarded routine v1 preflight skeleton까지만 수행한다.
+  실제 물리 루틴 실행은 별도 operator-confirmed executor가 구현되기 전까지
+  제공하지 않는다.
+- `confirm=...` 값은 비밀 토큰이 아니라 operator confirmation code다. v1 skeleton에서는
+  확인 값이 맞아도 state/safety/fault/sequence preflight를 먼저 통과해야 하며,
+  통과 후에도 `executionPolicy.mode=dry_run_only` 이고 execute 응답은
   `execute_blocked` 로 차단된다.
 
 ### HTTP
@@ -112,12 +114,16 @@ X-MotionBrain: 1
 
 - `GET /routine` 은 사용 가능한 routine 목록을 반환하는 읽기 전용 API다.
 - `POST /routine` 은 command token이 필요한 command boundary를 사용한다.
-- v0에서 허용되는 의미 있는 action은 `dry_run|dry-run|plan` 이다.
-- `run|execute` 는 route와 command type만 존재하고, 실제 모터 출력 없이
-  `ROUTINE_EXECUTE_BLOCKED` 이벤트와 실패 응답을 반환한다.
+- v0/v1 skeleton에서 허용되는 action은 `dry_run|dry-run|plan` 과
+  preflight-only `run|execute` 다.
 - `run|execute` 는 먼저 routine별 operator confirmation code를 검사한다.
   확인 값이 없거나 맞지 않으면 `ROUTINE_CONFIRM_REQ` 이벤트와 실패 응답을
   반환한다.
+- confirmation 통과 후에는 `state_armed`, `motion_clear`, `fault_clear`,
+  `no_active_sequence`, 필요 시 perception freshness를 검사한다. 실패하면
+  `ROUTINE_PREFLIGHT_BLOCK` 이벤트와 실패 응답을 반환한다.
+- 모든 preflight가 통과해도 실제 모터 출력 없이 `ROUTINE_EXECUTE_BLOCKED`
+  이벤트와 실패 응답을 반환한다.
 - 현재 routine 이름은 `inspect`, `open_gripper_check`, `stow`,
   `center_target_dry_run` 이다.
 - dry-run 응답은 계획과 preflight 상태를 보여주지만, 모터/라이트/그리퍼를
@@ -454,7 +460,12 @@ envelope에 routine 계획과 execute preflight 요약을 덧붙인다.
     "motionClear": true,
     "blockReason": "NONE",
     "faultLatched": false,
+    "faultClear": true,
     "operatorConfirmed": false,
+    "noActiveSequence": true,
+    "sequenceState": "IDLE",
+    "perceptionReady": true,
+    "executeReady": false,
     "result": "dry_run_only"
   },
   "routine": {
@@ -498,11 +509,14 @@ envelope에 routine 계획과 execute preflight 요약을 덧붙인다.
   `targetDegrees` 를 포함한다.
 - dry-run은 성공하더라도 `executeImplemented=false` 이다.
 - `operatorConfirmation.code` 는 operator confirmation 문구이며 명령 토큰이 아니다.
-- `executionPolicy.mode` 는 v0에서 항상 `dry_run_only` 이다.
-- `run` 응답의 `executePreflight.result` 는 confirmation 누락 시
-  `confirm_required`, confirmation 통과 후 execute 차단 시 `execute_blocked` 를
-  사용한다.
-- 실제 execute path는 v0에서 실패해야 하며 모터 출력으로 이어지면 안 된다.
+- `executionPolicy.mode` 는 현재 skeleton에서 항상 `dry_run_only` 이다.
+- `run` 응답의 `executePreflight.result` 는 `confirm_required`,
+  `state_not_armed`, `motion_blocked`, `fault_latched`, `sequence_active`,
+  `perception_required`, `execute_blocked` 중 하나다.
+- `executePreflight.executeReady=true` 는 preflight만 통과했다는 뜻이다.
+  현재 skeleton에서는 그래도 `executeImplemented=false` 이므로 실제 execute는
+  실패해야 한다.
+- 실제 execute path는 현재 skeleton에서 실패해야 하며 모터 출력으로 이어지면 안 된다.
 
 ## 8. 이벤트 응답 경계
 
@@ -570,6 +584,7 @@ envelope에 routine 계획과 execute preflight 요약을 덧붙인다.
 - `BASE_ANGLE_STOP`
 - `ROUTINE_DRY_RUN`
 - `ROUTINE_CONFIRM_REQ`
+- `ROUTINE_PREFLIGHT_BLOCK`
 - `ROUTINE_EXECUTE_BLOCKED`
 - teleop 연결/상태 변경 이벤트
 

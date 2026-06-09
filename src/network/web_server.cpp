@@ -1510,11 +1510,40 @@ void MotionBrainWebServer::handleRoutine() {
   CommandResult result;
   submitCommand(command, result);
 
-  const bool operatorConfirmed = hasPlan && plan.requiresOperatorConfirm &&
-                                 strcmp(command.routineConfirmCode, plan.confirmationCode) == 0;
+  const bool operatorConfirmed = hasPlan &&
+                                 (!plan.requiresOperatorConfirm ||
+                                  strcmp(command.routineConfirmCode, plan.confirmationCode) == 0);
+  const bool stateAllowsExecute =
+    systemState_ != nullptr && systemState_->getState() == SystemState::ARMED;
+  const bool motionClear = !safetyMonitor.isMotionBlocked();
+  const bool faultClear = !safetyMonitor.hasLatchedFault();
+  const bool noActiveSequence =
+    motionSequence_ == nullptr || motionSequence_->getState() != SequenceState::RUNNING;
+  const bool perceptionReady = hasPlan && !plan.perceptionRequired;
+  const char* sequenceState =
+    motionSequence_ != nullptr ? MotionSequence::stateToString(motionSequence_->getState()) : "UNKNOWN";
+  GuardedRoutineExecutePreflight preflight = {
+    operatorConfirmed,
+    stateAllowsExecute,
+    motionClear,
+    faultClear,
+    noActiveSequence,
+    perceptionReady,
+    false,
+    GuardedRoutinePreflightResult::DRY_RUN_ONLY
+  };
   const char* preflightResult = "dry_run_only";
-  if (command.type == CommandType::ROUTINE_RUN) {
-    preflightResult = operatorConfirmed ? "execute_blocked" : "confirm_required";
+  if (hasPlan && command.type == CommandType::ROUTINE_RUN) {
+    preflight = GuardedRoutine::evaluateExecutePreflight(plan,
+                                                         operatorConfirmed,
+                                                         stateAllowsExecute,
+                                                         motionClear,
+                                                         faultClear,
+                                                         noActiveSequence,
+                                                         perceptionReady);
+    preflightResult = GuardedRoutine::preflightResultToString(preflight.result);
+  } else if (!hasPlan) {
+    preflightResult = "unknown_routine";
   }
   String extra = "\"routineAction\":\"";
   extra += command.type == CommandType::ROUTINE_DRY_RUN ? "dry_run" : "run";
@@ -1523,15 +1552,25 @@ void MotionBrainWebServer::handleRoutine() {
   extra += "\"state\":\"";
   extra += systemState_ != nullptr ? systemState_->getStateString() : "UNKNOWN";
   extra += "\",\"stateAllowsExecute\":";
-  extra += (systemState_ != nullptr && systemState_->getState() == SystemState::ARMED) ? "true" : "false";
+  extra += preflight.stateAllowsExecute ? "true" : "false";
   extra += ",\"motionClear\":";
-  extra += safetyMonitor.isMotionBlocked() ? "false" : "true";
+  extra += preflight.motionClear ? "true" : "false";
   extra += ",\"blockReason\":\"";
   extra += safetyMonitor.getBlockReasonString();
   extra += "\",\"faultLatched\":";
   extra += safetyMonitor.hasLatchedFault() ? "true" : "false";
+  extra += ",\"faultClear\":";
+  extra += preflight.faultClear ? "true" : "false";
   extra += ",\"operatorConfirmed\":";
   extra += operatorConfirmed ? "true" : "false";
+  extra += ",\"noActiveSequence\":";
+  extra += preflight.noActiveSequence ? "true" : "false";
+  extra += ",\"sequenceState\":\"";
+  extra += sequenceState;
+  extra += "\",\"perceptionReady\":";
+  extra += preflight.perceptionReady ? "true" : "false";
+  extra += ",\"executeReady\":";
+  extra += preflight.executeReady ? "true" : "false";
   extra += ",\"result\":\"";
   extra += preflightResult;
   extra += "\"}";

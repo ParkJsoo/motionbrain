@@ -398,7 +398,7 @@ void SerialCommand::handleHelp() {
   DebugLog::info("=== Guarded Routine Commands ===");
   DebugLog::info("  routine list                 - Show available routine plans");
   DebugLog::info("  routine dry-run <name>       - Build a dry-run plan and log event");
-  DebugLog::info("  routine run <name> confirm=<code> - Validate confirmation, then reject in v0");
+  DebugLog::info("  routine run <name> confirm=<code> - Validate confirmation/preflight, then reject");
   DebugLog::info("  example: routine run inspect confirm=confirm-inspect");
   DebugLog::info("  routines: inspect, open_gripper_check, stow, center_target_dry_run");
   DebugLog::info("");

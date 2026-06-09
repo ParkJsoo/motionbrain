@@ -85,7 +85,7 @@ const GuardedRoutinePlan ROUTINES[] = {
    15000, 1000, 4500,
    true, true, true, false, true, true},
   {"center_target_dry_run", "Plan a target-centering action without physical execution.", "confirm-center-target",
-   "state_armed|motion_clear|fault_clear|operator_confirmed|perception_fresh|target_alignment_fresh",
+   "state_armed|motion_clear|fault_clear|operator_confirmed|no_active_sequence|perception_fresh|target_alignment_fresh",
    CENTER_TARGET_DRY_RUN_STEPS,
    static_cast<uint8_t>(sizeof(CENTER_TARGET_DRY_RUN_STEPS) / sizeof(CENTER_TARGET_DRY_RUN_STEPS[0])),
    15000, 1000, 2500,
@@ -167,6 +167,45 @@ uint8_t GuardedRoutine::routineCount() {
 
 const char* GuardedRoutine::routineNameAt(uint8_t index) {
   return index < routineCount() ? ROUTINES[index].name : "";
+}
+
+GuardedRoutineExecutePreflight GuardedRoutine::evaluateExecutePreflight(
+    const GuardedRoutinePlan& plan,
+    bool operatorConfirmed,
+    bool stateAllowsExecute,
+    bool motionClear,
+    bool faultClear,
+    bool noActiveSequence,
+    bool perceptionReady) {
+  GuardedRoutineExecutePreflight preflight = {
+    operatorConfirmed,
+    stateAllowsExecute,
+    motionClear,
+    faultClear,
+    noActiveSequence,
+    perceptionReady,
+    false,
+    GuardedRoutinePreflightResult::EXECUTE_BLOCKED
+  };
+
+  if (plan.requiresOperatorConfirm && !operatorConfirmed) {
+    preflight.result = GuardedRoutinePreflightResult::CONFIRM_REQUIRED;
+  } else if (plan.requiresArmedForExecute && !stateAllowsExecute) {
+    preflight.result = GuardedRoutinePreflightResult::STATE_NOT_ARMED;
+  } else if (plan.requiresMotionClearForExecute && !motionClear) {
+    preflight.result = GuardedRoutinePreflightResult::MOTION_BLOCKED;
+  } else if (!faultClear) {
+    preflight.result = GuardedRoutinePreflightResult::FAULT_LATCHED;
+  } else if (!noActiveSequence) {
+    preflight.result = GuardedRoutinePreflightResult::SEQUENCE_ACTIVE;
+  } else if (plan.perceptionRequired && !perceptionReady) {
+    preflight.result = GuardedRoutinePreflightResult::PERCEPTION_REQUIRED;
+  } else {
+    preflight.executeReady = true;
+    preflight.result = GuardedRoutinePreflightResult::EXECUTE_BLOCKED;
+  }
+
+  return preflight;
 }
 
 void GuardedRoutine::appendPlanJson(String& json, const GuardedRoutinePlan& plan) {
@@ -268,6 +307,20 @@ const char* GuardedRoutine::stepKindToString(GuardedRoutineStepKind kind) {
     case GuardedRoutineStepKind::MOTION: return "motion";
     case GuardedRoutineStepKind::VERIFY: return "verify";
     default:                             return "unknown";
+  }
+}
+
+const char* GuardedRoutine::preflightResultToString(GuardedRoutinePreflightResult result) {
+  switch (result) {
+    case GuardedRoutinePreflightResult::DRY_RUN_ONLY:          return "dry_run_only";
+    case GuardedRoutinePreflightResult::CONFIRM_REQUIRED:      return "confirm_required";
+    case GuardedRoutinePreflightResult::STATE_NOT_ARMED:       return "state_not_armed";
+    case GuardedRoutinePreflightResult::MOTION_BLOCKED:        return "motion_blocked";
+    case GuardedRoutinePreflightResult::FAULT_LATCHED:         return "fault_latched";
+    case GuardedRoutinePreflightResult::SEQUENCE_ACTIVE:       return "sequence_active";
+    case GuardedRoutinePreflightResult::PERCEPTION_REQUIRED:   return "perception_required";
+    case GuardedRoutinePreflightResult::EXECUTE_BLOCKED:       return "execute_blocked";
+    default:                                                   return "unknown";
   }
 }
 
