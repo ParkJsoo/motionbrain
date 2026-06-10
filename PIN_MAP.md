@@ -218,19 +218,6 @@ STM32 GND                   ->  ESP32 GND
 
 ---
 
-## Homing / Reference Feedback
-
-현재 하드웨어는 joint별 encoder, limit switch, absolute position sensor가
-없으므로 자동 homing을 지원하지 않는다. `soft_home_reference` routine은
-운영자 확인 기반 software reference 절차이며, motion step이 없다.
-
-향후 homing 센서를 추가할 때는 임의 GPIO에 바로 연결하지 말고
-[docs/HOMING_FEEDBACK_PLAN.md](docs/HOMING_FEEDBACK_PLAN.md)의 순서를 따른다.
-특히 ESP32 본체는 모터/PWM/UART로 핀 여유가 작으므로, STM32 센서 노드,
-I2C GPIO expander, 또는 I2C mux 기반 encoder 구조를 먼저 검토한다.
-
----
-
 ## STM32 Handheld Teleop Buttons
 
 현재 `MotionBrainSensor`의 `APP_MODE_TELEOP_REMOTE` 버튼 핀 source of truth는 아래와 같다.
