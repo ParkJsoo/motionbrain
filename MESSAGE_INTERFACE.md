@@ -516,6 +516,26 @@ envelope에 routine 계획과 execute preflight 요약을 덧붙인다.
     "sequenceStarted": false,
     "state": "idle",
     "motionStepCount": 2,
+    "stepJournal": {
+      "count": 4,
+      "truncated": false,
+      "entries": [
+        {
+          "index": 1,
+          "id": "preflight",
+          "kind": "check",
+          "result": "pending",
+          "detail": "non-motion step pending"
+        },
+        {
+          "index": 2,
+          "id": "shoulder_preview",
+          "kind": "motion",
+          "result": "skipped",
+          "detail": "motion step skipped before executor"
+        }
+      ]
+    },
     "result": "not_requested",
     "detail": "executor not requested"
   },
@@ -567,6 +587,10 @@ envelope에 routine 계획과 execute preflight 요약을 덧붙인다.
   `prepared|running|abort_requested` 상태가 아니었다는 뜻이다.
 - `executor.status.state` 는 `idle|prepared|running|abort_requested|aborted|
   timed_out|completed|blocked` 중 하나다.
+- `executor.stepJournal.entries[].result` 는 `pending|skipped|blocked` 중
+  하나다. 현재 skeleton에서는 non-motion step은 `pending`, executor가 호출되지
+  않은 motion step은 `skipped`, execute-ready 이후 firmware policy에 막힌
+  motion step은 `blocked` 로 남긴다.
 - `operatorConfirmation.code` 는 operator confirmation 문구이며 명령 토큰이 아니다.
 - `executionPolicy.mode` 는 현재 skeleton에서 항상 `dry_run_only` 이다.
 - `run` 응답의 `executePreflight.result` 는 `confirm_required`,

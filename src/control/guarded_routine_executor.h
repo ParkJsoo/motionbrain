@@ -30,6 +30,22 @@ enum class GuardedRoutineExecutorState : uint8_t {
   BLOCKED
 };
 
+enum class GuardedRoutineStepResult : uint8_t {
+  PENDING = 0,
+  SKIPPED,
+  BLOCKED
+};
+
+struct GuardedRoutineStepJournalEntry {
+  uint8_t index;
+  char stepId[24];
+  GuardedRoutineStepKind kind;
+  GuardedRoutineStepResult result;
+  char detail[64];
+
+  GuardedRoutineStepJournalEntry();
+};
+
 struct GuardedRoutineExecutorStatus {
   GuardedRoutineExecutorState state;
   char routineName[24];
@@ -47,6 +63,8 @@ struct GuardedRoutineExecutorStatus {
 };
 
 struct GuardedRoutineExecutorReport {
+  static const uint8_t MAX_STEP_JOURNAL = 8;
+
   bool attempted;
   bool enabled;
   bool executeImplemented;
@@ -54,6 +72,9 @@ struct GuardedRoutineExecutorReport {
   bool sequenceStarted;
   GuardedRoutineExecutorState state;
   uint8_t motionStepCount;
+  uint8_t stepJournalCount;
+  bool stepJournalTruncated;
+  GuardedRoutineStepJournalEntry stepJournal[MAX_STEP_JOURNAL];
   GuardedRoutineExecutorResult result;
   char detail[96];
 
@@ -83,8 +104,11 @@ public:
 
   static const char* resultToString(GuardedRoutineExecutorResult result);
   static const char* stateToString(GuardedRoutineExecutorState state);
+  static const char* stepResultToString(GuardedRoutineStepResult result);
 
 private:
+  static void buildStepJournal(const GuardedRoutinePlan& plan,
+                               GuardedRoutineExecutorReport& report);
   static uint8_t countMotionSteps(const GuardedRoutinePlan& plan);
 };
 

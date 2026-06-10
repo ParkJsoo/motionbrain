@@ -1419,6 +1419,9 @@ void SerialCommand::handleRoutine(const char* args) {
                    GuardedRoutineExecutor::stateToString(report.state),
                    GuardedRoutineExecutor::resultToString(report.result),
                    report.detail);
+    DebugLog::info("Step journal: count=%u truncated=%s",
+                   report.stepJournalCount,
+                   report.stepJournalTruncated ? "YES" : "NO");
     return;
   }
 
@@ -1502,6 +1505,17 @@ void SerialCommand::handleRoutine(const char* args) {
                  GuardedRoutineExecutor::stateToString(report.state),
                  GuardedRoutineExecutor::resultToString(report.result),
                  report.sequenceStarted ? "YES" : "NO");
+  DebugLog::info("Step journal: count=%u truncated=%s",
+                 report.stepJournalCount,
+                 report.stepJournalTruncated ? "YES" : "NO");
+  for (uint8_t journalIndex = 0; journalIndex < report.stepJournalCount; ++journalIndex) {
+    const GuardedRoutineStepJournalEntry& entry = report.stepJournal[journalIndex];
+    DebugLog::info("  journal %u. %s %s - %s",
+                   entry.index,
+                   entry.stepId,
+                   GuardedRoutineExecutor::stepResultToString(entry.result),
+                   entry.detail);
+  }
   DebugLog::info("Steps: %u", plan.stepCount);
   for (uint8_t stepIndex = 0; stepIndex < plan.stepCount; ++stepIndex) {
     const GuardedRoutineStep& step = plan.steps[stepIndex];

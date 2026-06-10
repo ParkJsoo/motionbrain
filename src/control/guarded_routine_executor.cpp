@@ -86,6 +86,15 @@ GuardedRoutineExecutorStatus::GuardedRoutineExecutorStatus()
   strlcpy(lastDetail, "executor idle", sizeof(lastDetail));
 }
 
+GuardedRoutineStepJournalEntry::GuardedRoutineStepJournalEntry()
+  : index(0)
+  , stepId{0}
+  , kind(GuardedRoutineStepKind::CHECK)
+  , result(GuardedRoutineStepResult::PENDING)
+  , detail{0} {
+  strlcpy(detail, "pending", sizeof(detail));
+}
+
 GuardedRoutineExecutorReport::GuardedRoutineExecutorReport()
   : attempted(false)
   , enabled(GuardedRoutineExecutor::isEnabled())
@@ -94,6 +103,8 @@ GuardedRoutineExecutorReport::GuardedRoutineExecutorReport()
   , sequenceStarted(false)
   , state(GuardedRoutineExecutorState::IDLE)
   , motionStepCount(0)
+  , stepJournalCount(0)
+  , stepJournalTruncated(false)
   , result(GuardedRoutineExecutorResult::NOT_REQUESTED)
   , detail{0} {
   strlcpy(detail, "executor not requested", sizeof(detail));
@@ -134,6 +145,7 @@ GuardedRoutineExecutorReport GuardedRoutineExecutor::describe(
             sizeof(report.detail));
   }
 
+  buildStepJournal(plan, report);
   return report;
 }
 
@@ -152,6 +164,8 @@ bool GuardedRoutineExecutor::abort(const char* reason,
   report.executeImplemented = executeImplemented();
   report.sequencePrepared = false;
   report.sequenceStarted = false;
+  report.stepJournalCount = 0;
+  report.stepJournalTruncated = false;
 
   if (!isActiveState(currentStatus.state)) {
     report.state = GuardedRoutineExecutorState::IDLE;
@@ -270,6 +284,30 @@ void GuardedRoutineExecutor::appendReportJson(
   json += "\"";
   json += ",\"motionStepCount\":";
   json += String(report.motionStepCount);
+  json += ",\"stepJournal\":{";
+  json += "\"count\":";
+  json += String(report.stepJournalCount);
+  json += ",\"truncated\":";
+  json += report.stepJournalTruncated ? "true" : "false";
+  json += ",\"entries\":[";
+  for (uint8_t i = 0; i < report.stepJournalCount; ++i) {
+    const GuardedRoutineStepJournalEntry& entry = report.stepJournal[i];
+    if (i > 0) {
+      json += ",";
+    }
+    json += "{\"index\":";
+    json += String(entry.index);
+    json += ",\"id\":\"";
+    appendEscaped(json, entry.stepId);
+    json += "\",\"kind\":\"";
+    json += GuardedRoutine::stepKindToString(entry.kind);
+    json += "\",\"result\":\"";
+    json += stepResultToString(entry.result);
+    json += "\",\"detail\":\"";
+    appendEscaped(json, entry.detail);
+    json += "\"}";
+  }
+  json += "]}";
   json += ",\"result\":\"";
   json += resultToString(report.result);
   json += "\",\"detail\":\"";
@@ -303,6 +341,59 @@ const char* GuardedRoutineExecutor::stateToString(
     case GuardedRoutineExecutorState::BLOCKED:          return "blocked";
     default:                                            return "unknown";
   }
+}
+
+const char* GuardedRoutineExecutor::stepResultToString(
+    GuardedRoutineStepResult result) {
+  switch (result) {
+    case GuardedRoutineStepResult::PENDING:  return "pending";
+    case GuardedRoutineStepResult::SKIPPED:  return "skipped";
+    case GuardedRoutineStepResult::BLOCKED:  return "blocked";
+    default:                                 return "unknown";
+  }
+}
+
+void GuardedRoutineExecutor::buildStepJournal(
+    const GuardedRoutinePlan& plan,
+    GuardedRoutineExecutorReport& report) {
+  report.stepJournalCount = 0;
+  report.stepJournalTruncated = plan.stepCount > GuardedRoutineExecutorReport::MAX_STEP_JOURNAL;
+
+  const uint8_t journalCount =
+    plan.stepCount < GuardedRoutineExecutorReport::MAX_STEP_JOURNAL
+      ? plan.stepCount
+      : GuardedRoutineExecutorReport::MAX_STEP_JOURNAL;
+
+  for (uint8_t i = 0; i < journalCount; ++i) {
+    const GuardedRoutineStep& step = plan.steps[i];
+    GuardedRoutineStepJournalEntry& entry = report.stepJournal[i];
+    entry.index = i + 1;
+    strlcpy(entry.stepId, step.kindId != nullptr ? step.kindId : "",
+            sizeof(entry.stepId));
+    entry.kind = step.kind;
+
+    if (step.kind == GuardedRoutineStepKind::MOTION) {
+      if (!report.attempted) {
+        entry.result = GuardedRoutineStepResult::SKIPPED;
+        strlcpy(entry.detail, "motion step skipped before executor",
+                sizeof(entry.detail));
+      } else {
+        entry.result = GuardedRoutineStepResult::BLOCKED;
+        strlcpy(entry.detail, "motion step blocked by executor policy",
+                sizeof(entry.detail));
+      }
+    } else if (report.attempted && report.result != GuardedRoutineExecutorResult::NOT_REQUESTED) {
+      entry.result = GuardedRoutineStepResult::PENDING;
+      strlcpy(entry.detail, "non-motion step pending executor implementation",
+              sizeof(entry.detail));
+    } else {
+      entry.result = GuardedRoutineStepResult::PENDING;
+      strlcpy(entry.detail, "non-motion step pending",
+              sizeof(entry.detail));
+    }
+  }
+
+  report.stepJournalCount = journalCount;
 }
 
 uint8_t GuardedRoutineExecutor::countMotionSteps(const GuardedRoutinePlan& plan) {
