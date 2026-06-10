@@ -43,6 +43,15 @@ enum class GuardedRoutinePrepareResult : uint8_t {
   PREPARE_INVALID_STEP
 };
 
+enum class GuardedRoutineMaterializeResult : uint8_t {
+  MATERIALIZE_NOT_REQUESTED = 0,
+  MATERIALIZE_READY,
+  MATERIALIZE_PREPARE_NOT_READY,
+  MATERIALIZE_SEQUENCE_UNAVAILABLE,
+  MATERIALIZE_SEQUENCE_NOT_IDLE,
+  MATERIALIZE_QUEUE_APPLY_DISABLED
+};
+
 struct GuardedRoutineStepJournalEntry {
   uint8_t index;
   char stepId[24];
@@ -102,6 +111,14 @@ struct GuardedRoutineExecutorReport {
   GuardedRoutinePrepareResult prepareResult;
   char prepareDetail[96];
   GuardedRoutinePreparedStep preparedSteps[MAX_PREPARED_STEPS];
+  bool materializeAttempted;
+  bool materializeReady;
+  bool motionSequenceAvailable;
+  bool motionSequenceIdle;
+  bool queueApplyAllowed;
+  SequenceState motionSequenceState;
+  GuardedRoutineMaterializeResult materializeResult;
+  char materializeDetail[96];
   uint8_t stepJournalCount;
   bool stepJournalTruncated;
   GuardedRoutineStepJournalEntry stepJournal[MAX_STEP_JOURNAL];
@@ -117,9 +134,11 @@ public:
   static bool executeImplemented();
 
   static GuardedRoutineExecutorReport describe(const GuardedRoutinePlan& plan,
-                                               bool attempted);
+                                               bool attempted,
+                                               MotionSequence* motionSequence = nullptr);
   static bool begin(const GuardedRoutinePlan& plan,
-                    GuardedRoutineExecutorReport& report);
+                    GuardedRoutineExecutorReport& report,
+                    MotionSequence* motionSequence = nullptr);
   static bool abort(const char* reason,
                     GuardedRoutineExecutorReport& report);
   static void update();
@@ -136,10 +155,14 @@ public:
   static const char* stateToString(GuardedRoutineExecutorState state);
   static const char* stepResultToString(GuardedRoutineStepResult result);
   static const char* prepareResultToString(GuardedRoutinePrepareResult result);
+  static const char* materializeResultToString(GuardedRoutineMaterializeResult result);
 
 private:
   static void buildPreparedSequence(const GuardedRoutinePlan& plan,
                                     GuardedRoutineExecutorReport& report);
+  static void buildMaterializationGate(const GuardedRoutinePlan& plan,
+                                       MotionSequence* motionSequence,
+                                       GuardedRoutineExecutorReport& report);
   static void buildStepJournal(const GuardedRoutinePlan& plan,
                                GuardedRoutineExecutorReport& report);
   static uint8_t countMotionSteps(const GuardedRoutinePlan& plan);

@@ -1566,7 +1566,8 @@ void MotionBrainWebServer::handleRoutine() {
   if (hasPlan) {
     const bool executorAttempted =
       command.type == CommandType::ROUTINE_RUN && preflight.executeReady;
-    executorReport = GuardedRoutineExecutor::describe(plan, executorAttempted);
+    executorReport = GuardedRoutineExecutor::describe(plan, executorAttempted,
+                                                      motionSequence_);
   }
 
   String extra = "\"routineAction\":\"";

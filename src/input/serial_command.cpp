@@ -1511,6 +1511,13 @@ void SerialCommand::handleRoutine(const char* args) {
                  report.preparedSequenceApplied ? "YES" : "NO",
                  report.preparedStepCount,
                  report.preparedMotionCount);
+  DebugLog::info("Materialization: result=%s ready=%s queueApply=%s sequence=%s",
+                 GuardedRoutineExecutor::materializeResultToString(report.materializeResult),
+                 report.materializeReady ? "YES" : "NO",
+                 report.queueApplyAllowed ? "YES" : "NO",
+                 report.motionSequenceAvailable
+                   ? MotionSequence::stateToString(report.motionSequenceState)
+                   : "UNKNOWN");
   DebugLog::info("Step journal: count=%u truncated=%s",
                  report.stepJournalCount,
                  report.stepJournalTruncated ? "YES" : "NO");

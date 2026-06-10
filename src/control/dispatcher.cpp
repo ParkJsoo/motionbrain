@@ -451,14 +451,15 @@ bool Dispatcher::execute(const Command& command, CommandResult& result) {
       }
 
       GuardedRoutineExecutorReport executorReport;
-      GuardedRoutineExecutor::begin(plan, executorReport);
+      GuardedRoutineExecutor::begin(plan, executorReport, motionSequence_);
 
       char detail[96] = {0};
       snprintf(detail, sizeof(detail),
-               "name=%s executor=%s prepare=%s applied=%u started=%u motion=%u",
+               "n=%s e=%s p=%s m=%s a=%u s=%u steps=%u",
                plan.name,
                GuardedRoutineExecutor::resultToString(executorReport.result),
                GuardedRoutineExecutor::prepareResultToString(executorReport.prepareResult),
+               GuardedRoutineExecutor::materializeResultToString(executorReport.materializeResult),
                executorReport.preparedSequenceApplied ? 1 : 0,
                executorReport.sequenceStarted ? 1 : 0,
                executorReport.motionStepCount);

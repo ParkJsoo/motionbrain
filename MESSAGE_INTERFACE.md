@@ -542,6 +542,16 @@ envelope에 routine 계획과 execute preflight 요약을 덧붙인다.
         }
       ]
     },
+    "materialization": {
+      "attempted": false,
+      "ready": false,
+      "motionSequenceAvailable": true,
+      "motionSequenceState": "IDLE",
+      "motionSequenceIdle": true,
+      "queueApplyAllowed": false,
+      "result": "not_requested",
+      "detail": "materialization not requested"
+    },
     "stepJournal": {
       "count": 4,
       "truncated": false,
@@ -623,6 +633,12 @@ envelope에 routine 계획과 execute preflight 요약을 덧붙인다.
   뜻이다.
 - `executor.preparedSequence.prepareResult` 는
   `not_requested|ready|too_many_steps|invalid_step` 중 하나다.
+- `executor.materialization` 은 준비된 후보를 실제 `MotionSequence` 큐에
+  적용하기 직전 gate다. 현재 skeleton에서는 `queueApplyAllowed=false` 이므로
+  `ready=false` 이고 실제 `addCommand()` 또는 `run()` 호출이 없어야 한다.
+- `executor.materialization.result` 는
+  `not_requested|ready|prepare_not_ready|motion_sequence_unavailable|
+  sequence_not_idle|queue_apply_disabled` 중 하나다.
 - `operatorConfirmation.code` 는 operator confirmation 문구이며 명령 토큰이 아니다.
 - `executionPolicy.mode` 는 현재 skeleton에서 항상 `dry_run_only` 이다.
 - `run` 응답의 `executePreflight.result` 는 `confirm_required`,
@@ -633,8 +649,8 @@ envelope에 routine 계획과 execute preflight 요약을 덧붙인다.
   실패해야 한다.
 - 실제 execute path는 현재 skeleton에서 실패해야 하며 모터 출력으로 이어지면 안 된다.
 - `ROUTINE_EXECUTE_BLOCKED` event detail은
-  `name=<routine> executor=<result> prepare=<prepareResult> applied=<0|1> started=<0|1> motion=<count>`
-  형식으로 executor gate와 준비 시퀀스 상태를 함께 남긴다.
+  `n=<routine> e=<result> p=<prepareResult> m=<materializeResult> a=<0|1> s=<0|1> steps=<count>`
+  형식으로 executor gate, 준비 시퀀스, materialization 상태를 함께 남긴다.
 - `ROUTINE_ABORT` 는 활성 executor scaffold가 있을 때만 남는다.
 - `ROUTINE_ABORT_IDLE` 은 abort가 안전하게 no-op 처리됐다는 뜻이다.
 - `ROUTINE_EXECUTOR_TIMEOUT` 은 executor scaffold가 `running` 상태에서

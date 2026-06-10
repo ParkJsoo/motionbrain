@@ -160,11 +160,20 @@ GuardedRoutineExecutorReport::GuardedRoutineExecutorReport()
   , preparedMotionCount(0)
   , prepareResult(GuardedRoutinePrepareResult::PREPARE_NOT_REQUESTED)
   , prepareDetail{0}
+  , materializeAttempted(false)
+  , materializeReady(false)
+  , motionSequenceAvailable(false)
+  , motionSequenceIdle(false)
+  , queueApplyAllowed(false)
+  , motionSequenceState(SequenceState::IDLE)
+  , materializeResult(GuardedRoutineMaterializeResult::MATERIALIZE_NOT_REQUESTED)
+  , materializeDetail{0}
   , stepJournalCount(0)
   , stepJournalTruncated(false)
   , result(GuardedRoutineExecutorResult::NOT_REQUESTED)
   , detail{0} {
   strlcpy(prepareDetail, "prepare not requested", sizeof(prepareDetail));
+  strlcpy(materializeDetail, "materialization not requested", sizeof(materializeDetail));
   strlcpy(detail, "executor not requested", sizeof(detail));
 }
 
@@ -178,7 +187,8 @@ bool GuardedRoutineExecutor::executeImplemented() {
 
 GuardedRoutineExecutorReport GuardedRoutineExecutor::describe(
     const GuardedRoutinePlan& plan,
-    bool attempted) {
+    bool attempted,
+    MotionSequence* motionSequence) {
   GuardedRoutineExecutorReport report;
   report.attempted = attempted;
   report.enabled = isEnabled();
@@ -187,6 +197,7 @@ GuardedRoutineExecutorReport GuardedRoutineExecutor::describe(
   report.sequencePrepared = false;
   report.sequenceStarted = false;
   buildPreparedSequence(plan, report);
+  buildMaterializationGate(plan, motionSequence, report);
 
   if (!attempted) {
     report.state = GuardedRoutineExecutorState::IDLE;
@@ -209,8 +220,9 @@ GuardedRoutineExecutorReport GuardedRoutineExecutor::describe(
 }
 
 bool GuardedRoutineExecutor::begin(const GuardedRoutinePlan& plan,
-                                   GuardedRoutineExecutorReport& report) {
-  report = describe(plan, true);
+                                   GuardedRoutineExecutorReport& report,
+                                   MotionSequence* motionSequence) {
+  report = describe(plan, true, motionSequence);
   publishReport(report, &plan, report.state);
   return report.sequenceStarted;
 }
@@ -230,6 +242,15 @@ bool GuardedRoutineExecutor::abort(const char* reason,
   report.preparedMotionCount = 0;
   report.prepareResult = GuardedRoutinePrepareResult::PREPARE_NOT_REQUESTED;
   strlcpy(report.prepareDetail, "prepare not requested", sizeof(report.prepareDetail));
+  report.materializeAttempted = false;
+  report.materializeReady = false;
+  report.motionSequenceAvailable = false;
+  report.motionSequenceIdle = false;
+  report.queueApplyAllowed = false;
+  report.motionSequenceState = SequenceState::IDLE;
+  report.materializeResult = GuardedRoutineMaterializeResult::MATERIALIZE_NOT_REQUESTED;
+  strlcpy(report.materializeDetail, "materialization not requested",
+          sizeof(report.materializeDetail));
   report.stepJournalCount = 0;
   report.stepJournalTruncated = false;
 
@@ -304,6 +325,9 @@ void GuardedRoutineExecutor::appendPolicyJson(String& json) {
   json += ",\"mode\":\"skeleton_disabled_by_default\"";
   json += ",\"abortSupported\":true";
   json += ",\"timeoutSupported\":true";
+  json += ",\"materializationGateSupported\":true";
+  json += ",\"queueApplyAllowed\":";
+  json += (report.enabled && report.executeImplemented) ? "true" : "false";
   json += ",";
   appendStatusJson(json);
   json += "}";
@@ -398,6 +422,26 @@ void GuardedRoutineExecutor::appendReportJson(
     json += "}";
   }
   json += "]}";
+  json += ",\"materialization\":{";
+  json += "\"attempted\":";
+  json += report.materializeAttempted ? "true" : "false";
+  json += ",\"ready\":";
+  json += report.materializeReady ? "true" : "false";
+  json += ",\"motionSequenceAvailable\":";
+  json += report.motionSequenceAvailable ? "true" : "false";
+  json += ",\"motionSequenceState\":\"";
+  json += report.motionSequenceAvailable
+            ? MotionSequence::stateToString(report.motionSequenceState)
+            : "UNKNOWN";
+  json += "\",\"motionSequenceIdle\":";
+  json += report.motionSequenceIdle ? "true" : "false";
+  json += ",\"queueApplyAllowed\":";
+  json += report.queueApplyAllowed ? "true" : "false";
+  json += ",\"result\":\"";
+  json += materializeResultToString(report.materializeResult);
+  json += "\",\"detail\":\"";
+  appendEscaped(json, report.materializeDetail);
+  json += "\"}";
   json += ",\"stepJournal\":{";
   json += "\"count\":";
   json += String(report.stepJournalCount);
@@ -478,6 +522,19 @@ const char* GuardedRoutineExecutor::prepareResultToString(
   }
 }
 
+const char* GuardedRoutineExecutor::materializeResultToString(
+    GuardedRoutineMaterializeResult result) {
+  switch (result) {
+    case GuardedRoutineMaterializeResult::MATERIALIZE_NOT_REQUESTED:         return "not_requested";
+    case GuardedRoutineMaterializeResult::MATERIALIZE_READY:                 return "ready";
+    case GuardedRoutineMaterializeResult::MATERIALIZE_PREPARE_NOT_READY:     return "prepare_not_ready";
+    case GuardedRoutineMaterializeResult::MATERIALIZE_SEQUENCE_UNAVAILABLE:  return "motion_sequence_unavailable";
+    case GuardedRoutineMaterializeResult::MATERIALIZE_SEQUENCE_NOT_IDLE:     return "sequence_not_idle";
+    case GuardedRoutineMaterializeResult::MATERIALIZE_QUEUE_APPLY_DISABLED:  return "queue_apply_disabled";
+    default:                                                                return "unknown";
+  }
+}
+
 void GuardedRoutineExecutor::buildPreparedSequence(
     const GuardedRoutinePlan& plan,
     GuardedRoutineExecutorReport& report) {
@@ -537,6 +594,67 @@ void GuardedRoutineExecutor::buildPreparedSequence(
   report.prepareResult = GuardedRoutinePrepareResult::PREPARE_READY;
   strlcpy(report.prepareDetail, "sequence candidate ready; not applied to MotionSequence",
           sizeof(report.prepareDetail));
+}
+
+void GuardedRoutineExecutor::buildMaterializationGate(
+    const GuardedRoutinePlan& plan,
+    MotionSequence* motionSequence,
+    GuardedRoutineExecutorReport& report) {
+  (void)plan;
+
+  report.materializeAttempted = report.attempted;
+  report.materializeReady = false;
+  report.motionSequenceAvailable = motionSequence != nullptr;
+  report.motionSequenceState = motionSequence != nullptr
+                                 ? motionSequence->getState()
+                                 : SequenceState::IDLE;
+  report.motionSequenceIdle =
+    motionSequence != nullptr && motionSequence->getState() != SequenceState::RUNNING;
+  report.queueApplyAllowed = isEnabled() && executeImplemented();
+  report.materializeResult = GuardedRoutineMaterializeResult::MATERIALIZE_NOT_REQUESTED;
+  strlcpy(report.materializeDetail, "materialization not requested",
+          sizeof(report.materializeDetail));
+
+  if (!report.materializeAttempted) {
+    return;
+  }
+
+  if (!report.prepareReady) {
+    report.materializeResult =
+      GuardedRoutineMaterializeResult::MATERIALIZE_PREPARE_NOT_READY;
+    strlcpy(report.materializeDetail, "prepared sequence candidate is not ready",
+            sizeof(report.materializeDetail));
+    return;
+  }
+
+  if (motionSequence == nullptr) {
+    report.materializeResult =
+      GuardedRoutineMaterializeResult::MATERIALIZE_SEQUENCE_UNAVAILABLE;
+    strlcpy(report.materializeDetail, "motion sequence dependency unavailable",
+            sizeof(report.materializeDetail));
+    return;
+  }
+
+  if (!report.motionSequenceIdle) {
+    report.materializeResult =
+      GuardedRoutineMaterializeResult::MATERIALIZE_SEQUENCE_NOT_IDLE;
+    strlcpy(report.materializeDetail, "motion sequence is running",
+            sizeof(report.materializeDetail));
+    return;
+  }
+
+  if (!report.queueApplyAllowed) {
+    report.materializeResult =
+      GuardedRoutineMaterializeResult::MATERIALIZE_QUEUE_APPLY_DISABLED;
+    strlcpy(report.materializeDetail, "motion sequence queue apply disabled by executor policy",
+            sizeof(report.materializeDetail));
+    return;
+  }
+
+  report.materializeReady = true;
+  report.materializeResult = GuardedRoutineMaterializeResult::MATERIALIZE_READY;
+  strlcpy(report.materializeDetail, "materialization gate ready; not applied to MotionSequence",
+          sizeof(report.materializeDetail));
 }
 
 void GuardedRoutineExecutor::buildStepJournal(
