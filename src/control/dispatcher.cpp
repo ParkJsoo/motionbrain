@@ -7,6 +7,7 @@
 #include "control/command_bus.h"
 #include "control/event_log.h"
 #include "control/guarded_routine.h"
+#include "control/guarded_routine_executor.h"
 #include "control/safety_gate.h"
 #include "debug/debug_log.h"
 #include "motion/robot_arm.h"
@@ -448,12 +449,18 @@ bool Dispatcher::execute(const Command& command, CommandResult& result) {
         break;
       }
 
+      GuardedRoutineExecutorReport executorReport;
+      GuardedRoutineExecutor::begin(plan, executorReport);
+
       char detail[96] = {0};
-      snprintf(detail, sizeof(detail), "name=%s confirm=accepted blocked=dry_run_only", plan.name);
+      snprintf(detail, sizeof(detail), "name=%s executor=%s motionSteps=%u",
+               plan.name,
+               GuardedRoutineExecutor::resultToString(executorReport.result),
+               executorReport.motionStepCount);
       eventLog.push("routine", "ROUTINE_EXECUTE_BLOCKED", EventSeverity::WARN, detail);
       success = false;
       setResult(result, command.id, false,
-                "Routine execute is not implemented in guarded routine v1 skeleton; use dry-run");
+                "Routine executor blocked: %s", executorReport.detail);
       break;
     }
 

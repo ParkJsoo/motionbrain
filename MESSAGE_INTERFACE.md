@@ -124,6 +124,9 @@ X-MotionBrain: 1
   `ROUTINE_PREFLIGHT_BLOCK` 이벤트와 실패 응답을 반환한다.
 - 모든 preflight가 통과해도 실제 모터 출력 없이 `ROUTINE_EXECUTE_BLOCKED`
   이벤트와 실패 응답을 반환한다.
+- executor skeleton은 현재 firmware policy상 disabled다. 응답의
+  `executor.enabled=false`, `executor.executeImplemented=false`,
+  `executor.sequenceStarted=false` 를 실제 물리 실행 차단 조건으로 취급한다.
 - 현재 routine 이름은 `inspect`, `open_gripper_check`, `stow`,
   `center_target_dry_run` 이다.
 - dry-run 응답은 계획과 preflight 상태를 보여주지만, 모터/라이트/그리퍼를
@@ -429,6 +432,11 @@ base 상대각 제어는 다음 종료 이유를 가진다.
   "baseAngleReason": "NONE",
   "dryRunOnly": true,
   "executeImplemented": false,
+  "executor": {
+    "enabled": false,
+    "executeImplemented": false,
+    "mode": "skeleton_disabled_by_default"
+  },
   "routines": [
     {"name": "inspect", "summary": "Low-speed visual inspection routine.", "dryRunOnly": true, "stepCount": 4}
   ]
@@ -467,6 +475,16 @@ envelope에 routine 계획과 execute preflight 요약을 덧붙인다.
     "perceptionReady": true,
     "executeReady": false,
     "result": "dry_run_only"
+  },
+  "executor": {
+    "attempted": false,
+    "enabled": false,
+    "executeImplemented": false,
+    "sequencePrepared": false,
+    "sequenceStarted": false,
+    "motionStepCount": 2,
+    "result": "not_requested",
+    "detail": "executor not requested"
   },
   "routine": {
     "name": "inspect",
@@ -508,6 +526,10 @@ envelope에 routine 계획과 execute preflight 요약을 덧붙인다.
 - `motion` step은 `joint`, `direction`, `percent`, `durationMs`,
   `targetDegrees` 를 포함한다.
 - dry-run은 성공하더라도 `executeImplemented=false` 이다.
+- `executor.result=not_requested` 는 dry-run 또는 preflight block처럼 executor
+  호출 조건에 도달하지 않았다는 뜻이다.
+- `executor.result=disabled` 는 preflight가 execute-ready까지 도달했더라도
+  firmware policy가 물리 executor를 막았다는 뜻이다.
 - `operatorConfirmation.code` 는 operator confirmation 문구이며 명령 토큰이 아니다.
 - `executionPolicy.mode` 는 현재 skeleton에서 항상 `dry_run_only` 이다.
 - `run` 응답의 `executePreflight.result` 는 `confirm_required`,

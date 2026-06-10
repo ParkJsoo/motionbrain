@@ -9,6 +9,7 @@
 #include "control/event_log.h"
 #include "control/dispatcher.h"
 #include "control/guarded_routine.h"
+#include "control/guarded_routine_executor.h"
 #include "safety/safety_monitor.h"
 #include "input/teleop_adapter.h"
 #include "system/system_init.h"       // SystemStateManager 사용
@@ -1545,9 +1546,17 @@ void MotionBrainWebServer::handleRoutine() {
   } else if (!hasPlan) {
     preflightResult = "unknown_routine";
   }
+  GuardedRoutineExecutorReport executorReport;
+  if (hasPlan) {
+    const bool executorAttempted =
+      command.type == CommandType::ROUTINE_RUN && preflight.executeReady;
+    executorReport = GuardedRoutineExecutor::describe(plan, executorAttempted);
+  }
+
   String extra = "\"routineAction\":\"";
   extra += command.type == CommandType::ROUTINE_DRY_RUN ? "dry_run" : "run";
-  extra += "\",\"executeImplemented\":false";
+  extra += "\",\"executeImplemented\":";
+  extra += GuardedRoutineExecutor::executeImplemented() ? "true" : "false";
   extra += ",\"executePreflight\":{";
   extra += "\"state\":\"";
   extra += systemState_ != nullptr ? systemState_->getStateString() : "UNKNOWN";
@@ -1577,6 +1586,8 @@ void MotionBrainWebServer::handleRoutine() {
 
   if (hasPlan) {
     extra += ",";
+    GuardedRoutineExecutor::appendReportJson(extra, executorReport);
+    extra += ",";
     GuardedRoutine::appendPlanJson(extra, plan);
   }
 
@@ -1591,7 +1602,10 @@ void MotionBrainWebServer::handleRoutineStatus() {
   json += "\",\"messageType\":\"routine_list\",";
   appendStateSummaryJson(json);
   json += ",\"dryRunOnly\":true";
-  json += ",\"executeImplemented\":false";
+  json += ",\"executeImplemented\":";
+  json += GuardedRoutineExecutor::executeImplemented() ? "true" : "false";
+  json += ",";
+  GuardedRoutineExecutor::appendPolicyJson(json);
   json += ",\"routines\":[";
   GuardedRoutine::appendRoutineListJson(json);
   json += "]}";
