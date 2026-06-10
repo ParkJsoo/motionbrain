@@ -23,6 +23,7 @@ enum class CommandType : uint8_t {
   SEQUENCE_CLEAR,
   ROUTINE_DRY_RUN,
   ROUTINE_RUN,
+  ROUTINE_ABORT,
   LIGHT_ON,
   LIGHT_OFF,
   LIGHT_TOGGLE

@@ -41,6 +41,7 @@ const char* commandTypeToString(CommandType type) {
     case CommandType::SEQUENCE_CLEAR:          return "sequence clear";
     case CommandType::ROUTINE_DRY_RUN:         return "routine dry-run";
     case CommandType::ROUTINE_RUN:             return "routine run";
+    case CommandType::ROUTINE_ABORT:           return "routine abort";
     case CommandType::LIGHT_ON:                return "light on";
     case CommandType::LIGHT_OFF:               return "light off";
     case CommandType::LIGHT_TOGGLE:            return "light toggle";
@@ -461,6 +462,19 @@ bool Dispatcher::execute(const Command& command, CommandResult& result) {
       success = false;
       setResult(result, command.id, false,
                 "Routine executor blocked: %s", executorReport.detail);
+      break;
+    }
+
+    case CommandType::ROUTINE_ABORT: {
+      GuardedRoutineExecutorReport executorReport;
+      success = GuardedRoutineExecutor::abort("operator_request", executorReport);
+      eventLog.push("routine",
+                    success ? "ROUTINE_ABORT" : "ROUTINE_ABORT_IDLE",
+                    success ? EventSeverity::WARN : EventSeverity::INFO,
+                    executorReport.detail);
+      setResult(result, command.id, success,
+                success ? "Routine executor abort requested"
+                        : "No active routine executor to abort");
       break;
     }
 

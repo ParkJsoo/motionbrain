@@ -6,6 +6,7 @@
 #include "control/command_bus.h"
 #include "control/dispatcher.h"
 #include "control/guarded_routine.h"
+#include "control/guarded_routine_executor.h"
 #include "input/teleop_adapter.h"
 #include "safety/safety_monitor.h"
 #include "system/system_init.h"
@@ -399,6 +400,8 @@ void SerialCommand::handleHelp() {
   DebugLog::info("  routine list                 - Show available routine plans");
   DebugLog::info("  routine dry-run <name>       - Build a dry-run plan and log event");
   DebugLog::info("  routine run <name> confirm=<code> - Validate confirmation/preflight, then reject");
+  DebugLog::info("  routine status              - Show routine executor scaffold state");
+  DebugLog::info("  routine abort               - Abort active routine executor scaffold");
   DebugLog::info("  example: routine run inspect confirm=confirm-inspect");
   DebugLog::info("  routines: inspect, open_gripper_check, stow, center_target_dry_run");
   DebugLog::info("");
@@ -1366,13 +1369,28 @@ void SerialCommand::handleSequence(const char* args) {
 }
 
 void SerialCommand::handleRoutine(const char* args) {
-  if (args == nullptr || strlen(args) == 0 || strcasecmp(args, "list") == 0 ||
-      strcasecmp(args, "status") == 0) {
+  if (args == nullptr || strlen(args) == 0 || strcasecmp(args, "list") == 0) {
     DebugLog::info("=== Guarded Routines ===");
     for (uint8_t i = 0; i < GuardedRoutine::routineCount(); ++i) {
       DebugLog::info("  %s", GuardedRoutine::routineNameAt(i));
     }
     DebugLog::info("Use: routine dry-run <name>");
+    DebugLog::info("Use: routine status | routine abort");
+    return;
+  }
+
+  if (strcasecmp(args, "status") == 0) {
+    const GuardedRoutineExecutorStatus status = GuardedRoutineExecutor::status();
+    DebugLog::info("=== Guarded Routine Executor ===");
+    DebugLog::info("State: %s", GuardedRoutineExecutor::stateToString(status.state));
+    DebugLog::info("Routine: %s", status.routineName[0] != '\0' ? status.routineName : "(none)");
+    DebugLog::info("Steps: current=%u total=%u motion=%u",
+                   status.currentStep, status.totalSteps, status.motionStepCount);
+    DebugLog::info("Timing: elapsed=%lums remaining=%lums",
+                   status.elapsedMs, status.remainingMs);
+    DebugLog::info("Last result: %s",
+                   GuardedRoutineExecutor::resultToString(status.lastResult));
+    DebugLog::info("Last detail: %s", status.lastDetail);
     return;
   }
 
@@ -1386,6 +1404,24 @@ void SerialCommand::handleRoutine(const char* args) {
 
   while (args[i] == ' ' || args[i] == '\t') i++;
   const char* routineArgs = &args[i];
+
+  if (strcasecmp(action, "abort") == 0 || strcasecmp(action, "cancel") == 0) {
+    Command command;
+    command.source = CommandSource::SERIAL_INPUT;
+    command.type = CommandType::ROUTINE_ABORT;
+
+    CommandResult result;
+    submitCommand(command, result);
+    logCommandResult(result);
+
+    const GuardedRoutineExecutorReport report = GuardedRoutineExecutor::lastReport();
+    DebugLog::info("Executor: state=%s result=%s detail=%s",
+                   GuardedRoutineExecutor::stateToString(report.state),
+                   GuardedRoutineExecutor::resultToString(report.result),
+                   report.detail);
+    return;
+  }
+
   if (routineArgs[0] == '\0') {
     DebugLog::warn("routine: missing name");
     DebugLog::info("Use: routine dry-run <name>");
@@ -1442,7 +1478,7 @@ void SerialCommand::handleRoutine(const char* args) {
   } else if (strcasecmp(action, "run") == 0 || strcasecmp(action, "execute") == 0) {
     command.type = CommandType::ROUTINE_RUN;
   } else {
-    DebugLog::warn("routine: unknown action '%s' (list/dry-run/run)", action);
+    DebugLog::warn("routine: unknown action '%s' (list/status/dry-run/run/abort)", action);
     return;
   }
 
@@ -1461,6 +1497,11 @@ void SerialCommand::handleRoutine(const char* args) {
   DebugLog::info("Summary: %s", plan.summary);
   DebugLog::info("Dry-run only: YES");
   DebugLog::info("Confirm code: %s", plan.confirmationCode);
+  const GuardedRoutineExecutorReport report = GuardedRoutineExecutor::lastReport();
+  DebugLog::info("Executor: state=%s result=%s started=%s",
+                 GuardedRoutineExecutor::stateToString(report.state),
+                 GuardedRoutineExecutor::resultToString(report.result),
+                 report.sequenceStarted ? "YES" : "NO");
   DebugLog::info("Steps: %u", plan.stepCount);
   for (uint8_t stepIndex = 0; stepIndex < plan.stepCount; ++stepIndex) {
     const GuardedRoutineStep& step = plan.steps[stepIndex];

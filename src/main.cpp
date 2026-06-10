@@ -14,6 +14,7 @@
 #include "control/command_bus.h"
 #include "control/event_log.h"
 #include "control/dispatcher.h"
+#include "control/guarded_routine_executor.h"
 #include "control/safety_gate.h"
 #include "safety/safety_monitor.h"
 #include "debug/debug_log.h"
@@ -206,6 +207,10 @@ void loop() {
 
   // 모션 시퀀스 업데이트 (Phase 2-B)
   motionSequence.update();
+
+  // Guarded routine executor status/timeout scaffold. Physical execution is
+  // disabled by firmware policy until explicitly implemented.
+  GuardedRoutineExecutor::update();
   
   // 시리얼 명령 처리
   serialCommand.update();

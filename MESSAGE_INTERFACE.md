@@ -30,6 +30,8 @@ routine dry-run open_gripper_check
 routine dry-run stow
 routine dry-run center_target_dry_run
 routine run inspect confirm=confirm-inspect
+routine status
+routine abort
 ```
 
 규칙:
@@ -43,6 +45,11 @@ routine run inspect confirm=confirm-inspect
 - `routine run ...` 은 guarded routine v1 preflight skeleton까지만 수행한다.
   실제 물리 루틴 실행은 별도 operator-confirmed executor가 구현되기 전까지
   제공하지 않는다.
+- `routine status` 는 executor scaffold의 현재 상태, 마지막 결과, timeout
+  bookkeeping을 출력한다.
+- `routine abort` 는 활성 executor scaffold가 있을 때 abort 상태를 기록한다.
+  현재 물리 executor는 disabled이므로 활성 실행이 없으면 `no_active_routine`
+  결과로 끝난다.
 - `confirm=...` 값은 비밀 토큰이 아니라 operator confirmation code다. v1 skeleton에서는
   확인 값이 맞아도 state/safety/fault/sequence preflight를 먼저 통과해야 하며,
   통과 후에도 `executionPolicy.mode=dry_run_only` 이고 execute 응답은
@@ -110,6 +117,11 @@ POST /routine?action=run&name=inspect&confirm=confirm-inspect
 X-MotionBrain: 1
 ```
 
+```http
+POST /routine?action=abort
+X-MotionBrain: 1
+```
+
 규칙:
 
 - `GET /routine` 은 사용 가능한 routine 목록을 반환하는 읽기 전용 API다.
@@ -127,6 +139,11 @@ X-MotionBrain: 1
 - executor skeleton은 현재 firmware policy상 disabled다. 응답의
   `executor.enabled=false`, `executor.executeImplemented=false`,
   `executor.sequenceStarted=false` 를 실제 물리 실행 차단 조건으로 취급한다.
+- `abort|cancel` 은 executor scaffold 상태만 갱신한다. 활성 실행이 없으면
+  `ROUTINE_ABORT_IDLE` 이벤트와 `executor.result=no_active_routine` 이 남는다.
+- executor timeout scaffold는 `running` 상태가 생겼을 때
+  `executor.status.remainingMs` 와 `executor.result=timed_out` 을 보고하기 위한
+  계약이다. 현재 disabled skeleton에서는 running 상태에 들어가지 않는다.
 - 현재 routine 이름은 `inspect`, `open_gripper_check`, `stow`,
   `center_target_dry_run` 이다.
 - dry-run 응답은 계획과 preflight 상태를 보여주지만, 모터/라이트/그리퍼를
@@ -435,7 +452,22 @@ base 상대각 제어는 다음 종료 이유를 가진다.
   "executor": {
     "enabled": false,
     "executeImplemented": false,
-    "mode": "skeleton_disabled_by_default"
+    "mode": "skeleton_disabled_by_default",
+    "abortSupported": true,
+    "timeoutSupported": true,
+    "status": {
+      "state": "idle",
+      "routineName": "",
+      "currentStep": 0,
+      "totalSteps": 0,
+      "motionStepCount": 0,
+      "startedAtMs": 0,
+      "deadlineMs": 0,
+      "elapsedMs": 0,
+      "remainingMs": 0,
+      "lastResult": "not_requested",
+      "lastDetail": "executor idle"
+    }
   },
   "routines": [
     {"name": "inspect", "summary": "Low-speed visual inspection routine.", "dryRunOnly": true, "stepCount": 4}
@@ -482,6 +514,7 @@ envelope에 routine 계획과 execute preflight 요약을 덧붙인다.
     "executeImplemented": false,
     "sequencePrepared": false,
     "sequenceStarted": false,
+    "state": "idle",
     "motionStepCount": 2,
     "result": "not_requested",
     "detail": "executor not requested"
@@ -530,6 +563,10 @@ envelope에 routine 계획과 execute preflight 요약을 덧붙인다.
   호출 조건에 도달하지 않았다는 뜻이다.
 - `executor.result=disabled` 는 preflight가 execute-ready까지 도달했더라도
   firmware policy가 물리 executor를 막았다는 뜻이다.
+- `executor.result=no_active_routine` 은 abort 요청이 들어왔지만 executor가
+  `prepared|running|abort_requested` 상태가 아니었다는 뜻이다.
+- `executor.status.state` 는 `idle|prepared|running|abort_requested|aborted|
+  timed_out|completed|blocked` 중 하나다.
 - `operatorConfirmation.code` 는 operator confirmation 문구이며 명령 토큰이 아니다.
 - `executionPolicy.mode` 는 현재 skeleton에서 항상 `dry_run_only` 이다.
 - `run` 응답의 `executePreflight.result` 는 `confirm_required`,
@@ -539,6 +576,8 @@ envelope에 routine 계획과 execute preflight 요약을 덧붙인다.
   현재 skeleton에서는 그래도 `executeImplemented=false` 이므로 실제 execute는
   실패해야 한다.
 - 실제 execute path는 현재 skeleton에서 실패해야 하며 모터 출력으로 이어지면 안 된다.
+- `ROUTINE_ABORT` 는 활성 executor scaffold가 있을 때만 남는다.
+- `ROUTINE_ABORT_IDLE` 은 abort가 안전하게 no-op 처리됐다는 뜻이다.
 
 ## 8. 이벤트 응답 경계
 

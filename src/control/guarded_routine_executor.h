@@ -13,7 +13,37 @@
 enum class GuardedRoutineExecutorResult : uint8_t {
   NOT_REQUESTED = 0,
   EXECUTOR_DISABLED,
-  EXECUTOR_NOT_IMPLEMENTED
+  EXECUTOR_NOT_IMPLEMENTED,
+  NO_ACTIVE_ROUTINE,
+  ABORTED,
+  TIMED_OUT
+};
+
+enum class GuardedRoutineExecutorState : uint8_t {
+  IDLE = 0,
+  PREPARED,
+  RUNNING,
+  ABORT_REQUESTED,
+  ABORTED,
+  TIMED_OUT,
+  COMPLETED,
+  BLOCKED
+};
+
+struct GuardedRoutineExecutorStatus {
+  GuardedRoutineExecutorState state;
+  char routineName[24];
+  uint8_t currentStep;
+  uint8_t totalSteps;
+  uint8_t motionStepCount;
+  uint32_t startedAtMs;
+  uint32_t deadlineMs;
+  uint32_t elapsedMs;
+  uint32_t remainingMs;
+  GuardedRoutineExecutorResult lastResult;
+  char lastDetail[96];
+
+  GuardedRoutineExecutorStatus();
 };
 
 struct GuardedRoutineExecutorReport {
@@ -22,6 +52,7 @@ struct GuardedRoutineExecutorReport {
   bool executeImplemented;
   bool sequencePrepared;
   bool sequenceStarted;
+  GuardedRoutineExecutorState state;
   uint8_t motionStepCount;
   GuardedRoutineExecutorResult result;
   char detail[96];
@@ -38,12 +69,20 @@ public:
                                                bool attempted);
   static bool begin(const GuardedRoutinePlan& plan,
                     GuardedRoutineExecutorReport& report);
+  static bool abort(const char* reason,
+                    GuardedRoutineExecutorReport& report);
+  static void update();
+
+  static GuardedRoutineExecutorStatus status();
+  static GuardedRoutineExecutorReport lastReport();
 
   static void appendPolicyJson(String& json);
+  static void appendStatusJson(String& json);
   static void appendReportJson(String& json,
                                const GuardedRoutineExecutorReport& report);
 
   static const char* resultToString(GuardedRoutineExecutorResult result);
+  static const char* stateToString(GuardedRoutineExecutorState state);
 
 private:
   static uint8_t countMotionSteps(const GuardedRoutinePlan& plan);

@@ -1472,12 +1472,6 @@ void MotionBrainWebServer::handleRoutine() {
     return;
   }
 
-  String name = server_.arg("name");
-  if (name.length() == 0) {
-    sendErrorJson(400, "Missing 'name' parameter");
-    return;
-  }
-
   String action = server_.arg("action");
   String dryRun = server_.arg("dryRun");
   if (action.length() == 0) {
@@ -1486,6 +1480,28 @@ void MotionBrainWebServer::handleRoutine() {
 
   Command command;
   command.source = CommandSource::WEB_INPUT;
+
+  if (action == "abort" || action == "cancel") {
+    command.type = CommandType::ROUTINE_ABORT;
+
+    CommandResult result;
+    submitCommand(command, result);
+
+    String extra = "\"routineAction\":\"abort\"";
+    extra += ",\"executeImplemented\":";
+    extra += GuardedRoutineExecutor::executeImplemented() ? "true" : "false";
+    extra += ",";
+    GuardedRoutineExecutor::appendReportJson(extra, GuardedRoutineExecutor::lastReport());
+    sendCommandResult(result, extra);
+    return;
+  }
+
+  String name = server_.arg("name");
+  if (name.length() == 0) {
+    sendErrorJson(400, "Missing 'name' parameter");
+    return;
+  }
+
   strlcpy(command.routineName, name.c_str(), sizeof(command.routineName));
   String confirmCode = server_.arg("confirmCode");
   if (confirmCode.length() == 0) {
