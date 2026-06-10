@@ -516,6 +516,28 @@ envelope에 routine 계획과 execute preflight 요약을 덧붙인다.
     "sequenceStarted": false,
     "state": "idle",
     "motionStepCount": 2,
+    "preparedSequence": {
+      "attempted": true,
+      "candidateReady": true,
+      "appliedToMotionSequence": false,
+      "preparedStepCount": 2,
+      "preparedMotionCount": 2,
+      "prepareResult": "ready",
+      "detail": "sequence candidate ready; not applied to MotionSequence",
+      "entries": [
+        {
+          "sourceIndex": 2,
+          "sourceId": "shoulder_preview",
+          "joint": "shoulder",
+          "direction": "up",
+          "percent": 25,
+          "durationMs": 250,
+          "targetDegrees": 0.0,
+          "stopAfterStepRequired": true,
+          "statusCheckRequired": true
+        }
+      ]
+    },
     "stepJournal": {
       "count": 4,
       "truncated": false,
@@ -591,6 +613,12 @@ envelope에 routine 계획과 execute preflight 요약을 덧붙인다.
   하나다. 현재 skeleton에서는 non-motion step은 `pending`, executor가 호출되지
   않은 motion step은 `skipped`, execute-ready 이후 firmware policy에 막힌
   motion step은 `blocked` 로 남긴다.
+- `executor.preparedSequence` 는 routine motion step을 `MotionCommand`
+  후보로 변환한 결과다. `candidateReady=true` 여도
+  `appliedToMotionSequence=false` 이면 실제 `MotionSequence` 큐에 넣지 않았다는
+  뜻이다.
+- `executor.preparedSequence.prepareResult` 는
+  `not_requested|ready|too_many_steps|invalid_step` 중 하나다.
 - `operatorConfirmation.code` 는 operator confirmation 문구이며 명령 토큰이 아니다.
 - `executionPolicy.mode` 는 현재 skeleton에서 항상 `dry_run_only` 이다.
 - `run` 응답의 `executePreflight.result` 는 `confirm_required`,

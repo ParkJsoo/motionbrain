@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "control/angle_controller.h"
+
 namespace {
 
 GuardedRoutineExecutorStatus currentStatus;
@@ -43,6 +45,39 @@ bool isActiveState(GuardedRoutineExecutorState state) {
   return state == GuardedRoutineExecutorState::PREPARED ||
          state == GuardedRoutineExecutorState::RUNNING ||
          state == GuardedRoutineExecutorState::ABORT_REQUESTED;
+}
+
+bool directionAllowedForJoint(MotionJoint joint, MotionDirection direction) {
+  switch (joint) {
+    case MotionJoint::GRIPPER:
+      return direction == MotionDirection::OPEN || direction == MotionDirection::CLOSE;
+    case MotionJoint::WRIST:
+    case MotionJoint::ELBOW:
+    case MotionJoint::SHOULDER:
+      return direction == MotionDirection::UP || direction == MotionDirection::DOWN;
+    case MotionJoint::BASE:
+      return direction == MotionDirection::LEFT || direction == MotionDirection::RIGHT;
+    default:
+      return false;
+  }
+}
+
+bool isBaseAngleStep(const GuardedRoutineStep& step) {
+  return step.joint == MotionJoint::BASE && step.targetDegrees > 0.0f;
+}
+
+bool hasValidMotionParameters(const GuardedRoutineStep& step) {
+  if (!directionAllowedForJoint(step.joint, step.direction) ||
+      step.percent == 0 || step.percent > 100) {
+    return false;
+  }
+
+  if (isBaseAngleStep(step)) {
+    return step.targetDegrees >= AngleController::MIN_TARGET_DEGREES &&
+           step.targetDegrees <= AngleController::MAX_TARGET_DEGREES;
+  }
+
+  return step.durationMs > 0 && step.targetDegrees == 0.0f;
 }
 
 void publishReport(const GuardedRoutineExecutorReport& report,
@@ -95,6 +130,18 @@ GuardedRoutineStepJournalEntry::GuardedRoutineStepJournalEntry()
   strlcpy(detail, "pending", sizeof(detail));
 }
 
+GuardedRoutinePreparedStep::GuardedRoutinePreparedStep()
+  : sourceIndex(0)
+  , sourceStepId{0}
+  , joint(MotionJoint::GRIPPER)
+  , direction(MotionDirection::OPEN)
+  , percent(0)
+  , durationMs(0)
+  , targetDegrees(0.0f)
+  , stopAfterStepRequired(false)
+  , statusCheckRequired(false) {
+}
+
 GuardedRoutineExecutorReport::GuardedRoutineExecutorReport()
   : attempted(false)
   , enabled(GuardedRoutineExecutor::isEnabled())
@@ -103,10 +150,18 @@ GuardedRoutineExecutorReport::GuardedRoutineExecutorReport()
   , sequenceStarted(false)
   , state(GuardedRoutineExecutorState::IDLE)
   , motionStepCount(0)
+  , prepareAttempted(false)
+  , prepareReady(false)
+  , preparedSequenceApplied(false)
+  , preparedStepCount(0)
+  , preparedMotionCount(0)
+  , prepareResult(GuardedRoutinePrepareResult::PREPARE_NOT_REQUESTED)
+  , prepareDetail{0}
   , stepJournalCount(0)
   , stepJournalTruncated(false)
   , result(GuardedRoutineExecutorResult::NOT_REQUESTED)
   , detail{0} {
+  strlcpy(prepareDetail, "prepare not requested", sizeof(prepareDetail));
   strlcpy(detail, "executor not requested", sizeof(detail));
 }
 
@@ -128,6 +183,7 @@ GuardedRoutineExecutorReport GuardedRoutineExecutor::describe(
   report.motionStepCount = countMotionSteps(plan);
   report.sequencePrepared = false;
   report.sequenceStarted = false;
+  buildPreparedSequence(plan, report);
 
   if (!attempted) {
     report.state = GuardedRoutineExecutorState::IDLE;
@@ -164,6 +220,13 @@ bool GuardedRoutineExecutor::abort(const char* reason,
   report.executeImplemented = executeImplemented();
   report.sequencePrepared = false;
   report.sequenceStarted = false;
+  report.prepareAttempted = false;
+  report.prepareReady = false;
+  report.preparedSequenceApplied = false;
+  report.preparedStepCount = 0;
+  report.preparedMotionCount = 0;
+  report.prepareResult = GuardedRoutinePrepareResult::PREPARE_NOT_REQUESTED;
+  strlcpy(report.prepareDetail, "prepare not requested", sizeof(report.prepareDetail));
   report.stepJournalCount = 0;
   report.stepJournalTruncated = false;
 
@@ -284,6 +347,48 @@ void GuardedRoutineExecutor::appendReportJson(
   json += "\"";
   json += ",\"motionStepCount\":";
   json += String(report.motionStepCount);
+  json += ",\"preparedSequence\":{";
+  json += "\"attempted\":";
+  json += report.prepareAttempted ? "true" : "false";
+  json += ",\"candidateReady\":";
+  json += report.prepareReady ? "true" : "false";
+  json += ",\"appliedToMotionSequence\":";
+  json += report.preparedSequenceApplied ? "true" : "false";
+  json += ",\"preparedStepCount\":";
+  json += String(report.preparedStepCount);
+  json += ",\"preparedMotionCount\":";
+  json += String(report.preparedMotionCount);
+  json += ",\"prepareResult\":\"";
+  json += prepareResultToString(report.prepareResult);
+  json += "\",\"detail\":\"";
+  appendEscaped(json, report.prepareDetail);
+  json += "\",\"entries\":[";
+  for (uint8_t i = 0; i < report.preparedStepCount; ++i) {
+    const GuardedRoutinePreparedStep& entry = report.preparedSteps[i];
+    if (i > 0) {
+      json += ",";
+    }
+    json += "{\"sourceIndex\":";
+    json += String(entry.sourceIndex);
+    json += ",\"sourceId\":\"";
+    appendEscaped(json, entry.sourceStepId);
+    json += "\",\"joint\":\"";
+    json += GuardedRoutine::jointToString(entry.joint);
+    json += "\",\"direction\":\"";
+    json += GuardedRoutine::directionToString(entry.direction);
+    json += "\",\"percent\":";
+    json += String(entry.percent);
+    json += ",\"durationMs\":";
+    json += String(entry.durationMs);
+    json += ",\"targetDegrees\":";
+    json += String(entry.targetDegrees, 1);
+    json += ",\"stopAfterStepRequired\":";
+    json += entry.stopAfterStepRequired ? "true" : "false";
+    json += ",\"statusCheckRequired\":";
+    json += entry.statusCheckRequired ? "true" : "false";
+    json += "}";
+  }
+  json += "]}";
   json += ",\"stepJournal\":{";
   json += "\"count\":";
   json += String(report.stepJournalCount);
@@ -351,6 +456,78 @@ const char* GuardedRoutineExecutor::stepResultToString(
     case GuardedRoutineStepResult::BLOCKED:  return "blocked";
     default:                                 return "unknown";
   }
+}
+
+const char* GuardedRoutineExecutor::prepareResultToString(
+    GuardedRoutinePrepareResult result) {
+  switch (result) {
+    case GuardedRoutinePrepareResult::PREPARE_NOT_REQUESTED:  return "not_requested";
+    case GuardedRoutinePrepareResult::PREPARE_READY:          return "ready";
+    case GuardedRoutinePrepareResult::PREPARE_TOO_MANY_STEPS: return "too_many_steps";
+    case GuardedRoutinePrepareResult::PREPARE_INVALID_STEP:   return "invalid_step";
+    default:                                                  return "unknown";
+  }
+}
+
+void GuardedRoutineExecutor::buildPreparedSequence(
+    const GuardedRoutinePlan& plan,
+    GuardedRoutineExecutorReport& report) {
+  report.prepareAttempted = true;
+  report.prepareReady = false;
+  report.preparedSequenceApplied = false;
+  report.preparedStepCount = 0;
+  report.preparedMotionCount = 0;
+  report.prepareResult = GuardedRoutinePrepareResult::PREPARE_NOT_REQUESTED;
+  strlcpy(report.prepareDetail, "prepare not requested", sizeof(report.prepareDetail));
+
+  const uint8_t motionCount = countMotionSteps(plan);
+  report.preparedMotionCount = motionCount;
+
+  if (motionCount > GuardedRoutineExecutorReport::MAX_PREPARED_STEPS) {
+    report.prepareResult = GuardedRoutinePrepareResult::PREPARE_TOO_MANY_STEPS;
+    strlcpy(report.prepareDetail, "too many motion steps for sequence candidate",
+            sizeof(report.prepareDetail));
+    return;
+  }
+
+  for (uint8_t i = 0; i < plan.stepCount; ++i) {
+    const GuardedRoutineStep& step = plan.steps[i];
+    if (step.kind != GuardedRoutineStepKind::MOTION) {
+      continue;
+    }
+
+    if (!hasValidMotionParameters(step)) {
+      report.prepareResult = GuardedRoutinePrepareResult::PREPARE_INVALID_STEP;
+      snprintf(report.prepareDetail, sizeof(report.prepareDetail),
+               "invalid motion step %u", i + 1);
+      return;
+    }
+
+    if (report.preparedStepCount >= GuardedRoutineExecutorReport::MAX_PREPARED_STEPS) {
+      report.prepareResult = GuardedRoutinePrepareResult::PREPARE_TOO_MANY_STEPS;
+      strlcpy(report.prepareDetail, "prepared sequence candidate overflow",
+              sizeof(report.prepareDetail));
+      return;
+    }
+
+    GuardedRoutinePreparedStep& prepared = report.preparedSteps[report.preparedStepCount];
+    prepared.sourceIndex = i + 1;
+    strlcpy(prepared.sourceStepId, step.kindId != nullptr ? step.kindId : "",
+            sizeof(prepared.sourceStepId));
+    prepared.joint = step.joint;
+    prepared.direction = step.direction;
+    prepared.percent = step.percent;
+    prepared.durationMs = step.durationMs;
+    prepared.targetDegrees = step.targetDegrees;
+    prepared.stopAfterStepRequired = plan.stopAfterEachMotionStep;
+    prepared.statusCheckRequired = plan.statusCheckAfterEachStep;
+    report.preparedStepCount++;
+  }
+
+  report.prepareReady = true;
+  report.prepareResult = GuardedRoutinePrepareResult::PREPARE_READY;
+  strlcpy(report.prepareDetail, "sequence candidate ready; not applied to MotionSequence",
+          sizeof(report.prepareDetail));
 }
 
 void GuardedRoutineExecutor::buildStepJournal(

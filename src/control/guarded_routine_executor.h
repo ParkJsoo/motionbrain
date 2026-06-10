@@ -36,6 +36,13 @@ enum class GuardedRoutineStepResult : uint8_t {
   BLOCKED
 };
 
+enum class GuardedRoutinePrepareResult : uint8_t {
+  PREPARE_NOT_REQUESTED = 0,
+  PREPARE_READY,
+  PREPARE_TOO_MANY_STEPS,
+  PREPARE_INVALID_STEP
+};
+
 struct GuardedRoutineStepJournalEntry {
   uint8_t index;
   char stepId[24];
@@ -44,6 +51,20 @@ struct GuardedRoutineStepJournalEntry {
   char detail[64];
 
   GuardedRoutineStepJournalEntry();
+};
+
+struct GuardedRoutinePreparedStep {
+  uint8_t sourceIndex;
+  char sourceStepId[24];
+  MotionJoint joint;
+  MotionDirection direction;
+  uint8_t percent;
+  uint32_t durationMs;
+  float targetDegrees;
+  bool stopAfterStepRequired;
+  bool statusCheckRequired;
+
+  GuardedRoutinePreparedStep();
 };
 
 struct GuardedRoutineExecutorStatus {
@@ -64,6 +85,7 @@ struct GuardedRoutineExecutorStatus {
 
 struct GuardedRoutineExecutorReport {
   static const uint8_t MAX_STEP_JOURNAL = 8;
+  static const uint8_t MAX_PREPARED_STEPS = MotionSequence::MAX_COMMANDS;
 
   bool attempted;
   bool enabled;
@@ -72,6 +94,14 @@ struct GuardedRoutineExecutorReport {
   bool sequenceStarted;
   GuardedRoutineExecutorState state;
   uint8_t motionStepCount;
+  bool prepareAttempted;
+  bool prepareReady;
+  bool preparedSequenceApplied;
+  uint8_t preparedStepCount;
+  uint8_t preparedMotionCount;
+  GuardedRoutinePrepareResult prepareResult;
+  char prepareDetail[96];
+  GuardedRoutinePreparedStep preparedSteps[MAX_PREPARED_STEPS];
   uint8_t stepJournalCount;
   bool stepJournalTruncated;
   GuardedRoutineStepJournalEntry stepJournal[MAX_STEP_JOURNAL];
@@ -105,8 +135,11 @@ public:
   static const char* resultToString(GuardedRoutineExecutorResult result);
   static const char* stateToString(GuardedRoutineExecutorState state);
   static const char* stepResultToString(GuardedRoutineStepResult result);
+  static const char* prepareResultToString(GuardedRoutinePrepareResult result);
 
 private:
+  static void buildPreparedSequence(const GuardedRoutinePlan& plan,
+                                    GuardedRoutineExecutorReport& report);
   static void buildStepJournal(const GuardedRoutinePlan& plan,
                                GuardedRoutineExecutorReport& report);
   static uint8_t countMotionSteps(const GuardedRoutinePlan& plan);

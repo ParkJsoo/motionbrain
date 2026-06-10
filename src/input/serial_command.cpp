@@ -1505,6 +1505,12 @@ void SerialCommand::handleRoutine(const char* args) {
                  GuardedRoutineExecutor::stateToString(report.state),
                  GuardedRoutineExecutor::resultToString(report.result),
                  report.sequenceStarted ? "YES" : "NO");
+  DebugLog::info("Prepared sequence: result=%s ready=%s applied=%s steps=%u motion=%u",
+                 GuardedRoutineExecutor::prepareResultToString(report.prepareResult),
+                 report.prepareReady ? "YES" : "NO",
+                 report.preparedSequenceApplied ? "YES" : "NO",
+                 report.preparedStepCount,
+                 report.preparedMotionCount);
   DebugLog::info("Step journal: count=%u truncated=%s",
                  report.stepJournalCount,
                  report.stepJournalTruncated ? "YES" : "NO");
