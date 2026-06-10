@@ -120,6 +120,24 @@ class GuardedRoutineContractTest(unittest.TestCase):
         self.assertIn("hard-stop seeking", doc)
         self.assertIn("dryRunOnly", doc)
 
+    def test_homing_feedback_plan_documents_current_boundary(self):
+        doc = (ROOT / "docs" / "HOMING_FEEDBACK_PLAN.md").read_text()
+        pin_map = (ROOT / "PIN_MAP.md").read_text()
+        message = (ROOT / "MESSAGE_INTERFACE.md").read_text()
+
+        self.assertIn("does not currently support true automatic homing", doc)
+        self.assertIn("soft_home_reference", doc)
+        self.assertIn("zero motion", doc)
+        self.assertIn("Limit switch", doc)
+        self.assertIn("Hall sensor", doc)
+        self.assertIn("Absolute magnetic encoder", doc)
+        self.assertIn("Read-only telemetry", doc)
+        self.assertIn("STM32 sensor/teleop node", doc)
+        self.assertIn("I2C GPIO expander", doc)
+        self.assertIn("I2C mux", doc)
+        self.assertIn("HOMING_FEEDBACK_PLAN.md", pin_map)
+        self.assertIn("HOMING_FEEDBACK_PLAN.md", message)
+
 
 if __name__ == "__main__":
     unittest.main()

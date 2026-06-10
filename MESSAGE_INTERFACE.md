@@ -150,6 +150,8 @@ X-MotionBrain: 1
 - `soft_home_reference` 는 운영자 확인 기반 software reference 절차다. 현재
   하드웨어에는 encoder/limit switch 기반 자동 homing이 없으므로 motion step이
   0개이며, hard-stop seeking이나 절대 joint pose 기록을 수행하지 않는다.
+  향후 센서 기반 homing 요구사항은
+  [docs/HOMING_FEEDBACK_PLAN.md](docs/HOMING_FEEDBACK_PLAN.md)에 둔다.
 - dry-run 응답은 계획과 preflight 상태를 보여주지만, 모터/라이트/그리퍼를
   움직이지 않는다.
 
