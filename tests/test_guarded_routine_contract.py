@@ -14,9 +14,14 @@ class GuardedRoutineContractTest(unittest.TestCase):
             "open_gripper_check",
             "stow",
             "center_target_dry_run",
+            "soft_home_reference",
         }:
             with self.subTest(name=name):
                 self.assertIn(f'"{name}"', source)
+        self.assertIn("isSoftHomeAlias", source)
+        self.assertIn("confirm-soft-home-reference", source)
+        self.assertIn("software reference", source)
+        self.assertIn("no encoder-grade homing", source)
 
     def test_routine_execute_is_explicitly_dry_run_only(self):
         dispatcher = (ROOT / "src" / "control" / "dispatcher.cpp").read_text()
@@ -75,6 +80,7 @@ class GuardedRoutineContractTest(unittest.TestCase):
         self.assertIn("routine status", serial)
         self.assertIn("routine abort", serial)
         self.assertIn("confirm=confirm-inspect", serial)
+        self.assertIn("soft_home_reference", serial)
 
     def test_message_interface_documents_dry_run_contract(self):
         doc = (ROOT / "MESSAGE_INTERFACE.md").read_text()
@@ -109,6 +115,9 @@ class GuardedRoutineContractTest(unittest.TestCase):
         self.assertIn("ROUTINE_EXECUTOR_TIMEOUT", doc)
         self.assertIn("prepare=<prepareResult>", doc)
         self.assertIn("system|safety|base_angle|teleop|routine", doc)
+        self.assertIn("soft_home_reference", doc)
+        self.assertIn("motion step", doc)
+        self.assertIn("hard-stop seeking", doc)
         self.assertIn("dryRunOnly", doc)
 
 

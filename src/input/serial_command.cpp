@@ -403,7 +403,7 @@ void SerialCommand::handleHelp() {
   DebugLog::info("  routine status              - Show routine executor scaffold state");
   DebugLog::info("  routine abort               - Abort active routine executor scaffold");
   DebugLog::info("  example: routine run inspect confirm=confirm-inspect");
-  DebugLog::info("  routines: inspect, open_gripper_check, stow, center_target_dry_run");
+  DebugLog::info("  routines: inspect, open_gripper_check, stow, center_target_dry_run, soft_home_reference");
   DebugLog::info("");
   DebugLog::info("=== Search Light Commands ===");
   DebugLog::info("  light on      - Turn on search light");

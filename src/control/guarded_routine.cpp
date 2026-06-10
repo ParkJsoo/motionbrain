@@ -65,6 +65,18 @@ const GuardedRoutineStep CENTER_TARGET_DRY_RUN_STEPS[] = {
    MotionJoint::GRIPPER, MotionDirection::OPEN, 0, 0, 0.0f},
 };
 
+const GuardedRoutineStep SOFT_HOME_REFERENCE_STEPS[] = {
+  {"preflight", GuardedRoutineStepKind::CHECK, "Preflight",
+   "Require operator-confirmed manual reference pose, clear fault state, and no active sequence.",
+   MotionJoint::GRIPPER, MotionDirection::OPEN, 0, 0, 0.0f},
+  {"manual_reference", GuardedRoutineStepKind::VERIFY, "Manual reference",
+   "Operator places the arm at the agreed soft-home pose; firmware records no absolute joint position.",
+   MotionJoint::GRIPPER, MotionDirection::OPEN, 0, 0, 0.0f},
+  {"verify_limits", GuardedRoutineStepKind::VERIFY, "Verify limits",
+   "Confirm this is a software reference only; no encoder-grade homing or hard-stop seeking is performed.",
+   MotionJoint::GRIPPER, MotionDirection::OPEN, 0, 0, 0.0f},
+};
+
 const GuardedRoutinePlan ROUTINES[] = {
   {"inspect", "Low-speed visual inspection routine.", "confirm-inspect",
    "state_armed|motion_clear|fault_clear|operator_confirmed|no_active_sequence",
@@ -90,6 +102,12 @@ const GuardedRoutinePlan ROUTINES[] = {
    static_cast<uint8_t>(sizeof(CENTER_TARGET_DRY_RUN_STEPS) / sizeof(CENTER_TARGET_DRY_RUN_STEPS[0])),
    15000, 1000, 2500,
    true, true, true, true, true, true},
+  {"soft_home_reference", "Operator-confirmed software home/reference procedure; no automatic homing motion.", "confirm-soft-home-reference",
+   "manual_reference_pose|fault_clear|operator_confirmed|no_active_sequence",
+   SOFT_HOME_REFERENCE_STEPS,
+   static_cast<uint8_t>(sizeof(SOFT_HOME_REFERENCE_STEPS) / sizeof(SOFT_HOME_REFERENCE_STEPS[0])),
+   15000, 1000, 2000,
+   true, false, false, false, false, true},
 };
 
 void appendEscaped(String& json, const char* raw) {
@@ -111,6 +129,14 @@ bool isCenterTargetAlias(const char* name) {
   return strcasecmp(name, "center_target") == 0 ||
          strcasecmp(name, "center-target") == 0 ||
          strcasecmp(name, "center_target_dry_run") == 0;
+}
+
+bool isSoftHomeAlias(const char* name) {
+  return strcasecmp(name, "home_reference") == 0 ||
+         strcasecmp(name, "home-reference") == 0 ||
+         strcasecmp(name, "soft_home") == 0 ||
+         strcasecmp(name, "soft-home") == 0 ||
+         strcasecmp(name, "soft_home_reference") == 0;
 }
 
 void appendStringArrayFromPipes(String& json, const char* values) {
@@ -152,7 +178,8 @@ bool GuardedRoutine::getPlan(const char* name, GuardedRoutinePlan& outPlan) {
 
   for (uint8_t i = 0; i < routineCount(); ++i) {
     if (strcasecmp(name, ROUTINES[i].name) == 0 ||
-        (isCenterTargetAlias(name) && strcmp(ROUTINES[i].name, "center_target_dry_run") == 0)) {
+        (isCenterTargetAlias(name) && strcmp(ROUTINES[i].name, "center_target_dry_run") == 0) ||
+        (isSoftHomeAlias(name) && strcmp(ROUTINES[i].name, "soft_home_reference") == 0)) {
       outPlan = ROUTINES[i];
       return true;
     }

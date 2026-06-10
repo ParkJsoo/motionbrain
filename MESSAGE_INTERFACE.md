@@ -29,6 +29,7 @@ routine dry-run inspect
 routine dry-run open_gripper_check
 routine dry-run stow
 routine dry-run center_target_dry_run
+routine dry-run soft_home_reference
 routine run inspect confirm=confirm-inspect
 routine status
 routine abort
@@ -145,7 +146,10 @@ X-MotionBrain: 1
   `executor.status.remainingMs` 와 `executor.result=timed_out` 을 보고하기 위한
   계약이다. 현재 disabled skeleton에서는 running 상태에 들어가지 않는다.
 - 현재 routine 이름은 `inspect`, `open_gripper_check`, `stow`,
-  `center_target_dry_run` 이다.
+  `center_target_dry_run`, `soft_home_reference` 이다.
+- `soft_home_reference` 는 운영자 확인 기반 software reference 절차다. 현재
+  하드웨어에는 encoder/limit switch 기반 자동 homing이 없으므로 motion step이
+  0개이며, hard-stop seeking이나 절대 joint pose 기록을 수행하지 않는다.
 - dry-run 응답은 계획과 preflight 상태를 보여주지만, 모터/라이트/그리퍼를
   움직이지 않는다.
 
