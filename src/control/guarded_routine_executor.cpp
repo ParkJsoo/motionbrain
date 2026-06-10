@@ -4,6 +4,9 @@
 #include <string.h>
 
 #include "control/angle_controller.h"
+#include "control/event_log.h"
+
+extern EventLog eventLog;
 
 namespace {
 
@@ -273,6 +276,12 @@ void GuardedRoutineExecutor::update() {
   strlcpy(currentStatus.lastDetail, currentReport.detail,
           sizeof(currentStatus.lastDetail));
   refreshTiming(currentStatus);
+
+  char detail[96] = {0};
+  snprintf(detail, sizeof(detail), "name=%s result=timed_out elapsedMs=%lu",
+           currentStatus.routineName[0] != '\0' ? currentStatus.routineName : "(none)",
+           static_cast<unsigned long>(currentStatus.elapsedMs));
+  eventLog.push("routine", "ROUTINE_EXECUTOR_TIMEOUT", EventSeverity::ERROR, detail);
 }
 
 GuardedRoutineExecutorStatus GuardedRoutineExecutor::status() {

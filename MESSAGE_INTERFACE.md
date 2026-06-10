@@ -628,8 +628,13 @@ envelope에 routine 계획과 execute preflight 요약을 덧붙인다.
   현재 skeleton에서는 그래도 `executeImplemented=false` 이므로 실제 execute는
   실패해야 한다.
 - 실제 execute path는 현재 skeleton에서 실패해야 하며 모터 출력으로 이어지면 안 된다.
+- `ROUTINE_EXECUTE_BLOCKED` event detail은
+  `name=<routine> executor=<result> prepare=<prepareResult> applied=<0|1> started=<0|1> motion=<count>`
+  형식으로 executor gate와 준비 시퀀스 상태를 함께 남긴다.
 - `ROUTINE_ABORT` 는 활성 executor scaffold가 있을 때만 남는다.
 - `ROUTINE_ABORT_IDLE` 은 abort가 안전하게 no-op 처리됐다는 뜻이다.
+- `ROUTINE_EXECUTOR_TIMEOUT` 은 executor scaffold가 `running` 상태에서
+  deadline을 넘겼을 때 남는 timeout 이벤트다.
 
 ## 8. 이벤트 응답 경계
 
@@ -680,7 +685,7 @@ envelope에 routine 계획과 execute preflight 요약을 덧붙인다.
 
 - 기본은 최근 전체 이벤트를 반환하고, `limit` 쿼리로 마지막 N개만 잘라 받을 수 있다.
 - `severity` 는 `INFO|WARN|ERROR`
-- `category` 는 현재 `system|safety|base_angle|teleop` 를 사용한다.
+- `category` 는 현재 `system|safety|base_angle|teleop|routine` 를 사용한다.
 - `code` 는 상위 호스트에서 문자열 비교가 가능하도록 안정적인 식별자 이름을 유지한다.
 - `detail` 은 짧은 설명 문자열이며, 상위 호스트 UI 표시나 디버그 로그 연결 용도다.
 
@@ -699,6 +704,7 @@ envelope에 routine 계획과 execute preflight 요약을 덧붙인다.
 - `ROUTINE_CONFIRM_REQ`
 - `ROUTINE_PREFLIGHT_BLOCK`
 - `ROUTINE_EXECUTE_BLOCKED`
+- `ROUTINE_EXECUTOR_TIMEOUT`
 - teleop 연결/상태 변경 이벤트
 
 ## 9. Phase 4로 넘길 때 유지할 약속

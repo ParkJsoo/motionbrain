@@ -27,6 +27,7 @@ class GuardedRoutineContractTest(unittest.TestCase):
         self.assertIn("ROUTINE_CONFIRM_REQ", dispatcher)
         self.assertIn("ROUTINE_PREFLIGHT_BLOCK", dispatcher)
         self.assertIn("ROUTINE_EXECUTE_BLOCKED", dispatcher)
+        self.assertIn("prepare=%s applied=%u started=%u motion=%u", dispatcher)
         self.assertIn("requires operator confirmation code", dispatcher)
         self.assertIn("preflight blocked", dispatcher)
         self.assertIn("GuardedRoutineExecutor::begin", dispatcher)
@@ -51,6 +52,7 @@ class GuardedRoutineContractTest(unittest.TestCase):
         self.assertIn("motion step blocked by executor policy", executor_source)
         self.assertIn("motion step skipped before executor", executor_source)
         self.assertIn("routine executor timeout", executor_source)
+        self.assertIn("ROUTINE_EXECUTOR_TIMEOUT", executor_source)
         self.assertIn("no active routine executor to abort", executor_source)
         self.assertIn("sequenceStarted(false)", executor_source)
         self.assertIn("executeImplemented() {\n  return false;", executor_source)
@@ -104,6 +106,9 @@ class GuardedRoutineContractTest(unittest.TestCase):
         self.assertIn("ROUTINE_CONFIRM_REQ", doc)
         self.assertIn("ROUTINE_PREFLIGHT_BLOCK", doc)
         self.assertIn("ROUTINE_EXECUTE_BLOCKED", doc)
+        self.assertIn("ROUTINE_EXECUTOR_TIMEOUT", doc)
+        self.assertIn("prepare=<prepareResult>", doc)
+        self.assertIn("system|safety|base_angle|teleop|routine", doc)
         self.assertIn("dryRunOnly", doc)
 
 

@@ -454,9 +454,13 @@ bool Dispatcher::execute(const Command& command, CommandResult& result) {
       GuardedRoutineExecutor::begin(plan, executorReport);
 
       char detail[96] = {0};
-      snprintf(detail, sizeof(detail), "name=%s executor=%s motionSteps=%u",
+      snprintf(detail, sizeof(detail),
+               "name=%s executor=%s prepare=%s applied=%u started=%u motion=%u",
                plan.name,
                GuardedRoutineExecutor::resultToString(executorReport.result),
+               GuardedRoutineExecutor::prepareResultToString(executorReport.prepareResult),
+               executorReport.preparedSequenceApplied ? 1 : 0,
+               executorReport.sequenceStarted ? 1 : 0,
                executorReport.motionStepCount);
       eventLog.push("routine", "ROUTINE_EXECUTE_BLOCKED", EventSeverity::WARN, detail);
       success = false;
