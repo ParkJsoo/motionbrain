@@ -21,6 +21,10 @@ The original JSON topics remain available for debugging, while typed
 | `/motionbrain/status_typed` | publish | `motionbrain_msgs/msg/MotionStatus` | Stable status fields plus raw JSON |
 | `/motionbrain/routine` | publish | `std_msgs/String` | Raw read-only `GET /routine` JSON with guarded routine catalog, executor state, recovery hint, and diagnostics |
 | `/motionbrain/routine_typed` | publish | `motionbrain_msgs/msg/RoutineStatus` | Stable guarded routine readiness, executor policy/state, sensor/teleop/safety diagnostics, and routine names plus raw JSON |
+| `/motionbrain/routine_cmd` | subscribe | `std_msgs/String` | Compatibility guarded routine command input: `status`, `dry_run <name>`, or `abort`; `run` is rejected by bridge policy |
+| `/motionbrain/routine_cmd_typed` | subscribe | `motionbrain_msgs/msg/RoutineCommand` | Typed guarded routine command input for status, dry-run, or abort |
+| `/motionbrain/routine_result` | publish | `std_msgs/String` | Raw guarded routine command result and bridge policy outcome |
+| `/motionbrain/routine_result_typed` | publish | `motionbrain_msgs/msg/RoutineResult` | Stable guarded routine command result fields plus raw JSON |
 | `/motionbrain/events` | publish | `std_msgs/String` | Raw `GET /events?limit=N` JSON |
 | `/motionbrain/events_typed` | publish | `motionbrain_msgs/msg/MotionEvent` | One typed message per ESP32 event |
 | `/camera/detection` | publish | `std_msgs/String` | Color detection JSON from ESP32-CAM `/capture`, or Pi perception `/api/detection` when configured |
@@ -67,6 +71,13 @@ bounded `detect -> align -> operator confirm -> act` flow, publishes
 `/motionbrain/mission_state_typed`, accepts `/motionbrain/mission_cmd_typed`,
 and only publishes `/motionbrain/light_cmd_typed` after an explicit operator
 `confirm`. JSON mission command/state topics remain available for compatibility.
+
+Guarded routine command topics intentionally stay non-motion by default. The
+bridge forwards `status`, `dry_run <name>`, and `abort` to the token-gated ESP32
+HTTP boundary, but rejects `run`/`execute` locally with
+`routine_execute_disabled_by_bridge_policy`. The firmware executor is still
+disabled by policy and `queue_apply_allowed=false` remains visible on
+`/motionbrain/routine_typed`.
 
 ## Build
 
@@ -130,6 +141,8 @@ ros2 topic echo /motionbrain/status
 ros2 topic echo /motionbrain/status_typed
 ros2 topic echo /motionbrain/routine
 ros2 topic echo /motionbrain/routine_typed
+ros2 topic echo /motionbrain/routine_result
+ros2 topic echo /motionbrain/routine_result_typed
 ros2 topic echo /joint_states
 ros2 topic echo /motionbrain/end_effector_pose
 ros2 topic echo /motionbrain/kinematics_typed
@@ -143,6 +156,28 @@ ros2 topic echo /motionbrain/events_typed
 ros2 topic echo /camera/detection
 ros2 topic echo /camera/detection_typed
 ```
+
+Read routine state through the command boundary:
+
+```bash
+ros2 topic echo /motionbrain/routine_result_typed
+```
+
+In another terminal:
+
+```bash
+ros2 topic pub --once --wait-matching-subscriptions 1 /motionbrain/routine_cmd_typed \
+  motionbrain_msgs/msg/RoutineCommand "{action: status}"
+```
+
+Dry-run a guarded routine without physical execution:
+
+```bash
+ros2 topic pub --once --wait-matching-subscriptions 1 /motionbrain/routine_cmd_typed \
+  motionbrain_msgs/msg/RoutineCommand "{action: dry_run, routine_name: inspect}"
+```
+
+`run` and `execute` requests are not forwarded by this bridge.
 
 Toggle the search light through ROS2:
 

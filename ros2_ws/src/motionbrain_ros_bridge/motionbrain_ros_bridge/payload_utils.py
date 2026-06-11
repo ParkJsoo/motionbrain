@@ -1,4 +1,5 @@
 import json
+import shlex
 import urllib.parse
 from typing import Any
 
@@ -23,6 +24,78 @@ def parse_light_action(payload: str) -> str | None:
     if action in {"on", "off", "toggle"}:
         return action
     return None
+
+
+def normalize_routine_action(value: Any) -> str:
+    text = str(value or "").strip().lower().replace("-", "_")
+    aliases = {
+        "dryrun": "dry_run",
+        "dry_run": "dry_run",
+        "status": "status",
+        "list": "status",
+        "abort": "abort",
+        "run": "run",
+        "execute": "run",
+    }
+    return aliases.get(text, text)
+
+
+def parse_routine_command(payload: str) -> dict[str, str] | None:
+    text = payload.strip()
+    if not text:
+        return None
+
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        data = None
+
+    if isinstance(data, dict):
+        action = normalize_routine_action(data.get("action") or data.get("routineAction"))
+        routine_name = as_str(data.get("name") or data.get("routineName")).strip()
+        confirm_code = as_str(
+            data.get("confirm")
+            or data.get("confirmCode")
+            or data.get("confirmationCode")
+        ).strip()
+        if not action:
+            return None
+        return {
+            "action": action,
+            "routine_name": routine_name,
+            "confirm_code": confirm_code,
+        }
+
+    if data is not None:
+        return None
+
+    try:
+        tokens = shlex.split(text)
+    except ValueError:
+        tokens = text.split()
+    if not tokens:
+        return None
+
+    if tokens[0].lower() == "routine" and len(tokens) > 1:
+        tokens = tokens[1:]
+
+    action = normalize_routine_action(tokens[0])
+    routine_name = ""
+    confirm_code = ""
+    for token in tokens[1:]:
+        key, separator, value = token.partition("=")
+        if separator and key.strip().lower() in {"confirm", "confirm_code", "confirmcode"}:
+            confirm_code = value.strip()
+        elif not routine_name:
+            routine_name = token.strip()
+
+    if not action:
+        return None
+    return {
+        "action": action,
+        "routine_name": routine_name,
+        "confirm_code": confirm_code,
+    }
 
 
 def compact_json(payload: dict[str, Any]) -> str:

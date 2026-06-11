@@ -37,6 +37,8 @@ EXPECTED_MESSAGE_FILES = {
     "MissionState.msg",
     "MotionEvent.msg",
     "MotionStatus.msg",
+    "RoutineCommand.msg",
+    "RoutineResult.msg",
     "RoutineStatus.msg",
 }
 
@@ -171,6 +173,28 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         self.assertIn("self.publish_routine_typed(routine)", bridge_text)
         self.assertIn('capture_topic "/motionbrain/routine"', evidence_text)
         self.assertIn('capture_topic "/motionbrain/routine_typed"', evidence_text)
+
+    def test_status_bridge_exposes_non_motion_routine_command_boundary(self):
+        bridge_text = (
+            ROS2_SRC
+            / "motionbrain_ros_bridge"
+            / "motionbrain_ros_bridge"
+            / "motionbrain_status_node.py"
+        ).read_text()
+
+        expected_fragments = [
+            '"/motionbrain/routine_cmd"',
+            '"/motionbrain/routine_cmd_typed"',
+            'self.create_publisher(String, "/motionbrain/routine_result", 10)',
+            '"/motionbrain/routine_result_typed"',
+            "routine_execute_disabled_by_bridge_policy",
+            "ROS2 routine bridge forwards only status, dry_run, and abort",
+            "post_motionbrain(self.motion_base_url, path, timeout, token)",
+            'fetch_json(f"{self.motion_base_url}/routine", timeout)',
+        ]
+        for fragment in expected_fragments:
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, bridge_text)
 
     def test_mission_config_matches_supervisor_topic_contract(self):
         config_text = (

@@ -10,6 +10,7 @@ from motionbrain_ros_bridge.payload_utils import command_suggestion_for_alignmen
 from motionbrain_ros_bridge.payload_utils import compact_json
 from motionbrain_ros_bridge.payload_utils import perception_detection_url
 from motionbrain_ros_bridge.payload_utils import parse_light_action
+from motionbrain_ros_bridge.payload_utils import parse_routine_command
 
 
 class PayloadUtilsPackageTest(unittest.TestCase):
@@ -23,6 +24,31 @@ class PayloadUtilsPackageTest(unittest.TestCase):
         self.assertIsNone(parse_light_action("blink"))
         self.assertIsNone(parse_light_action('{"action":"blink"}'))
         self.assertIsNone(parse_light_action('["toggle"]'))
+
+    def test_parse_routine_command_accepts_raw_and_json_payloads(self):
+        self.assertEqual(
+            {"action": "status", "routine_name": "", "confirm_code": ""},
+            parse_routine_command("status"),
+        )
+        self.assertEqual(
+            {"action": "dry_run", "routine_name": "inspect", "confirm_code": ""},
+            parse_routine_command("routine dry-run inspect"),
+        )
+        self.assertEqual(
+            {"action": "abort", "routine_name": "", "confirm_code": ""},
+            parse_routine_command('{"action":"abort"}'),
+        )
+        self.assertEqual(
+            {"action": "run", "routine_name": "inspect", "confirm_code": "confirm-inspect"},
+            parse_routine_command(
+                '{"action":"execute","routineName":"inspect","confirm":"confirm-inspect"}'
+            ),
+        )
+
+    def test_parse_routine_command_rejects_empty_or_non_object_json(self):
+        self.assertIsNone(parse_routine_command(""))
+        self.assertIsNone(parse_routine_command('["status"]'))
+        self.assertIsNone(parse_routine_command("{}"))
 
     def test_alignment_classification_matches_dashboard_contract(self):
         self.assertEqual("LOST", classify_alignment(None))

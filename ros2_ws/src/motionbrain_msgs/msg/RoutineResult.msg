@@ -1,0 +1,9 @@
+builtin_interfaces/Time stamp
+bool success
+string action
+string routine_name
+string result
+string message
+string error
+bool forwarded
+string raw_json

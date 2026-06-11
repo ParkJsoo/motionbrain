@@ -19,6 +19,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/MissionState.msg"
   "msg/MotionEvent.msg"
   "msg/MotionStatus.msg"
+  "msg/RoutineCommand.msg"
+  "msg/RoutineResult.msg"
   "msg/RoutineStatus.msg"
   DEPENDENCIES builtin_interfaces
 )

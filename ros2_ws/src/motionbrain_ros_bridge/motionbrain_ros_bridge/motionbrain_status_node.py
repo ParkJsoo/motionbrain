@@ -14,6 +14,8 @@ from motionbrain_msgs.msg import LightCommand
 from motionbrain_msgs.msg import LightResult
 from motionbrain_msgs.msg import MotionEvent
 from motionbrain_msgs.msg import MotionStatus
+from motionbrain_msgs.msg import RoutineCommand
+from motionbrain_msgs.msg import RoutineResult
 from motionbrain_msgs.msg import RoutineStatus
 from motionbrain_ros_bridge.payload_utils import ALIGN_DEADBAND
 from motionbrain_ros_bridge.payload_utils import as_bool
@@ -23,6 +25,7 @@ from motionbrain_ros_bridge.payload_utils import as_uint
 from motionbrain_ros_bridge.payload_utils import compact_json
 from motionbrain_ros_bridge.payload_utils import perception_detection_url
 from motionbrain_ros_bridge.payload_utils import parse_light_action
+from motionbrain_ros_bridge.payload_utils import parse_routine_command
 from motionbrain_ros_bridge.vision_detection import detect_colored_target
 from rclpy.node import Node
 from std_msgs.msg import String
@@ -78,6 +81,7 @@ class MotionBrainStatusNode(Node):
         self.events_pub = self.create_publisher(String, "/motionbrain/events", 10)
         self.detection_pub = self.create_publisher(String, "/camera/detection", 10)
         self.light_result_pub = self.create_publisher(String, "/motionbrain/light_result", 10)
+        self.routine_result_pub = self.create_publisher(String, "/motionbrain/routine_result", 10)
         self.status_typed_pub = self.create_publisher(MotionStatus, "/motionbrain/status_typed", 10)
         self.routine_typed_pub = self.create_publisher(RoutineStatus, "/motionbrain/routine_typed", 10)
         self.events_typed_pub = self.create_publisher(MotionEvent, "/motionbrain/events_typed", 10)
@@ -89,6 +93,11 @@ class MotionBrainStatusNode(Node):
         self.light_result_typed_pub = self.create_publisher(
             LightResult,
             "/motionbrain/light_result_typed",
+            10,
+        )
+        self.routine_result_typed_pub = self.create_publisher(
+            RoutineResult,
+            "/motionbrain/routine_result_typed",
             10,
         )
         self.light_sub = self.create_subscription(
@@ -103,6 +112,18 @@ class MotionBrainStatusNode(Node):
             self.handle_light_cmd_typed,
             10,
         )
+        self.routine_sub = self.create_subscription(
+            String,
+            "/motionbrain/routine_cmd",
+            self.handle_routine_cmd,
+            10,
+        )
+        self.routine_typed_sub = self.create_subscription(
+            RoutineCommand,
+            "/motionbrain/routine_cmd_typed",
+            self.handle_routine_cmd_typed,
+            10,
+        )
 
         interval = float(self.get_parameter("poll_interval").value)
         self.timer = self.create_timer(max(interval, 0.1), self.poll_once)
@@ -112,7 +133,8 @@ class MotionBrainStatusNode(Node):
             "/motionbrain/routine /motionbrain/routine_typed "
             "/motionbrain/events /motionbrain/events_typed "
             "/camera/detection /camera/detection_typed "
-            "/motionbrain/light_cmd /motionbrain/light_cmd_typed"
+            "/motionbrain/light_cmd /motionbrain/light_cmd_typed "
+            "/motionbrain/routine_cmd /motionbrain/routine_cmd_typed"
         )
 
     def _motion_base_url(self) -> str:
@@ -294,6 +316,23 @@ class MotionBrainStatusNode(Node):
         self.publish_json(self.light_result_pub, payload)
         self.publish_light_result_typed(payload)
 
+    def publish_routine_result_typed(self, payload: dict[str, Any]) -> None:
+        message = RoutineResult()
+        message.stamp = self.get_clock().now().to_msg()
+        message.success = as_bool(payload.get("success"))
+        message.action = as_str(payload.get("action"))
+        message.routine_name = as_str(payload.get("routineName"))
+        message.result = as_str(payload.get("result"))
+        message.message = as_str(payload.get("message"))
+        message.error = as_str(payload.get("error"))
+        message.forwarded = as_bool(payload.get("forwarded"))
+        message.raw_json = compact_json(payload)
+        self.routine_result_typed_pub.publish(message)
+
+    def publish_routine_result(self, payload: dict[str, Any]) -> None:
+        self.publish_json(self.routine_result_pub, payload)
+        self.publish_routine_result_typed(payload)
+
     def poll_once(self) -> None:
         self.motion_base_url = self._motion_base_url()
         timeout = self._timeout()
@@ -401,6 +440,193 @@ class MotionBrainStatusNode(Node):
                     "success": False,
                     "requestedAction": action,
                     "error": str(exc),
+                },
+            )
+
+    def handle_routine_cmd(self, message: String) -> None:
+        command = parse_routine_command(message.data)
+        if command is None:
+            self.publish_routine_result(
+                {
+                    "success": False,
+                    "action": "",
+                    "routineName": "",
+                    "result": "invalid_routine_command",
+                    "error": "invalid_routine_command",
+                    "message": "accepted actions: status, dry_run, abort",
+                    "forwarded": False,
+                    "payload": message.data,
+                },
+            )
+            return
+        self.handle_routine_action(
+            command["action"],
+            command["routine_name"],
+            command["confirm_code"],
+            message.data,
+        )
+
+    def handle_routine_cmd_typed(self, message: RoutineCommand) -> None:
+        if message.raw_json:
+            command = parse_routine_command(message.raw_json)
+            if command is not None:
+                self.handle_routine_action(
+                    command["action"],
+                    command["routine_name"],
+                    command["confirm_code"],
+                    message.raw_json,
+                )
+                return
+        command = parse_routine_command(message.action)
+        action = command["action"] if command is not None else ""
+        self.handle_routine_action(
+            action,
+            message.routine_name,
+            message.confirm_code,
+            message.raw_json or compact_json(
+                {
+                    "action": message.action,
+                    "routineName": message.routine_name,
+                    "confirmCode": message.confirm_code,
+                },
+            ),
+        )
+
+    def routine_response_success(self, payload: dict[str, Any]) -> bool:
+        if "success" in payload:
+            return as_bool(payload.get("success"))
+        if "ok" in payload:
+            return as_bool(payload.get("ok"))
+        return "error" not in payload
+
+    def wrap_routine_response(
+        self,
+        action: str,
+        routine_name: str,
+        response: dict[str, Any],
+        result: str,
+        message: str,
+    ) -> dict[str, Any]:
+        return {
+            "success": self.routine_response_success(response),
+            "action": action,
+            "routineName": routine_name,
+            "result": as_str(response.get("result"), result),
+            "message": as_str(response.get("message"), message),
+            "error": as_str(response.get("error")),
+            "forwarded": True,
+            "response": response,
+        }
+
+    def handle_routine_action(
+        self,
+        action: str,
+        routine_name: str,
+        confirm_code: str,
+        raw_payload: str,
+    ) -> None:
+        action = action.strip().lower()
+        routine_name = routine_name.strip()
+        if action in {"run", "execute"}:
+            self.publish_routine_result(
+                {
+                    "success": False,
+                    "action": "run",
+                    "routineName": routine_name,
+                    "result": "routine_execute_disabled_by_bridge_policy",
+                    "message": "ROS2 routine bridge forwards only status, dry_run, and abort",
+                    "error": "routine_execute_disabled_by_bridge_policy",
+                    "forwarded": False,
+                    "confirmCodePresent": bool(confirm_code),
+                    "payload": raw_payload,
+                },
+            )
+            return
+
+        if action not in {"status", "dry_run", "abort"}:
+            self.publish_routine_result(
+                {
+                    "success": False,
+                    "action": action,
+                    "routineName": routine_name,
+                    "result": "invalid_routine_action",
+                    "message": "accepted actions: status, dry_run, abort",
+                    "error": "invalid_routine_action",
+                    "forwarded": False,
+                    "payload": raw_payload,
+                },
+            )
+            return
+
+        if action == "dry_run" and not routine_name:
+            self.publish_routine_result(
+                {
+                    "success": False,
+                    "action": action,
+                    "routineName": routine_name,
+                    "result": "missing_routine_name",
+                    "message": "dry_run requires routine_name",
+                    "error": "missing_routine_name",
+                    "forwarded": False,
+                    "payload": raw_payload,
+                },
+            )
+            return
+
+        self.motion_base_url = self._motion_base_url()
+        timeout = self._timeout()
+        try:
+            if action == "status":
+                response = fetch_json(f"{self.motion_base_url}/routine", timeout)
+                self.publish_json(self.routine_pub, response)
+                self.publish_routine_typed(response)
+                self.publish_routine_result(
+                    self.wrap_routine_response(
+                        action,
+                        routine_name,
+                        response,
+                        "status",
+                        "routine status fetched",
+                    ),
+                )
+                return
+
+            token = str(self.get_parameter("http_token").value)
+            if action == "dry_run":
+                path = f"/routine?action=dry_run&name={urllib.parse.quote(routine_name)}"
+                response = post_motionbrain(self.motion_base_url, path, timeout, token)
+                self.publish_routine_result(
+                    self.wrap_routine_response(
+                        action,
+                        routine_name,
+                        response,
+                        "dry_run",
+                        "routine dry-run requested",
+                    ),
+                )
+                return
+
+            response = post_motionbrain(self.motion_base_url, "/routine?action=abort", timeout, token)
+            self.publish_routine_result(
+                self.wrap_routine_response(
+                    action,
+                    routine_name,
+                    response,
+                    "abort",
+                    "routine abort requested",
+                ),
+            )
+        except POLL_EXCEPTIONS as exc:
+            self.publish_routine_result(
+                {
+                    "success": False,
+                    "action": action,
+                    "routineName": routine_name,
+                    "result": "http_error",
+                    "message": "routine HTTP request failed",
+                    "error": str(exc),
+                    "forwarded": action in {"status", "dry_run", "abort"},
+                    "payload": raw_payload,
                 },
             )
 
