@@ -32,6 +32,7 @@ routine dry-run center_target_dry_run
 routine dry-run soft_home_reference
 routine run inspect confirm=confirm-inspect
 routine status
+routine diagnostics
 routine abort
 ```
 
@@ -48,6 +49,9 @@ routine abort
   제공하지 않는다.
 - `routine status` 는 executor scaffold의 현재 상태, 마지막 결과, timeout
   bookkeeping을 출력한다.
+- `routine diagnostics` 는 routine preflight 판단 근거가 되는 controller,
+  sensor freshness, teleop freshness, safety block/fault, last command audit을
+  읽기 전용으로 출력한다.
 - `routine abort` 는 활성 executor scaffold가 있을 때 abort 상태를 기록한다.
   현재 물리 executor는 disabled이므로 활성 실행이 없으면 `no_active_routine`
   결과로 끝난다.

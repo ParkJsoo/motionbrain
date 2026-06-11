@@ -36,6 +36,42 @@ bool isSensitiveSerialCommand(const char* command) {
   return strncasecmp(command, "wifi token", 10) == 0;
 }
 
+const char* commandTypeToString(CommandType type) {
+  switch (type) {
+    case CommandType::ARM:                     return "arm";
+    case CommandType::DISARM:                  return "disarm";
+    case CommandType::STOP:                    return "stop";
+    case CommandType::MOTOR_RUN:               return "motor run";
+    case CommandType::MOTOR_STOP:              return "motor stop";
+    case CommandType::MOTOR_STOP_ALL:          return "motor stop all";
+    case CommandType::MOTOR_SET_DEFAULT_SPEED: return "motor default";
+    case CommandType::JOINT_RUN:               return "joint run";
+    case CommandType::JOINT_STOP:              return "joint stop";
+    case CommandType::JOINT_STOP_ALL:          return "joint stop all";
+    case CommandType::BASE_ANGLE_RUN:          return "base angle";
+    case CommandType::SEQUENCE_ADD:            return "sequence add";
+    case CommandType::SEQUENCE_RUN:            return "sequence run";
+    case CommandType::SEQUENCE_STOP:           return "sequence stop";
+    case CommandType::SEQUENCE_CLEAR:          return "sequence clear";
+    case CommandType::ROUTINE_DRY_RUN:         return "routine dry-run";
+    case CommandType::ROUTINE_RUN:             return "routine run";
+    case CommandType::ROUTINE_ABORT:           return "routine abort";
+    case CommandType::LIGHT_ON:                return "light on";
+    case CommandType::LIGHT_OFF:               return "light off";
+    case CommandType::LIGHT_TOGGLE:            return "light toggle";
+    default:                                   return "unknown";
+  }
+}
+
+const char* commandSourceToString(CommandSource source) {
+  switch (source) {
+    case CommandSource::SERIAL_INPUT: return "serial";
+    case CommandSource::WEB_INPUT:    return "web";
+    case CommandSource::INTERNAL:     return "internal";
+    default:                          return "unknown";
+  }
+}
+
 } // namespace
 
 /**
@@ -401,6 +437,7 @@ void SerialCommand::handleHelp() {
   DebugLog::info("  routine dry-run <name>       - Build a dry-run plan and log event");
   DebugLog::info("  routine run <name> confirm=<code> - Validate confirmation/preflight, then reject");
   DebugLog::info("  routine status              - Show routine executor scaffold state");
+  DebugLog::info("  routine diagnostics         - Show routine preflight sensor/teleop/safety diagnostics");
   DebugLog::info("  routine abort               - Abort active routine executor scaffold");
   DebugLog::info("  example: routine run inspect confirm=confirm-inspect");
   DebugLog::info("  routines: inspect, open_gripper_check, stow, center_target_dry_run, soft_home_reference");
@@ -1375,7 +1412,7 @@ void SerialCommand::handleRoutine(const char* args) {
       DebugLog::info("  %s", GuardedRoutine::routineNameAt(i));
     }
     DebugLog::info("Use: routine dry-run <name>");
-    DebugLog::info("Use: routine status | routine abort");
+    DebugLog::info("Use: routine status | routine diagnostics | routine abort");
     return;
   }
 
@@ -1391,6 +1428,69 @@ void SerialCommand::handleRoutine(const char* args) {
     DebugLog::info("Last result: %s",
                    GuardedRoutineExecutor::resultToString(status.lastResult));
     DebugLog::info("Last detail: %s", status.lastDetail);
+    return;
+  }
+
+  if (strcasecmp(args, "diagnostics") == 0 || strcasecmp(args, "diag") == 0) {
+    const bool useStm32Sensor = stm32Bridge.isSimulationEnabled() || stm32Bridge.isConnected() ||
+                                !teleopAdapter.hasEmbeddedSafetySnapshot();
+    const uint32_t sensorAgeMs = useStm32Sensor
+                               ? stm32Bridge.getLastPacketAgeMs()
+                               : teleopAdapter.getEmbeddedSafetyAgeMs();
+    const uint32_t sensorPackets = useStm32Sensor
+                                 ? stm32Bridge.getPacketsReceived()
+                                 : teleopAdapter.getEmbeddedSafetyPacketsReceived();
+    const uint32_t sensorParseErrors = useStm32Sensor
+                                     ? stm32Bridge.getParseErrors()
+                                     : teleopAdapter.getParseErrors();
+    const bool sensorConnected = useStm32Sensor
+                               ? stm32Bridge.isConnected()
+                               : (teleopAdapter.getEmbeddedSafetyAgeMs() <= SafetyMonitor::SENSOR_STALE_MS);
+    const uint32_t safetyEventMs = safetyMonitor.getLastSafetyEventMs();
+    const DispatcherCommandAudit audit = dispatcher_ != nullptr
+                                       ? dispatcher_->lastCommandAudit()
+                                       : DispatcherCommandAudit();
+
+    DebugLog::info("=== Routine Diagnostics ===");
+    DebugLog::info("Controller: state=%s uptime=%lums",
+                   systemState_ != nullptr ? systemState_->getStateString() : "UNKNOWN",
+                   static_cast<unsigned long>(millis()));
+    DebugLog::info("Sensor: source=%s connected=%s fresh=%s age=%lums threshold=%lums packets=%lu parseErrors=%lu simulated=%s",
+                   useStm32Sensor ? "stm32_bridge" : "teleop_embedded",
+                   sensorConnected ? "YES" : "NO",
+                   (sensorConnected && sensorAgeMs <= SafetyMonitor::SENSOR_STALE_MS) ? "YES" : "NO",
+                   static_cast<unsigned long>(sensorAgeMs),
+                   static_cast<unsigned long>(SafetyMonitor::SENSOR_STALE_MS),
+                   static_cast<unsigned long>(sensorPackets),
+                   static_cast<unsigned long>(sensorParseErrors),
+                   stm32Bridge.isSimulationEnabled() ? "YES" : "NO");
+    DebugLog::info("Teleop: connected=%s deadman=%s active=%s age=%lums threshold=%lums packets=%lu parseErrors=%lu stop=%s",
+                   teleopAdapter.isConnected() ? "YES" : "NO",
+                   teleopAdapter.isDeadmanHeld() ? "YES" : "NO",
+                   teleopAdapter.isControlActive() ? "YES" : "NO",
+                   static_cast<unsigned long>(teleopAdapter.getLastFrameAgeMs()),
+                   static_cast<unsigned long>(TeleopAdapter::LINK_TIMEOUT_MS),
+                   static_cast<unsigned long>(teleopAdapter.getPacketsReceived()),
+                   static_cast<unsigned long>(teleopAdapter.getParseErrors()),
+                   teleopAdapter.getLastStopReasonString());
+    DebugLog::info("Safety: blocked=%s reason=%s fault=%s faultReason=%s lastEventMs=%lu lastEventAgeMs=%lu",
+                   safetyMonitor.isMotionBlocked() ? "YES" : "NO",
+                   safetyMonitor.getBlockReasonString(),
+                   safetyMonitor.hasLatchedFault() ? "YES" : "NO",
+                   safetyMonitor.getLatchedFaultReasonString(),
+                   static_cast<unsigned long>(safetyEventMs),
+                   static_cast<unsigned long>(safetyEventMs == 0 ? 0 : millis() - safetyEventMs));
+    if (audit.seen) {
+      DebugLog::info("Last command: id=%lu type=%s source=%s success=%s age=%lums msg=%s",
+                     static_cast<unsigned long>(audit.commandId),
+                     commandTypeToString(audit.type),
+                     commandSourceToString(audit.source),
+                     audit.success ? "YES" : "NO",
+                     static_cast<unsigned long>(millis() - audit.executedAtMs),
+                     audit.message);
+    } else {
+      DebugLog::info("Last command: seen=NO");
+    }
     return;
   }
 
