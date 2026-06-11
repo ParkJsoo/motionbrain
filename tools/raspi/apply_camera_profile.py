@@ -81,7 +81,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Apply the ESP32-CAM profile expected by MotionBrain perception.")
     parser.add_argument("--camera-url", required=True, help="ESP32-CAM base URL")
     parser.add_argument("--framesize", default="qvga", help="ESP32-CAM frame size, for example qvga")
-    parser.add_argument("--quality", type=int, default=4, help="ESP32-CAM JPEG quality, 4..30")
+    parser.add_argument("--quality", type=int, default=10, help="ESP32-CAM JPEG quality, 4..30")
     parser.add_argument("--timeout", type=float, default=3.0, help="HTTP timeout in seconds")
     args = parser.parse_args()
     if args.quality < 4 or args.quality > 30:

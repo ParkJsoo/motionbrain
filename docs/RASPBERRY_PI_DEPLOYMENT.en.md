@@ -119,7 +119,7 @@ disable discovery fallback. Set a specific scan subnet with a value such as
 For the current cup known-object demo, use `MOTIONBRAIN_OBJECT_TARGET=cup`,
 `MOTIONBRAIN_OBJECT_MIN_CONFIDENCE=0.25`, and
 `MOTIONBRAIN_DISPLAY_HOLD_SECONDS=1.5`. The ESP32-CAM profile should also stay
-at `MOTIONBRAIN_CAMERA_FRAMESIZE=qvga` and `MOTIONBRAIN_CAMERA_QUALITY=4`. The
+at `MOTIONBRAIN_CAMERA_FRAMESIZE=qvga` and `MOTIONBRAIN_CAMERA_QUALITY=10`. The
 service wrappers apply this profile on startup, and the reconcile timer
 re-applies it and restarts dashboard/perception when an ESP32-CAM reboot resets
 the profile. Set `MOTIONBRAIN_CAMERA_PROFILE=0` when using another camera. Keep
@@ -357,7 +357,9 @@ processes next to the ROS2 bridge for the current camera-mode split.
 - Controller: `192.168.219.111`
 - ESP32-CAM: `192.168.219.113`
 - Raspberry Pi: `192.168.219.114`
-- ESP32-CAM profile: `qvga`, JPEG quality `4`
+- ESP32-CAM profile: `qvga`, JPEG quality `4` in that dated bench check;
+  current service wrappers default to JPEG quality `10` for live capture
+  stability.
 - Perception service: Pi port `8766`, object mode, OpenCV DNN YOLOv5s, target
   `cup`, then-current confidence gate `0.5`, display hold `1.5s`
 - Dashboard: Pi port `8765`, `--perception-url http://127.0.0.1:8766`

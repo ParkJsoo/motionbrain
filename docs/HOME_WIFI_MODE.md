@@ -156,7 +156,7 @@ Pi live check, use the OpenCV-DNN-compatible YOLOv5s detect ONNX file with
 `config/coco80.labels`:
 
 ```bash
-curl -sS -X POST "http://<camera-ip>/camera?framesize=qvga&quality=4"
+curl -sS -X POST "http://<camera-ip>/camera?framesize=qvga&quality=10"
 
 ~/.cache/motionbrain/opencv-venv/bin/python tools/motionbrain_perception_service.py \
   --host 127.0.0.1 \
@@ -171,9 +171,9 @@ curl -sS -X POST "http://<camera-ip>/camera?framesize=qvga&quality=4"
   --display-hold-seconds 1.5
 ```
 
-The saved-frame cup dataset used VGA, but the current live Pi/ESP32-CAM bench
-is more reliable at QVGA quality `4` with a `cup` target confidence baseline of
-`0.25`. VGA captures can work, but the live low-angle scene has shown more
+The saved-frame cup dataset used VGA, but the current live Pi/ESP32-CAM
+operating profile is QVGA quality `10` with a `cup` target confidence baseline
+of `0.25`. VGA captures can work, but the live low-angle scene has shown more
 label flicker at VGA than at the current QVGA profile.
 `--display-hold-seconds` only smooths the UI overlay after transient misses;
 held detections are marked `held:true` and are blocked from nudge/dry-run

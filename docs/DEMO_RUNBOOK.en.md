@@ -417,7 +417,7 @@ separately and let the dashboard proxy its result. First set the ESP32-CAM to
 the current bench profile:
 
 ```bash
-curl -sS -X POST "http://<camera-ip>/camera?framesize=qvga&quality=4"
+curl -sS -X POST "http://<camera-ip>/camera?framesize=qvga&quality=10"
 ```
 
 On the Pi:

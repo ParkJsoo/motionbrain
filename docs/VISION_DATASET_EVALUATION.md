@@ -14,8 +14,8 @@ prototype.
 Current conclusion:
 
 - ESP32-CAM remains usable after removing the lens film. Saved-frame cup
-  evaluation worked best at VGA, while the current live bench recognizes the
-  cup more reliably at QVGA quality `4`.
+  evaluation worked best at VGA; current live operation uses QVGA quality `10`
+  because the board later showed capture failures at quality `4`.
 - Use `YOLOv5s` through OpenCV DNN as the first practical model baseline.
 - Active semantic target: `cup`, current live confidence gate `0.25`.
 - Use `STREAM` for manual camera feedback and `TRACKED` only for slower
@@ -49,7 +49,9 @@ curl -sS -X POST "http://<camera-ip>/camera?framesize=vga&quality=12"
 Current practical baselines:
 
 - Saved-frame evaluation baseline: `vga`, JPEG quality `12`.
-- Live Pi/ESP32-CAM cup demo baseline: `qvga`, JPEG quality `4`.
+- Current live Pi/ESP32-CAM operating baseline: `qvga`, JPEG quality `10`,
+  selected after the live board showed capture failures at JPEG quality `4`
+  after a later power cycle.
 - `vga`, JPEG quality `18`: captured reliably on the current board, but the
   low-angle live cup scene often mislabeled the cup body.
 - `svga`: observed capture failures on the current board, so do not use it as
@@ -181,11 +183,11 @@ Camera-profile sweep on the live bench showed:
   assigned visually adjacent COCO labels; only a weak partial `cup` candidate
   appeared.
 
-With `qvga` / JPEG quality `4`, the live dashboard/perception API returned
+With `qvga` / JPEG quality `4`, the 2026-06-02 live dashboard/perception API returned
 `label=cup`, class id `41`, confidence about `0.55-0.59`,
 `alignment=CENTER`, and an area ratio about `0.287`. This is the dated
-2026-06-02 physical cup success profile; current operating docs keep the same
-camera profile and use a `0.25` confidence gate.
+physical cup success profile. Current operating docs use QVGA JPEG quality
+`10` for capture stability and keep a `0.25` confidence gate.
 
 On 2026-06-04 KST, the same live bench direction was rechecked after the
 embedded control page was changed to default to `STREAM`. The active setup was

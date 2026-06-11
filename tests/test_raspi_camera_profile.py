@@ -14,6 +14,22 @@ SPEC.loader.exec_module(apply_camera_profile)
 
 
 class RaspiCameraProfileTest(unittest.TestCase):
+    def test_service_scripts_default_to_stable_live_quality(self) -> None:
+        repo_root = Path(__file__).resolve().parents[1]
+        expected_fragment = 'MOTIONBRAIN_CAMERA_QUALITY:-10'
+        for relative_path in (
+            "tools/raspi/start_perception_service.sh",
+            "tools/raspi/start_dashboard_service.sh",
+            "tools/raspi/reconcile_dashboard_services.sh",
+        ):
+            with self.subTest(path=relative_path):
+                self.assertIn(expected_fragment, (repo_root / relative_path).read_text())
+
+        self.assertIn(
+            'parser.add_argument("--quality", type=int, default=10',
+            SCRIPT_PATH.read_text(),
+        )
+
     def test_normalize_base_url_strips_path_and_adds_scheme(self) -> None:
         self.assertEqual(
             apply_camera_profile.normalize_base_url("motionbrain-cam.local/status"),

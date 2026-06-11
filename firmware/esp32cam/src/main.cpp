@@ -32,6 +32,7 @@ namespace {
 const uint32_t STREAM_FRAME_DELAY_MS = 100;
 const uint32_t STREAM_MAX_DURATION_MS = 20000;
 const uint32_t WIFI_CONNECT_TIMEOUT_MS = 30000;
+const uint32_t CAMERA_RECOVERY_SETTLE_MS = 150;
 const framesize_t DEFAULT_CAMERA_FRAME_SIZE = FRAMESIZE_QVGA;
 const int DEFAULT_CAMERA_JPEG_QUALITY = 15;
 const int MIN_CAMERA_JPEG_QUALITY = 4;
@@ -58,13 +59,19 @@ int currentJpegQuality = DEFAULT_CAMERA_JPEG_QUALITY;
 struct CameraStats {
   uint32_t captures = 0;
   uint32_t captureFailures = 0;
+  uint32_t consecutiveCaptureFailures = 0;
   uint32_t clientWriteFailures = 0;
+  uint32_t cameraRecoveries = 0;
+  uint32_t lastRecoveryMs = 0;
+  uint32_t lastRecoveryDurationMs = 0;
   uint32_t lastCaptureMs = 0;
   uint32_t maxCaptureMs = 0;
   uint32_t lastFrameBytes = 0;
+  bool lastRecoveryOk = false;
 };
 
 CameraStats cameraStats;
+String lastCameraError;
 
 const CameraProfileOption* findCameraProfile(framesize_t frameSize) {
   for (const CameraProfileOption& option : CAMERA_PROFILE_OPTIONS) {
@@ -150,7 +157,95 @@ bool applyCameraProfile(const CameraProfileOption* profile, int quality, String&
   currentFrameProfile = profile;
   currentJpegQuality = quality;
   cameraStats = CameraStats{};
+  lastCameraError = "";
   return true;
+}
+
+bool configureCamera(const CameraProfileOption* profile, int quality, String& error) {
+  if (profile == nullptr) {
+    error = "unknown_framesize";
+    return false;
+  }
+  if (quality < MIN_CAMERA_JPEG_QUALITY || quality > MAX_CAMERA_JPEG_QUALITY) {
+    error = "invalid_quality";
+    return false;
+  }
+
+  camera_config_t config{};
+  config.ledc_channel = LEDC_CHANNEL_0;
+  config.ledc_timer = LEDC_TIMER_0;
+  config.pin_d0 = Y2_GPIO_NUM;
+  config.pin_d1 = Y3_GPIO_NUM;
+  config.pin_d2 = Y4_GPIO_NUM;
+  config.pin_d3 = Y5_GPIO_NUM;
+  config.pin_d4 = Y6_GPIO_NUM;
+  config.pin_d5 = Y7_GPIO_NUM;
+  config.pin_d6 = Y8_GPIO_NUM;
+  config.pin_d7 = Y9_GPIO_NUM;
+  config.pin_xclk = XCLK_GPIO_NUM;
+  config.pin_pclk = PCLK_GPIO_NUM;
+  config.pin_vsync = VSYNC_GPIO_NUM;
+  config.pin_href = HREF_GPIO_NUM;
+  config.pin_sccb_sda = SIOD_GPIO_NUM;
+  config.pin_sccb_scl = SIOC_GPIO_NUM;
+  config.pin_pwdn = PWDN_GPIO_NUM;
+  config.pin_reset = RESET_GPIO_NUM;
+  config.xclk_freq_hz = 20000000;
+  config.pixel_format = PIXFORMAT_JPEG;
+  config.frame_size = profile->frameSize;
+  config.jpeg_quality = quality;
+  config.fb_count = psramFound() ? 2 : 1;
+  config.fb_location = psramFound() ? CAMERA_FB_IN_PSRAM : CAMERA_FB_IN_DRAM;
+  config.grab_mode = CAMERA_GRAB_LATEST;
+
+  esp_err_t err = esp_camera_init(&config);
+  if (err != ESP_OK) {
+    error = "camera_init_failed_0x" + String(static_cast<uint32_t>(err), HEX);
+    return false;
+  }
+
+  sensor_t* sensor = esp_camera_sensor_get();
+  if (sensor == nullptr) {
+    error = "camera_sensor_unavailable";
+    return false;
+  }
+  if (sensor->set_framesize(sensor, profile->frameSize) != 0) {
+    error = "set_framesize_failed";
+    return false;
+  }
+  if (sensor->set_quality(sensor, quality) != 0) {
+    error = "set_quality_failed";
+    return false;
+  }
+
+  currentFrameProfile = profile;
+  currentJpegQuality = quality;
+  return true;
+}
+
+bool recoverCamera(const char* reason) {
+  const uint32_t startedAt = millis();
+  cameraStats.cameraRecoveries++;
+  cameraStats.lastRecoveryMs = startedAt;
+  Serial.printf("Camera recovery requested: %s\n", reason);
+
+  esp_camera_deinit();
+  delay(CAMERA_RECOVERY_SETTLE_MS);
+
+  String error;
+  const bool ok = configureCamera(currentFrameProfile, currentJpegQuality, error);
+  cameraStats.lastRecoveryDurationMs = millis() - startedAt;
+  cameraStats.lastRecoveryOk = ok;
+  if (ok) {
+    cameraStats.consecutiveCaptureFailures = 0;
+    lastCameraError = "";
+    Serial.printf("Camera recovery ok in %lu ms\n",
+                  static_cast<unsigned long>(cameraStats.lastRecoveryDurationMs));
+  } else {
+    lastCameraError = error;
+    Serial.printf("Camera recovery failed: %s\n", error.c_str());
+  }
+  return ok;
 }
 
 void appendCameraProfileJson(String& json) {
@@ -317,53 +412,20 @@ bool promptWifiConfig(WifiConfig& config) {
 }
 
 bool initCamera() {
-  camera_config_t config{};
-  config.ledc_channel = LEDC_CHANNEL_0;
-  config.ledc_timer = LEDC_TIMER_0;
-  config.pin_d0 = Y2_GPIO_NUM;
-  config.pin_d1 = Y3_GPIO_NUM;
-  config.pin_d2 = Y4_GPIO_NUM;
-  config.pin_d3 = Y5_GPIO_NUM;
-  config.pin_d4 = Y6_GPIO_NUM;
-  config.pin_d5 = Y7_GPIO_NUM;
-  config.pin_d6 = Y8_GPIO_NUM;
-  config.pin_d7 = Y9_GPIO_NUM;
-  config.pin_xclk = XCLK_GPIO_NUM;
-  config.pin_pclk = PCLK_GPIO_NUM;
-  config.pin_vsync = VSYNC_GPIO_NUM;
-  config.pin_href = HREF_GPIO_NUM;
-  config.pin_sccb_sda = SIOD_GPIO_NUM;
-  config.pin_sccb_scl = SIOC_GPIO_NUM;
-  config.pin_pwdn = PWDN_GPIO_NUM;
-  config.pin_reset = RESET_GPIO_NUM;
-  config.xclk_freq_hz = 20000000;
-  config.pixel_format = PIXFORMAT_JPEG;
-  config.frame_size = DEFAULT_CAMERA_FRAME_SIZE;
-  config.jpeg_quality = DEFAULT_CAMERA_JPEG_QUALITY;
-  config.fb_count = psramFound() ? 2 : 1;
-  config.fb_location = psramFound() ? CAMERA_FB_IN_PSRAM : CAMERA_FB_IN_DRAM;
-  config.grab_mode = CAMERA_GRAB_LATEST;
-
-  esp_err_t err = esp_camera_init(&config);
-  if (err != ESP_OK) {
-    Serial.printf("Camera init failed: 0x%x\n", err);
+  String error;
+  const bool ok = configureCamera(&CAMERA_PROFILE_OPTIONS[0], DEFAULT_CAMERA_JPEG_QUALITY, error);
+  if (!ok) {
+    Serial.printf("Camera init failed: %s\n", error.c_str());
+    lastCameraError = error;
     return false;
   }
-
-  sensor_t* sensor = esp_camera_sensor_get();
-  if (sensor != nullptr) {
-    sensor->set_framesize(sensor, DEFAULT_CAMERA_FRAME_SIZE);
-    sensor->set_quality(sensor, DEFAULT_CAMERA_JPEG_QUALITY);
-    const CameraProfileOption* profile = findCameraProfile(DEFAULT_CAMERA_FRAME_SIZE);
-    if (profile != nullptr) {
-      currentFrameProfile = profile;
-    }
-    currentJpegQuality = DEFAULT_CAMERA_JPEG_QUALITY;
-  }
-
   camera_fb_t* warmup = esp_camera_fb_get();
   if (warmup != nullptr) {
     esp_camera_fb_return(warmup);
+  } else {
+    cameraStats.captureFailures++;
+    cameraStats.consecutiveCaptureFailures++;
+    lastCameraError = "warmup_capture_failed";
   }
   return true;
 }
@@ -393,10 +455,16 @@ void handleStatus() {
   json += ",";
   json += "\"captures\":" + String(cameraStats.captures) + ",";
   json += "\"captureFailures\":" + String(cameraStats.captureFailures) + ",";
+  json += "\"consecutiveCaptureFailures\":" + String(cameraStats.consecutiveCaptureFailures) + ",";
   json += "\"clientWriteFailures\":" + String(cameraStats.clientWriteFailures) + ",";
+  json += "\"cameraRecoveries\":" + String(cameraStats.cameraRecoveries) + ",";
+  json += "\"lastRecoveryMs\":" + String(cameraStats.lastRecoveryMs) + ",";
+  json += "\"lastRecoveryDurationMs\":" + String(cameraStats.lastRecoveryDurationMs) + ",";
+  json += "\"lastRecoveryOk\":" + String(cameraStats.lastRecoveryOk ? "true" : "false") + ",";
   json += "\"lastCaptureMs\":" + String(cameraStats.lastCaptureMs) + ",";
   json += "\"maxCaptureMs\":" + String(cameraStats.maxCaptureMs) + ",";
-  json += "\"lastFrameBytes\":" + String(cameraStats.lastFrameBytes);
+  json += "\"lastFrameBytes\":" + String(cameraStats.lastFrameBytes) + ",";
+  json += "\"lastError\":\"" + lastCameraError + "\"";
   json += "}";
   server.send(200, "application/json", json);
 }
@@ -444,10 +512,15 @@ void handleCapture() {
   }
   if (fb == nullptr) {
     cameraStats.captureFailures++;
+    cameraStats.consecutiveCaptureFailures++;
+    lastCameraError = "camera_capture_failed";
+    recoverCamera("capture_failed");
     server.send(503, "text/plain", "camera capture failed");
     return;
   }
   cameraStats.captures++;
+  cameraStats.consecutiveCaptureFailures = 0;
+  lastCameraError = "";
   cameraStats.lastFrameBytes = fb->len;
 
   server.sendHeader("Cache-Control", "no-store");

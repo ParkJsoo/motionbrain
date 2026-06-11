@@ -117,7 +117,7 @@ discovery fallback을 끄려면 `/etc/motionbrain/ros-bridge.env`,
 현재 cup known-object 데모에서는 `MOTIONBRAIN_OBJECT_TARGET=cup`,
 `MOTIONBRAIN_OBJECT_MIN_CONFIDENCE=0.25`, `MOTIONBRAIN_DISPLAY_HOLD_SECONDS=1.5`
 를 기준으로 한다. 또한 ESP32-CAM은 `MOTIONBRAIN_CAMERA_FRAMESIZE=qvga`,
-`MOTIONBRAIN_CAMERA_QUALITY=4`로 맞춘다. service wrapper는 시작 시 이 profile을
+`MOTIONBRAIN_CAMERA_QUALITY=10`으로 맞춘다. service wrapper는 시작 시 이 profile을
 적용하고, reconcile timer는 ESP32-CAM 재부팅으로 profile이 초기화되면 다시 적용한
 뒤 dashboard/perception을 재시작한다. 다른 카메라를 쓸 때는
 `MOTIONBRAIN_CAMERA_PROFILE=0`으로 끈다. 현재 구도에서 흰 컵이 인접 COCO label로
@@ -346,7 +346,9 @@ Raspberry Pi에서 dashboard와 perception service를 ROS2 bridge와 별도
 - Controller: `192.168.219.111`
 - ESP32-CAM: `192.168.219.113`
 - Raspberry Pi: `192.168.219.114`
-- ESP32-CAM profile: `qvga`, JPEG quality `4`
+- ESP32-CAM profile: 해당 bench check에서는 `qvga`, JPEG quality `4`;
+  현재 service wrapper 기본값은 live capture 안정성을 위해 JPEG quality
+  `10`
 - Perception service: Pi port `8766`, object mode, OpenCV DNN YOLOv5s,
   target `cup`, 당시 confidence gate `0.5`, display hold `1.5s`
 - Dashboard: Pi port `8765`, `--perception-url http://127.0.0.1:8766`

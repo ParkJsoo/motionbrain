@@ -57,7 +57,7 @@ if [[ "${MOTIONBRAIN_CAMERA_PROFILE:-1}" != "0" ]]; then
   profile_args=(
     --camera-url "${CAMERA_URL}"
     --framesize "${MOTIONBRAIN_CAMERA_FRAMESIZE:-qvga}"
-    --quality "${MOTIONBRAIN_CAMERA_QUALITY:-4}"
+    --quality "${MOTIONBRAIN_CAMERA_QUALITY:-10}"
     --timeout "${MOTIONBRAIN_CAMERA_PROFILE_TIMEOUT:-3.0}"
   )
   if ! "${CAMERA_PROFILE_PYTHON}" "${REPO}/tools/raspi/apply_camera_profile.py" "${profile_args[@]}" >&2; then
