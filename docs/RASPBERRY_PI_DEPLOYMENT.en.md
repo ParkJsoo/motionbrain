@@ -126,6 +126,11 @@ the profile. Set `MOTIONBRAIN_CAMERA_PROFILE=0` when using another camera. Keep
 aliases empty as the baseline; add a known-mislabel alias only when the current
 white-cup view flickers into a nearby COCO label.
 
+If an older `/etc/motionbrain/*.env` still sets `MOTIONBRAIN_CAMERA_QUALITY=4`,
+the service wrappers raise it to the stable minimum `10` by default. Set
+`MOTIONBRAIN_ALLOW_UNSTABLE_CAMERA_QUALITY=1` only for a deliberate bench
+comparison.
+
 ## Install ROS2 Bridge Service
 
 ```bash

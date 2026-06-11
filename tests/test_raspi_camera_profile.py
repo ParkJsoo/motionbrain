@@ -23,7 +23,11 @@ class RaspiCameraProfileTest(unittest.TestCase):
             "tools/raspi/reconcile_dashboard_services.sh",
         ):
             with self.subTest(path=relative_path):
-                self.assertIn(expected_fragment, (repo_root / relative_path).read_text())
+                script_text = (repo_root / relative_path).read_text()
+                self.assertIn(expected_fragment, script_text)
+                self.assertIn("MOTIONBRAIN_CAMERA_MIN_STABLE_QUALITY", script_text)
+                self.assertIn("MOTIONBRAIN_ALLOW_UNSTABLE_CAMERA_QUALITY", script_text)
+                self.assertIn("--quality \"${CAMERA_QUALITY}\"", script_text)
 
         self.assertIn(
             'parser.add_argument("--quality", type=int, default=10',

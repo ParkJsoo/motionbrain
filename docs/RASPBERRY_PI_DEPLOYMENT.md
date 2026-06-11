@@ -124,6 +124,10 @@ discovery fallback을 끄려면 `/etc/motionbrain/ros-bridge.env`,
 흔들릴 때만 known-mislabel alias를 추가한다. 기본 env example처럼 alias는 비워두는
 것이 기준이다.
 
+기존 `/etc/motionbrain/*.env`에 `MOTIONBRAIN_CAMERA_QUALITY=4`가 남아 있어도
+service wrapper는 기본적으로 안정 하한 `10`으로 올려 적용한다. 의도적인 bench 비교
+때만 `MOTIONBRAIN_ALLOW_UNSTABLE_CAMERA_QUALITY=1`을 설정한다.
+
 ## ROS2 Bridge 서비스 설치
 
 ```bash

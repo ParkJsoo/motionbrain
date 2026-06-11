@@ -9,6 +9,16 @@ MOTION_HOST="${MOTIONBRAIN_MOTION_HOST:-${MOTIONBRAIN_HOST:-motionbrain.local}}"
 MOTION_PORT="${MOTIONBRAIN_MOTION_PORT:-80}"
 CAMERA_URL="${MOTIONBRAIN_CAMERA_URL-http://motionbrain-cam.local}"
 PERCEPTION_URL="${MOTIONBRAIN_PERCEPTION_URL-http://127.0.0.1:8766}"
+CAMERA_QUALITY="${MOTIONBRAIN_CAMERA_QUALITY:-10}"
+CAMERA_MIN_STABLE_QUALITY="${MOTIONBRAIN_CAMERA_MIN_STABLE_QUALITY:-10}"
+
+if [[ "${MOTIONBRAIN_ALLOW_UNSTABLE_CAMERA_QUALITY:-0}" != "1" ]] &&
+   [[ "${CAMERA_QUALITY}" =~ ^[0-9]+$ ]] &&
+   [[ "${CAMERA_MIN_STABLE_QUALITY}" =~ ^[0-9]+$ ]] &&
+   (( CAMERA_QUALITY < CAMERA_MIN_STABLE_QUALITY )); then
+  echo "Warning: raising ESP32-CAM JPEG quality from ${CAMERA_QUALITY} to stable minimum ${CAMERA_MIN_STABLE_QUALITY}" >&2
+  CAMERA_QUALITY="${CAMERA_MIN_STABLE_QUALITY}"
+fi
 
 cd "${REPO}"
 
@@ -57,7 +67,7 @@ if [[ "${MOTIONBRAIN_CAMERA_PROFILE:-1}" != "0" ]]; then
   profile_args=(
     --camera-url "${CAMERA_URL}"
     --framesize "${MOTIONBRAIN_CAMERA_FRAMESIZE:-qvga}"
-    --quality "${MOTIONBRAIN_CAMERA_QUALITY:-10}"
+    --quality "${CAMERA_QUALITY}"
     --timeout "${MOTIONBRAIN_CAMERA_PROFILE_TIMEOUT:-3.0}"
   )
   if ! "${CAMERA_PROFILE_PYTHON}" "${REPO}/tools/raspi/apply_camera_profile.py" "${profile_args[@]}" >&2; then
