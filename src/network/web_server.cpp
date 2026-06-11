@@ -197,7 +197,54 @@ void MotionBrainWebServer::appendStateSummaryJson(String& json) const {
   json += angleController.isActive() ? "true" : "false";
   json += ",\"baseAngleReason\":\"";
   json += angleController.getLastStopReasonString();
-  json += "\"";
+  json += "\",";
+  appendRecoveryJson(json);
+  if (dispatcher_ != nullptr) {
+    json += ",";
+    dispatcher_->appendLastCommandJson(json);
+  }
+}
+
+void MotionBrainWebServer::appendRecoveryJson(String& json) const {
+  const bool faultLatched = safetyMonitor.hasLatchedFault();
+  const bool motionBlocked = safetyMonitor.isMotionBlocked();
+  const SystemState state = systemState_ != nullptr ? systemState_->getState() : SystemState::BOOT;
+  const bool stateFault = state == SystemState::FAULT;
+
+  const char* action = "none";
+  const char* detail = "System is already in a stable read-only state.";
+  bool canRecoverToIdle = false;
+  bool requiresFaultClear = false;
+  bool requiresMotionClear = false;
+
+  if (stateFault || faultLatched) {
+    action = "stop";
+    detail = "After the hazard is resolved, POST /command cmd=stop transitions FAULT toward IDLE.";
+    canRecoverToIdle = true;
+    requiresFaultClear = faultLatched;
+    requiresMotionClear = motionBlocked;
+  } else if (motionBlocked) {
+    action = "resolve_safety_block";
+    detail = "Restore fresh safety telemetry or clear the block before ARM or routine execute.";
+    requiresMotionClear = true;
+  } else if (state == SystemState::ARMED) {
+    action = "disarm_or_stop";
+    detail = "Use disarm or stop to return the controller to IDLE.";
+    canRecoverToIdle = true;
+  }
+
+  json += "\"recovery\":{";
+  json += "\"action\":\"";
+  json += action;
+  json += "\",\"canRecoverToIdle\":";
+  json += canRecoverToIdle ? "true" : "false";
+  json += ",\"requiresFaultClear\":";
+  json += requiresFaultClear ? "true" : "false";
+  json += ",\"requiresMotionClear\":";
+  json += requiresMotionClear ? "true" : "false";
+  json += ",\"detail\":\"";
+  json += jsonEscape(detail);
+  json += "\"}";
 }
 
 void MotionBrainWebServer::sendErrorJson(int statusCode, const char* error, const String& details) {
@@ -876,6 +923,13 @@ void MotionBrainWebServer::handleStatus() {
   json += ",\"lastStopReason\":\"";
   json += teleopAdapter.getLastStopReasonString();
   json += "\"}";
+
+  json += ",";
+  appendRecoveryJson(json);
+  if (dispatcher_ != nullptr) {
+    json += ",";
+    dispatcher_->appendLastCommandJson(json);
+  }
 
   json += "}";
 

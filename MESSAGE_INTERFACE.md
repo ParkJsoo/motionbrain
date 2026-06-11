@@ -370,7 +370,24 @@ base 상대각 제어는 다음 종료 이유를 가진다.
   "faultLatched": false,
   "faultReason": "NONE",
   "baseAngleActive": false,
-  "baseAngleReason": "NO_ROTATION_FEEDBACK"
+  "baseAngleReason": "NO_ROTATION_FEEDBACK",
+  "recovery": {
+    "action": "disarm_or_stop",
+    "canRecoverToIdle": true,
+    "requiresFaultClear": false,
+    "requiresMotionClear": false,
+    "detail": "Use disarm or stop to return the controller to IDLE."
+  },
+  "lastCommand": {
+    "seen": true,
+    "id": 42,
+    "type": "arm",
+    "source": "web",
+    "executedAtMs": 18234,
+    "ageMs": 8,
+    "success": true,
+    "message": "System armed successfully"
+  }
 }
 ```
 
@@ -379,10 +396,30 @@ base 상대각 제어는 다음 종료 이유를 가진다.
 - `commandId` 는 ESP32 내부 실행 단위 식별자다.
 - `message` 는 사용자 표시용 짧은 설명이다.
 - `state`, `sensorBlocked`, `blockReason`, `faultLatched`, `baseAngleActive` 는 상위 호스트가 후속 행동을 결정하는 데 쓸 수 있는 최소 상태 요약이다.
+- `recovery` 는 현재 상태에서 다음 안전 복구 행동을 알려주는 읽기 전용 hint다.
+  FAULT 또는 latched fault 상태에서는 hazard를 해소한 뒤 `cmd=stop` 으로
+  IDLE 복귀를 시도하는 경계를 명시한다.
+- `lastCommand` 는 Dispatcher audit snapshot이다. `seen=false` 이면 아직
+  dispatcher가 처리한 command가 없다는 뜻이고, `seen=true` 이면 마지막
+  command의 id/type/source/result/message를 보여준다.
 - 각 라우트는 여기에 추가 필드를 덧붙일 수 있다.
   - 예: `/light` 는 `light`
   - 예: `/sequence` 는 `count`
   - 예: `/base` 는 `baseAngleActive`, `baseAngleReason`
+
+복구 hint 예시:
+
+```json
+{
+  "recovery": {
+    "action": "stop",
+    "canRecoverToIdle": true,
+    "requiresFaultClear": true,
+    "requiresMotionClear": true,
+    "detail": "After the hazard is resolved, POST /command cmd=stop transitions FAULT toward IDLE."
+  }
+}
+```
 
 ## 5. 에러 응답 경계
 
@@ -401,7 +438,20 @@ base 상대각 제어는 다음 종료 이유를 가진다.
   "faultLatched": false,
   "faultReason": "NONE",
   "baseAngleActive": false,
-  "baseAngleReason": "NONE"
+  "baseAngleReason": "NONE",
+  "recovery": {
+    "action": "none",
+    "canRecoverToIdle": false,
+    "requiresFaultClear": false,
+    "requiresMotionClear": false
+  },
+  "lastCommand": {
+    "seen": true,
+    "id": 42,
+    "type": "arm",
+    "source": "web",
+    "success": true
+  }
 }
 ```
 
@@ -410,6 +460,9 @@ base 상대각 제어는 다음 종료 이유를 가진다.
 - `error` 는 짧은 실패 이유다.
 - `details` 는 선택적 보조 정보다.
 - 에러 응답도 상태 요약을 포함하므로, 상위 호스트는 실패 직후 추가 `/status` 호출 없이도 기본 판단이 가능하다.
+- 에러 응답의 `lastCommand` 는 dispatcher를 통과한 마지막 command를 의미한다.
+  인증 실패나 파라미터 검증 실패처럼 dispatcher에 도달하지 않은 요청은 새
+  command audit으로 기록되지 않는다.
 
 ## 6. 시퀀스 상태 응답
 
@@ -426,6 +479,13 @@ base 상대각 제어는 다음 종료 이유를 가진다.
   "faultReason": "NONE",
   "baseAngleActive": false,
   "baseAngleReason": "NONE",
+  "recovery": {
+    "action": "none",
+    "canRecoverToIdle": false,
+    "requiresFaultClear": false,
+    "requiresMotionClear": false
+  },
+  "lastCommand": {"seen": false},
   "sequence": {
     "state": "IDLE",
     "currentStep": 1,
@@ -451,6 +511,13 @@ base 상대각 제어는 다음 종료 이유를 가진다.
   "faultReason": "NONE",
   "baseAngleActive": false,
   "baseAngleReason": "NONE",
+  "recovery": {
+    "action": "none",
+    "canRecoverToIdle": false,
+    "requiresFaultClear": false,
+    "requiresMotionClear": false
+  },
+  "lastCommand": {"seen": false},
   "dryRunOnly": true,
   "executeImplemented": false,
   "executor": {
@@ -496,6 +563,19 @@ envelope에 routine 계획과 execute preflight 요약을 덧붙인다.
   "faultReason": "NONE",
   "baseAngleActive": false,
   "baseAngleReason": "NONE",
+  "recovery": {
+    "action": "none",
+    "canRecoverToIdle": false,
+    "requiresFaultClear": false,
+    "requiresMotionClear": false
+  },
+  "lastCommand": {
+    "seen": true,
+    "id": 43,
+    "type": "routine dry-run",
+    "source": "web",
+    "success": true
+  },
   "routineAction": "dry_run",
   "executeImplemented": false,
   "executePreflight": {

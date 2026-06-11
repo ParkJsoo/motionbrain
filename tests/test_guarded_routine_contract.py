@@ -69,6 +69,8 @@ class GuardedRoutineContractTest(unittest.TestCase):
     def test_http_and_serial_expose_same_routine_boundary(self):
         web_server = (ROOT / "src" / "network" / "web_server.cpp").read_text()
         serial = (ROOT / "src" / "input" / "serial_command.cpp").read_text()
+        dispatcher_header = (ROOT / "src" / "control" / "dispatcher.h").read_text()
+        dispatcher_source = (ROOT / "src" / "control" / "dispatcher.cpp").read_text()
 
         self.assertIn('server_.on("/routine", HTTP_POST', web_server)
         self.assertIn('server_.on("/routine", HTTP_GET', web_server)
@@ -86,6 +88,13 @@ class GuardedRoutineContractTest(unittest.TestCase):
         self.assertIn("routine abort", serial)
         self.assertIn("confirm=confirm-inspect", serial)
         self.assertIn("soft_home_reference", serial)
+        self.assertIn("appendRecoveryJson", web_server)
+        self.assertIn("recovery", web_server)
+        self.assertIn("dispatcher_->appendLastCommandJson", web_server)
+        self.assertIn("DispatcherCommandAudit", dispatcher_header)
+        self.assertIn("recordCommandResult", dispatcher_source)
+        self.assertIn("lastCommand", dispatcher_source)
+        self.assertIn("POST /command cmd=stop transitions FAULT toward IDLE", web_server)
 
     def test_message_interface_documents_dry_run_contract(self):
         doc = (ROOT / "MESSAGE_INTERFACE.md").read_text()
@@ -128,6 +137,11 @@ class GuardedRoutineContractTest(unittest.TestCase):
         self.assertIn("motion step", doc)
         self.assertIn("hard-stop seeking", doc)
         self.assertIn("dryRunOnly", doc)
+        self.assertIn('"recovery"', doc)
+        self.assertIn('"lastCommand"', doc)
+        self.assertIn('"action": "stop"', doc)
+        self.assertIn("Dispatcher audit", doc)
+        self.assertIn("cmd=stop", doc)
 
 
 if __name__ == "__main__":

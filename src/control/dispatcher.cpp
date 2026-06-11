@@ -49,6 +49,30 @@ const char* commandTypeToString(CommandType type) {
   }
 }
 
+const char* commandSourceToString(CommandSource source) {
+  switch (source) {
+    case CommandSource::SERIAL_INPUT: return "serial";
+    case CommandSource::WEB_INPUT:    return "web";
+    case CommandSource::INTERNAL:     return "internal";
+    default:                          return "unknown";
+  }
+}
+
+void appendEscaped(String& json, const char* raw) {
+  const char* text = raw != nullptr ? raw : "";
+  while (*text != '\0') {
+    switch (*text) {
+      case '\\': json += "\\\\"; break;
+      case '"':  json += "\\\""; break;
+      case '\n': json += "\\n"; break;
+      case '\r': json += "\\r"; break;
+      case '\t': json += "\\t"; break;
+      default:   json += *text; break;
+    }
+    text++;
+  }
+}
+
 const char* jointToString(MotionJoint joint) {
   switch (joint) {
     case MotionJoint::GRIPPER:  return "gripper";
@@ -205,11 +229,13 @@ bool Dispatcher::execute(const Command& command, CommandResult& result) {
   const char* missingDependency = nullptr;
   if (!hasDependenciesFor(command.type, &missingDependency)) {
     setResult(result, command.id, false, "Dispatcher missing %s", missingDependency);
+    recordCommandResult(command, result);
     return false;
   }
 
   if (!safetyGate_->allows(command, result)) {
     DebugLog::command(commandTypeToString(command.type), false, result.message);
+    recordCommandResult(command, result);
     return false;
   }
 
@@ -508,7 +534,38 @@ bool Dispatcher::execute(const Command& command, CommandResult& result) {
   }
 
   DebugLog::command(commandTypeToString(command.type), result.success, result.message);
+  recordCommandResult(command, result);
   return result.success;
+}
+
+DispatcherCommandAudit Dispatcher::lastCommandAudit() const {
+  return lastCommand_;
+}
+
+void Dispatcher::appendLastCommandJson(String& json) const {
+  json += "\"lastCommand\":{";
+  json += "\"seen\":";
+  json += lastCommand_.seen ? "true" : "false";
+
+  if (lastCommand_.seen) {
+    json += ",\"id\":";
+    json += String(lastCommand_.commandId);
+    json += ",\"type\":\"";
+    json += commandTypeToString(lastCommand_.type);
+    json += "\",\"source\":\"";
+    json += commandSourceToString(lastCommand_.source);
+    json += "\",\"executedAtMs\":";
+    json += String(lastCommand_.executedAtMs);
+    json += ",\"ageMs\":";
+    json += String(millis() - lastCommand_.executedAtMs);
+    json += ",\"success\":";
+    json += lastCommand_.success ? "true" : "false";
+    json += ",\"message\":\"";
+    appendEscaped(json, lastCommand_.message);
+    json += "\"";
+  }
+
+  json += "}";
 }
 
 void Dispatcher::cancelBaseAngleIfNeeded(const Command& command) {
@@ -561,6 +618,16 @@ void Dispatcher::cancelBaseAngleIfNeeded(const Command& command) {
     default:
       return;
   }
+}
+
+void Dispatcher::recordCommandResult(const Command& command, const CommandResult& result) {
+  lastCommand_.seen = true;
+  lastCommand_.commandId = result.commandId;
+  lastCommand_.type = command.type;
+  lastCommand_.source = command.source;
+  lastCommand_.executedAtMs = millis();
+  lastCommand_.success = result.success;
+  strlcpy(lastCommand_.message, result.message, sizeof(lastCommand_.message));
 }
 
 bool Dispatcher::dispatchNext(CommandBus& commandBus, uint32_t* processedId, CommandResult* result) {

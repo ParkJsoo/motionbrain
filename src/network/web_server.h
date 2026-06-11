@@ -103,6 +103,7 @@ private:
   bool submitCommand(const Command& command, CommandResult& result);
   bool requireCommandAuth();
   void appendStateSummaryJson(String& json) const;
+  void appendRecoveryJson(String& json) const;
   void sendErrorJson(int statusCode, const char* error, const String& details = "");
   void sendCommandResult(const CommandResult& result, const String& extraJson = "");
   void expireManualLeases();
