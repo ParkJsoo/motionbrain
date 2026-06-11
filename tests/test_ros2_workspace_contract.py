@@ -181,6 +181,7 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
             / "motionbrain_ros_bridge"
             / "motionbrain_status_node.py"
         ).read_text()
+        evidence_text = (REPO_ROOT / "tools" / "raspi" / "capture_ros2_evidence.sh").read_text()
 
         expected_fragments = [
             '"/motionbrain/routine_cmd"',
@@ -195,6 +196,19 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         for fragment in expected_fragments:
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, bridge_text)
+
+        expected_evidence_fragments = [
+            "CAPTURE_ROUTINE_COMMAND_BOUNDARY",
+            "Routine command status result",
+            "Routine command run rejection result",
+            "{action: status}",
+            "{action: run, routine_name: inspect, confirm_code: confirm-inspect}",
+            "routine_execute_disabled_by_bridge_policy",
+            "forwarded: false",
+        ]
+        for fragment in expected_evidence_fragments:
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, evidence_text)
 
     def test_mission_config_matches_supervisor_topic_contract(self):
         config_text = (

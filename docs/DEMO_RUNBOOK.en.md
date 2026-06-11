@@ -141,6 +141,17 @@ cd ~/develop/arduino/motionbrain
 CAPTURE_MISSION_BOUNDARY=1 tools/raspi/capture_ros2_evidence.sh
 ```
 
+To include the routine command/result boundary, use a separate opt-in mode. It
+captures a successful typed routine `status` command and the bridge-local
+rejection for `run`. The `run` request is recorded as
+`routine_execute_disabled_by_bridge_policy` / `forwarded=false`, so it is not
+forwarded to the ESP32 HTTP routine command boundary.
+
+```bash
+cd ~/develop/arduino/motionbrain
+CAPTURE_ROUTINE_COMMAND_BOUNDARY=1 tools/raspi/capture_ros2_evidence.sh
+```
+
 Default output path:
 
 ```text

@@ -140,6 +140,17 @@ cd ~/develop/arduino/motionbrain
 CAPTURE_MISSION_BOUNDARY=1 tools/raspi/capture_ros2_evidence.sh
 ```
 
+routine command/result boundary까지 남기려면 별도 opt-in 모드를 사용한다.
+이 모드는 typed routine `status` 명령 성공과 `run` 명령의 bridge-local
+거부만 캡처한다. `run`은
+`routine_execute_disabled_by_bridge_policy` / `forwarded=false`로 기록되어
+ESP32 HTTP routine command로 전달되지 않는다.
+
+```bash
+cd ~/develop/arduino/motionbrain
+CAPTURE_ROUTINE_COMMAND_BOUNDARY=1 tools/raspi/capture_ros2_evidence.sh
+```
+
 출력 파일 기본 위치:
 
 ```text

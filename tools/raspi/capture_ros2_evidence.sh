@@ -7,6 +7,8 @@ CHECK_SERVICE="${CHECK_SERVICE:-1}"
 SAMPLE_TIMEOUT_SECONDS="${SAMPLE_TIMEOUT_SECONDS:-12}"
 CAPTURE_COMPAT_JSON="${CAPTURE_COMPAT_JSON:-1}"
 CAPTURE_MISSION_BOUNDARY="${CAPTURE_MISSION_BOUNDARY:-0}"
+CAPTURE_ROUTINE_COMMAND_BOUNDARY="${CAPTURE_ROUTINE_COMMAND_BOUNDARY:-0}"
+COMMAND_ECHO_SETTLE_SECONDS="${COMMAND_ECHO_SETTLE_SECONDS:-1}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="${MOTIONBRAIN_REPO:-$(cd "${SCRIPT_DIR}/../.." && pwd)}"
@@ -45,6 +47,49 @@ run_step() {
 capture_topic() {
   local topic="$1"
   run_step "Topic sample ${topic}" timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo "${topic}" --once
+}
+
+capture_command_result() {
+  local label="$1"
+  local command_topic="$2"
+  local command_type="$3"
+  local command_payload="$4"
+  local result_topic="$5"
+  shift 5
+  local expected_patterns=("$@")
+  local echo_output
+  local echo_pid
+  local pub_rc=0
+  local echo_rc=0
+  local missing=0
+
+  section "${label}"
+  echo_output="$(mktemp)"
+  printf '+ timeout %q ros2 topic echo %q --once\n' "${SAMPLE_TIMEOUT_SECONDS}" "${result_topic}"
+  set +e
+  timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo "${result_topic}" --once > "${echo_output}" 2>&1 &
+  echo_pid=$!
+  sleep "${COMMAND_ECHO_SETTLE_SECONDS}"
+  printf '+ timeout %q ros2 topic pub --once --wait-matching-subscriptions 1 %q %q %q\n' \
+    "${SAMPLE_TIMEOUT_SECONDS}" "${command_topic}" "${command_type}" "${command_payload}"
+  timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic pub --once --wait-matching-subscriptions 1 \
+    "${command_topic}" "${command_type}" "${command_payload}"
+  pub_rc=$?
+  wait "${echo_pid}"
+  echo_rc=$?
+  set -e
+  cat "${echo_output}"
+  for pattern in "${expected_patterns[@]}"; do
+    if ! grep -Fq "${pattern}" "${echo_output}"; then
+      echo "FAIL ${label}: missing expected output pattern: ${pattern}"
+      missing=$((missing + 1))
+    fi
+  done
+  rm -f "${echo_output}"
+  if (( pub_rc != 0 || echo_rc != 0 || missing != 0 )); then
+    echo "FAIL ${label}: publish exit ${pub_rc}, echo exit ${echo_rc}, missing ${missing}"
+    failures=$((failures + 1))
+  fi
 }
 
 section "MotionBrain ROS2 Evidence"
@@ -124,6 +169,20 @@ if [[ "${CAPTURE_MISSION_BOUNDARY}" == "1" ]]; then
     "{command: reset}"
   sleep 1
   capture_topic "/motionbrain/mission_state_typed"
+fi
+
+if [[ "${CAPTURE_ROUTINE_COMMAND_BOUNDARY}" == "1" ]]; then
+  capture_command_result "Routine command status result" \
+    /motionbrain/routine_cmd_typed motionbrain_msgs/msg/RoutineCommand \
+    "{action: status}" \
+    /motionbrain/routine_result_typed \
+    "success: true" "action: status" "forwarded: true"
+
+  capture_command_result "Routine command run rejection result" \
+    /motionbrain/routine_cmd_typed motionbrain_msgs/msg/RoutineCommand \
+    "{action: run, routine_name: inspect, confirm_code: confirm-inspect}" \
+    /motionbrain/routine_result_typed \
+    "success: false" "forwarded: false" "routine_execute_disabled_by_bridge_policy"
 fi
 
 section "Summary"
