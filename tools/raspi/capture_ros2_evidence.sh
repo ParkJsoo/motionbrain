@@ -102,6 +102,7 @@ capture_topic "/motionbrain/mission_state_typed"
 
 if [[ "${CAPTURE_COMPAT_JSON}" == "1" ]]; then
   capture_topic "/motionbrain/status"
+  capture_topic "/motionbrain/routine"
   capture_topic "/camera/detection"
   capture_topic "/motionbrain/kinematics"
   capture_topic "/motionbrain/control_guard"

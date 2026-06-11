@@ -17,6 +17,7 @@ EXPECTED_PACKAGES = {
 
 EXPECTED_RUNTIME_TOPICS = {
     "/motionbrain/status_typed",
+    "/motionbrain/routine",
     "/camera/detection_typed",
     "/joint_states",
     "/motionbrain/end_effector_pose",
@@ -141,6 +142,21 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         for topic in EXPECTED_RUNTIME_TOPICS:
             with self.subTest(topic=topic):
                 self.assertIn(f"OK topic: ${{topic}}", script_text)
+
+        self.assertIn("OK routine diagnostics sample", script_text)
+
+    def test_status_bridge_publishes_read_only_routine_diagnostics(self):
+        bridge_text = (
+            ROS2_SRC
+            / "motionbrain_ros_bridge"
+            / "motionbrain_ros_bridge"
+            / "motionbrain_status_node.py"
+        ).read_text()
+        evidence_text = (REPO_ROOT / "tools" / "raspi" / "capture_ros2_evidence.sh").read_text()
+
+        self.assertIn('self.create_publisher(String, "/motionbrain/routine", 10)', bridge_text)
+        self.assertIn('fetch_json(f"{self.motion_base_url}/routine", timeout)', bridge_text)
+        self.assertIn('capture_topic "/motionbrain/routine"', evidence_text)
 
     def test_mission_config_matches_supervisor_topic_contract(self):
         config_text = (

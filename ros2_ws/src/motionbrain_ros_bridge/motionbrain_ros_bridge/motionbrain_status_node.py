@@ -73,6 +73,7 @@ class MotionBrainStatusNode(Node):
 
         self.motion_base_url = self._motion_base_url()
         self.status_pub = self.create_publisher(String, "/motionbrain/status", 10)
+        self.routine_pub = self.create_publisher(String, "/motionbrain/routine", 10)
         self.events_pub = self.create_publisher(String, "/motionbrain/events", 10)
         self.detection_pub = self.create_publisher(String, "/camera/detection", 10)
         self.light_result_pub = self.create_publisher(String, "/motionbrain/light_result", 10)
@@ -106,6 +107,7 @@ class MotionBrainStatusNode(Node):
         self.get_logger().info(
             f"MotionBrain ROS2 bridge polling {self.motion_base_url}; "
             "topics: /motionbrain/status /motionbrain/status_typed "
+            "/motionbrain/routine "
             "/motionbrain/events /motionbrain/events_typed "
             "/camera/detection /camera/detection_typed "
             "/motionbrain/light_cmd /motionbrain/light_cmd_typed"
@@ -223,6 +225,12 @@ class MotionBrainStatusNode(Node):
             self.publish_status_typed(status)
         except POLL_EXCEPTIONS as exc:
             self.get_logger().warning(f"status poll failed: {exc}")
+
+        try:
+            routine = fetch_json(f"{self.motion_base_url}/routine", timeout)
+            self.publish_json(self.routine_pub, routine)
+        except POLL_EXCEPTIONS as exc:
+            self.get_logger().warning(f"routine poll failed: {exc}")
 
         try:
             limit = int(self.get_parameter("events_limit").value)
