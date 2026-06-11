@@ -520,6 +520,37 @@ base 상대각 제어는 다음 종료 이유를 가진다.
   "lastCommand": {"seen": false},
   "dryRunOnly": true,
   "executeImplemented": false,
+  "diagnostics": {
+    "controller": {"state": "IDLE", "uptimeMs": 18234},
+    "sensor": {
+      "source": "teleop_embedded",
+      "connected": true,
+      "fresh": true,
+      "ageMs": 28,
+      "freshnessThresholdMs": 1000,
+      "packetsReceived": 1570,
+      "parseErrors": 0,
+      "simulated": false
+    },
+    "teleop": {
+      "connected": true,
+      "deadman": false,
+      "controlActive": false,
+      "ageMs": 28,
+      "freshnessThresholdMs": 200,
+      "packetsReceived": 1570,
+      "parseErrors": 0,
+      "lastStopReason": "DEADMAN_RELEASE"
+    },
+    "safety": {
+      "motionBlocked": false,
+      "blockReason": "NONE",
+      "faultLatched": false,
+      "faultReason": "NONE",
+      "lastEventMs": 0,
+      "lastEventAgeMs": 0
+    }
+  },
   "executor": {
     "enabled": false,
     "executeImplemented": false,
@@ -548,6 +579,11 @@ base 상대각 제어는 다음 종료 이유를 가진다.
 
 `POST /routine?action=dry_run&name=inspect` 는 공통 `command_result`
 envelope에 routine 계획과 execute preflight 요약을 덧붙인다.
+
+`diagnostics` 는 routine 화면이나 ROS2/host adapter가 추가 `/status` 호출 없이
+preflight 판단의 근거를 표시하기 위한 읽기 전용 요약이다. `sensor.fresh` 는
+현재 safety freshness 기준, `teleop.connected` 는 handheld frame freshness 기준,
+`safety.lastEventAgeMs` 는 마지막 safety event 이후 경과 시간을 뜻한다.
 
 ```json
 {
@@ -578,6 +614,29 @@ envelope에 routine 계획과 execute preflight 요약을 덧붙인다.
   },
   "routineAction": "dry_run",
   "executeImplemented": false,
+  "diagnostics": {
+    "controller": {"state": "IDLE", "uptimeMs": 18234},
+    "sensor": {
+      "source": "teleop_embedded",
+      "connected": true,
+      "fresh": true,
+      "ageMs": 28,
+      "freshnessThresholdMs": 1000
+    },
+    "teleop": {
+      "connected": true,
+      "deadman": false,
+      "controlActive": false,
+      "ageMs": 28,
+      "freshnessThresholdMs": 200
+    },
+    "safety": {
+      "motionBlocked": false,
+      "blockReason": "NONE",
+      "faultLatched": false,
+      "faultReason": "NONE"
+    }
+  },
   "executePreflight": {
     "state": "IDLE",
     "stateAllowsExecute": false,

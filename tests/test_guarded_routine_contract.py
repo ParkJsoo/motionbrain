@@ -89,7 +89,12 @@ class GuardedRoutineContractTest(unittest.TestCase):
         self.assertIn("confirm=confirm-inspect", serial)
         self.assertIn("soft_home_reference", serial)
         self.assertIn("appendRecoveryJson", web_server)
+        self.assertIn("appendRuntimeDiagnosticsJson", web_server)
         self.assertIn("recovery", web_server)
+        self.assertIn("diagnostics", web_server)
+        self.assertIn("freshnessThresholdMs", web_server)
+        self.assertIn("SafetyMonitor::SENSOR_STALE_MS", web_server)
+        self.assertIn("TeleopAdapter::LINK_TIMEOUT_MS", web_server)
         self.assertIn("dispatcher_->appendLastCommandJson", web_server)
         self.assertIn("DispatcherCommandAudit", dispatcher_header)
         self.assertIn("recordCommandResult", dispatcher_source)
@@ -142,6 +147,11 @@ class GuardedRoutineContractTest(unittest.TestCase):
         self.assertIn('"action": "stop"', doc)
         self.assertIn("Dispatcher audit", doc)
         self.assertIn("cmd=stop", doc)
+        self.assertIn('"diagnostics"', doc)
+        self.assertIn('"freshnessThresholdMs"', doc)
+        self.assertIn('"sensor"', doc)
+        self.assertIn('"teleop"', doc)
+        self.assertIn('"safety"', doc)
 
 
 if __name__ == "__main__":

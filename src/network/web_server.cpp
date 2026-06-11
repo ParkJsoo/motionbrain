@@ -247,6 +247,83 @@ void MotionBrainWebServer::appendRecoveryJson(String& json) const {
   json += "\"}";
 }
 
+void MotionBrainWebServer::appendRuntimeDiagnosticsJson(String& json) const {
+  const bool useStm32Sensor = stm32Bridge.isSimulationEnabled() || stm32Bridge.isConnected() ||
+                              !teleopAdapter.hasEmbeddedSafetySnapshot();
+  const uint32_t sensorAgeMs = useStm32Sensor
+                             ? stm32Bridge.getLastPacketAgeMs()
+                             : teleopAdapter.getEmbeddedSafetyAgeMs();
+  const uint32_t sensorPackets = useStm32Sensor
+                               ? stm32Bridge.getPacketsReceived()
+                               : teleopAdapter.getEmbeddedSafetyPacketsReceived();
+  const uint32_t sensorParseErrors = useStm32Sensor
+                                   ? stm32Bridge.getParseErrors()
+                                   : teleopAdapter.getParseErrors();
+  const bool sensorConnected = useStm32Sensor
+                             ? stm32Bridge.isConnected()
+                             : (teleopAdapter.getEmbeddedSafetyAgeMs() <= SafetyMonitor::SENSOR_STALE_MS);
+  const uint32_t safetyEventMs = safetyMonitor.getLastSafetyEventMs();
+
+  json += "\"diagnostics\":{";
+  json += "\"controller\":{";
+  json += "\"state\":\"";
+  json += systemState_ != nullptr ? systemState_->getStateString() : "UNKNOWN";
+  json += "\",\"uptimeMs\":";
+  json += String(millis());
+  json += "}";
+  json += ",\"sensor\":{";
+  json += "\"source\":\"";
+  json += useStm32Sensor ? "stm32_bridge" : "teleop_embedded";
+  json += "\",\"connected\":";
+  json += sensorConnected ? "true" : "false";
+  json += ",\"fresh\":";
+  json += (sensorConnected && sensorAgeMs <= SafetyMonitor::SENSOR_STALE_MS) ? "true" : "false";
+  json += ",\"ageMs\":";
+  json += String(sensorAgeMs);
+  json += ",\"freshnessThresholdMs\":";
+  json += String(SafetyMonitor::SENSOR_STALE_MS);
+  json += ",\"packetsReceived\":";
+  json += String(sensorPackets);
+  json += ",\"parseErrors\":";
+  json += String(sensorParseErrors);
+  json += ",\"simulated\":";
+  json += stm32Bridge.isSimulationEnabled() ? "true" : "false";
+  json += "}";
+  json += ",\"teleop\":{";
+  json += "\"connected\":";
+  json += teleopAdapter.isConnected() ? "true" : "false";
+  json += ",\"deadman\":";
+  json += teleopAdapter.isDeadmanHeld() ? "true" : "false";
+  json += ",\"controlActive\":";
+  json += teleopAdapter.isControlActive() ? "true" : "false";
+  json += ",\"ageMs\":";
+  json += String(teleopAdapter.getLastFrameAgeMs());
+  json += ",\"freshnessThresholdMs\":";
+  json += String(TeleopAdapter::LINK_TIMEOUT_MS);
+  json += ",\"packetsReceived\":";
+  json += String(teleopAdapter.getPacketsReceived());
+  json += ",\"parseErrors\":";
+  json += String(teleopAdapter.getParseErrors());
+  json += ",\"lastStopReason\":\"";
+  json += teleopAdapter.getLastStopReasonString();
+  json += "\"}";
+  json += ",\"safety\":{";
+  json += "\"motionBlocked\":";
+  json += safetyMonitor.isMotionBlocked() ? "true" : "false";
+  json += ",\"blockReason\":\"";
+  json += safetyMonitor.getBlockReasonString();
+  json += "\",\"faultLatched\":";
+  json += safetyMonitor.hasLatchedFault() ? "true" : "false";
+  json += ",\"faultReason\":\"";
+  json += safetyMonitor.getLatchedFaultReasonString();
+  json += "\",\"lastEventMs\":";
+  json += String(safetyEventMs);
+  json += ",\"lastEventAgeMs\":";
+  json += safetyEventMs == 0 ? "0" : String(millis() - safetyEventMs);
+  json += "}";
+  json += "}";
+}
+
 void MotionBrainWebServer::sendErrorJson(int statusCode, const char* error, const String& details) {
   String json = "{\"schemaVersion\":\"";
   json += MESSAGE_SCHEMA_VERSION;
@@ -1628,6 +1705,8 @@ void MotionBrainWebServer::handleRoutine() {
   extra += command.type == CommandType::ROUTINE_DRY_RUN ? "dry_run" : "run";
   extra += "\",\"executeImplemented\":";
   extra += GuardedRoutineExecutor::executeImplemented() ? "true" : "false";
+  extra += ",";
+  appendRuntimeDiagnosticsJson(extra);
   extra += ",\"executePreflight\":{";
   extra += "\"state\":\"";
   extra += systemState_ != nullptr ? systemState_->getStateString() : "UNKNOWN";
@@ -1675,6 +1754,8 @@ void MotionBrainWebServer::handleRoutineStatus() {
   json += ",\"dryRunOnly\":true";
   json += ",\"executeImplemented\":";
   json += GuardedRoutineExecutor::executeImplemented() ? "true" : "false";
+  json += ",";
+  appendRuntimeDiagnosticsJson(json);
   json += ",";
   GuardedRoutineExecutor::appendPolicyJson(json);
   json += ",\"routines\":[";
