@@ -20,6 +20,7 @@ The original JSON topics remain available for debugging, while typed
 | `/motionbrain/status` | publish | `std_msgs/String` | Raw `GET /status` JSON |
 | `/motionbrain/status_typed` | publish | `motionbrain_msgs/msg/MotionStatus` | Stable status fields plus raw JSON |
 | `/motionbrain/routine` | publish | `std_msgs/String` | Raw read-only `GET /routine` JSON with guarded routine catalog, executor state, recovery hint, and diagnostics |
+| `/motionbrain/routine_typed` | publish | `motionbrain_msgs/msg/RoutineStatus` | Stable guarded routine readiness, executor policy/state, sensor/teleop/safety diagnostics, and routine names plus raw JSON |
 | `/motionbrain/events` | publish | `std_msgs/String` | Raw `GET /events?limit=N` JSON |
 | `/motionbrain/events_typed` | publish | `motionbrain_msgs/msg/MotionEvent` | One typed message per ESP32 event |
 | `/camera/detection` | publish | `std_msgs/String` | Color detection JSON from ESP32-CAM `/capture`, or Pi perception `/api/detection` when configured |
@@ -128,6 +129,7 @@ Watch bridge output:
 ros2 topic echo /motionbrain/status
 ros2 topic echo /motionbrain/status_typed
 ros2 topic echo /motionbrain/routine
+ros2 topic echo /motionbrain/routine_typed
 ros2 topic echo /joint_states
 ros2 topic echo /motionbrain/end_effector_pose
 ros2 topic echo /motionbrain/kinematics_typed

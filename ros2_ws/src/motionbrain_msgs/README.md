@@ -19,6 +19,7 @@ debugging and schema evolution.
 | `motionbrain_msgs/msg/MissionState` | Detect-align-confirm-act mission supervisor state |
 | `motionbrain_msgs/msg/LightCommand` | Search-light command request |
 | `motionbrain_msgs/msg/LightResult` | Search-light command result |
+| `motionbrain_msgs/msg/RoutineStatus` | Guarded routine readiness, executor policy/state, sensor/teleop/safety diagnostics, and raw `/routine` JSON |
 
 ## Build
 

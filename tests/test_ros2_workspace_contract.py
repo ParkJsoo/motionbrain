@@ -18,6 +18,7 @@ EXPECTED_PACKAGES = {
 EXPECTED_RUNTIME_TOPICS = {
     "/motionbrain/status_typed",
     "/motionbrain/routine",
+    "/motionbrain/routine_typed",
     "/camera/detection_typed",
     "/joint_states",
     "/motionbrain/end_effector_pose",
@@ -36,6 +37,7 @@ EXPECTED_MESSAGE_FILES = {
     "MissionState.msg",
     "MotionEvent.msg",
     "MotionStatus.msg",
+    "RoutineStatus.msg",
 }
 
 EXPECTED_PACKAGE_TEST_FILES = {
@@ -131,6 +133,11 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         }
         self.assertEqual(EXPECTED_MESSAGE_FILES, message_files)
 
+        cmake_text = (ROS2_SRC / "motionbrain_msgs" / "CMakeLists.txt").read_text()
+        for message_file in EXPECTED_MESSAGE_FILES:
+            with self.subTest(message_file=message_file):
+                self.assertIn(f'"msg/{message_file}"', cmake_text)
+
     def test_health_check_covers_runtime_topics(self):
         script_text = (REPO_ROOT / "tools" / "raspi" / "check_ros_bridge_health.sh").read_text()
         required_block = re.search(r"required_topics=\(\n(?P<body>.*?)\n\)", script_text, re.S)
@@ -144,6 +151,7 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
                 self.assertIn(f"OK topic: ${{topic}}", script_text)
 
         self.assertIn("OK routine diagnostics sample", script_text)
+        self.assertIn("OK routine typed diagnostics sample", script_text)
 
     def test_status_bridge_publishes_read_only_routine_diagnostics(self):
         bridge_text = (
@@ -155,8 +163,14 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         evidence_text = (REPO_ROOT / "tools" / "raspi" / "capture_ros2_evidence.sh").read_text()
 
         self.assertIn('self.create_publisher(String, "/motionbrain/routine", 10)', bridge_text)
+        self.assertIn(
+            'self.create_publisher(RoutineStatus, "/motionbrain/routine_typed", 10)',
+            bridge_text,
+        )
         self.assertIn('fetch_json(f"{self.motion_base_url}/routine", timeout)', bridge_text)
+        self.assertIn("self.publish_routine_typed(routine)", bridge_text)
         self.assertIn('capture_topic "/motionbrain/routine"', evidence_text)
+        self.assertIn('capture_topic "/motionbrain/routine_typed"', evidence_text)
 
     def test_mission_config_matches_supervisor_topic_contract(self):
         config_text = (

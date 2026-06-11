@@ -12,6 +12,7 @@ TOPIC_POLL_SECONDS="${TOPIC_POLL_SECONDS:-1}"
 required_topics=(
   "/motionbrain/status_typed"
   "/motionbrain/routine"
+  "/motionbrain/routine_typed"
   "/camera/detection_typed"
   "/joint_states"
   "/motionbrain/end_effector_pose"
@@ -57,6 +58,9 @@ echo "OK status typed sample"
 
 timeout 10 ros2 topic echo /motionbrain/routine --once >/dev/null
 echo "OK routine diagnostics sample"
+
+timeout 10 ros2 topic echo /motionbrain/routine_typed --once >/dev/null
+echo "OK routine typed diagnostics sample"
 
 camera_detection_sample="$(timeout 10 ros2 topic echo /camera/detection_typed --once)"
 if [[ "${STRICT_CAMERA_AVAILABLE}" == "1" ]] && ! grep -Eq '^available: true$' <<< "${camera_detection_sample}"; then

@@ -14,6 +14,7 @@ from motionbrain_msgs.msg import LightCommand
 from motionbrain_msgs.msg import LightResult
 from motionbrain_msgs.msg import MotionEvent
 from motionbrain_msgs.msg import MotionStatus
+from motionbrain_msgs.msg import RoutineStatus
 from motionbrain_ros_bridge.payload_utils import ALIGN_DEADBAND
 from motionbrain_ros_bridge.payload_utils import as_bool
 from motionbrain_ros_bridge.payload_utils import as_float
@@ -78,6 +79,7 @@ class MotionBrainStatusNode(Node):
         self.detection_pub = self.create_publisher(String, "/camera/detection", 10)
         self.light_result_pub = self.create_publisher(String, "/motionbrain/light_result", 10)
         self.status_typed_pub = self.create_publisher(MotionStatus, "/motionbrain/status_typed", 10)
+        self.routine_typed_pub = self.create_publisher(RoutineStatus, "/motionbrain/routine_typed", 10)
         self.events_typed_pub = self.create_publisher(MotionEvent, "/motionbrain/events_typed", 10)
         self.detection_typed_pub = self.create_publisher(
             CameraDetection,
@@ -107,7 +109,7 @@ class MotionBrainStatusNode(Node):
         self.get_logger().info(
             f"MotionBrain ROS2 bridge polling {self.motion_base_url}; "
             "topics: /motionbrain/status /motionbrain/status_typed "
-            "/motionbrain/routine "
+            "/motionbrain/routine /motionbrain/routine_typed "
             "/motionbrain/events /motionbrain/events_typed "
             "/camera/detection /camera/detection_typed "
             "/motionbrain/light_cmd /motionbrain/light_cmd_typed"
@@ -171,6 +173,83 @@ class MotionBrainStatusNode(Node):
             message.raw_json = compact_json(event)
             self.events_typed_pub.publish(message)
 
+    def publish_routine_typed(self, payload: dict[str, Any]) -> None:
+        message = RoutineStatus()
+        message.stamp = self.get_clock().now().to_msg()
+        message.available = True
+        message.controller_state = as_str(payload.get("state"), "UNKNOWN")
+        message.dry_run_only = as_bool(payload.get("dryRunOnly"))
+        message.execute_implemented = as_bool(payload.get("executeImplemented"))
+
+        executor = payload.get("executor")
+        if isinstance(executor, dict):
+            message.executor_enabled = as_bool(executor.get("enabled"))
+            message.executor_mode = as_str(executor.get("mode"))
+            message.abort_supported = as_bool(executor.get("abortSupported"))
+            message.timeout_supported = as_bool(executor.get("timeoutSupported"))
+            message.materialization_gate_supported = as_bool(
+                executor.get("materializationGateSupported")
+            )
+            message.queue_apply_allowed = as_bool(executor.get("queueApplyAllowed"))
+
+            status = executor.get("status")
+            if isinstance(status, dict):
+                message.executor_state = as_str(status.get("state"))
+                message.routine_name = as_str(status.get("routineName"))
+                message.current_step = as_uint(status.get("currentStep"))
+                message.total_steps = as_uint(status.get("totalSteps"))
+                message.motion_step_count = as_uint(status.get("motionStepCount"))
+                message.remaining_ms = as_uint(status.get("remainingMs"))
+                message.executor_last_result = as_str(status.get("lastResult"))
+                message.executor_last_detail = as_str(status.get("lastDetail"))
+
+        diagnostics = payload.get("diagnostics")
+        if isinstance(diagnostics, dict):
+            sensor = diagnostics.get("sensor")
+            if isinstance(sensor, dict):
+                message.sensor_connected = as_bool(sensor.get("connected"))
+                message.sensor_fresh = as_bool(sensor.get("fresh"))
+                message.sensor_age_ms = as_uint(sensor.get("ageMs"))
+
+            teleop = diagnostics.get("teleop")
+            if isinstance(teleop, dict):
+                message.teleop_connected = as_bool(teleop.get("connected"))
+                message.teleop_deadman = as_bool(teleop.get("deadman"))
+                message.teleop_control_active = as_bool(teleop.get("controlActive"))
+                message.teleop_age_ms = as_uint(teleop.get("ageMs"))
+
+            safety = diagnostics.get("safety")
+            if isinstance(safety, dict):
+                message.safety_motion_blocked = as_bool(safety.get("motionBlocked"))
+                message.safety_block_reason = as_str(safety.get("blockReason"))
+                message.safety_fault_latched = as_bool(safety.get("faultLatched"))
+                message.safety_fault_reason = as_str(safety.get("faultReason"))
+
+        recovery = payload.get("recovery")
+        if isinstance(recovery, dict):
+            message.recovery_action = as_str(recovery.get("action"))
+
+        last_command = payload.get("lastCommand")
+        if isinstance(last_command, dict):
+            message.last_command_seen = as_bool(last_command.get("seen"))
+            message.last_command_success = as_bool(last_command.get("success"))
+            message.last_command_type = as_str(last_command.get("type"))
+            message.last_command_source = as_str(last_command.get("source"))
+            message.last_command_message = as_str(last_command.get("message"))
+
+        routines = payload.get("routines")
+        if isinstance(routines, list):
+            routine_names = [
+                as_str(routine.get("name"))
+                for routine in routines
+                if isinstance(routine, dict) and as_str(routine.get("name"))
+            ]
+            message.routine_names = routine_names
+            message.routine_count = len(routine_names)
+
+        message.raw_json = compact_json(payload)
+        self.routine_typed_pub.publish(message)
+
     def publish_detection_typed(self, payload: dict[str, Any]) -> None:
         message = CameraDetection()
         message.stamp = self.get_clock().now().to_msg()
@@ -229,6 +308,7 @@ class MotionBrainStatusNode(Node):
         try:
             routine = fetch_json(f"{self.motion_base_url}/routine", timeout)
             self.publish_json(self.routine_pub, routine)
+            self.publish_routine_typed(routine)
         except POLL_EXCEPTIONS as exc:
             self.get_logger().warning(f"routine poll failed: {exc}")
 

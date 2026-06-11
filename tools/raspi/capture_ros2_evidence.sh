@@ -93,6 +93,7 @@ run_step "MotionBrain ROS2 interfaces" bash -lc "ros2 interface list | grep 'mot
 run_step "ROS2 topic list" ros2 topic list
 
 capture_topic "/motionbrain/status_typed"
+capture_topic "/motionbrain/routine_typed"
 capture_topic "/camera/detection_typed"
 capture_topic "/joint_states"
 capture_topic "/motionbrain/end_effector_pose"
