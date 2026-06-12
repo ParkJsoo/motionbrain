@@ -114,8 +114,23 @@ echo "OK status typed sample"
 timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo /motionbrain/routine --once >/dev/null
 echo "OK routine diagnostics sample"
 
-timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo /motionbrain/routine_typed --once >/dev/null
-echo "OK routine typed diagnostics sample"
+routine_typed_sample="$(timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo /motionbrain/routine_typed --once)"
+if ! grep -Fq 'feedback_selected_target: base_yaw_reference' <<< "${routine_typed_sample}"; then
+  echo "FAIL routine typed sample missing feedback_selected_target=base_yaw_reference" >&2
+  echo "${routine_typed_sample}" >&2
+  exit 1
+fi
+if ! grep -Fq 'feedback_ready: false' <<< "${routine_typed_sample}"; then
+  echo "FAIL routine typed sample missing feedback_ready=false" >&2
+  echo "${routine_typed_sample}" >&2
+  exit 1
+fi
+if ! grep -Fq 'base_yaw_feedback_fault: not_installed' <<< "${routine_typed_sample}"; then
+  echo "FAIL routine typed sample missing base_yaw_feedback_fault=not_installed" >&2
+  echo "${routine_typed_sample}" >&2
+  exit 1
+fi
+echo "OK routine typed feedback readiness sample"
 
 lifecycle_sample="$(timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo /motionbrain/lifecycle_typed || true)"
 for lifecycle_node in "${expected_lifecycle_nodes[@]}"; do
@@ -141,6 +156,16 @@ if ! grep -Fq 'name: motionbrain/controller' <<< "${diagnostics_sample}"; then
 fi
 if ! grep -Fq 'name: motionbrain/routine_executor' <<< "${diagnostics_sample}"; then
   echo "FAIL diagnostics sample missing motionbrain/routine_executor" >&2
+  echo "${diagnostics_sample}" >&2
+  exit 1
+fi
+if ! grep -Fq 'name: motionbrain/feedback' <<< "${diagnostics_sample}"; then
+  echo "FAIL diagnostics sample missing motionbrain/feedback" >&2
+  echo "${diagnostics_sample}" >&2
+  exit 1
+fi
+if ! grep -Fq 'base_yaw_fault' <<< "${diagnostics_sample}"; then
+  echo "FAIL diagnostics sample missing base_yaw_fault key" >&2
   echo "${diagnostics_sample}" >&2
   exit 1
 fi

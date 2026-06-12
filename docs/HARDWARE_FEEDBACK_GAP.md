@@ -84,11 +84,16 @@ implemented, but the status contract must include these concepts:
     "schemaVersion": "feedback.v0",
     "selectedClosureTarget": "base_yaw_reference",
     "physicalRoutineExecutionAllowed": false,
+    "readyForRoutineExecution": false,
+    "blockReason": "feedback_required",
     "baseYaw": {
+      "installed": false,
       "available": false,
       "connected": false,
       "fresh": false,
       "referenced": false,
+      "faulted": true,
+      "readyForRoutineExecution": false,
       "ageMs": 0,
       "positionDeg": 0.0,
       "velocityDps": 0.0,
@@ -105,9 +110,10 @@ The same state must be reflected in:
 - `GET /routine`
 - routine preflight responses
 - event log entries
-- dashboard readiness UI
-- ROS2 diagnostics or typed status
-- evidence helper output
+- dashboard readiness UI (`Routine Readiness` feedback tile)
+- ROS2 diagnostics or typed status (`motionbrain/feedback`,
+  `RoutineStatus.feedback_ready`, and `RoutineStatus.base_yaw_feedback_fault`)
+- evidence helper output (`/motionbrain/routine` and typed feedback capture)
 
 ## Current Firmware Scaffold
 

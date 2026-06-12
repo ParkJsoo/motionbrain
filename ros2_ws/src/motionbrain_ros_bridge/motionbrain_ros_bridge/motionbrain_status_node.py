@@ -216,6 +216,7 @@ class MotionBrainStatusNode(Node):
         message.status = [
             self.controller_diagnostic(status_payload),
             self.routine_diagnostic(routine_payload),
+            self.feedback_diagnostic(routine_payload),
             self.teleop_sensor_diagnostic(routine_payload),
             self.camera_diagnostic(detection_payload),
         ]
@@ -309,6 +310,59 @@ class MotionBrainStatusNode(Node):
                 "executor_state": as_str(status.get("state")),
                 "executor_last_result": as_str(status.get("lastResult")),
                 "routine_count": routine_count,
+            },
+            "esp32_motion_controller",
+        )
+
+    def feedback_diagnostic(self, payload: dict[str, Any] | None) -> DiagnosticStatus:
+        if payload is None:
+            return self.diagnostic_status(
+                "motionbrain/feedback",
+                DiagnosticStatus.ERROR,
+                "feedback poll unavailable",
+                {},
+                "esp32_motion_controller",
+            )
+
+        feedback = payload.get("feedback")
+        feedback = feedback if isinstance(feedback, dict) else {}
+        base_yaw = feedback.get("baseYaw")
+        base_yaw = base_yaw if isinstance(base_yaw, dict) else {}
+
+        ready = as_bool(feedback.get("readyForRoutineExecution"))
+        physical_allowed = as_bool(feedback.get("physicalRoutineExecutionAllowed"))
+        fault = as_str(base_yaw.get("fault") or feedback.get("blockReason"), "unknown")
+        if ready:
+            level = DiagnosticStatus.OK
+            text = "feedback ready for physical routines"
+        elif physical_allowed:
+            level = DiagnosticStatus.ERROR
+            text = "feedback policy mismatch"
+        else:
+            level = DiagnosticStatus.WARN
+            text = "feedback not ready for physical routines"
+
+        return self.diagnostic_status(
+            "motionbrain/feedback",
+            level,
+            text,
+            {
+                "selected_target": as_str(
+                    feedback.get("selectedClosureTarget"),
+                    "base_yaw_reference",
+                ),
+                "feedback_ready": ready,
+                "physical_routine_execution_allowed": physical_allowed,
+                "block_reason": as_str(feedback.get("blockReason"), "feedback_required"),
+                "base_yaw_installed": as_bool(base_yaw.get("installed")),
+                "base_yaw_available": as_bool(base_yaw.get("available")),
+                "base_yaw_connected": as_bool(base_yaw.get("connected")),
+                "base_yaw_fresh": as_bool(base_yaw.get("fresh")),
+                "base_yaw_referenced": as_bool(base_yaw.get("referenced")),
+                "base_yaw_faulted": as_bool(base_yaw.get("faulted")),
+                "base_yaw_fault": fault,
+                "base_yaw_age_ms": as_uint(base_yaw.get("ageMs")),
+                "base_yaw_last_update_ms": as_uint(base_yaw.get("lastUpdateMs")),
             },
             "esp32_motion_controller",
         )
@@ -495,6 +549,38 @@ class MotionBrainStatusNode(Node):
         recovery = payload.get("recovery")
         if isinstance(recovery, dict):
             message.recovery_action = as_str(recovery.get("action"))
+
+        feedback = payload.get("feedback")
+        if isinstance(feedback, dict):
+            message.feedback_selected_target = as_str(feedback.get("selectedClosureTarget"))
+            message.feedback_ready = as_bool(feedback.get("readyForRoutineExecution"))
+            message.physical_routine_execution_allowed = as_bool(
+                feedback.get("physicalRoutineExecutionAllowed")
+            )
+            message.feedback_block_reason = as_str(feedback.get("blockReason"))
+
+            base_yaw = feedback.get("baseYaw")
+            if isinstance(base_yaw, dict):
+                message.base_yaw_feedback_installed = as_bool(base_yaw.get("installed"))
+                message.base_yaw_feedback_available = as_bool(base_yaw.get("available"))
+                message.base_yaw_feedback_connected = as_bool(base_yaw.get("connected"))
+                message.base_yaw_feedback_fresh = as_bool(base_yaw.get("fresh"))
+                message.base_yaw_feedback_referenced = as_bool(base_yaw.get("referenced"))
+                message.base_yaw_feedback_faulted = as_bool(base_yaw.get("faulted"))
+                message.base_yaw_feedback_age_ms = as_uint(base_yaw.get("ageMs"))
+                message.base_yaw_feedback_last_update_ms = as_uint(
+                    base_yaw.get("lastUpdateMs")
+                )
+                message.base_yaw_feedback_position_deg = as_float(
+                    base_yaw.get("positionDeg")
+                )
+                message.base_yaw_feedback_velocity_dps = as_float(
+                    base_yaw.get("velocityDps")
+                )
+                message.base_yaw_feedback_stop_reason = as_str(
+                    base_yaw.get("lastStopReason")
+                )
+                message.base_yaw_feedback_fault = as_str(base_yaw.get("fault"))
 
         last_command = payload.get("lastCommand")
         if isinstance(last_command, dict):

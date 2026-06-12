@@ -19,11 +19,11 @@ The original JSON topics remain available for debugging, while typed
 | `/motionbrain/mission_state` | publish | `std_msgs/String` | Compatibility mission state JSON |
 | `/motionbrain/status` | publish | `std_msgs/String` | Raw `GET /status` JSON |
 | `/motionbrain/status_typed` | publish | `motionbrain_msgs/msg/MotionStatus` | Stable status fields plus raw JSON |
-| `/motionbrain/routine` | publish | `std_msgs/String` | Raw read-only `GET /routine` JSON with guarded routine catalog, executor state, recovery hint, and diagnostics |
-| `/motionbrain/routine_typed` | publish | `motionbrain_msgs/msg/RoutineStatus` | Stable guarded routine readiness, executor policy/state, sensor/teleop/safety diagnostics, and routine names plus raw JSON |
+| `/motionbrain/routine` | publish | `std_msgs/String` | Raw read-only `GET /routine` JSON with guarded routine catalog, executor state, feedback readiness, recovery hint, and diagnostics |
+| `/motionbrain/routine_typed` | publish | `motionbrain_msgs/msg/RoutineStatus` | Stable guarded routine readiness, executor policy/state, feedback/base-yaw readiness, sensor/teleop/safety diagnostics, and routine names plus raw JSON |
 | `/motionbrain/lifecycle_typed` | publish | `motionbrain_msgs/msg/NodeLifecycleStatus` | Lifecycle-style active/configuring/error heartbeat from bridge-side nodes |
 | `/motionbrain/lifecycle` | publish | `std_msgs/String` | Compatibility lifecycle heartbeat JSON |
-| `/motionbrain/diagnostics` | publish | `diagnostic_msgs/msg/DiagnosticArray` | Read-only ROS diagnostics for controller, routine executor policy, teleop/sensor freshness, and camera/perception availability |
+| `/motionbrain/diagnostics` | publish | `diagnostic_msgs/msg/DiagnosticArray` | Read-only ROS diagnostics for controller, routine executor policy, feedback readiness, teleop/sensor freshness, and camera/perception availability |
 | `/motionbrain/routine_cmd` | subscribe | `std_msgs/String` | Compatibility guarded routine command input: `status`, `dry_run <name>`, or `abort`; `run` is rejected by bridge policy |
 | `/motionbrain/routine_cmd_typed` | subscribe | `motionbrain_msgs/msg/RoutineCommand` | Typed guarded routine command input for status, dry-run, or abort |
 | `/motionbrain/routine_result` | publish | `std_msgs/String` | Raw guarded routine command result and bridge policy outcome |
@@ -82,15 +82,19 @@ bridge forwards `status`, `dry_run <name>`, and `abort` to the token-gated ESP32
 HTTP boundary, but rejects `run`/`execute` locally with
 `routine_execute_disabled_by_bridge_policy`. The firmware executor is still
 disabled by policy and `queue_apply_allowed=false` remains visible on
-`/motionbrain/routine_typed`. The `/motionbrain/routine_command` service uses
-the same policy and result schema for request/response clients. The
+`/motionbrain/routine_typed`. The same typed message mirrors the firmware
+feedback scaffold through `feedback_selected_target`, `feedback_ready`,
+`physical_routine_execution_allowed`, and `base_yaw_feedback_fault`; the current
+read-only scaffold reports `base_yaw_reference`, `false`, `false`, and
+`not_installed`. The `/motionbrain/routine_command` service uses the same policy
+and result schema for request/response clients. The
 `/motionbrain/guarded_routine` action uses the same policy for action clients
 that expect feedback and a terminal result.
 
 `/motionbrain/diagnostics` is a read-only ROS standard diagnostics view. It does
 not poll extra endpoints or send commands; it summarizes the latest bridge poll
-for controller safety, routine executor policy, STM32 teleop/sensor freshness,
-and camera/perception availability.
+for controller safety, routine executor policy, `motionbrain/feedback`, STM32
+teleop/sensor freshness, and camera/perception availability.
 
 `/motionbrain/lifecycle_typed` is a low-risk lifecycle-style status boundary.
 It does not convert the nodes into managed lifecycle nodes yet; instead, each

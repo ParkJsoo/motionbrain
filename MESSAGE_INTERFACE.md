@@ -964,7 +964,8 @@ motionbrain_status_node
   `motionbrain_msgs/msg/NodeLifecycleStatus`
 - `pub /motionbrain/diagnostics` -> `diagnostic_msgs/msg/DiagnosticArray`
   read-only diagnostics for controller safety, routine executor policy,
-  teleop/sensor freshness, and camera/perception availability
+  feedback readiness, teleop/sensor freshness, and camera/perception
+  availability
 - `pub /camera/detection` -> ESP32-CAM `/capture` 기반 색상 감지 JSON, 또는
   `perception_url`이 설정된 경우 Pi perception `/api/detection` JSON
 - `pub /camera/detection_typed` -> `motionbrain_msgs/msg/CameraDetection`
@@ -1009,6 +1010,14 @@ ROS2 routine command 규칙:
   `forwarded=false`를 반환한다.
 - 이 service는 request/response client를 위한 경계일 뿐이며, firmware executor
   policy는 계속 `queueApplyAllowed=false`와 disabled executor 상태를 따른다.
+- `RoutineStatus`는 firmware `feedback` 객체를 typed field로 mirror한다.
+  현재 scaffold에서 기대값은
+  `feedback_selected_target=base_yaw_reference`, `feedback_ready=false`,
+  `physical_routine_execution_allowed=false`,
+  `base_yaw_feedback_fault=not_installed` 이다.
+- `/motionbrain/diagnostics`는 `motionbrain/feedback` status를 포함한다. 현재
+  feedback hardware가 없는 상태는 polling 실패가 아니므로 ERROR가 아니라
+  WARN `feedback not ready for physical routines` 로 보고한다.
 
 2026-05-26 실기 검증:
 

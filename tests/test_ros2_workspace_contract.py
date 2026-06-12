@@ -186,6 +186,34 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
             with self.subTest(field=field):
                 self.assertIn(field, lifecycle_text)
 
+        routine_status_text = (
+            ROS2_SRC
+            / "motionbrain_msgs"
+            / "msg"
+            / "RoutineStatus.msg"
+        ).read_text()
+        expected_routine_feedback_fields = [
+            "string feedback_selected_target",
+            "bool feedback_ready",
+            "bool physical_routine_execution_allowed",
+            "string feedback_block_reason",
+            "bool base_yaw_feedback_installed",
+            "bool base_yaw_feedback_available",
+            "bool base_yaw_feedback_connected",
+            "bool base_yaw_feedback_fresh",
+            "bool base_yaw_feedback_referenced",
+            "bool base_yaw_feedback_faulted",
+            "uint32 base_yaw_feedback_age_ms",
+            "uint32 base_yaw_feedback_last_update_ms",
+            "float32 base_yaw_feedback_position_deg",
+            "float32 base_yaw_feedback_velocity_dps",
+            "string base_yaw_feedback_stop_reason",
+            "string base_yaw_feedback_fault",
+        ]
+        for field in expected_routine_feedback_fields:
+            with self.subTest(field=field):
+                self.assertIn(field, routine_status_text)
+
     def test_motionbrain_service_inventory_is_explicit(self):
         service_files = {
             path.name
@@ -267,7 +295,10 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
                 self.assertIn(f"OK topic: ${{topic}}", script_text)
 
         self.assertIn("OK routine diagnostics sample", script_text)
-        self.assertIn("OK routine typed diagnostics sample", script_text)
+        self.assertIn("OK routine typed feedback readiness sample", script_text)
+        self.assertIn("feedback_selected_target: base_yaw_reference", script_text)
+        self.assertIn("feedback_ready: false", script_text)
+        self.assertIn("base_yaw_feedback_fault: not_installed", script_text)
         self.assertIn("expected_lifecycle_nodes=(", script_text)
         self.assertIn("motionbrain_status_node", script_text)
         self.assertIn("motionbrain_joint_state_node", script_text)
@@ -278,6 +309,8 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         self.assertIn("OK diagnostics sample", script_text)
         self.assertIn("motionbrain/controller", script_text)
         self.assertIn("motionbrain/routine_executor", script_text)
+        self.assertIn("motionbrain/feedback", script_text)
+        self.assertIn("base_yaw_fault", script_text)
         self.assertIn("/motionbrain/routine_command", script_text)
         self.assertIn("motionbrain_msgs/srv/GuardedRoutineCommand", script_text)
         self.assertIn("success[:=][[:space:]]*(true|True)", script_text)
@@ -304,6 +337,9 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         self.assertIn("self.publish_routine_typed(routine)", bridge_text)
         self.assertIn('capture_topic "/motionbrain/routine"', evidence_text)
         self.assertIn('capture_topic "/motionbrain/routine_typed"', evidence_text)
+        self.assertIn("capture_feedback_readiness", evidence_text)
+        self.assertIn("Read-only feedback readiness capture", evidence_text)
+        self.assertIn("base_yaw_feedback_fault: not_installed", evidence_text)
         self.assertIn('capture_topic "/motionbrain/lifecycle_typed"', evidence_text)
         self.assertIn('capture_topic "/motionbrain/lifecycle"', evidence_text)
         self.assertIn('capture_topic "/motionbrain/diagnostics"', evidence_text)
@@ -323,10 +359,14 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
             "publish_diagnostics(status_payload, routine_payload, detection_payload)",
             "motionbrain/controller",
             "motionbrain/routine_executor",
+            "motionbrain/feedback",
             "motionbrain/teleop_sensor",
             "motionbrain/camera_perception",
             "queue_apply_allowed",
             "routine executor disabled by policy",
+            "feedback not ready for physical routines",
+            "feedback_ready",
+            "base_yaw_fault",
         ]
         for fragment in expected_fragments:
             with self.subTest(fragment=fragment):

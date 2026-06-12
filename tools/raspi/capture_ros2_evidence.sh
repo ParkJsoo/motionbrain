@@ -54,6 +54,39 @@ capture_topic() {
   run_step "Topic sample ${topic}" timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo "${topic}" --once
 }
 
+capture_feedback_readiness() {
+  local sample_output
+  local rc=0
+  local missing=0
+  local expected_patterns=(
+    "feedback_selected_target: base_yaw_reference"
+    "feedback_ready: false"
+    "base_yaw_feedback_fault: not_installed"
+  )
+
+  section "Read-only feedback readiness capture"
+  sample_output="$(mktemp)"
+  printf '+ timeout %q ros2 topic echo /motionbrain/routine_typed --once\n' \
+    "${SAMPLE_TIMEOUT_SECONDS}"
+  set +e
+  timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo \
+    /motionbrain/routine_typed --once > "${sample_output}" 2>&1
+  rc=$?
+  set -e
+  cat "${sample_output}"
+  for pattern in "${expected_patterns[@]}"; do
+    if ! grep -Fq "${pattern}" "${sample_output}"; then
+      echo "FAIL Read-only feedback readiness capture: missing expected output pattern: ${pattern}"
+      missing=$((missing + 1))
+    fi
+  done
+  rm -f "${sample_output}"
+  if (( rc != 0 || missing != 0 )); then
+    echo "FAIL Read-only feedback readiness capture: echo exit ${rc}, missing ${missing}"
+    failures=$((failures + 1))
+  fi
+}
+
 capture_command_result() {
   local label="$1"
   local command_topic="$2"
@@ -268,6 +301,8 @@ run_step "ROS2 action list" ros2 action list
 
 capture_topic "/motionbrain/status_typed"
 capture_topic "/motionbrain/routine_typed"
+capture_topic "/motionbrain/routine"
+capture_feedback_readiness
 capture_topic "/motionbrain/lifecycle_typed"
 capture_topic "/motionbrain/diagnostics"
 capture_topic "/camera/detection_typed"
@@ -279,7 +314,6 @@ capture_topic "/motionbrain/mission_state_typed"
 
 if [[ "${CAPTURE_COMPAT_JSON}" == "1" ]]; then
   capture_topic "/motionbrain/status"
-  capture_topic "/motionbrain/routine"
   capture_topic "/motionbrain/lifecycle"
   capture_topic "/camera/detection"
   capture_topic "/motionbrain/kinematics"

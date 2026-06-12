@@ -348,6 +348,12 @@ The evidence helper is safe by default:
 CHECK_SERVICE=1 tools/raspi/capture_ros2_evidence.sh
 ```
 
+The default capture is read-only. It now always samples `/motionbrain/routine`
+and validates typed feedback readiness from `/motionbrain/routine_typed`;
+the current no-feedback scaffold should report
+`feedback_selected_target=base_yaw_reference`, `feedback_ready=false`, and
+`base_yaw_feedback_fault=not_installed`.
+
 For compact bag evidence, opt in explicitly:
 
 ```bash
