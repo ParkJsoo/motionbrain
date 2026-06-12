@@ -317,6 +317,17 @@ Capture these artifacts after bring-up:
 - Photo or short video showing Raspberry Pi, ESP32 controller, ESP32-CAM, and
   the robot hardware on Home Wi-Fi
 
+Optional ROS2 controller architecture evidence:
+
+- `motionbrain_ros2_control_mock` provides a mock-only `ros2_control` launch
+  using `mock_components/GenericSystem`.
+- It requires ROS2 control runtime packages such as `controller_manager`,
+  `joint_state_broadcaster`, and `joint_trajectory_controller`.
+- It does not connect to the ESP32 controller, STM32 teleop board, motors,
+  gripper, or light.
+- Use it only as mock controller architecture evidence until real joint
+  feedback hardware exists.
+
 The evidence helper is safe by default:
 
 ```bash

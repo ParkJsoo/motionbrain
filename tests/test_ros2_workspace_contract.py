@@ -13,6 +13,7 @@ EXPECTED_PACKAGES = {
     "motionbrain_mission",
     "motionbrain_ros_bridge",
     "motionbrain_description",
+    "motionbrain_ros2_control_mock",
 }
 
 EXPECTED_RUNTIME_TOPICS = {
@@ -136,6 +137,16 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         )
         self.assertIn("motionbrain_ros_bridge", description_deps)
         self.assertIn("robot_state_publisher", description_deps)
+
+        mock_control_deps = dependency_names(
+            package_xml("motionbrain_ros2_control_mock"),
+            {"depend", "exec_depend", "build_depend"},
+        )
+        self.assertIn("controller_manager", mock_control_deps)
+        self.assertIn("joint_state_broadcaster", mock_control_deps)
+        self.assertIn("joint_trajectory_controller", mock_control_deps)
+        self.assertIn("ros2_control", mock_control_deps)
+        self.assertIn("ros2_controllers", mock_control_deps)
 
     def test_motionbrain_message_inventory_is_explicit(self):
         message_files = {
@@ -424,6 +435,41 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         workflow_text = (REPO_ROOT / ".github" / "workflows" / "ros2.yml").read_text()
         self.assertNotIn("No package-level colcon test suites were produced yet", workflow_text)
         self.assertIn("colcon test-result --verbose", workflow_text)
+
+    def test_ros2_control_mock_demo_is_optional_and_non_physical(self):
+        package_dir = ROS2_SRC / "motionbrain_ros2_control_mock"
+        self.assertTrue((package_dir / "package.xml").exists())
+        self.assertTrue((package_dir / "launch" / "mock_control.launch.py").exists())
+        self.assertTrue((package_dir / "config" / "controllers.yaml").exists())
+        self.assertTrue((package_dir / "urdf" / "motionbrain_mock_control.urdf").exists())
+
+        urdf_text = (package_dir / "urdf" / "motionbrain_mock_control.urdf").read_text()
+        config_text = (package_dir / "config" / "controllers.yaml").read_text()
+        launch_text = (package_dir / "launch" / "mock_control.launch.py").read_text()
+        readme_text = (package_dir / "README.md").read_text()
+
+        expected_joints = [
+            "base_yaw_joint",
+            "shoulder_pitch_joint",
+            "elbow_pitch_joint",
+            "wrist_pitch_joint",
+            "gripper_joint",
+        ]
+        for joint in expected_joints:
+            with self.subTest(joint=joint):
+                self.assertIn(f'joint name="{joint}"', urdf_text)
+                self.assertIn(f"- {joint}", config_text)
+
+        self.assertIn("<ros2_control", urdf_text)
+        self.assertIn("mock_components/GenericSystem", urdf_text)
+        self.assertIn("joint_trajectory_controller/JointTrajectoryController", config_text)
+        self.assertIn("joint_state_broadcaster/JointStateBroadcaster", config_text)
+        self.assertIn('package="controller_manager"', launch_text)
+        self.assertIn('executable="ros2_control_node"', launch_text)
+        self.assertIn("motionbrain_arm_controller", launch_text)
+        self.assertIn("does not connect to the ESP32 controller", readme_text)
+        self.assertIn("It is not a", readme_text)
+        self.assertIn("physical hardware interface", readme_text)
 
 
 if __name__ == "__main__":
