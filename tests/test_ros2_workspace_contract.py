@@ -146,7 +146,9 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         self.assertIn("joint_state_broadcaster", mock_control_deps)
         self.assertIn("joint_trajectory_controller", mock_control_deps)
         self.assertIn("ros2_control", mock_control_deps)
+        self.assertIn("ros2_control_test_assets", mock_control_deps)
         self.assertIn("ros2_controllers", mock_control_deps)
+        self.assertIn("ros2controlcli", mock_control_deps)
 
     def test_motionbrain_message_inventory_is_explicit(self):
         message_files = {
@@ -470,10 +472,39 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         self.assertIn("joint_state_broadcaster/JointStateBroadcaster", config_text)
         self.assertIn('package="controller_manager"', launch_text)
         self.assertIn('executable="ros2_control_node"', launch_text)
+        self.assertIn('name="controller_manager"', launch_text)
         self.assertIn("motionbrain_arm_controller", launch_text)
         self.assertIn("does not connect to the ESP32 controller", readme_text)
+        self.assertIn("capture_ros2_control_mock_evidence.sh", readme_text)
         self.assertIn("It is not a", readme_text)
         self.assertIn("physical hardware interface", readme_text)
+
+    def test_ros2_control_mock_evidence_helper_is_mock_only(self):
+        helper_text = (
+            REPO_ROOT / "tools" / "raspi" / "capture_ros2_control_mock_evidence.sh"
+        ).read_text()
+        bringup_text = (REPO_ROOT / "docs" / "RASPBERRY_PI_ROS2_BRINGUP.md").read_text()
+
+        expected_fragments = [
+            'MOCK_ROS_DOMAIN_ID="${MOCK_ROS_DOMAIN_ID:-42}"',
+            "CAPTURE_MOCK_TRAJECTORY",
+            "MOTIONBRAIN_ROS2_CONTROL_OVERLAY_PREFIX",
+            "motionbrain_ros2_control_mock",
+            "ros2_control_test_assets",
+            "ros2controlcli",
+            "ros2 launch motionbrain_ros2_control_mock mock_control.launch.py",
+            "ros2 control list_controllers",
+            "ros2 control list_hardware_interfaces",
+            "timeout \"${SAMPLE_TIMEOUT_SECONDS}\" ros2 topic echo /joint_states --once",
+            "ros-jazzy-ros2-control-test-assets",
+            "ros-jazzy-ros2controlcli",
+        ]
+        for fragment in expected_fragments:
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, helper_text)
+
+        self.assertIn("capture_ros2_control_mock_evidence.sh", bringup_text)
+        self.assertIn("separate `ROS_DOMAIN_ID`", bringup_text)
 
 
 if __name__ == "__main__":

@@ -12,7 +12,9 @@ sudo apt install -y \
   ros-jazzy-ros2-controllers \
   ros-jazzy-controller-manager \
   ros-jazzy-joint-state-broadcaster \
-  ros-jazzy-joint-trajectory-controller
+  ros-jazzy-joint-trajectory-controller \
+  ros-jazzy-ros2-control-test-assets \
+  ros-jazzy-ros2controlcli
 ```
 
 Build the optional package:
@@ -35,6 +37,12 @@ Inspect controllers:
 ros2 control list_hardware_interfaces
 ros2 control list_controllers
 ros2 topic echo /joint_states --once
+```
+
+Capture a repeatable mock-only evidence bundle on the Raspberry Pi:
+
+```bash
+tools/raspi/capture_ros2_control_mock_evidence.sh
 ```
 
 Send a mock-only joint trajectory:

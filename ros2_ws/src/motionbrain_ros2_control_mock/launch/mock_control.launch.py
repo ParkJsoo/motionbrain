@@ -35,7 +35,7 @@ def generate_launch_description() -> LaunchDescription:
             Node(
                 package="controller_manager",
                 executable="ros2_control_node",
-                name="motionbrain_mock_controller_manager",
+                name="controller_manager",
                 output="screen",
                 parameters=[
                     {"robot_description": robot_description},

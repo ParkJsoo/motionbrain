@@ -327,6 +327,15 @@ Optional ROS2 controller architecture evidence:
   gripper, or light.
 - Use it only as mock controller architecture evidence until real joint
   feedback hardware exists.
+- After installing the ROS2 control runtime packages, capture the mock-only
+  controller evidence with:
+
+```bash
+tools/raspi/capture_ros2_control_mock_evidence.sh
+```
+
+The helper uses a separate `ROS_DOMAIN_ID` by default so its mock `/joint_states`
+sample does not mix with the running bridge service.
 
 The evidence helper is safe by default:
 
