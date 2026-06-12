@@ -231,7 +231,7 @@ class GuardedRoutineContractTest(unittest.TestCase):
             "current sensing",
             "limit switch",
             "encoder",
-            "The executor should stay disabled through steps 1-6.",
+            "The executor should stay disabled until step 7 has explicit approval",
             "Current Firmware Scaffold",
             "GET /status",
             "GET /routine",

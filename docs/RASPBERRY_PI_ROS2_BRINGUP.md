@@ -291,6 +291,8 @@ messages by default while keeping JSON compatibility topics.
   [docs/evidence/2026-06-12-ros2-routine-service-boundary.md](evidence/2026-06-12-ros2-routine-service-boundary.md)
 - ROS diagnostics and read-only bag evidence:
   [docs/evidence/2026-06-12-ros2-diagnostics.md](evidence/2026-06-12-ros2-diagnostics.md)
+- Feedback readiness mirror evidence:
+  [docs/evidence/2026-06-13-ros2-feedback-readiness.md](evidence/2026-06-13-ros2-feedback-readiness.md)
 
 ## Portfolio Evidence Checklist
 

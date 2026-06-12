@@ -232,11 +232,14 @@ Recommended next implementation sequence:
 3. Add block reasons and events for stale, disconnected, unreferenced, timeout,
    no-progress, and faulted feedback. Done for the enum/contract surface;
    hardware-backed transitions remain future work.
-4. Mirror feedback readiness into dashboard and ROS2 diagnostics.
+4. Mirror feedback readiness into dashboard and ROS2 diagnostics. Done for the
+   `not_installed` scaffold; see
+   `docs/evidence/2026-06-13-ros2-feedback-readiness.md`.
 5. Extend tests so routine execution remains blocked while feedback is not
-   ready.
-6. Capture read-only evidence on the Pi.
+   ready. Done for the scaffold contract.
+6. Capture read-only evidence on the Pi. Done for the scaffold contract.
 7. Only after explicit approval, perform a short single-axis physical validation
    with stop-after-step status verification.
 
-The executor should stay disabled through steps 1-6.
+The executor should stay disabled until step 7 has explicit approval and
+hardware-backed feedback evidence.
