@@ -116,34 +116,17 @@ echo "OK routine diagnostics sample"
 timeout 10 ros2 topic echo /motionbrain/routine_typed --once >/dev/null
 echo "OK routine typed diagnostics sample"
 
-lifecycle_deadline=$((SECONDS + TOPIC_WAIT_SECONDS))
-lifecycle_observed=""
-while (( SECONDS <= lifecycle_deadline )); do
-  lifecycle_sample="$(timeout 8 ros2 topic echo /motionbrain/lifecycle_typed --once || true)"
-  if grep -Eq '^node_name: ' <<< "${lifecycle_sample}" &&
-     grep -Eq '^state_label: active$' <<< "${lifecycle_sample}" &&
-     grep -Eq '^active: true$' <<< "${lifecycle_sample}"; then
-    node_name="$(sed -n 's/^node_name: //p' <<< "${lifecycle_sample}" | head -1)"
-    lifecycle_observed="${lifecycle_observed}
-${node_name}"
-  fi
-
-  lifecycle_missing=0
-  for lifecycle_node in "${expected_lifecycle_nodes[@]}"; do
-    if ! grep -qx "${lifecycle_node}" <<< "${lifecycle_observed}"; then
-      lifecycle_missing=1
-      break
-    fi
-  done
-  if (( lifecycle_missing == 0 )); then
-    break
-  fi
-done
-
+lifecycle_sample="$(timeout "${TOPIC_WAIT_SECONDS}" ros2 topic echo /motionbrain/lifecycle_typed || true)"
 for lifecycle_node in "${expected_lifecycle_nodes[@]}"; do
-  if ! grep -qx "${lifecycle_node}" <<< "${lifecycle_observed}"; then
+  if ! awk -v node="${lifecycle_node}" '
+    BEGIN { RS="---"; found=0 }
+    $0 ~ "node_name: " node && $0 ~ "state_label: active" && $0 ~ "active: true" {
+      found=1
+    }
+    END { exit found ? 0 : 1 }
+  ' <<< "${lifecycle_sample}"; then
     echo "FAIL lifecycle sample missing active node: ${lifecycle_node}" >&2
-    echo "Observed lifecycle nodes:${lifecycle_observed}" >&2
+    echo "${lifecycle_sample}" >&2
     exit 1
   fi
 done
