@@ -329,12 +329,12 @@ if [[ "${CAPTURE_ROUTINE_ACTION_BOUNDARY}" == "1" ]]; then
   capture_action_result "Guarded routine action status result" \
     /motionbrain/guarded_routine motionbrain_msgs/action/GuardedRoutine \
     "{action: status}" \
-    "success=True" "action='status'" "forwarded=True"
+    "success: true" "action: status" "forwarded: true"
 
   capture_action_result "Guarded routine action run rejection result" \
     /motionbrain/guarded_routine motionbrain_msgs/action/GuardedRoutine \
     "{action: run, routine_name: inspect, confirm_code: confirm-inspect}" \
-    "success=False" "forwarded=False" "routine_execute_disabled_by_bridge_policy"
+    "success: false" "forwarded: false" "routine_execute_disabled_by_bridge_policy"
 fi
 
 if [[ "${CAPTURE_ROSBAG}" == "1" ]]; then
