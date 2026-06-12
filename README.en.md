@@ -180,6 +180,7 @@ commands.
 - [PORTFOLIO.md](PORTFOLIO.md): Korean portfolio summary
 - [MESSAGE_INTERFACE.md](MESSAGE_INTERFACE.md): serial, HTTP, and ROS2 command/status boundary
 - [PIN_MAP.md](PIN_MAP.md): pin and wiring reference
+- [docs/HARDWARE_FEEDBACK_GAP.md](docs/HARDWARE_FEEDBACK_GAP.md): hardware feedback gap before physical routine execution
 - [docs/DEMO_RUNBOOK.en.md](docs/DEMO_RUNBOOK.en.md): demo capture runbook
 - [docs/RASPBERRY_PI_DEPLOYMENT.en.md](docs/RASPBERRY_PI_DEPLOYMENT.en.md): Raspberry Pi systemd deployment
 - [docs/RASPBERRY_PI_ROS2_BRINGUP.md](docs/RASPBERRY_PI_ROS2_BRINGUP.md): Raspberry Pi ROS2 bring-up notes

@@ -159,6 +159,49 @@ class GuardedRoutineContractTest(unittest.TestCase):
         self.assertIn('"sensor"', doc)
         self.assertIn('"teleop"', doc)
         self.assertIn('"safety"', doc)
+        self.assertIn("docs/HARDWARE_FEEDBACK_GAP.md", doc)
+        self.assertIn("base_yaw_reference", doc)
+        self.assertIn("feedback_required", doc)
+        self.assertIn("ROUTINE_FEEDBACK_BLOCK", doc)
+
+    def test_hardware_feedback_gap_spec_blocks_physical_routine_execution(self):
+        spec = (ROOT / "docs" / "HARDWARE_FEEDBACK_GAP.md").read_text()
+        readme = (ROOT / "README.md").read_text()
+        readme_en = (ROOT / "README.en.md").read_text()
+        firmware_evidence = (ROOT / "docs" / "EMBEDDED_FIRMWARE_EVIDENCE.md").read_text()
+
+        required_fragments = [
+            "dryRunOnly=true",
+            "executeImplemented=false",
+            "queueApplyAllowed=false",
+            "routine_execute_disabled_by_bridge_policy",
+            "soft_home_reference",
+            "MotionSequence::addCommand",
+            "MotionSequence::addBaseAngleCommand",
+            "MotionSequence::run",
+            "base_yaw_reference",
+            "selectedClosureTarget",
+            "physicalRoutineExecutionAllowed",
+            "feedback_required",
+            "ROUTINE_FEEDBACK_BLOCK",
+            "stale",
+            "disconnected",
+            "unreferenced",
+            "no-progress",
+            "timeout",
+            "overshoot",
+            "current sensing",
+            "limit switch",
+            "encoder",
+            "The executor should stay disabled through steps 1-6.",
+        ]
+        for fragment in required_fragments:
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, spec)
+
+        self.assertIn("docs/HARDWARE_FEEDBACK_GAP.md", readme)
+        self.assertIn("docs/HARDWARE_FEEDBACK_GAP.md", readme_en)
+        self.assertIn("docs/HARDWARE_FEEDBACK_GAP.md", firmware_evidence)
 
 
 if __name__ == "__main__":

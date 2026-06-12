@@ -154,6 +154,12 @@ X-MotionBrain: 1
 - `soft_home_reference` 는 운영자 확인 기반 software reference 절차다. 현재
   하드웨어에는 encoder/limit switch 기반 자동 homing이 없으므로 motion step이
   0개이며, hard-stop seeking이나 절대 joint pose 기록을 수행하지 않는다.
+- 물리 routine 실행을 열기 전 hardware feedback gap은
+  `docs/HARDWARE_FEEDBACK_GAP.md`가 기준이다. 현재 선택된 첫 gap closure
+  target은 `base_yaw_reference`이며, feedback이 not installed, stale,
+  disconnected, unreferenced, faulted, no-progress, timeout, overshoot 상태일
+  때는 `feedback_required` / `ROUTINE_FEEDBACK_BLOCK` 경계로 실행을 막아야
+  한다.
 - dry-run 응답은 계획과 preflight 상태를 보여주지만, 모터/라이트/그리퍼를
   움직이지 않는다.
 
@@ -791,6 +797,8 @@ preflight 판단의 근거를 표시하기 위한 읽기 전용 요약이다. `s
   현재 skeleton에서는 그래도 `executeImplemented=false` 이므로 실제 execute는
   실패해야 한다.
 - 실제 execute path는 현재 skeleton에서 실패해야 하며 모터 출력으로 이어지면 안 된다.
+- `executeImplemented` 또는 `queueApplyAllowed` 를 true로 바꾸기 전에는
+  `docs/HARDWARE_FEEDBACK_GAP.md`의 evidence 조건을 먼저 만족해야 한다.
 - `ROUTINE_EXECUTE_BLOCKED` event detail은
   `n=<routine> e=<result> p=<prepareResult> m=<materializeResult> a=<0|1> s=<0|1> steps=<count>`
   형식으로 executor gate, 준비 시퀀스, materialization 상태를 함께 남긴다.

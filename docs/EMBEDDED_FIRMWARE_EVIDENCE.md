@@ -99,4 +99,8 @@
 - RTOS task scheduling, priority inversion, queue/timer primitive evidence 없음.
 - CAN/Ethernet physical interface evidence 없음.
 - 오실로스코프/logic analyzer 캡처 evidence 없음.
+- 물리 guarded routine 실행 전 하드웨어 피드백 gap은
+  `docs/HARDWARE_FEEDBACK_GAP.md`에 정의한다. 현재 첫 closure target은
+  `base_yaw_reference`이며, 이 증거가 생기기 전까지 routine executor는
+  disabled 상태를 유지한다.
 - 제품형 safety architecture 수준의 독립 safety MCU/channel은 아직 bench MVP 이후 과제다.

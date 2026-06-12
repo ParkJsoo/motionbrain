@@ -178,6 +178,7 @@ systemd wrapper는 ESP32-CAM 재부팅 후에도 이 카메라 프로필을 다�
 - [PORTFOLIO.en.md](PORTFOLIO.en.md): 영어 포트폴리오 요약
 - [MESSAGE_INTERFACE.md](MESSAGE_INTERFACE.md): 시리얼/HTTP/ROS2 명령과 상태 경계
 - [PIN_MAP.md](PIN_MAP.md): 핀과 배선 기준
+- [docs/HARDWARE_FEEDBACK_GAP.md](docs/HARDWARE_FEEDBACK_GAP.md): 물리 routine 실행 전 하드웨어 피드백 gap 기준
 - [docs/DEMO_RUNBOOK.md](docs/DEMO_RUNBOOK.md): 데모 캡처 절차
 - [docs/RASPBERRY_PI_DEPLOYMENT.md](docs/RASPBERRY_PI_DEPLOYMENT.md): Raspberry Pi systemd 배포
 - [docs/RASPBERRY_PI_ROS2_BRINGUP.md](docs/RASPBERRY_PI_ROS2_BRINGUP.md): Raspberry Pi ROS2 bring-up 기록
