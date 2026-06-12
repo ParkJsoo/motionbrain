@@ -45,6 +45,14 @@ Capture a repeatable mock-only evidence bundle on the Raspberry Pi:
 tools/raspi/capture_ros2_control_mock_evidence.sh
 ```
 
+If a temporary non-root ROS package overlay is being used for evidence capture,
+point the helper at that prefix:
+
+```bash
+MOTIONBRAIN_ROS2_CONTROL_OVERLAY_PREFIX=$HOME/.local/motionbrain_ros2_control_overlay/opt/ros/jazzy \
+  tools/raspi/capture_ros2_control_mock_evidence.sh
+```
+
 Send a mock-only joint trajectory:
 
 ```bash
