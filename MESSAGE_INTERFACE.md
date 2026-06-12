@@ -935,10 +935,16 @@ motionbrain_status_node
 - `/motionbrain/routine_command` ->
   `motionbrain_msgs/srv/GuardedRoutineCommand`
 
+액션:
+
+- `/motionbrain/guarded_routine` -> `motionbrain_msgs/action/GuardedRoutine`
+
 ROS2 routine command 규칙:
 
 - topic과 service 경계 모두 `status`, `dry_run <name>`, `abort`만 ESP32 HTTP
   boundary로 전달한다.
+- action 경계도 같은 정책을 사용한다. 현재 action은 `status`와 `dry_run`을
+  위한 goal/feedback/result 경계이며, 실행 goal은 ROS2 bridge에서 로컬 거부한다.
 - `run|execute`는 ROS2 bridge에서
   `routine_execute_disabled_by_bridge_policy`로 로컬 거부하며
   `forwarded=false`를 반환한다.

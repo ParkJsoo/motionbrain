@@ -26,6 +26,10 @@ required_services=(
   "/motionbrain/routine_command"
 )
 
+required_actions=(
+  "/motionbrain/guarded_routine"
+)
+
 if [[ "${CHECK_SERVICE}" == "1" ]]; then
   if ! systemctl is-active --quiet "${SERVICE_NAME}"; then
     echo "FAIL service inactive: ${SERVICE_NAME}" >&2
@@ -76,6 +80,24 @@ for service in "${required_services[@]}"; do
   echo "OK service: ${service}"
 done
 
+for action in "${required_actions[@]}"; do
+  action_deadline=$((SECONDS + TOPIC_WAIT_SECONDS))
+  actions=""
+  while (( SECONDS <= action_deadline )); do
+    actions="$(timeout 8 ros2 action list || true)"
+    if grep -qx "${action}" <<< "${actions}"; then
+      break
+    fi
+    sleep "${TOPIC_POLL_SECONDS}"
+  done
+  if ! grep -qx "${action}" <<< "${actions}"; then
+    echo "FAIL missing action: ${action}" >&2
+    echo "${actions}" >&2
+    exit 1
+  fi
+  echo "OK action: ${action}"
+done
+
 timeout 10 ros2 topic echo /motionbrain/status_typed --once >/dev/null
 echo "OK status typed sample"
 
@@ -106,6 +128,15 @@ if ! grep -Eq 'success[:=][[:space:]]*(true|True)' <<< "${routine_service_sample
   exit 1
 fi
 echo "OK routine command service status sample"
+
+routine_action_sample="$(timeout 15 ros2 action send_goal /motionbrain/guarded_routine \
+  motionbrain_msgs/action/GuardedRoutine "{action: status}")"
+if ! grep -Eq 'success[:=][[:space:]]*(true|True)' <<< "${routine_action_sample}"; then
+  echo "FAIL guarded routine action status sample is not success=true" >&2
+  echo "${routine_action_sample}" >&2
+  exit 1
+fi
+echo "OK guarded routine action status sample"
 
 camera_detection_sample="$(timeout 10 ros2 topic echo /camera/detection_typed --once)"
 if [[ "${STRICT_CAMERA_AVAILABLE}" == "1" ]] && ! grep -Eq '^available: true$' <<< "${camera_detection_sample}"; then

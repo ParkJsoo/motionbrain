@@ -12,6 +12,7 @@ import rclpy
 from diagnostic_msgs.msg import DiagnosticArray
 from diagnostic_msgs.msg import DiagnosticStatus
 from diagnostic_msgs.msg import KeyValue
+from motionbrain_msgs.action import GuardedRoutine
 from motionbrain_msgs.msg import CameraDetection
 from motionbrain_msgs.msg import LightCommand
 from motionbrain_msgs.msg import LightResult
@@ -31,6 +32,7 @@ from motionbrain_ros_bridge.payload_utils import perception_detection_url
 from motionbrain_ros_bridge.payload_utils import parse_light_action
 from motionbrain_ros_bridge.payload_utils import parse_routine_command
 from motionbrain_ros_bridge.vision_detection import detect_colored_target
+from rclpy.action import ActionServer
 from rclpy.node import Node
 from std_msgs.msg import String
 
@@ -138,6 +140,12 @@ class MotionBrainStatusNode(Node):
             "/motionbrain/routine_command",
             self.handle_routine_service,
         )
+        self.routine_action_server = ActionServer(
+            self,
+            GuardedRoutine,
+            "/motionbrain/guarded_routine",
+            self.execute_routine_goal,
+        )
 
         interval = float(self.get_parameter("poll_interval").value)
         self.timer = self.create_timer(max(interval, 0.1), self.poll_once)
@@ -150,7 +158,8 @@ class MotionBrainStatusNode(Node):
             "/camera/detection /camera/detection_typed "
             "/motionbrain/light_cmd /motionbrain/light_cmd_typed "
             "/motionbrain/routine_cmd /motionbrain/routine_cmd_typed "
-            "service: /motionbrain/routine_command"
+            "service: /motionbrain/routine_command "
+            "action: /motionbrain/guarded_routine"
         )
 
     def _motion_base_url(self) -> str:
@@ -577,6 +586,39 @@ class MotionBrainStatusNode(Node):
         response.raw_json = compact_json(payload)
         return response
 
+    def populate_routine_action_result(
+        self,
+        payload: dict[str, Any],
+    ) -> GuardedRoutine.Result:
+        result = GuardedRoutine.Result()
+        result.stamp = self.get_clock().now().to_msg()
+        result.success = as_bool(payload.get("success"))
+        result.action = as_str(payload.get("action"))
+        result.routine_name = as_str(payload.get("routineName"))
+        result.result = as_str(payload.get("result"))
+        result.message = as_str(payload.get("message"))
+        result.error = as_str(payload.get("error"))
+        result.forwarded = as_bool(payload.get("forwarded"))
+        result.raw_json = compact_json(payload)
+        return result
+
+    def routine_feedback(
+        self,
+        state: str,
+        current_step: int,
+        total_steps: int,
+        message: str,
+        payload: dict[str, Any] | None = None,
+    ) -> GuardedRoutine.Feedback:
+        feedback = GuardedRoutine.Feedback()
+        feedback.stamp = self.get_clock().now().to_msg()
+        feedback.state = state
+        feedback.current_step = current_step
+        feedback.total_steps = total_steps
+        feedback.message = message
+        feedback.raw_json = compact_json(payload or {})
+        return feedback
+
     def poll_once(self) -> None:
         self.motion_base_url = self._motion_base_url()
         timeout = self._timeout()
@@ -791,6 +833,71 @@ class MotionBrainStatusNode(Node):
         )
         self.publish_routine_result(result)
         return self.populate_routine_service_response(response, result)
+
+    def execute_routine_goal(self, goal_handle: Any) -> GuardedRoutine.Result:
+        request = goal_handle.request
+        raw_payload = request.raw_json or compact_json(
+            {
+                "action": request.action,
+                "routineName": request.routine_name,
+                "confirmCode": request.confirm_code,
+            },
+        )
+        goal_handle.publish_feedback(
+            self.routine_feedback(
+                "accepted",
+                0,
+                1,
+                "guarded routine action accepted",
+                {
+                    "action": request.action,
+                    "routineName": request.routine_name,
+                },
+            ),
+        )
+
+        if request.raw_json:
+            command = parse_routine_command(request.raw_json)
+            if command is not None:
+                action = command["action"]
+                routine_name = command["routine_name"]
+                confirm_code = command["confirm_code"]
+            else:
+                action = request.action
+                routine_name = request.routine_name
+                confirm_code = request.confirm_code
+        else:
+            command = parse_routine_command(request.action)
+            action = command["action"] if command is not None else request.action
+            routine_name = request.routine_name or (
+                command["routine_name"] if command is not None else ""
+            )
+            confirm_code = request.confirm_code or (
+                command["confirm_code"] if command is not None else ""
+            )
+
+        result_payload = self.execute_routine_action(
+            action,
+            routine_name,
+            confirm_code,
+            raw_payload,
+        )
+        self.publish_routine_result(result_payload)
+        goal_handle.publish_feedback(
+            self.routine_feedback(
+                "completed",
+                1,
+                1,
+                as_str(result_payload.get("message"), "guarded routine action completed"),
+                result_payload,
+            ),
+        )
+
+        if as_bool(result_payload.get("success")):
+            goal_handle.succeed()
+        else:
+            goal_handle.abort()
+        return self.populate_routine_action_result(result_payload)
 
     def routine_response_success(self, payload: dict[str, Any]) -> bool:
         if "success" in payload:

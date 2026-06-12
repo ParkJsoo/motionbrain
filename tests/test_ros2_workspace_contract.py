@@ -47,6 +47,10 @@ EXPECTED_SERVICE_FILES = {
     "GuardedRoutineCommand.srv",
 }
 
+EXPECTED_ACTION_FILES = {
+    "GuardedRoutine.action",
+}
+
 EXPECTED_PACKAGE_TEST_FILES = {
     "motionbrain_control/test/test_control_guard_logic.cpp",
     "motionbrain_mission/test/test_mission_flow.py",
@@ -177,6 +181,43 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
             with self.subTest(field=field):
                 self.assertIn(field, service_text)
 
+    def test_motionbrain_action_inventory_is_explicit(self):
+        action_files = {
+            path.name
+            for path in (ROS2_SRC / "motionbrain_msgs" / "action").iterdir()
+            if path.suffix == ".action"
+        }
+        self.assertEqual(EXPECTED_ACTION_FILES, action_files)
+
+        cmake_text = (ROS2_SRC / "motionbrain_msgs" / "CMakeLists.txt").read_text()
+        package_text = (ROS2_SRC / "motionbrain_msgs" / "package.xml").read_text()
+        for action_file in EXPECTED_ACTION_FILES:
+            with self.subTest(action_file=action_file):
+                self.assertIn(f'"action/{action_file}"', cmake_text)
+
+        self.assertIn("find_package(action_msgs REQUIRED)", cmake_text)
+        self.assertIn("DEPENDENCIES action_msgs builtin_interfaces", cmake_text)
+        self.assertIn("<depend>action_msgs</depend>", package_text)
+
+        action_text = (
+            ROS2_SRC
+            / "motionbrain_msgs"
+            / "action"
+            / "GuardedRoutine.action"
+        ).read_text()
+        expected_fields = [
+            "string action",
+            "string routine_name",
+            "string confirm_code",
+            "bool success",
+            "bool forwarded",
+            "uint32 current_step",
+            "uint32 total_steps",
+        ]
+        for field in expected_fields:
+            with self.subTest(field=field):
+                self.assertIn(field, action_text)
+
     def test_health_check_covers_runtime_topics(self):
         script_text = (REPO_ROOT / "tools" / "raspi" / "check_ros_bridge_health.sh").read_text()
         required_block = re.search(r"required_topics=\(\n(?P<body>.*?)\n\)", script_text, re.S)
@@ -198,6 +239,9 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         self.assertIn("motionbrain_msgs/srv/GuardedRoutineCommand", script_text)
         self.assertIn("success[:=][[:space:]]*(true|True)", script_text)
         self.assertIn("OK routine command service status sample", script_text)
+        self.assertIn("/motionbrain/guarded_routine", script_text)
+        self.assertIn("motionbrain_msgs/action/GuardedRoutine", script_text)
+        self.assertIn("OK guarded routine action status sample", script_text)
 
     def test_status_bridge_publishes_read_only_routine_diagnostics(self):
         bridge_text = (
@@ -253,6 +297,8 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         evidence_text = (REPO_ROOT / "tools" / "raspi" / "capture_ros2_evidence.sh").read_text()
 
         expected_fragments = [
+            "from motionbrain_msgs.action import GuardedRoutine",
+            "from rclpy.action import ActionServer",
             '"/motionbrain/routine_cmd"',
             '"/motionbrain/routine_cmd_typed"',
             'self.create_publisher(String, "/motionbrain/routine_result", 10)',
@@ -260,6 +306,9 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
             "self.create_service(",
             "GuardedRoutineCommand",
             '"/motionbrain/routine_command"',
+            "ActionServer(",
+            '"/motionbrain/guarded_routine"',
+            "execute_routine_goal",
             "execute_routine_action",
             "routine_execute_disabled_by_bridge_policy",
             "ROS2 routine bridge forwards only status, dry_run, and abort",
@@ -278,6 +327,10 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
             "Routine command service status result",
             "Routine command service run rejection result",
             "motionbrain_msgs/srv/GuardedRoutineCommand",
+            "CAPTURE_ROUTINE_ACTION_BOUNDARY",
+            "Guarded routine action status result",
+            "Guarded routine action run rejection result",
+            "motionbrain_msgs/action/GuardedRoutine",
             "success=True",
             "forwarded=True",
             "success=False",

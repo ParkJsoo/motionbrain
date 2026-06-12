@@ -27,6 +27,7 @@ The original JSON topics remain available for debugging, while typed
 | `/motionbrain/routine_result` | publish | `std_msgs/String` | Raw guarded routine command result and bridge policy outcome |
 | `/motionbrain/routine_result_typed` | publish | `motionbrain_msgs/msg/RoutineResult` | Stable guarded routine command result fields plus raw JSON |
 | `/motionbrain/routine_command` | service | `motionbrain_msgs/srv/GuardedRoutineCommand` | Request/response guarded routine boundary for status, dry-run, or abort; `run` is rejected by bridge policy |
+| `/motionbrain/guarded_routine` | action | `motionbrain_msgs/action/GuardedRoutine` | Action boundary for guarded routine status/dry-run clients; mirrors results to routine result topics and rejects `run` by bridge policy |
 | `/motionbrain/events` | publish | `std_msgs/String` | Raw `GET /events?limit=N` JSON |
 | `/motionbrain/events_typed` | publish | `motionbrain_msgs/msg/MotionEvent` | One typed message per ESP32 event |
 | `/camera/detection` | publish | `std_msgs/String` | Color detection JSON from ESP32-CAM `/capture`, or Pi perception `/api/detection` when configured |
@@ -80,7 +81,9 @@ HTTP boundary, but rejects `run`/`execute` locally with
 `routine_execute_disabled_by_bridge_policy`. The firmware executor is still
 disabled by policy and `queue_apply_allowed=false` remains visible on
 `/motionbrain/routine_typed`. The `/motionbrain/routine_command` service uses
-the same policy and result schema for request/response clients.
+the same policy and result schema for request/response clients. The
+`/motionbrain/guarded_routine` action uses the same policy for action clients
+that expect feedback and a terminal result.
 
 `/motionbrain/diagnostics` is a read-only ROS standard diagnostics view. It does
 not poll extra endpoints or send commands; it summarizes the latest bridge poll
@@ -203,6 +206,17 @@ ros2 service call /motionbrain/routine_command \
   motionbrain_msgs/srv/GuardedRoutineCommand \
   "{action: dry_run, routine_name: inspect}"
 ```
+
+The same boundary is available as an action for clients that prefer goal,
+feedback, and result semantics:
+
+```bash
+ros2 action send_goal /motionbrain/guarded_routine \
+  motionbrain_msgs/action/GuardedRoutine "{action: status}"
+```
+
+`run` and `execute` goals return a terminal result with
+`routine_execute_disabled_by_bridge_policy` and are not forwarded.
 
 From the repository root, capture text evidence and optional read-only rosbag
 evidence from the Pi:

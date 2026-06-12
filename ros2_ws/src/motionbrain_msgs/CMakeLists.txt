@@ -6,10 +6,12 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 find_package(ament_cmake REQUIRED)
+find_package(action_msgs REQUIRED)
 find_package(builtin_interfaces REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
+  "action/GuardedRoutine.action"
   "msg/CameraDetection.msg"
   "msg/ControlGuard.msg"
   "msg/KinematicsState.msg"
@@ -23,7 +25,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/RoutineResult.msg"
   "msg/RoutineStatus.msg"
   "srv/GuardedRoutineCommand.srv"
-  DEPENDENCIES builtin_interfaces
+  DEPENDENCIES action_msgs builtin_interfaces
 )
 
 ament_export_dependencies(rosidl_default_runtime)

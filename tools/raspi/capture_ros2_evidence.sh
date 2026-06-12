@@ -9,6 +9,7 @@ CAPTURE_COMPAT_JSON="${CAPTURE_COMPAT_JSON:-1}"
 CAPTURE_MISSION_BOUNDARY="${CAPTURE_MISSION_BOUNDARY:-0}"
 CAPTURE_ROUTINE_COMMAND_BOUNDARY="${CAPTURE_ROUTINE_COMMAND_BOUNDARY:-0}"
 CAPTURE_ROUTINE_SERVICE_BOUNDARY="${CAPTURE_ROUTINE_SERVICE_BOUNDARY:-0}"
+CAPTURE_ROUTINE_ACTION_BOUNDARY="${CAPTURE_ROUTINE_ACTION_BOUNDARY:-0}"
 CAPTURE_ROSBAG="${CAPTURE_ROSBAG:-0}"
 ROSBAG_DURATION_SECONDS="${ROSBAG_DURATION_SECONDS:-10}"
 COMMAND_ECHO_SETTLE_SECONDS="${COMMAND_ECHO_SETTLE_SECONDS:-1}"
@@ -130,6 +131,40 @@ capture_service_result() {
   fi
 }
 
+capture_action_result() {
+  local label="$1"
+  local action_name="$2"
+  local action_type="$3"
+  local action_goal="$4"
+  shift 4
+  local expected_patterns=("$@")
+  local action_output
+  local rc=0
+  local missing=0
+
+  section "${label}"
+  action_output="$(mktemp)"
+  printf '+ timeout %q ros2 action send_goal %q %q %q\n' \
+    "${SAMPLE_TIMEOUT_SECONDS}" "${action_name}" "${action_type}" "${action_goal}"
+  set +e
+  timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 action send_goal \
+    "${action_name}" "${action_type}" "${action_goal}" > "${action_output}" 2>&1
+  rc=$?
+  set -e
+  cat "${action_output}"
+  for pattern in "${expected_patterns[@]}"; do
+    if ! grep -Fq "${pattern}" "${action_output}"; then
+      echo "FAIL ${label}: missing expected output pattern: ${pattern}"
+      missing=$((missing + 1))
+    fi
+  done
+  rm -f "${action_output}"
+  if (( rc != 0 || missing != 0 )); then
+    echo "FAIL ${label}: action exit ${rc}, missing ${missing}"
+    failures=$((failures + 1))
+  fi
+}
+
 capture_rosbag() {
   local rc=0
   local topics=(
@@ -224,8 +259,10 @@ run_step "Bridge health check" env \
 run_step "MotionBrain ROS2 packages" bash -lc "ros2 pkg list | grep '^motionbrain'"
 run_step "MotionBrain ROS2 interfaces" bash -lc "ros2 interface list | grep 'motionbrain_msgs/msg'"
 run_step "MotionBrain ROS2 services" bash -lc "ros2 interface list | grep 'motionbrain_msgs/srv'"
+run_step "MotionBrain ROS2 actions" bash -lc "ros2 interface list | grep 'motionbrain_msgs/action'"
 run_step "ROS2 topic list" ros2 topic list
 run_step "ROS2 service list" ros2 service list
+run_step "ROS2 action list" ros2 action list
 
 capture_topic "/motionbrain/status_typed"
 capture_topic "/motionbrain/routine_typed"
@@ -284,6 +321,18 @@ if [[ "${CAPTURE_ROUTINE_SERVICE_BOUNDARY}" == "1" ]]; then
 
   capture_service_result "Routine command service run rejection result" \
     /motionbrain/routine_command motionbrain_msgs/srv/GuardedRoutineCommand \
+    "{action: run, routine_name: inspect, confirm_code: confirm-inspect}" \
+    "success=False" "forwarded=False" "routine_execute_disabled_by_bridge_policy"
+fi
+
+if [[ "${CAPTURE_ROUTINE_ACTION_BOUNDARY}" == "1" ]]; then
+  capture_action_result "Guarded routine action status result" \
+    /motionbrain/guarded_routine motionbrain_msgs/action/GuardedRoutine \
+    "{action: status}" \
+    "success=True" "action='status'" "forwarded=True"
+
+  capture_action_result "Guarded routine action run rejection result" \
+    /motionbrain/guarded_routine motionbrain_msgs/action/GuardedRoutine \
     "{action: run, routine_name: inspect, confirm_code: confirm-inspect}" \
     "success=False" "forwarded=False" "routine_execute_disabled_by_bridge_policy"
 fi
