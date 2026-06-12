@@ -27,10 +27,15 @@ class GuardedRoutineContractTest(unittest.TestCase):
         dispatcher = (ROOT / "src" / "control" / "dispatcher.cpp").read_text()
         executor_header = (ROOT / "src" / "control" / "guarded_routine_executor.h").read_text()
         executor_source = (ROOT / "src" / "control" / "guarded_routine_executor.cpp").read_text()
+        feedback_header = (ROOT / "src" / "control" / "hardware_feedback.h").read_text()
+        feedback_source = (ROOT / "src" / "control" / "hardware_feedback.cpp").read_text()
 
         self.assertIn("ROUTINE_DRY_RUN", dispatcher)
         self.assertIn("ROUTINE_CONFIRM_REQ", dispatcher)
         self.assertIn("ROUTINE_PREFLIGHT_BLOCK", dispatcher)
+        self.assertIn("GuardedRoutinePreflightResult::FEEDBACK_REQUIRED", dispatcher)
+        self.assertIn("HardwareFeedback::baseYawReferenceReadyForRoutineExecution", dispatcher)
+        self.assertIn("HardwareFeedback::routineBlockEventCode", dispatcher)
         self.assertIn("ROUTINE_EXECUTE_BLOCKED", dispatcher)
         self.assertIn("p=%s m=%s a=%u s=%u steps=%u", dispatcher)
         self.assertIn("requires operator confirmation code", dispatcher)
@@ -65,6 +70,26 @@ class GuardedRoutineContractTest(unittest.TestCase):
         self.assertIn("no active routine executor to abort", executor_source)
         self.assertIn("sequenceStarted(false)", executor_source)
         self.assertIn("executeImplemented() {\n  return false;", executor_source)
+        self.assertIn("enum class HardwareFeedbackFault", feedback_header)
+        self.assertIn("base_yaw_reference", feedback_source)
+        self.assertIn("ROUTINE_FEEDBACK_BLOCK", feedback_source)
+        self.assertIn("feedback_required", feedback_source)
+        self.assertIn("base_yaw_reference feedback not installed", feedback_source)
+        self.assertIn("physicalRoutineExecutionAllowed", feedback_source)
+        self.assertIn("readyForRoutineExecution", feedback_source)
+        for fault in [
+            "NOT_INSTALLED",
+            "DISCONNECTED",
+            "STALE",
+            "UNREFERENCED",
+            "FAULTED",
+            "NO_PROGRESS",
+            "TIMEOUT",
+            "OVERSHOOT",
+        ]:
+            with self.subTest(fault=fault):
+                self.assertIn(fault, feedback_header)
+                self.assertIn(fault, feedback_source)
 
     def test_http_and_serial_expose_same_routine_boundary(self):
         web_server = (ROOT / "src" / "network" / "web_server.cpp").read_text()
@@ -77,6 +102,11 @@ class GuardedRoutineContractTest(unittest.TestCase):
         self.assertIn("CommandType::ROUTINE_DRY_RUN", web_server)
         self.assertIn("routineConfirmCode", web_server)
         self.assertIn("GuardedRoutine::evaluateExecutePreflight", web_server)
+        self.assertIn("HardwareFeedback::appendStatusJson", web_server)
+        self.assertIn("HardwareFeedback::baseYawReferenceReadyForRoutineExecution", web_server)
+        self.assertIn("feedbackRequired", web_server)
+        self.assertIn("feedbackReady", web_server)
+        self.assertIn("feedbackBlockReason", web_server)
         self.assertIn("GuardedRoutineExecutor::appendReportJson", web_server)
         self.assertIn("GuardedRoutineExecutor::appendPolicyJson", web_server)
         self.assertIn("CommandType::ROUTINE_ABORT", web_server)
@@ -163,6 +193,10 @@ class GuardedRoutineContractTest(unittest.TestCase):
         self.assertIn("base_yaw_reference", doc)
         self.assertIn("feedback_required", doc)
         self.assertIn("ROUTINE_FEEDBACK_BLOCK", doc)
+        self.assertIn('"feedback"', doc)
+        self.assertIn('"feedbackRequired": true', doc)
+        self.assertIn('"feedbackReady": false', doc)
+        self.assertIn('"fault": "not_installed"', doc)
 
     def test_hardware_feedback_gap_spec_blocks_physical_routine_execution(self):
         spec = (ROOT / "docs" / "HARDWARE_FEEDBACK_GAP.md").read_text()
@@ -194,6 +228,11 @@ class GuardedRoutineContractTest(unittest.TestCase):
             "limit switch",
             "encoder",
             "The executor should stay disabled through steps 1-6.",
+            "Current Firmware Scaffold",
+            "GET /status",
+            "GET /routine",
+            "routine command responses",
+            "not_installed",
         ]
         for fragment in required_fragments:
             with self.subTest(fragment=fragment):

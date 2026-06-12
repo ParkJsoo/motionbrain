@@ -203,7 +203,9 @@ GuardedRoutineExecutePreflight GuardedRoutine::evaluateExecutePreflight(
     bool motionClear,
     bool faultClear,
     bool noActiveSequence,
-    bool perceptionReady) {
+    bool perceptionReady,
+    bool feedbackReady) {
+  const bool feedbackRequired = requiresFeedbackForExecute(plan);
   GuardedRoutineExecutePreflight preflight = {
     operatorConfirmed,
     stateAllowsExecute,
@@ -211,6 +213,8 @@ GuardedRoutineExecutePreflight GuardedRoutine::evaluateExecutePreflight(
     faultClear,
     noActiveSequence,
     perceptionReady,
+    feedbackRequired,
+    feedbackReady,
     false,
     GuardedRoutinePreflightResult::EXECUTE_BLOCKED
   };
@@ -227,12 +231,23 @@ GuardedRoutineExecutePreflight GuardedRoutine::evaluateExecutePreflight(
     preflight.result = GuardedRoutinePreflightResult::SEQUENCE_ACTIVE;
   } else if (plan.perceptionRequired && !perceptionReady) {
     preflight.result = GuardedRoutinePreflightResult::PERCEPTION_REQUIRED;
+  } else if (feedbackRequired && !feedbackReady) {
+    preflight.result = GuardedRoutinePreflightResult::FEEDBACK_REQUIRED;
   } else {
     preflight.executeReady = true;
     preflight.result = GuardedRoutinePreflightResult::EXECUTE_BLOCKED;
   }
 
   return preflight;
+}
+
+bool GuardedRoutine::requiresFeedbackForExecute(const GuardedRoutinePlan& plan) {
+  for (uint8_t i = 0; i < plan.stepCount; ++i) {
+    if (plan.steps[i].kind == GuardedRoutineStepKind::MOTION) {
+      return true;
+    }
+  }
+  return false;
 }
 
 void GuardedRoutine::appendPlanJson(String& json, const GuardedRoutinePlan& plan) {
@@ -272,6 +287,8 @@ void GuardedRoutine::appendPlanJson(String& json, const GuardedRoutinePlan& plan
   json += plan.requiresMotionClearForExecute ? "true" : "false";
   json += ",\"perceptionRequired\":";
   json += plan.perceptionRequired ? "true" : "false";
+  json += ",\"feedbackRequiredForExecute\":";
+  json += requiresFeedbackForExecute(plan) ? "true" : "false";
   json += ",\"stepCount\":";
   json += String(plan.stepCount);
   json += ",\"steps\":[";
@@ -346,6 +363,7 @@ const char* GuardedRoutine::preflightResultToString(GuardedRoutinePreflightResul
     case GuardedRoutinePreflightResult::FAULT_LATCHED:         return "fault_latched";
     case GuardedRoutinePreflightResult::SEQUENCE_ACTIVE:       return "sequence_active";
     case GuardedRoutinePreflightResult::PERCEPTION_REQUIRED:   return "perception_required";
+    case GuardedRoutinePreflightResult::FEEDBACK_REQUIRED:     return "feedback_required";
     case GuardedRoutinePreflightResult::EXECUTE_BLOCKED:       return "execute_blocked";
     default:                                                   return "unknown";
   }

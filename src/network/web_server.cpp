@@ -10,6 +10,7 @@
 #include "control/dispatcher.h"
 #include "control/guarded_routine.h"
 #include "control/guarded_routine_executor.h"
+#include "control/hardware_feedback.h"
 #include "safety/safety_monitor.h"
 #include "input/teleop_adapter.h"
 #include "system/system_init.h"       // SystemStateManager 사용
@@ -198,6 +199,8 @@ void MotionBrainWebServer::appendStateSummaryJson(String& json) const {
   json += ",\"baseAngleReason\":\"";
   json += angleController.getLastStopReasonString();
   json += "\",";
+  HardwareFeedback::appendStatusJson(json, &angleController);
+  json += ",";
   appendRecoveryJson(json);
   if (dispatcher_ != nullptr) {
     json += ",";
@@ -981,6 +984,9 @@ void MotionBrainWebServer::handleStatus() {
   json += String(angleController.getLastTransitionMs());
   json += "}";
 
+  json += ",";
+  HardwareFeedback::appendStatusJson(json, &angleController);
+
   json += ",\"teleop\":{";
   json += "\"connected\":";
   json += teleopAdapter.isConnected() ? "true" : "false";
@@ -1687,6 +1693,8 @@ void MotionBrainWebServer::handleRoutine() {
   const bool noActiveSequence =
     motionSequence_ == nullptr || motionSequence_->getState() != SequenceState::RUNNING;
   const bool perceptionReady = hasPlan && !plan.perceptionRequired;
+  const bool feedbackReady =
+    HardwareFeedback::baseYawReferenceReadyForRoutineExecution(&angleController);
   const char* sequenceState =
     motionSequence_ != nullptr ? MotionSequence::stateToString(motionSequence_->getState()) : "UNKNOWN";
   GuardedRoutineExecutePreflight preflight = {
@@ -1696,6 +1704,8 @@ void MotionBrainWebServer::handleRoutine() {
     faultClear,
     noActiveSequence,
     perceptionReady,
+    hasPlan && GuardedRoutine::requiresFeedbackForExecute(plan),
+    feedbackReady,
     false,
     GuardedRoutinePreflightResult::DRY_RUN_ONLY
   };
@@ -1707,7 +1717,8 @@ void MotionBrainWebServer::handleRoutine() {
                                                          motionClear,
                                                          faultClear,
                                                          noActiveSequence,
-                                                         perceptionReady);
+                                                         perceptionReady,
+                                                         feedbackReady);
     preflightResult = GuardedRoutine::preflightResultToString(preflight.result);
   } else if (!hasPlan) {
     preflightResult = "unknown_routine";
@@ -1747,6 +1758,13 @@ void MotionBrainWebServer::handleRoutine() {
   extra += sequenceState;
   extra += "\",\"perceptionReady\":";
   extra += preflight.perceptionReady ? "true" : "false";
+  extra += ",\"feedbackRequired\":";
+  extra += preflight.feedbackRequired ? "true" : "false";
+  extra += ",\"feedbackReady\":";
+  extra += preflight.feedbackReady ? "true" : "false";
+  extra += ",\"feedbackBlockReason\":\"";
+  extra += HardwareFeedback::routineBlockReason();
+  extra += "\"";
   extra += ",\"executeReady\":";
   extra += preflight.executeReady ? "true" : "false";
   extra += ",\"result\":\"";

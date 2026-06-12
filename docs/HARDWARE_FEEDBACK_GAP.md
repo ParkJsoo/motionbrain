@@ -109,6 +109,48 @@ The same state must be reflected in:
 - ROS2 diagnostics or typed status
 - evidence helper output
 
+## Current Firmware Scaffold
+
+The current firmware scaffold implements the first read-only status layer:
+
+- `src/control/hardware_feedback.h`
+- `src/control/hardware_feedback.cpp`
+
+It reports the selected closure target as `base_yaw_reference` and exposes the
+current state as `not_installed`. This is intentionally conservative:
+
+```json
+{
+  "feedback": {
+    "schemaVersion": "feedback.v0",
+    "selectedClosureTarget": "base_yaw_reference",
+    "physicalRoutineExecutionAllowed": false,
+    "readyForRoutineExecution": false,
+    "blockReason": "feedback_required",
+    "baseYaw": {
+      "installed": false,
+      "available": false,
+      "connected": false,
+      "fresh": false,
+      "referenced": false,
+      "faulted": true,
+      "readyForRoutineExecution": false,
+      "lastStopReason": "NOT_INSTALLED",
+      "fault": "not_installed"
+    }
+  }
+}
+```
+
+`GET /status`, `GET /routine`, and routine command responses expose this
+read-only object. Motion-step routines now include feedback readiness in
+`executePreflight`; if all earlier gates pass but `base_yaw_reference` is not
+ready, the routine is blocked with `feedback_required` and the event log uses
+`ROUTINE_FEEDBACK_BLOCK`.
+
+The scaffold does not read real feedback hardware yet and does not enable the
+executor.
+
 ## Mandatory Blocks
 
 Routine `run` or `execute` must remain blocked if any of these are true:
@@ -178,10 +220,12 @@ is closed.
 Recommended next implementation sequence:
 
 1. Add a firmware-side read-only feedback status model for
-   `base_yaw_reference`.
-2. Publish that model through `GET /status` and `GET /routine`.
+   `base_yaw_reference`. Done for the `not_installed` scaffold.
+2. Publish that model through `GET /status` and `GET /routine`. Done for the
+   read-only scaffold.
 3. Add block reasons and events for stale, disconnected, unreferenced, timeout,
-   no-progress, and faulted feedback.
+   no-progress, and faulted feedback. Done for the enum/contract surface;
+   hardware-backed transitions remain future work.
 4. Mirror feedback readiness into dashboard and ROS2 diagnostics.
 5. Extend tests so routine execution remains blocked while feedback is not
    ready.

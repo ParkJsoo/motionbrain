@@ -49,6 +49,7 @@ enum class GuardedRoutinePreflightResult : uint8_t {
   FAULT_LATCHED,
   SEQUENCE_ACTIVE,
   PERCEPTION_REQUIRED,
+  FEEDBACK_REQUIRED,
   EXECUTE_BLOCKED
 };
 
@@ -59,6 +60,8 @@ struct GuardedRoutineExecutePreflight {
   bool faultClear;
   bool noActiveSequence;
   bool perceptionReady;
+  bool feedbackRequired;
+  bool feedbackReady;
   bool executeReady;
   GuardedRoutinePreflightResult result;
 };
@@ -76,8 +79,10 @@ public:
     bool motionClear,
     bool faultClear,
     bool noActiveSequence,
-    bool perceptionReady);
+    bool perceptionReady,
+    bool feedbackReady);
 
+  static bool requiresFeedbackForExecute(const GuardedRoutinePlan& plan);
   static void appendPlanJson(String& json, const GuardedRoutinePlan& plan);
   static void appendRoutineListJson(String& json);
 

@@ -8,6 +8,7 @@
 #include "control/event_log.h"
 #include "control/guarded_routine.h"
 #include "control/guarded_routine_executor.h"
+#include "control/hardware_feedback.h"
 #include "control/safety_gate.h"
 #include "debug/debug_log.h"
 #include "motion/robot_arm.h"
@@ -443,6 +444,8 @@ bool Dispatcher::execute(const Command& command, CommandResult& result) {
       const bool noActiveSequence =
         motionSequence_ == nullptr || motionSequence_->getState() != SequenceState::RUNNING;
       const bool perceptionReady = !plan.perceptionRequired;
+      const bool feedbackReady =
+        HardwareFeedback::baseYawReferenceReadyForRoutineExecution(angleController_);
       const GuardedRoutineExecutePreflight preflight =
         GuardedRoutine::evaluateExecutePreflight(plan,
                                                  operatorConfirmed,
@@ -450,7 +453,8 @@ bool Dispatcher::execute(const Command& command, CommandResult& result) {
                                                  motionClear,
                                                  faultClear,
                                                  noActiveSequence,
-                                                 perceptionReady);
+                                                 perceptionReady,
+                                                 feedbackReady);
       const char* preflightResult = GuardedRoutine::preflightResultToString(preflight.result);
 
       if (preflight.result == GuardedRoutinePreflightResult::CONFIRM_REQUIRED) {
@@ -460,6 +464,25 @@ bool Dispatcher::execute(const Command& command, CommandResult& result) {
         success = false;
         setResult(result, command.id, false,
                   "Routine '%s' requires operator confirmation code", plan.name);
+        break;
+      }
+
+      if (preflight.result == GuardedRoutinePreflightResult::FEEDBACK_REQUIRED) {
+        const BaseYawReferenceFeedback feedback =
+          HardwareFeedback::baseYawReferenceStatus(angleController_);
+        char detail[128] = {0};
+        snprintf(detail, sizeof(detail), "name=%s result=%s target=%s fault=%s",
+                 plan.name,
+                 preflightResult,
+                 HardwareFeedback::selectedClosureTarget(),
+                 HardwareFeedback::faultToString(feedback.fault));
+        eventLog.push("routine",
+                      HardwareFeedback::routineBlockEventCode(),
+                      EventSeverity::WARN,
+                      detail);
+        success = false;
+        setResult(result, command.id, false,
+                  "Routine '%s' preflight blocked: %s", plan.name, preflightResult);
         break;
       }
 

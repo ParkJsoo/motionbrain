@@ -449,6 +449,29 @@ base 상대각 제어는 다음 종료 이유를 가진다.
   "faultReason": "NONE",
   "baseAngleActive": false,
   "baseAngleReason": "NONE",
+  "feedback": {
+    "schemaVersion": "feedback.v0",
+    "selectedClosureTarget": "base_yaw_reference",
+    "physicalRoutineExecutionAllowed": false,
+    "readyForRoutineExecution": false,
+    "blockReason": "feedback_required",
+    "detail": "base_yaw_reference feedback not installed; physical routine execution disabled",
+    "baseYaw": {
+      "installed": false,
+      "available": false,
+      "connected": false,
+      "fresh": false,
+      "referenced": false,
+      "faulted": true,
+      "readyForRoutineExecution": false,
+      "ageMs": 0,
+      "lastUpdateMs": 0,
+      "positionDeg": 0.0,
+      "velocityDps": 0.0,
+      "lastStopReason": "NOT_INSTALLED",
+      "fault": "not_installed"
+    }
+  },
   "recovery": {
     "action": "none",
     "canRecoverToIdle": false,
@@ -489,6 +512,24 @@ base 상대각 제어는 다음 종료 이유를 가진다.
   "faultReason": "NONE",
   "baseAngleActive": false,
   "baseAngleReason": "NONE",
+  "feedback": {
+    "schemaVersion": "feedback.v0",
+    "selectedClosureTarget": "base_yaw_reference",
+    "physicalRoutineExecutionAllowed": false,
+    "readyForRoutineExecution": false,
+    "blockReason": "feedback_required",
+    "baseYaw": {
+      "installed": false,
+      "available": false,
+      "connected": false,
+      "fresh": false,
+      "referenced": false,
+      "faulted": true,
+      "readyForRoutineExecution": false,
+      "lastStopReason": "NOT_INSTALLED",
+      "fault": "not_installed"
+    }
+  },
   "recovery": {
     "action": "none",
     "canRecoverToIdle": false,
@@ -658,6 +699,9 @@ preflight 판단의 근거를 표시하기 위한 읽기 전용 요약이다. `s
     "noActiveSequence": true,
     "sequenceState": "IDLE",
     "perceptionReady": true,
+    "feedbackRequired": true,
+    "feedbackReady": false,
+    "feedbackBlockReason": "feedback_required",
     "executeReady": false,
     "result": "dry_run_only"
   },
@@ -792,7 +836,11 @@ preflight 판단의 근거를 표시하기 위한 읽기 전용 요약이다. `s
 - `executionPolicy.mode` 는 현재 skeleton에서 항상 `dry_run_only` 이다.
 - `run` 응답의 `executePreflight.result` 는 `confirm_required`,
   `state_not_armed`, `motion_blocked`, `fault_latched`, `sequence_active`,
-  `perception_required`, `execute_blocked` 중 하나다.
+  `perception_required`, `feedback_required`, `execute_blocked` 중 하나다.
+- 현재 firmware feedback scaffold에서는 motion step이 있는 routine이
+  confirmation/state/safety/fault/sequence/perception gate를 통과해도
+  `base_yaw_reference` 가 `not_installed` 이므로 `feedback_required` 로 막힌다.
+  이때 event log에는 `ROUTINE_FEEDBACK_BLOCK` 을 남긴다.
 - `executePreflight.executeReady=true` 는 preflight만 통과했다는 뜻이다.
   현재 skeleton에서는 그래도 `executeImplemented=false` 이므로 실제 execute는
   실패해야 한다.
