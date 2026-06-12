@@ -140,6 +140,11 @@ PY
   export LD_LIBRARY_PATH="${EXTRA_ROS_PREFIX}/lib:${LD_LIBRARY_PATH:-}"
   export PATH="${EXTRA_ROS_PREFIX}/bin:${PATH:-}"
   export PYTHONPATH="${EXTRA_ROS_PREFIX}/${python_site}:${PYTHONPATH:-}"
+  if [[ -d "${EXTRA_ROS_PREFIX}/opt" ]]; then
+    while IFS= read -r vendor_lib_dir; do
+      export LD_LIBRARY_PATH="${vendor_lib_dir}:${LD_LIBRARY_PATH:-}"
+    done < <(find "${EXTRA_ROS_PREFIX}/opt" -type d -name lib)
+  fi
 fi
 source "${WORKSPACE}/install/setup.bash"
 export ROS_DOMAIN_ID="${MOCK_ROS_DOMAIN_ID}"
@@ -198,7 +203,7 @@ section "Wait for controller manager"
 deadline=$((SECONDS + MOCK_STARTUP_TIMEOUT_SECONDS))
 controller_ready=0
 while (( SECONDS < deadline )); do
-  if ros2 control list_controllers >/tmp/motionbrain_mock_controllers.$$ 2>&1; then
+  if timeout 5 ros2 control list_controllers >/tmp/motionbrain_mock_controllers.$$ 2>&1; then
     controller_ready=1
     break
   fi
@@ -214,11 +219,11 @@ fi
 
 capture_step "Controller list" \
   "joint_state_broadcaster" "active" "motionbrain_arm_controller" "active" -- \
-  ros2 control list_controllers
+  timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 control list_controllers
 
 capture_step "Hardware interfaces" \
   "base_yaw_joint/position" "shoulder_pitch_joint/position" "gripper_joint/position" -- \
-  ros2 control list_hardware_interfaces
+  timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 control list_hardware_interfaces
 
 capture_step "Mock joint states" \
   "base_yaw_joint" "shoulder_pitch_joint" "gripper_joint" -- \
