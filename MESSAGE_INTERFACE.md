@@ -920,6 +920,27 @@ motionbrain_status_node
 - `sub /motionbrain/mission_cmd_typed` -> `motionbrain_msgs/msg/MissionCommand`
 - `pub /motionbrain/mission_state` -> mission state JSON
 - `pub /motionbrain/mission_state_typed` -> `motionbrain_msgs/msg/MissionState`
+- `pub /motionbrain/routine` -> raw read-only `GET /routine` JSON
+- `pub /motionbrain/routine_typed` -> `motionbrain_msgs/msg/RoutineStatus`
+- `sub /motionbrain/routine_cmd` -> routine command string/JSON compatibility
+- `sub /motionbrain/routine_cmd_typed` -> `motionbrain_msgs/msg/RoutineCommand`
+- `pub /motionbrain/routine_result` -> routine command result JSON
+- `pub /motionbrain/routine_result_typed` -> `motionbrain_msgs/msg/RoutineResult`
+
+서비스:
+
+- `/motionbrain/routine_command` ->
+  `motionbrain_msgs/srv/GuardedRoutineCommand`
+
+ROS2 routine command 규칙:
+
+- topic과 service 경계 모두 `status`, `dry_run <name>`, `abort`만 ESP32 HTTP
+  boundary로 전달한다.
+- `run|execute`는 ROS2 bridge에서
+  `routine_execute_disabled_by_bridge_policy`로 로컬 거부하며
+  `forwarded=false`를 반환한다.
+- 이 service는 request/response client를 위한 경계일 뿐이며, firmware executor
+  policy는 계속 `queueApplyAllowed=false`와 disabled executor 상태를 따른다.
 
 2026-05-26 실기 검증:
 

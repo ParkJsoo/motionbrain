@@ -23,6 +23,12 @@ debugging and schema evolution.
 | `motionbrain_msgs/msg/RoutineResult` | Guarded routine command result, bridge policy outcome, and raw response JSON |
 | `motionbrain_msgs/msg/RoutineStatus` | Guarded routine readiness, executor policy/state, sensor/teleop/safety diagnostics, and raw `/routine` JSON |
 
+## Services
+
+| Service | Purpose |
+| --- | --- |
+| `motionbrain_msgs/srv/GuardedRoutineCommand` | Request/response guarded routine command boundary for `status`, `dry_run`, and `abort`; `run`/`execute` remains locally rejected by bridge policy |
+
 ## Build
 
 ```bash
@@ -30,4 +36,5 @@ cd ros2_ws
 colcon build --packages-select motionbrain_msgs
 source install/setup.bash
 ros2 interface show motionbrain_msgs/msg/MotionStatus
+ros2 interface show motionbrain_msgs/srv/GuardedRoutineCommand
 ```

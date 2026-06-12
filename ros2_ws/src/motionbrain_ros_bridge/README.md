@@ -25,6 +25,7 @@ The original JSON topics remain available for debugging, while typed
 | `/motionbrain/routine_cmd_typed` | subscribe | `motionbrain_msgs/msg/RoutineCommand` | Typed guarded routine command input for status, dry-run, or abort |
 | `/motionbrain/routine_result` | publish | `std_msgs/String` | Raw guarded routine command result and bridge policy outcome |
 | `/motionbrain/routine_result_typed` | publish | `motionbrain_msgs/msg/RoutineResult` | Stable guarded routine command result fields plus raw JSON |
+| `/motionbrain/routine_command` | service | `motionbrain_msgs/srv/GuardedRoutineCommand` | Request/response guarded routine boundary for status, dry-run, or abort; `run` is rejected by bridge policy |
 | `/motionbrain/events` | publish | `std_msgs/String` | Raw `GET /events?limit=N` JSON |
 | `/motionbrain/events_typed` | publish | `motionbrain_msgs/msg/MotionEvent` | One typed message per ESP32 event |
 | `/camera/detection` | publish | `std_msgs/String` | Color detection JSON from ESP32-CAM `/capture`, or Pi perception `/api/detection` when configured |
@@ -77,7 +78,8 @@ bridge forwards `status`, `dry_run <name>`, and `abort` to the token-gated ESP32
 HTTP boundary, but rejects `run`/`execute` locally with
 `routine_execute_disabled_by_bridge_policy`. The firmware executor is still
 disabled by policy and `queue_apply_allowed=false` remains visible on
-`/motionbrain/routine_typed`.
+`/motionbrain/routine_typed`. The `/motionbrain/routine_command` service uses
+the same policy and result schema for request/response clients.
 
 ## Build
 
@@ -178,6 +180,22 @@ ros2 topic pub --once --wait-matching-subscriptions 1 /motionbrain/routine_cmd_t
 ```
 
 `run` and `execute` requests are not forwarded by this bridge.
+
+The same non-motion boundary is available as a service:
+
+```bash
+ros2 service call /motionbrain/routine_command \
+  motionbrain_msgs/srv/GuardedRoutineCommand "{action: status}"
+```
+
+Dry-run through the service still uses the ESP32 token-gated routine dry-run
+endpoint and does not start the executor:
+
+```bash
+ros2 service call /motionbrain/routine_command \
+  motionbrain_msgs/srv/GuardedRoutineCommand \
+  "{action: dry_run, routine_name: inspect}"
+```
 
 From the repository root, capture text evidence and optional read-only rosbag
 evidence from the Pi:

@@ -21,6 +21,10 @@ required_topics=(
   "/motionbrain/mission_state_typed"
 )
 
+required_services=(
+  "/motionbrain/routine_command"
+)
+
 if [[ "${CHECK_SERVICE}" == "1" ]]; then
   if ! systemctl is-active --quiet "${SERVICE_NAME}"; then
     echo "FAIL service inactive: ${SERVICE_NAME}" >&2
@@ -53,6 +57,24 @@ for topic in "${required_topics[@]}"; do
   echo "OK topic: ${topic}"
 done
 
+for service in "${required_services[@]}"; do
+  service_deadline=$((SECONDS + TOPIC_WAIT_SECONDS))
+  services=""
+  while (( SECONDS <= service_deadline )); do
+    services="$(timeout 8 ros2 service list || true)"
+    if grep -qx "${service}" <<< "${services}"; then
+      break
+    fi
+    sleep "${TOPIC_POLL_SECONDS}"
+  done
+  if ! grep -qx "${service}" <<< "${services}"; then
+    echo "FAIL missing service: ${service}" >&2
+    echo "${services}" >&2
+    exit 1
+  fi
+  echo "OK service: ${service}"
+done
+
 timeout 10 ros2 topic echo /motionbrain/status_typed --once >/dev/null
 echo "OK status typed sample"
 
@@ -61,6 +83,15 @@ echo "OK routine diagnostics sample"
 
 timeout 10 ros2 topic echo /motionbrain/routine_typed --once >/dev/null
 echo "OK routine typed diagnostics sample"
+
+routine_service_sample="$(timeout 10 ros2 service call /motionbrain/routine_command \
+  motionbrain_msgs/srv/GuardedRoutineCommand "{action: status}")"
+if ! grep -Eq 'success[:=][[:space:]]*(true|True)' <<< "${routine_service_sample}"; then
+  echo "FAIL routine command service status sample is not success=true" >&2
+  echo "${routine_service_sample}" >&2
+  exit 1
+fi
+echo "OK routine command service status sample"
 
 camera_detection_sample="$(timeout 10 ros2 topic echo /camera/detection_typed --once)"
 if [[ "${STRICT_CAMERA_AVAILABLE}" == "1" ]] && ! grep -Eq '^available: true$' <<< "${camera_detection_sample}"; then

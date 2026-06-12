@@ -299,6 +299,8 @@ Capture these artifacts after bring-up:
 - `ros2 topic echo /motionbrain/control_guard_typed` output
 - `ros2 topic echo /motionbrain/mission_state_typed` output
 - `ros2 topic echo /motionbrain/events` output
+- `ros2 service call /motionbrain/routine_command ...` output for read-only
+  routine status
 - `ros2 topic echo /camera/detection` output
 - `ros2 topic echo /camera/detection_typed` output
 - Optional read-only rosbag capture from
@@ -326,6 +328,17 @@ detection, joint state, kinematics, control guard, and mission state topics. It
 does not publish command topics. Keep command-boundary captures under their
 separate opt-in flags, and do not run physical command captures unless that
 specific actuator action is intended.
+
+For the request/response routine service boundary, opt in explicitly:
+
+```bash
+CAPTURE_ROUTINE_SERVICE_BOUNDARY=1 CAPTURE_COMPAT_JSON=0 \
+  tools/raspi/capture_ros2_evidence.sh
+```
+
+That service capture checks a read-only `status` request and a bridge-local
+`run` rejection. The `run` rejection must report
+`routine_execute_disabled_by_bridge_policy` with `forwarded=false`.
 
 ## Flash Ubuntu
 

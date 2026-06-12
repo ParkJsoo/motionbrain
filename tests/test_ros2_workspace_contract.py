@@ -42,6 +42,10 @@ EXPECTED_MESSAGE_FILES = {
     "RoutineStatus.msg",
 }
 
+EXPECTED_SERVICE_FILES = {
+    "GuardedRoutineCommand.srv",
+}
+
 EXPECTED_PACKAGE_TEST_FILES = {
     "motionbrain_control/test/test_control_guard_logic.cpp",
     "motionbrain_mission/test/test_mission_flow.py",
@@ -140,6 +144,37 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
             with self.subTest(message_file=message_file):
                 self.assertIn(f'"msg/{message_file}"', cmake_text)
 
+    def test_motionbrain_service_inventory_is_explicit(self):
+        service_files = {
+            path.name
+            for path in (ROS2_SRC / "motionbrain_msgs" / "srv").iterdir()
+            if path.suffix == ".srv"
+        }
+        self.assertEqual(EXPECTED_SERVICE_FILES, service_files)
+
+        cmake_text = (ROS2_SRC / "motionbrain_msgs" / "CMakeLists.txt").read_text()
+        for service_file in EXPECTED_SERVICE_FILES:
+            with self.subTest(service_file=service_file):
+                self.assertIn(f'"srv/{service_file}"', cmake_text)
+
+        service_text = (
+            ROS2_SRC
+            / "motionbrain_msgs"
+            / "srv"
+            / "GuardedRoutineCommand.srv"
+        ).read_text()
+        expected_fields = [
+            "string action",
+            "string routine_name",
+            "string confirm_code",
+            "string raw_json",
+            "bool success",
+            "bool forwarded",
+        ]
+        for field in expected_fields:
+            with self.subTest(field=field):
+                self.assertIn(field, service_text)
+
     def test_health_check_covers_runtime_topics(self):
         script_text = (REPO_ROOT / "tools" / "raspi" / "check_ros_bridge_health.sh").read_text()
         required_block = re.search(r"required_topics=\(\n(?P<body>.*?)\n\)", script_text, re.S)
@@ -154,6 +189,10 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
 
         self.assertIn("OK routine diagnostics sample", script_text)
         self.assertIn("OK routine typed diagnostics sample", script_text)
+        self.assertIn("/motionbrain/routine_command", script_text)
+        self.assertIn("motionbrain_msgs/srv/GuardedRoutineCommand", script_text)
+        self.assertIn("success[:=][[:space:]]*(true|True)", script_text)
+        self.assertIn("OK routine command service status sample", script_text)
 
     def test_status_bridge_publishes_read_only_routine_diagnostics(self):
         bridge_text = (
@@ -188,6 +227,10 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
             '"/motionbrain/routine_cmd_typed"',
             'self.create_publisher(String, "/motionbrain/routine_result", 10)',
             '"/motionbrain/routine_result_typed"',
+            "self.create_service(",
+            "GuardedRoutineCommand",
+            '"/motionbrain/routine_command"',
+            "execute_routine_action",
             "routine_execute_disabled_by_bridge_policy",
             "ROS2 routine bridge forwards only status, dry_run, and abort",
             "post_motionbrain(self.motion_base_url, path, timeout, token)",
@@ -201,6 +244,14 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
             "CAPTURE_ROUTINE_COMMAND_BOUNDARY",
             "Routine command status result",
             "Routine command run rejection result",
+            "CAPTURE_ROUTINE_SERVICE_BOUNDARY",
+            "Routine command service status result",
+            "Routine command service run rejection result",
+            "motionbrain_msgs/srv/GuardedRoutineCommand",
+            "success=True",
+            "forwarded=True",
+            "success=False",
+            "forwarded=False",
             "{action: status}",
             "{action: run, routine_name: inspect, confirm_code: confirm-inspect}",
             "routine_execute_disabled_by_bridge_policy",
