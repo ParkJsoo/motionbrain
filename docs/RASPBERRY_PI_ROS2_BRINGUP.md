@@ -283,6 +283,8 @@ messages by default while keeping JSON compatibility topics.
   - `/motionbrain/mission_state_typed`
 - Text evidence:
   [docs/evidence/2026-05-30-ros2-typed-systemd.md](evidence/2026-05-30-ros2-typed-systemd.md)
+- Routine service boundary and read-only bag evidence:
+  [docs/evidence/2026-06-12-ros2-routine-service-boundary.md](evidence/2026-06-12-ros2-routine-service-boundary.md)
 
 ## Portfolio Evidence Checklist
 
