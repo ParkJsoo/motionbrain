@@ -210,6 +210,50 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, evidence_text)
 
+    def test_evidence_helper_has_read_only_rosbag_capture_option(self):
+        evidence_text = (REPO_ROOT / "tools" / "raspi" / "capture_ros2_evidence.sh").read_text()
+        rosbag_block = re.search(
+            r"capture_rosbag\(\) \{\n(?P<body>.*?)\n\}",
+            evidence_text,
+            re.S,
+        )
+        self.assertIsNotNone(rosbag_block)
+        rosbag_body = rosbag_block.group("body")
+
+        required_fragments = [
+            'CAPTURE_ROSBAG="${CAPTURE_ROSBAG:-0}"',
+            'ROSBAG_DURATION_SECONDS="${ROSBAG_DURATION_SECONDS:-10}"',
+            'ROSBAG_OUTPUT="${MOTIONBRAIN_ROSBAG_OUTPUT:-/tmp/motionbrain_ros2_bag_${STAMP}}"',
+            'section "ROS2 bag read-only capture"',
+            "timeout --signal=SIGINT",
+            "ros2 bag record",
+            "metadata.yaml",
+            'echo "ROS2 bag: ${ROSBAG_OUTPUT}"',
+        ]
+        for fragment in required_fragments:
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, evidence_text)
+
+        read_only_topics = {
+            "/motionbrain/status_typed",
+            "/motionbrain/routine_typed",
+            "/motionbrain/events_typed",
+            "/camera/detection_typed",
+            "/joint_states",
+            "/motionbrain/end_effector_pose",
+            "/motionbrain/kinematics_typed",
+            "/motionbrain/control_guard_typed",
+            "/motionbrain/mission_state_typed",
+        }
+        for topic in read_only_topics:
+            with self.subTest(topic=topic):
+                self.assertIn(f'"{topic}"', rosbag_body)
+
+        self.assertNotIn("/motionbrain/light_cmd", rosbag_body)
+        self.assertNotIn("/motionbrain/routine_cmd", rosbag_body)
+        self.assertNotIn("CAPTURE_MISSION_BOUNDARY", rosbag_body)
+        self.assertNotIn("CAPTURE_ROUTINE_COMMAND_BOUNDARY", rosbag_body)
+
     def test_mission_config_matches_supervisor_topic_contract(self):
         config_text = (
             ROS2_SRC

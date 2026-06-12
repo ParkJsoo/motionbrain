@@ -179,6 +179,19 @@ ros2 topic pub --once --wait-matching-subscriptions 1 /motionbrain/routine_cmd_t
 
 `run` and `execute` requests are not forwarded by this bridge.
 
+From the repository root, capture text evidence and optional read-only rosbag
+evidence from the Pi:
+
+```bash
+CHECK_SERVICE=1 tools/raspi/capture_ros2_evidence.sh
+CAPTURE_ROSBAG=1 ROSBAG_DURATION_SECONDS=10 \
+  tools/raspi/capture_ros2_evidence.sh
+```
+
+The rosbag option records typed status, routine readiness, event, detection,
+joint state, kinematics, control guard, and mission state topics only. It does
+not publish command topics or request physical motion.
+
 Toggle the search light through ROS2:
 
 ```bash

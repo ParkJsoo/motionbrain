@@ -301,10 +301,31 @@ Capture these artifacts after bring-up:
 - `ros2 topic echo /motionbrain/events` output
 - `ros2 topic echo /camera/detection` output
 - `ros2 topic echo /camera/detection_typed` output
+- Optional read-only rosbag capture from
+  `CAPTURE_ROSBAG=1 tools/raspi/capture_ros2_evidence.sh`
 - `ros2 topic pub --once /motionbrain/light_cmd ...` plus
   `/motionbrain/light_result` output
 - Photo or short video showing Raspberry Pi, ESP32 controller, ESP32-CAM, and
   the robot hardware on Home Wi-Fi
+
+The evidence helper is safe by default:
+
+```bash
+CHECK_SERVICE=1 tools/raspi/capture_ros2_evidence.sh
+```
+
+For compact bag evidence, opt in explicitly:
+
+```bash
+CAPTURE_ROSBAG=1 ROSBAG_DURATION_SECONDS=10 \
+  tools/raspi/capture_ros2_evidence.sh
+```
+
+The rosbag option records read-only status, routine readiness, event, camera
+detection, joint state, kinematics, control guard, and mission state topics. It
+does not publish command topics. Keep command-boundary captures under their
+separate opt-in flags, and do not run physical command captures unless that
+specific actuator action is intended.
 
 ## Flash Ubuntu
 

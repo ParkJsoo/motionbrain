@@ -8,6 +8,8 @@ SAMPLE_TIMEOUT_SECONDS="${SAMPLE_TIMEOUT_SECONDS:-12}"
 CAPTURE_COMPAT_JSON="${CAPTURE_COMPAT_JSON:-1}"
 CAPTURE_MISSION_BOUNDARY="${CAPTURE_MISSION_BOUNDARY:-0}"
 CAPTURE_ROUTINE_COMMAND_BOUNDARY="${CAPTURE_ROUTINE_COMMAND_BOUNDARY:-0}"
+CAPTURE_ROSBAG="${CAPTURE_ROSBAG:-0}"
+ROSBAG_DURATION_SECONDS="${ROSBAG_DURATION_SECONDS:-10}"
 COMMAND_ECHO_SETTLE_SECONDS="${COMMAND_ECHO_SETTLE_SECONDS:-1}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,6 +17,7 @@ REPO_DIR="${MOTIONBRAIN_REPO:-$(cd "${SCRIPT_DIR}/../.." && pwd)}"
 WORKSPACE="${MOTIONBRAIN_ROS_WS:-${REPO_DIR}/ros2_ws}"
 STAMP="$(date +%Y%m%d_%H%M%S)"
 OUTPUT="${MOTIONBRAIN_EVIDENCE_OUTPUT:-/tmp/motionbrain_ros2_evidence_${STAMP}.txt}"
+ROSBAG_OUTPUT="${MOTIONBRAIN_ROSBAG_OUTPUT:-/tmp/motionbrain_ros2_bag_${STAMP}}"
 
 failures=0
 
@@ -90,6 +93,55 @@ capture_command_result() {
     echo "FAIL ${label}: publish exit ${pub_rc}, echo exit ${echo_rc}, missing ${missing}"
     failures=$((failures + 1))
   fi
+}
+
+capture_rosbag() {
+  local rc=0
+  local topics=(
+    "/motionbrain/status_typed"
+    "/motionbrain/routine_typed"
+    "/motionbrain/events_typed"
+    "/camera/detection_typed"
+    "/joint_states"
+    "/motionbrain/end_effector_pose"
+    "/motionbrain/kinematics_typed"
+    "/motionbrain/control_guard_typed"
+    "/motionbrain/mission_state_typed"
+  )
+
+  section "ROS2 bag read-only capture"
+  echo "Output directory: ${ROSBAG_OUTPUT}"
+  printf '+ timeout --signal=SIGINT %q ros2 bag record -o %q' \
+    "${ROSBAG_DURATION_SECONDS}" "${ROSBAG_OUTPUT}"
+  printf ' %q' "${topics[@]}"
+  printf '\n'
+
+  set +e
+  timeout --signal=SIGINT "${ROSBAG_DURATION_SECONDS}" ros2 bag record \
+    -o "${ROSBAG_OUTPUT}" \
+    "${topics[@]}"
+  rc=$?
+  set -e
+
+  if (( rc != 0 && rc != 124 )); then
+    echo "FAIL ROS2 bag read-only capture: exit ${rc}"
+    failures=$((failures + 1))
+    return
+  fi
+
+  if [[ ! -d "${ROSBAG_OUTPUT}" ]]; then
+    echo "FAIL ROS2 bag read-only capture: missing output directory"
+    failures=$((failures + 1))
+    return
+  fi
+
+  if [[ ! -f "${ROSBAG_OUTPUT}/metadata.yaml" ]]; then
+    echo "FAIL ROS2 bag read-only capture: missing metadata.yaml"
+    failures=$((failures + 1))
+    return
+  fi
+
+  run_step "ROS2 bag output files" find "${ROSBAG_OUTPUT}" -maxdepth 2 -type f -print
 }
 
 section "MotionBrain ROS2 Evidence"
@@ -185,8 +237,15 @@ if [[ "${CAPTURE_ROUTINE_COMMAND_BOUNDARY}" == "1" ]]; then
     "success: false" "forwarded: false" "routine_execute_disabled_by_bridge_policy"
 fi
 
+if [[ "${CAPTURE_ROSBAG}" == "1" ]]; then
+  capture_rosbag
+fi
+
 section "Summary"
 echo "Output: ${OUTPUT}"
+if [[ "${CAPTURE_ROSBAG}" == "1" ]]; then
+  echo "ROS2 bag: ${ROSBAG_OUTPUT}"
+fi
 if (( failures > 0 )); then
   echo "Result: FAIL (${failures} step(s) failed)"
   exit 1
