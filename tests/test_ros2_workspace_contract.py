@@ -20,6 +20,7 @@ EXPECTED_RUNTIME_TOPICS = {
     "/motionbrain/status_typed",
     "/motionbrain/routine",
     "/motionbrain/routine_typed",
+    "/motionbrain/lifecycle_typed",
     "/motionbrain/diagnostics",
     "/camera/detection_typed",
     "/joint_states",
@@ -37,6 +38,7 @@ EXPECTED_MESSAGE_FILES = {
     "LightResult.msg",
     "MissionCommand.msg",
     "MissionState.msg",
+    "NodeLifecycleStatus.msg",
     "MotionEvent.msg",
     "MotionStatus.msg",
     "RoutineCommand.msg",
@@ -163,6 +165,27 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
             with self.subTest(message_file=message_file):
                 self.assertIn(f'"msg/{message_file}"', cmake_text)
 
+        lifecycle_text = (
+            ROS2_SRC
+            / "motionbrain_msgs"
+            / "msg"
+            / "NodeLifecycleStatus.msg"
+        ).read_text()
+        expected_lifecycle_fields = [
+            "uint8 PRIMARY_STATE_ACTIVE=3",
+            "uint8 TRANSITION_STATE_ERRORPROCESSING=15",
+            "string node_name",
+            "uint8 state_id",
+            "string state_label",
+            "bool active",
+            "bool error",
+            "string detail",
+            "string raw_json",
+        ]
+        for field in expected_lifecycle_fields:
+            with self.subTest(field=field):
+                self.assertIn(field, lifecycle_text)
+
     def test_motionbrain_service_inventory_is_explicit(self):
         service_files = {
             path.name
@@ -245,6 +268,13 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
 
         self.assertIn("OK routine diagnostics sample", script_text)
         self.assertIn("OK routine typed diagnostics sample", script_text)
+        self.assertIn("expected_lifecycle_nodes=(", script_text)
+        self.assertIn("motionbrain_status_node", script_text)
+        self.assertIn("motionbrain_joint_state_node", script_text)
+        self.assertIn("motionbrain_kinematics_node", script_text)
+        self.assertIn("motionbrain_control_guard_node", script_text)
+        self.assertIn("motionbrain_mission_supervisor", script_text)
+        self.assertIn("OK lifecycle active samples", script_text)
         self.assertIn("OK diagnostics sample", script_text)
         self.assertIn("motionbrain/controller", script_text)
         self.assertIn("motionbrain/routine_executor", script_text)
@@ -274,6 +304,8 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         self.assertIn("self.publish_routine_typed(routine)", bridge_text)
         self.assertIn('capture_topic "/motionbrain/routine"', evidence_text)
         self.assertIn('capture_topic "/motionbrain/routine_typed"', evidence_text)
+        self.assertIn('capture_topic "/motionbrain/lifecycle_typed"', evidence_text)
+        self.assertIn('capture_topic "/motionbrain/lifecycle"', evidence_text)
         self.assertIn('capture_topic "/motionbrain/diagnostics"', evidence_text)
 
     def test_status_bridge_publishes_standard_diagnostics(self):
@@ -299,6 +331,39 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         for fragment in expected_fragments:
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, bridge_text)
+
+    def test_portfolio_nodes_publish_lifecycle_status(self):
+        bridge_dir = ROS2_SRC / "motionbrain_ros_bridge" / "motionbrain_ros_bridge"
+        status_text = (bridge_dir / "motionbrain_status_node.py").read_text()
+        joint_state_text = (bridge_dir / "motionbrain_joint_state_node.py").read_text()
+        kinematics_text = (bridge_dir / "motionbrain_kinematics_node.py").read_text()
+        mission_text = (
+            ROS2_SRC
+            / "motionbrain_mission"
+            / "motionbrain_mission"
+            / "mission_supervisor_node.py"
+        ).read_text()
+        guard_text = (
+            ROS2_SRC
+            / "motionbrain_control"
+            / "src"
+            / "control_guard_node.cpp"
+        ).read_text()
+
+        for text in [status_text, joint_state_text, kinematics_text]:
+            with self.subTest(node="python_bridge_node"):
+                self.assertIn("LifecycleStatusPublisher", text)
+                self.assertIn("mark_active", text)
+
+        self.assertIn("NodeLifecycleStatus", mission_text)
+        self.assertIn('"/motionbrain/lifecycle_typed"', mission_text)
+        self.assertIn('"/motionbrain/lifecycle"', mission_text)
+        self.assertIn("PRIMARY_STATE_ACTIVE", mission_text)
+
+        self.assertIn("node_lifecycle_status.hpp", guard_text)
+        self.assertIn('"/motionbrain/lifecycle_typed"', guard_text)
+        self.assertIn('"/motionbrain/lifecycle"', guard_text)
+        self.assertIn("PRIMARY_STATE_ACTIVE", guard_text)
 
     def test_status_bridge_exposes_non_motion_routine_command_boundary(self):
         bridge_text = (

@@ -170,6 +170,7 @@ capture_rosbag() {
   local topics=(
     "/motionbrain/status_typed"
     "/motionbrain/routine_typed"
+    "/motionbrain/lifecycle_typed"
     "/motionbrain/diagnostics"
     "/motionbrain/events_typed"
     "/camera/detection_typed"
@@ -266,6 +267,7 @@ run_step "ROS2 action list" ros2 action list
 
 capture_topic "/motionbrain/status_typed"
 capture_topic "/motionbrain/routine_typed"
+capture_topic "/motionbrain/lifecycle_typed"
 capture_topic "/motionbrain/diagnostics"
 capture_topic "/camera/detection_typed"
 capture_topic "/joint_states"
@@ -277,6 +279,7 @@ capture_topic "/motionbrain/mission_state_typed"
 if [[ "${CAPTURE_COMPAT_JSON}" == "1" ]]; then
   capture_topic "/motionbrain/status"
   capture_topic "/motionbrain/routine"
+  capture_topic "/motionbrain/lifecycle"
   capture_topic "/camera/detection"
   capture_topic "/motionbrain/kinematics"
   capture_topic "/motionbrain/control_guard"

@@ -8,6 +8,8 @@ from motionbrain_msgs.msg import MotionStatus
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
 
+from motionbrain_ros_bridge.lifecycle_status import LifecycleStatusPublisher
+
 
 JOINT_NAMES = [
     "base_yaw_joint",
@@ -47,6 +49,11 @@ class MotionBrainJointStateNode(Node):
             10,
         )
         self.timer = self.create_timer(1.0 / publish_rate_hz, self.publish_joint_states)
+        self.lifecycle = LifecycleStatusPublisher(
+            self,
+            detail=f"configuring {joint_states_topic} from {source_topic}",
+        )
+        self.lifecycle.mark_active(f"publishing {joint_states_topic} from {source_topic}")
 
         self.get_logger().info(
             f"Publishing {joint_states_topic} from {source_topic} for joints: "

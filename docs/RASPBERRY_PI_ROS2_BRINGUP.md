@@ -273,8 +273,12 @@ messages by default while keeping JSON compatibility topics.
   - `motionbrain_kinematics_node`
   - `motionbrain_control_guard_node`
   - `motionbrain_mission_supervisor`
+- The bridge launch set now publishes lifecycle-style active heartbeats on
+  `/motionbrain/lifecycle_typed` and compatibility JSON on
+  `/motionbrain/lifecycle`.
 - `CHECK_SERVICE=1 tools/raspi/check_ros_bridge_health.sh` passed for:
   - `/motionbrain/status_typed`
+  - `/motionbrain/lifecycle_typed`
   - `/camera/detection_typed`
   - `/joint_states`
   - `/motionbrain/end_effector_pose`
@@ -297,6 +301,7 @@ Capture these artifacts after bring-up:
   success log
 - `ros2 topic echo /motionbrain/status` output
 - `ros2 topic echo /motionbrain/status_typed` output
+- `ros2 topic echo /motionbrain/lifecycle_typed` output
 - `ros2 topic echo /motionbrain/diagnostics` output
 - `ros2 topic echo /joint_states` output
 - `ros2 topic echo /motionbrain/end_effector_pose` output

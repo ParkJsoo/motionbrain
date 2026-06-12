@@ -7,6 +7,7 @@ from motionbrain_msgs.msg import LightCommand
 from motionbrain_msgs.msg import MissionCommand
 from motionbrain_msgs.msg import MissionState as MissionStateMsg
 from motionbrain_msgs.msg import MotionStatus
+from motionbrain_msgs.msg import NodeLifecycleStatus
 from rclpy.node import Node
 from std_msgs.msg import String
 
@@ -64,6 +65,13 @@ class MotionBrainMissionSupervisor(Node):
         self.state_pub = self.create_publisher(MissionStateMsg, self.mission_state_topic, 10)
         self.state_json_pub = self.create_publisher(String, self.mission_state_json_topic, 10)
         self.light_cmd_pub = self.create_publisher(LightCommand, self.light_cmd_topic, 10)
+        self.lifecycle_pub = self.create_publisher(
+            NodeLifecycleStatus, "/motionbrain/lifecycle_typed", 10
+        )
+        self.lifecycle_json_pub = self.create_publisher(String, "/motionbrain/lifecycle", 10)
+        self.lifecycle_state_id = NodeLifecycleStatus.TRANSITION_STATE_CONFIGURING
+        self.lifecycle_state_label = "configuring"
+        self.lifecycle_detail = "configuring mission supervisor"
 
         self.create_subscription(ControlGuard, self.control_guard_topic, self.on_guard, 10)
         self.create_subscription(String, self.control_guard_json_topic, self.on_guard_json, 10)
@@ -73,6 +81,13 @@ class MotionBrainMissionSupervisor(Node):
         self.create_subscription(String, self.mission_cmd_json_topic, self.on_command_json, 10)
 
         self.timer = self.create_timer(1.0 / publish_rate_hz, self.publish_state)
+        self.lifecycle_timer = self.create_timer(5.0, self.publish_lifecycle_status)
+        self.lifecycle_state_id = NodeLifecycleStatus.PRIMARY_STATE_ACTIVE
+        self.lifecycle_state_label = "active"
+        self.lifecycle_detail = (
+            f"supervising {self.detection_topic} and publishing {self.mission_state_topic}"
+        )
+        self.publish_lifecycle_status()
 
         self.get_logger().info(
             f"Mission supervisor ready: {self.detection_topic} -> "
@@ -155,6 +170,32 @@ class MotionBrainMissionSupervisor(Node):
         json_msg = String()
         json_msg.data = raw_json
         self.state_json_pub.publish(json_msg)
+
+    def publish_lifecycle_status(self) -> None:
+        payload = {
+            "nodeName": self.get_name(),
+            "stateId": int(self.lifecycle_state_id),
+            "stateLabel": self.lifecycle_state_label,
+            "active": self.lifecycle_state_id == NodeLifecycleStatus.PRIMARY_STATE_ACTIVE,
+            "error": self.lifecycle_state_id == NodeLifecycleStatus.TRANSITION_STATE_ERRORPROCESSING,
+            "detail": self.lifecycle_detail,
+        }
+        raw_json = json.dumps(payload, separators=(",", ":"), sort_keys=True)
+
+        message = NodeLifecycleStatus()
+        message.stamp = self.get_clock().now().to_msg()
+        message.node_name = self.get_name()
+        message.state_id = int(self.lifecycle_state_id)
+        message.state_label = self.lifecycle_state_label
+        message.active = bool(payload["active"])
+        message.error = bool(payload["error"])
+        message.detail = self.lifecycle_detail
+        message.raw_json = raw_json
+        self.lifecycle_pub.publish(message)
+
+        json_message = String()
+        json_message.data = raw_json
+        self.lifecycle_json_pub.publish(json_message)
 
 
 def main(args=None) -> None:

@@ -17,6 +17,7 @@ debugging and schema evolution.
 | `motionbrain_msgs/msg/ControlGuard` | Control readiness guard output from typed status and detection |
 | `motionbrain_msgs/msg/MissionCommand` | Operator mission command request |
 | `motionbrain_msgs/msg/MissionState` | Detect-align-confirm-act mission supervisor state |
+| `motionbrain_msgs/msg/NodeLifecycleStatus` | Lifecycle-style primary state heartbeat for bridge-side nodes |
 | `motionbrain_msgs/msg/LightCommand` | Search-light command request |
 | `motionbrain_msgs/msg/LightResult` | Search-light command result |
 | `motionbrain_msgs/msg/RoutineCommand` | Guarded routine `status`, `dry_run`, or `abort` request |

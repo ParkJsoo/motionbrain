@@ -903,6 +903,9 @@ motionbrain_status_node
 - `pub /motionbrain/status_typed` -> `motionbrain_msgs/msg/MotionStatus`
 - `pub /motionbrain/events` -> raw `GET /events?limit=N` JSON
 - `pub /motionbrain/events_typed` -> `motionbrain_msgs/msg/MotionEvent`
+- `pub /motionbrain/lifecycle` -> lifecycle-style node state JSON
+- `pub /motionbrain/lifecycle_typed` ->
+  `motionbrain_msgs/msg/NodeLifecycleStatus`
 - `pub /motionbrain/diagnostics` -> `diagnostic_msgs/msg/DiagnosticArray`
   read-only diagnostics for controller safety, routine executor policy,
   teleop/sensor freshness, and camera/perception availability

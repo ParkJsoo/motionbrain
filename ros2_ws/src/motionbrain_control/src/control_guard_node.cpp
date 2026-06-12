@@ -9,6 +9,7 @@
 #include "motionbrain_msgs/msg/camera_detection.hpp"
 #include "motionbrain_msgs/msg/control_guard.hpp"
 #include "motionbrain_msgs/msg/motion_status.hpp"
+#include "motionbrain_msgs/msg/node_lifecycle_status.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/string.hpp"
 
@@ -85,11 +86,18 @@ public:
 
     guard_pub_ = create_publisher<motionbrain_msgs::msg::ControlGuard>(output_topic_, 10);
     guard_json_pub_ = create_publisher<std_msgs::msg::String>(json_output_topic_, 10);
+    lifecycle_pub_ =
+      create_publisher<motionbrain_msgs::msg::NodeLifecycleStatus>("/motionbrain/lifecycle_typed", 10);
+    lifecycle_json_pub_ = create_publisher<std_msgs::msg::String>("/motionbrain/lifecycle", 10);
     const auto publish_period = std::chrono::duration_cast<std::chrono::milliseconds>(
       std::chrono::duration<double>(1.0 / publish_rate_hz));
     timer_ = create_wall_timer(
       publish_period,
       [this]() { publish_guard_state(); });
+    lifecycle_timer_ = create_wall_timer(5s, [this]() { publish_lifecycle_status(); });
+    lifecycle_detail_ =
+      "evaluating guard from " + status_topic_ + " and " + detection_topic_;
+    publish_lifecycle_status();
 
     RCLCPP_INFO(
       get_logger(),
@@ -193,6 +201,33 @@ private:
     guard_json_pub_->publish(message);
   }
 
+  void publish_lifecycle_status()
+  {
+    motionbrain_msgs::msg::NodeLifecycleStatus message;
+    message.stamp = now();
+    message.node_name = get_name();
+    message.state_id = motionbrain_msgs::msg::NodeLifecycleStatus::PRIMARY_STATE_ACTIVE;
+    message.state_label = "active";
+    message.active = true;
+    message.error = false;
+    message.detail = lifecycle_detail_;
+    std::ostringstream out;
+    out << "{"
+        << "\"active\":true,"
+        << "\"detail\":\"" << escape_json(lifecycle_detail_) << "\","
+        << "\"error\":false,"
+        << "\"nodeName\":\"" << escape_json(message.node_name) << "\","
+        << "\"stateId\":" << static_cast<int>(message.state_id) << ","
+        << "\"stateLabel\":\"active\""
+        << "}";
+    message.raw_json = out.str();
+    lifecycle_pub_->publish(message);
+
+    std_msgs::msg::String json_message;
+    json_message.data = message.raw_json;
+    lifecycle_json_pub_->publish(json_message);
+  }
+
   std::string status_topic_;
   std::string detection_topic_;
   std::string output_topic_;
@@ -208,7 +243,11 @@ private:
   rclcpp::Subscription<motionbrain_msgs::msg::CameraDetection>::SharedPtr detection_sub_;
   rclcpp::Publisher<motionbrain_msgs::msg::ControlGuard>::SharedPtr guard_pub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr guard_json_pub_;
+  rclcpp::Publisher<motionbrain_msgs::msg::NodeLifecycleStatus>::SharedPtr lifecycle_pub_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr lifecycle_json_pub_;
   rclcpp::TimerBase::SharedPtr timer_;
+  rclcpp::TimerBase::SharedPtr lifecycle_timer_;
+  std::string lifecycle_detail_{"node active"};
 };
 
 int main(int argc, char ** argv)

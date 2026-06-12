@@ -22,6 +22,7 @@ from motionbrain_msgs.msg import RoutineCommand
 from motionbrain_msgs.msg import RoutineResult
 from motionbrain_msgs.msg import RoutineStatus
 from motionbrain_msgs.srv import GuardedRoutineCommand
+from motionbrain_ros_bridge.lifecycle_status import LifecycleStatusPublisher
 from motionbrain_ros_bridge.payload_utils import ALIGN_DEADBAND
 from motionbrain_ros_bridge.payload_utils import as_bool
 from motionbrain_ros_bridge.payload_utils import as_float
@@ -149,6 +150,13 @@ class MotionBrainStatusNode(Node):
 
         interval = float(self.get_parameter("poll_interval").value)
         self.timer = self.create_timer(max(interval, 0.1), self.poll_once)
+        self.lifecycle = LifecycleStatusPublisher(
+            self,
+            detail=f"configuring bridge for {self.motion_base_url}",
+        )
+        self.lifecycle.mark_active(
+            "polling status/routine/camera and serving routine command/action boundaries"
+        )
         self.get_logger().info(
             f"MotionBrain ROS2 bridge polling {self.motion_base_url}; "
             "topics: /motionbrain/status /motionbrain/status_typed "

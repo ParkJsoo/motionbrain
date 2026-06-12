@@ -11,6 +11,7 @@ from rclpy.node import Node
 from sensor_msgs.msg import JointState
 from std_msgs.msg import String
 
+from motionbrain_ros_bridge.lifecycle_status import LifecycleStatusPublisher
 from motionbrain_ros_bridge.motionbrain_kinematics import JointAngles
 from motionbrain_ros_bridge.motionbrain_kinematics import forward_kinematics
 from motionbrain_ros_bridge.motionbrain_kinematics import inverse_kinematics
@@ -67,6 +68,13 @@ class MotionBrainKinematicsNode(Node):
             joint_states_topic,
             self.handle_joint_state,
             10,
+        )
+        self.lifecycle = LifecycleStatusPublisher(
+            self,
+            detail=f"configuring FK from {joint_states_topic}",
+        )
+        self.lifecycle.mark_active(
+            f"publishing FK pose on {pose_topic} and kinematics on {kinematics_typed_topic}"
         )
 
         self.get_logger().info(

@@ -21,6 +21,8 @@ The original JSON topics remain available for debugging, while typed
 | `/motionbrain/status_typed` | publish | `motionbrain_msgs/msg/MotionStatus` | Stable status fields plus raw JSON |
 | `/motionbrain/routine` | publish | `std_msgs/String` | Raw read-only `GET /routine` JSON with guarded routine catalog, executor state, recovery hint, and diagnostics |
 | `/motionbrain/routine_typed` | publish | `motionbrain_msgs/msg/RoutineStatus` | Stable guarded routine readiness, executor policy/state, sensor/teleop/safety diagnostics, and routine names plus raw JSON |
+| `/motionbrain/lifecycle_typed` | publish | `motionbrain_msgs/msg/NodeLifecycleStatus` | Lifecycle-style active/configuring/error heartbeat from bridge-side nodes |
+| `/motionbrain/lifecycle` | publish | `std_msgs/String` | Compatibility lifecycle heartbeat JSON |
 | `/motionbrain/diagnostics` | publish | `diagnostic_msgs/msg/DiagnosticArray` | Read-only ROS diagnostics for controller, routine executor policy, teleop/sensor freshness, and camera/perception availability |
 | `/motionbrain/routine_cmd` | subscribe | `std_msgs/String` | Compatibility guarded routine command input: `status`, `dry_run <name>`, or `abort`; `run` is rejected by bridge policy |
 | `/motionbrain/routine_cmd_typed` | subscribe | `motionbrain_msgs/msg/RoutineCommand` | Typed guarded routine command input for status, dry-run, or abort |
@@ -89,6 +91,12 @@ that expect feedback and a terminal result.
 not poll extra endpoints or send commands; it summarizes the latest bridge poll
 for controller safety, routine executor policy, STM32 teleop/sensor freshness,
 and camera/perception availability.
+
+`/motionbrain/lifecycle_typed` is a low-risk lifecycle-style status boundary.
+It does not convert the nodes into managed lifecycle nodes yet; instead, each
+bridge-side process publishes its primary state using ROS lifecycle state IDs so
+health checks can prove the full launch set is active without changing systemd
+startup behavior.
 
 ## Build
 
