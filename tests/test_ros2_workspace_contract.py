@@ -19,6 +19,7 @@ EXPECTED_RUNTIME_TOPICS = {
     "/motionbrain/status_typed",
     "/motionbrain/routine",
     "/motionbrain/routine_typed",
+    "/motionbrain/diagnostics",
     "/camera/detection_typed",
     "/joint_states",
     "/motionbrain/end_effector_pose",
@@ -106,6 +107,7 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         )
         self.assertIn("motionbrain_msgs", bridge_deps)
         self.assertIn("motionbrain_mission", bridge_deps)
+        self.assertIn("diagnostic_msgs", bridge_deps)
         self.assertIn("launch_ros", bridge_deps)
 
         mission_deps = dependency_names(
@@ -189,6 +191,9 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
 
         self.assertIn("OK routine diagnostics sample", script_text)
         self.assertIn("OK routine typed diagnostics sample", script_text)
+        self.assertIn("OK diagnostics sample", script_text)
+        self.assertIn("motionbrain/controller", script_text)
+        self.assertIn("motionbrain/routine_executor", script_text)
         self.assertIn("/motionbrain/routine_command", script_text)
         self.assertIn("motionbrain_msgs/srv/GuardedRoutineCommand", script_text)
         self.assertIn("success[:=][[:space:]]*(true|True)", script_text)
@@ -212,6 +217,31 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         self.assertIn("self.publish_routine_typed(routine)", bridge_text)
         self.assertIn('capture_topic "/motionbrain/routine"', evidence_text)
         self.assertIn('capture_topic "/motionbrain/routine_typed"', evidence_text)
+        self.assertIn('capture_topic "/motionbrain/diagnostics"', evidence_text)
+
+    def test_status_bridge_publishes_standard_diagnostics(self):
+        bridge_text = (
+            ROS2_SRC
+            / "motionbrain_ros_bridge"
+            / "motionbrain_ros_bridge"
+            / "motionbrain_status_node.py"
+        ).read_text()
+
+        expected_fragments = [
+            "from diagnostic_msgs.msg import DiagnosticArray",
+            "from diagnostic_msgs.msg import DiagnosticStatus",
+            '"/motionbrain/diagnostics"',
+            "publish_diagnostics(status_payload, routine_payload, detection_payload)",
+            "motionbrain/controller",
+            "motionbrain/routine_executor",
+            "motionbrain/teleop_sensor",
+            "motionbrain/camera_perception",
+            "queue_apply_allowed",
+            "routine executor disabled by policy",
+        ]
+        for fragment in expected_fragments:
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, bridge_text)
 
     def test_status_bridge_exposes_non_motion_routine_command_boundary(self):
         bridge_text = (
@@ -288,6 +318,7 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         read_only_topics = {
             "/motionbrain/status_typed",
             "/motionbrain/routine_typed",
+            "/motionbrain/diagnostics",
             "/motionbrain/events_typed",
             "/camera/detection_typed",
             "/joint_states",

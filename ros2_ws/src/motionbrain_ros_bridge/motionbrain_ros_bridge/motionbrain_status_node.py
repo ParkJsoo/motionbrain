@@ -9,6 +9,9 @@ import urllib.request
 from typing import Any
 
 import rclpy
+from diagnostic_msgs.msg import DiagnosticArray
+from diagnostic_msgs.msg import DiagnosticStatus
+from diagnostic_msgs.msg import KeyValue
 from motionbrain_msgs.msg import CameraDetection
 from motionbrain_msgs.msg import LightCommand
 from motionbrain_msgs.msg import LightResult
@@ -81,6 +84,11 @@ class MotionBrainStatusNode(Node):
         self.routine_pub = self.create_publisher(String, "/motionbrain/routine", 10)
         self.events_pub = self.create_publisher(String, "/motionbrain/events", 10)
         self.detection_pub = self.create_publisher(String, "/camera/detection", 10)
+        self.diagnostics_pub = self.create_publisher(
+            DiagnosticArray,
+            "/motionbrain/diagnostics",
+            10,
+        )
         self.light_result_pub = self.create_publisher(String, "/motionbrain/light_result", 10)
         self.routine_result_pub = self.create_publisher(String, "/motionbrain/routine_result", 10)
         self.status_typed_pub = self.create_publisher(MotionStatus, "/motionbrain/status_typed", 10)
@@ -138,6 +146,7 @@ class MotionBrainStatusNode(Node):
             "topics: /motionbrain/status /motionbrain/status_typed "
             "/motionbrain/routine /motionbrain/routine_typed "
             "/motionbrain/events /motionbrain/events_typed "
+            "/motionbrain/diagnostics "
             "/camera/detection /camera/detection_typed "
             "/motionbrain/light_cmd /motionbrain/light_cmd_typed "
             "/motionbrain/routine_cmd /motionbrain/routine_cmd_typed "
@@ -156,6 +165,218 @@ class MotionBrainStatusNode(Node):
         message = String()
         message.data = compact_json(payload)
         publisher.publish(message)
+
+    def diagnostic_value(self, key: str, value: Any) -> KeyValue:
+        item = KeyValue()
+        item.key = key
+        item.value = as_str(value)
+        return item
+
+    def diagnostic_status(
+        self,
+        name: str,
+        level: int,
+        message: str,
+        values: dict[str, Any],
+        hardware_id: str = "motionbrain",
+    ) -> DiagnosticStatus:
+        status = DiagnosticStatus()
+        status.name = name
+        status.hardware_id = hardware_id
+        status.level = level
+        status.message = message
+        status.values = [self.diagnostic_value(key, value) for key, value in values.items()]
+        return status
+
+    def publish_diagnostics(
+        self,
+        status_payload: dict[str, Any] | None,
+        routine_payload: dict[str, Any] | None,
+        detection_payload: dict[str, Any] | None,
+    ) -> None:
+        message = DiagnosticArray()
+        message.header.stamp = self.get_clock().now().to_msg()
+        message.status = [
+            self.controller_diagnostic(status_payload),
+            self.routine_diagnostic(routine_payload),
+            self.teleop_sensor_diagnostic(routine_payload),
+            self.camera_diagnostic(detection_payload),
+        ]
+        self.diagnostics_pub.publish(message)
+
+    def controller_diagnostic(self, payload: dict[str, Any] | None) -> DiagnosticStatus:
+        if payload is None:
+            return self.diagnostic_status(
+                "motionbrain/controller",
+                DiagnosticStatus.ERROR,
+                "status poll unavailable",
+                {},
+                "esp32_motion_controller",
+            )
+
+        sensor = payload.get("sensor")
+        sensor = sensor if isinstance(sensor, dict) else {}
+        recovery = payload.get("recovery")
+        recovery = recovery if isinstance(recovery, dict) else {}
+        last_command = payload.get("lastCommand")
+        last_command = last_command if isinstance(last_command, dict) else {}
+
+        state = as_str(payload.get("state"), "UNKNOWN")
+        fault_latched = as_bool(sensor.get("faultLatched")) or state.upper() == "FAULT"
+        motion_blocked = as_bool(sensor.get("blocked"))
+        if fault_latched:
+            level = DiagnosticStatus.ERROR
+            text = "controller fault latched"
+        elif motion_blocked:
+            level = DiagnosticStatus.WARN
+            text = "motion blocked by safety gate"
+        else:
+            level = DiagnosticStatus.OK
+            text = "controller ready"
+
+        return self.diagnostic_status(
+            "motionbrain/controller",
+            level,
+            text,
+            {
+                "state": state,
+                "motor_enabled": as_bool(payload.get("motorEnabled")),
+                "block_reason": as_str(sensor.get("blockReason"), "NONE"),
+                "fault_reason": as_str(sensor.get("faultReason"), "NONE"),
+                "recovery_action": as_str(recovery.get("action"), "none"),
+                "last_command_seen": as_bool(last_command.get("seen")),
+                "last_command_success": as_bool(last_command.get("success")),
+                "last_command_type": as_str(last_command.get("type")),
+            },
+            "esp32_motion_controller",
+        )
+
+    def routine_diagnostic(self, payload: dict[str, Any] | None) -> DiagnosticStatus:
+        if payload is None:
+            return self.diagnostic_status(
+                "motionbrain/routine_executor",
+                DiagnosticStatus.ERROR,
+                "routine poll unavailable",
+                {},
+                "esp32_motion_controller",
+            )
+
+        executor = payload.get("executor")
+        executor = executor if isinstance(executor, dict) else {}
+        status = executor.get("status")
+        status = status if isinstance(status, dict) else {}
+        queue_apply_allowed = as_bool(executor.get("queueApplyAllowed"))
+        execute_implemented = as_bool(executor.get("executeImplemented"))
+        executor_enabled = as_bool(executor.get("enabled"))
+
+        if queue_apply_allowed:
+            level = DiagnosticStatus.WARN
+            text = "routine queue apply is enabled"
+        elif execute_implemented or executor_enabled:
+            level = DiagnosticStatus.WARN
+            text = "routine executor policy changed"
+        else:
+            level = DiagnosticStatus.OK
+            text = "routine executor disabled by policy"
+
+        routines = payload.get("routines")
+        routine_count = len(routines) if isinstance(routines, list) else 0
+        return self.diagnostic_status(
+            "motionbrain/routine_executor",
+            level,
+            text,
+            {
+                "executor_enabled": executor_enabled,
+                "execute_implemented": execute_implemented,
+                "queue_apply_allowed": queue_apply_allowed,
+                "executor_state": as_str(status.get("state")),
+                "executor_last_result": as_str(status.get("lastResult")),
+                "routine_count": routine_count,
+            },
+            "esp32_motion_controller",
+        )
+
+    def teleop_sensor_diagnostic(self, payload: dict[str, Any] | None) -> DiagnosticStatus:
+        diagnostics = payload.get("diagnostics") if isinstance(payload, dict) else None
+        diagnostics = diagnostics if isinstance(diagnostics, dict) else {}
+        sensor = diagnostics.get("sensor")
+        sensor = sensor if isinstance(sensor, dict) else {}
+        teleop = diagnostics.get("teleop")
+        teleop = teleop if isinstance(teleop, dict) else {}
+        safety = diagnostics.get("safety")
+        safety = safety if isinstance(safety, dict) else {}
+
+        sensor_connected = as_bool(sensor.get("connected"))
+        sensor_fresh = as_bool(sensor.get("fresh"))
+        teleop_connected = as_bool(teleop.get("connected"))
+        safety_fault = as_bool(safety.get("faultLatched"))
+        if safety_fault:
+            level = DiagnosticStatus.ERROR
+            text = "teleop/sensor safety fault"
+        elif not sensor_connected or not sensor_fresh or not teleop_connected:
+            level = DiagnosticStatus.WARN
+            text = "teleop or sensor stale"
+        else:
+            level = DiagnosticStatus.OK
+            text = "teleop and sensor fresh"
+
+        return self.diagnostic_status(
+            "motionbrain/teleop_sensor",
+            level,
+            text,
+            {
+                "sensor_connected": sensor_connected,
+                "sensor_fresh": sensor_fresh,
+                "sensor_age_ms": as_uint(sensor.get("ageMs")),
+                "teleop_connected": teleop_connected,
+                "teleop_deadman": as_bool(teleop.get("deadman")),
+                "teleop_control_active": as_bool(teleop.get("controlActive")),
+                "teleop_age_ms": as_uint(teleop.get("ageMs")),
+                "safety_block_reason": as_str(safety.get("blockReason"), "NONE"),
+                "safety_fault_reason": as_str(safety.get("faultReason"), "NONE"),
+            },
+            "stm32_teleop_sensor",
+        )
+
+    def camera_diagnostic(self, payload: dict[str, Any] | None) -> DiagnosticStatus:
+        if payload is None:
+            return self.diagnostic_status(
+                "motionbrain/camera_perception",
+                DiagnosticStatus.ERROR,
+                "camera detection poll unavailable",
+                {},
+                "esp32_cam_or_pi_perception",
+            )
+
+        available = as_bool(payload.get("available"))
+        detected = as_bool(payload.get("detected"))
+        if not available:
+            level = DiagnosticStatus.WARN
+            text = "camera detection unavailable"
+        elif detected:
+            level = DiagnosticStatus.OK
+            text = "target detected"
+        else:
+            level = DiagnosticStatus.OK
+            text = "camera available, target not found"
+
+        return self.diagnostic_status(
+            "motionbrain/camera_perception",
+            level,
+            text,
+            {
+                "available": available,
+                "detected": detected,
+                "target_type": as_str(payload.get("targetType")),
+                "label": as_str(payload.get("label") or payload.get("color")),
+                "confidence": as_float(payload.get("confidence")),
+                "alignment": as_str(payload.get("alignment"), "LOST"),
+                "reason": as_str(payload.get("reason")),
+                "camera_url": as_str(payload.get("cameraUrl")),
+                "perception_url": as_str(payload.get("perceptionUrl")),
+            },
+            "esp32_cam_or_pi_perception",
+        )
 
     def publish_status_typed(self, payload: dict[str, Any]) -> None:
         message = MotionStatus()
@@ -359,11 +580,15 @@ class MotionBrainStatusNode(Node):
     def poll_once(self) -> None:
         self.motion_base_url = self._motion_base_url()
         timeout = self._timeout()
+        status_payload = None
+        routine_payload = None
+        detection_payload = None
 
         try:
             status = fetch_json(f"{self.motion_base_url}/status", timeout)
             self.publish_json(self.status_pub, status)
             self.publish_status_typed(status)
+            status_payload = status
         except POLL_EXCEPTIONS as exc:
             self.get_logger().warning(f"status poll failed: {exc}")
 
@@ -371,6 +596,7 @@ class MotionBrainStatusNode(Node):
             routine = fetch_json(f"{self.motion_base_url}/routine", timeout)
             self.publish_json(self.routine_pub, routine)
             self.publish_routine_typed(routine)
+            routine_payload = routine
         except POLL_EXCEPTIONS as exc:
             self.get_logger().warning(f"routine poll failed: {exc}")
 
@@ -386,11 +612,13 @@ class MotionBrainStatusNode(Node):
         perception_url = str(self.get_parameter("perception_url").value).strip().rstrip("/")
         camera_url = str(self.get_parameter("camera_url").value).strip().rstrip("/")
         if perception_url:
-            self.poll_perception(perception_url, timeout)
+            detection_payload = self.poll_perception(perception_url, timeout)
         elif camera_url:
-            self.poll_camera(camera_url, timeout)
+            detection_payload = self.poll_camera(camera_url, timeout)
 
-    def poll_perception(self, perception_url: str, timeout: float) -> None:
+        self.publish_diagnostics(status_payload, routine_payload, detection_payload)
+
+    def poll_perception(self, perception_url: str, timeout: float) -> dict[str, Any]:
         try:
             detection = fetch_json(perception_detection_url(perception_url), timeout)
             if not isinstance(detection, dict):
@@ -409,8 +637,9 @@ class MotionBrainStatusNode(Node):
             }
             self.publish_json(self.detection_pub, detection)
             self.publish_detection_typed(detection)
+        return detection
 
-    def poll_camera(self, camera_url: str, timeout: float) -> None:
+    def poll_camera(self, camera_url: str, timeout: float) -> dict[str, Any]:
         color = str(self.get_parameter("detect_color").value)
         try:
             frame = fetch_bytes(f"{camera_url}/capture", timeout)
@@ -429,6 +658,7 @@ class MotionBrainStatusNode(Node):
             }
             self.publish_json(self.detection_pub, detection)
             self.publish_detection_typed(detection)
+        return detection
 
     def handle_light_cmd(self, message: String) -> None:
         action = parse_light_action(message.data)

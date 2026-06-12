@@ -903,6 +903,9 @@ motionbrain_status_node
 - `pub /motionbrain/status_typed` -> `motionbrain_msgs/msg/MotionStatus`
 - `pub /motionbrain/events` -> raw `GET /events?limit=N` JSON
 - `pub /motionbrain/events_typed` -> `motionbrain_msgs/msg/MotionEvent`
+- `pub /motionbrain/diagnostics` -> `diagnostic_msgs/msg/DiagnosticArray`
+  read-only diagnostics for controller safety, routine executor policy,
+  teleop/sensor freshness, and camera/perception availability
 - `pub /camera/detection` -> ESP32-CAM `/capture` 기반 색상 감지 JSON, 또는
   `perception_url`이 설정된 경우 Pi perception `/api/detection` JSON
 - `pub /camera/detection_typed` -> `motionbrain_msgs/msg/CameraDetection`

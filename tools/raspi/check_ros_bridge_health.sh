@@ -13,6 +13,7 @@ required_topics=(
   "/motionbrain/status_typed"
   "/motionbrain/routine"
   "/motionbrain/routine_typed"
+  "/motionbrain/diagnostics"
   "/camera/detection_typed"
   "/joint_states"
   "/motionbrain/end_effector_pose"
@@ -83,6 +84,19 @@ echo "OK routine diagnostics sample"
 
 timeout 10 ros2 topic echo /motionbrain/routine_typed --once >/dev/null
 echo "OK routine typed diagnostics sample"
+
+diagnostics_sample="$(timeout 10 ros2 topic echo /motionbrain/diagnostics --once)"
+if ! grep -Fq 'name: motionbrain/controller' <<< "${diagnostics_sample}"; then
+  echo "FAIL diagnostics sample missing motionbrain/controller" >&2
+  echo "${diagnostics_sample}" >&2
+  exit 1
+fi
+if ! grep -Fq 'name: motionbrain/routine_executor' <<< "${diagnostics_sample}"; then
+  echo "FAIL diagnostics sample missing motionbrain/routine_executor" >&2
+  echo "${diagnostics_sample}" >&2
+  exit 1
+fi
+echo "OK diagnostics sample"
 
 routine_service_sample="$(timeout 10 ros2 service call /motionbrain/routine_command \
   motionbrain_msgs/srv/GuardedRoutineCommand "{action: status}")"

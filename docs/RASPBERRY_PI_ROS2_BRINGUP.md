@@ -295,6 +295,7 @@ Capture these artifacts after bring-up:
   success log
 - `ros2 topic echo /motionbrain/status` output
 - `ros2 topic echo /motionbrain/status_typed` output
+- `ros2 topic echo /motionbrain/diagnostics` output
 - `ros2 topic echo /joint_states` output
 - `ros2 topic echo /motionbrain/end_effector_pose` output
 - `ros2 topic echo /motionbrain/kinematics_typed` output
@@ -325,11 +326,11 @@ CAPTURE_ROSBAG=1 ROSBAG_DURATION_SECONDS=10 \
   tools/raspi/capture_ros2_evidence.sh
 ```
 
-The rosbag option records read-only status, routine readiness, event, camera
-detection, joint state, kinematics, control guard, and mission state topics. It
-does not publish command topics. Keep command-boundary captures under their
-separate opt-in flags, and do not run physical command captures unless that
-specific actuator action is intended.
+The rosbag option records read-only status, routine readiness, diagnostics,
+event, camera detection, joint state, kinematics, control guard, and mission
+state topics. It does not publish command topics. Keep command-boundary
+captures under their separate opt-in flags, and do not run physical command
+captures unless that specific actuator action is intended.
 
 For the request/response routine service boundary, opt in explicitly:
 

@@ -135,6 +135,7 @@ capture_rosbag() {
   local topics=(
     "/motionbrain/status_typed"
     "/motionbrain/routine_typed"
+    "/motionbrain/diagnostics"
     "/motionbrain/events_typed"
     "/camera/detection_typed"
     "/joint_states"
@@ -228,6 +229,7 @@ run_step "ROS2 service list" ros2 service list
 
 capture_topic "/motionbrain/status_typed"
 capture_topic "/motionbrain/routine_typed"
+capture_topic "/motionbrain/diagnostics"
 capture_topic "/camera/detection_typed"
 capture_topic "/joint_states"
 capture_topic "/motionbrain/end_effector_pose"

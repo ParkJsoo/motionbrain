@@ -21,6 +21,7 @@ The original JSON topics remain available for debugging, while typed
 | `/motionbrain/status_typed` | publish | `motionbrain_msgs/msg/MotionStatus` | Stable status fields plus raw JSON |
 | `/motionbrain/routine` | publish | `std_msgs/String` | Raw read-only `GET /routine` JSON with guarded routine catalog, executor state, recovery hint, and diagnostics |
 | `/motionbrain/routine_typed` | publish | `motionbrain_msgs/msg/RoutineStatus` | Stable guarded routine readiness, executor policy/state, sensor/teleop/safety diagnostics, and routine names plus raw JSON |
+| `/motionbrain/diagnostics` | publish | `diagnostic_msgs/msg/DiagnosticArray` | Read-only ROS diagnostics for controller, routine executor policy, teleop/sensor freshness, and camera/perception availability |
 | `/motionbrain/routine_cmd` | subscribe | `std_msgs/String` | Compatibility guarded routine command input: `status`, `dry_run <name>`, or `abort`; `run` is rejected by bridge policy |
 | `/motionbrain/routine_cmd_typed` | subscribe | `motionbrain_msgs/msg/RoutineCommand` | Typed guarded routine command input for status, dry-run, or abort |
 | `/motionbrain/routine_result` | publish | `std_msgs/String` | Raw guarded routine command result and bridge policy outcome |
@@ -80,6 +81,11 @@ HTTP boundary, but rejects `run`/`execute` locally with
 disabled by policy and `queue_apply_allowed=false` remains visible on
 `/motionbrain/routine_typed`. The `/motionbrain/routine_command` service uses
 the same policy and result schema for request/response clients.
+
+`/motionbrain/diagnostics` is a read-only ROS standard diagnostics view. It does
+not poll extra endpoints or send commands; it summarizes the latest bridge poll
+for controller safety, routine executor policy, STM32 teleop/sensor freshness,
+and camera/perception availability.
 
 ## Build
 
@@ -143,6 +149,7 @@ ros2 topic echo /motionbrain/status
 ros2 topic echo /motionbrain/status_typed
 ros2 topic echo /motionbrain/routine
 ros2 topic echo /motionbrain/routine_typed
+ros2 topic echo /motionbrain/diagnostics
 ros2 topic echo /motionbrain/routine_result
 ros2 topic echo /motionbrain/routine_result_typed
 ros2 topic echo /joint_states
