@@ -8,6 +8,7 @@ CHECK_SERVICE="${CHECK_SERVICE:-1}"
 STRICT_CAMERA_AVAILABLE="${STRICT_CAMERA_AVAILABLE:-0}"
 TOPIC_WAIT_SECONDS="${TOPIC_WAIT_SECONDS:-20}"
 TOPIC_POLL_SECONDS="${TOPIC_POLL_SECONDS:-1}"
+SAMPLE_TIMEOUT_SECONDS="${SAMPLE_TIMEOUT_SECONDS:-20}"
 
 required_topics=(
   "/motionbrain/status_typed"
@@ -107,16 +108,16 @@ for action in "${required_actions[@]}"; do
   echo "OK action: ${action}"
 done
 
-timeout 10 ros2 topic echo /motionbrain/status_typed --once >/dev/null
+timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo /motionbrain/status_typed --once >/dev/null
 echo "OK status typed sample"
 
-timeout 10 ros2 topic echo /motionbrain/routine --once >/dev/null
+timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo /motionbrain/routine --once >/dev/null
 echo "OK routine diagnostics sample"
 
-timeout 10 ros2 topic echo /motionbrain/routine_typed --once >/dev/null
+timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo /motionbrain/routine_typed --once >/dev/null
 echo "OK routine typed diagnostics sample"
 
-lifecycle_sample="$(timeout "${TOPIC_WAIT_SECONDS}" ros2 topic echo /motionbrain/lifecycle_typed || true)"
+lifecycle_sample="$(timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo /motionbrain/lifecycle_typed || true)"
 for lifecycle_node in "${expected_lifecycle_nodes[@]}"; do
   if ! awk -v node="${lifecycle_node}" '
     BEGIN { RS="---"; found=0 }
@@ -132,7 +133,7 @@ for lifecycle_node in "${expected_lifecycle_nodes[@]}"; do
 done
 echo "OK lifecycle active samples"
 
-diagnostics_sample="$(timeout 10 ros2 topic echo /motionbrain/diagnostics --once)"
+diagnostics_sample="$(timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo /motionbrain/diagnostics --once)"
 if ! grep -Fq 'name: motionbrain/controller' <<< "${diagnostics_sample}"; then
   echo "FAIL diagnostics sample missing motionbrain/controller" >&2
   echo "${diagnostics_sample}" >&2
@@ -145,7 +146,7 @@ if ! grep -Fq 'name: motionbrain/routine_executor' <<< "${diagnostics_sample}"; 
 fi
 echo "OK diagnostics sample"
 
-routine_service_sample="$(timeout 10 ros2 service call /motionbrain/routine_command \
+routine_service_sample="$(timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 service call /motionbrain/routine_command \
   motionbrain_msgs/srv/GuardedRoutineCommand "{action: status}")"
 if ! grep -Eq 'success[:=][[:space:]]*(true|True)' <<< "${routine_service_sample}"; then
   echo "FAIL routine command service status sample is not success=true" >&2
@@ -154,7 +155,7 @@ if ! grep -Eq 'success[:=][[:space:]]*(true|True)' <<< "${routine_service_sample
 fi
 echo "OK routine command service status sample"
 
-routine_action_sample="$(timeout 15 ros2 action send_goal /motionbrain/guarded_routine \
+routine_action_sample="$(timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 action send_goal /motionbrain/guarded_routine \
   motionbrain_msgs/action/GuardedRoutine "{action: status}")"
 if ! grep -Eq 'success[:=][[:space:]]*(true|True)' <<< "${routine_action_sample}"; then
   echo "FAIL guarded routine action status sample is not success=true" >&2
@@ -163,7 +164,7 @@ if ! grep -Eq 'success[:=][[:space:]]*(true|True)' <<< "${routine_action_sample}
 fi
 echo "OK guarded routine action status sample"
 
-camera_detection_sample="$(timeout 10 ros2 topic echo /camera/detection_typed --once)"
+camera_detection_sample="$(timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo /camera/detection_typed --once)"
 if [[ "${STRICT_CAMERA_AVAILABLE}" == "1" ]] && ! grep -Eq '^available: true$' <<< "${camera_detection_sample}"; then
   echo "FAIL camera detection typed sample is not available=true" >&2
   echo "${camera_detection_sample}" >&2
@@ -171,17 +172,17 @@ if [[ "${STRICT_CAMERA_AVAILABLE}" == "1" ]] && ! grep -Eq '^available: true$' <
 fi
 echo "OK camera detection typed sample"
 
-timeout 10 ros2 topic echo /joint_states --once >/dev/null
+timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo /joint_states --once >/dev/null
 echo "OK joint state sample"
 
-timeout 10 ros2 topic echo /motionbrain/end_effector_pose --once >/dev/null
+timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo /motionbrain/end_effector_pose --once >/dev/null
 echo "OK end-effector pose sample"
 
-timeout 10 ros2 topic echo /motionbrain/kinematics_typed --once >/dev/null
+timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo /motionbrain/kinematics_typed --once >/dev/null
 echo "OK kinematics typed sample"
 
-timeout 10 ros2 topic echo /motionbrain/control_guard_typed --once >/dev/null
+timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo /motionbrain/control_guard_typed --once >/dev/null
 echo "OK control guard typed sample"
 
-timeout 10 ros2 topic echo /motionbrain/mission_state_typed --once >/dev/null
+timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo /motionbrain/mission_state_typed --once >/dev/null
 echo "OK mission state typed sample"

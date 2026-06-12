@@ -255,6 +255,7 @@ run_step "Bridge health check" env \
   CHECK_SERVICE="${CHECK_SERVICE}" \
   ROS_DISTRO="${ROS_DISTRO}" \
   MOTIONBRAIN_ROS_WS="${WORKSPACE}" \
+  SAMPLE_TIMEOUT_SECONDS="${SAMPLE_TIMEOUT_SECONDS}" \
   "${REPO_DIR}/tools/raspi/check_ros_bridge_health.sh"
 
 run_step "MotionBrain ROS2 packages" bash -lc "ros2 pkg list | grep '^motionbrain'"
