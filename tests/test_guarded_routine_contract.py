@@ -72,6 +72,15 @@ class GuardedRoutineContractTest(unittest.TestCase):
         self.assertIn("executeImplemented() {\n  return false;", executor_source)
         self.assertIn("enum class HardwareFeedbackFault", feedback_header)
         self.assertIn("base_yaw_reference", feedback_source)
+        self.assertIn("MOTIONBRAIN_BASE_YAW_REFERENCE_ENABLED 0", feedback_header)
+        self.assertIn("MOTIONBRAIN_BASE_YAW_REFERENCE_PIN 36", feedback_header)
+        self.assertIn("MOTIONBRAIN_BASE_YAW_REFERENCE_PHYSICAL_ROUTINE_ALLOWED 0", feedback_header)
+        self.assertIn("initBaseYawReference", feedback_source)
+        self.assertIn("updateBaseYawReference", feedback_source)
+        self.assertIn("hardwareReady", feedback_source)
+        self.assertIn("signalActive", feedback_source)
+        self.assertIn("UNREFERENCED", feedback_source)
+        self.assertIn("STALE", feedback_source)
         self.assertIn("ROUTINE_FEEDBACK_BLOCK", feedback_source)
         self.assertIn("feedback_required", feedback_source)
         self.assertIn("base_yaw_reference feedback not installed", feedback_source)
@@ -231,7 +240,14 @@ class GuardedRoutineContractTest(unittest.TestCase):
             "current sensing",
             "limit switch",
             "encoder",
-            "The executor should stay disabled until step 7 has explicit approval",
+            "GPIO36 active-low base index/reference input",
+            "MOTIONBRAIN_BASE_YAW_REFERENCE_ENABLED=0",
+            "MOTIONBRAIN_BASE_YAW_REFERENCE_PHYSICAL_ROUTINE_ALLOWED=0",
+            "HardwareFeedback::initBaseYawReference",
+            "HardwareFeedback::updateBaseYawReference",
+            "hardwareReady",
+            "signalActive",
+            "The executor should stay disabled until step 8 has explicit approval",
             "Current Firmware Scaffold",
             "GET /status",
             "GET /routine",

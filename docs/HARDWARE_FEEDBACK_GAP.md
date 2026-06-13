@@ -72,6 +72,33 @@ magnetic angle sensor, or a dedicated home/index switch plus bounded relative
 feedback. The repo should not claim closed-loop base routine execution until
 one concrete implementation is wired, reported, tested, and evidenced.
 
+Chosen first hardware path:
+
+```text
+GPIO36 active-low base index/reference input
+```
+
+The first concrete path is a read-only digital index/reference input on ESP32
+`GPIO36`, using an external pull-up to 3V3 and an active-low sensor or switch
+that pulls the pin to GND at the base reference. The intended physical sensor is
+a base-mounted magnet with a digital Hall/index output, or a simple
+normally-open switch/reed switch for bench validation. `GPIO36` is input-only
+and has no internal pull-up, so the pull-up must be external. This is an index
+reference, not a continuous absolute encoder.
+
+Firmware defaults stay conservative:
+
+- `MOTIONBRAIN_BASE_YAW_REFERENCE_ENABLED=0`
+- `MOTIONBRAIN_BASE_YAW_REFERENCE_PIN=36`
+- `MOTIONBRAIN_BASE_YAW_REFERENCE_ACTIVE_LOW=1`
+- `MOTIONBRAIN_BASE_YAW_REFERENCE_PHYSICAL_ROUTINE_ALLOWED=0`
+
+With the input disabled, status remains `not_installed`. With the input enabled
+for bench work, the adapter may report `installed`, `connected`, `fresh`,
+`signalActive`, `referenced`, and `hardwareReady`; physical routine execution
+still remains disabled unless the separate physical routine gate is explicitly
+opened in a later evidence-backed change.
+
 ## Required Telemetry Contract
 
 Before physical routine execution can be considered, the chosen feedback path
@@ -154,8 +181,25 @@ read-only object. Motion-step routines now include feedback readiness in
 ready, the routine is blocked with `feedback_required` and the event log uses
 `ROUTINE_FEEDBACK_BLOCK`.
 
-The scaffold does not read real feedback hardware yet and does not enable the
-executor.
+The default scaffold does not read real feedback hardware yet and does not
+enable the executor.
+
+The current firmware now also includes a disabled-by-default read-only adapter
+for the selected GPIO36 active-low index path:
+
+- `HardwareFeedback::initBaseYawReference()`
+- `HardwareFeedback::updateBaseYawReference()`
+- default macro gate:
+  `MOTIONBRAIN_BASE_YAW_REFERENCE_ENABLED=0`
+- physical routine gate:
+  `MOTIONBRAIN_BASE_YAW_REFERENCE_PHYSICAL_ROUTINE_ALLOWED=0`
+
+When enabled for bench validation, the adapter debounces the digital input,
+marks the axis `referenced` after the index signal is observed, reports
+`UNREFERENCED` until that happens, reports `STALE` if the sampling loop stops
+updating, and keeps `readyForRoutineExecution=false` while
+`MOTIONBRAIN_BASE_YAW_REFERENCE_PHYSICAL_ROUTINE_ALLOWED=0`.
+The wiring note is mirrored in `PIN_MAP.md`.
 
 ## Mandatory Blocks
 
@@ -238,8 +282,10 @@ Recommended next implementation sequence:
 5. Extend tests so routine execution remains blocked while feedback is not
    ready. Done for the scaffold contract.
 6. Capture read-only evidence on the Pi. Done for the scaffold contract.
-7. Only after explicit approval, perform a short single-axis physical validation
+7. Wire the GPIO36 active-low index/reference input and capture bench evidence
+   for inactive, active/reference, unreferenced, stale, and reboot states.
+8. Only after explicit approval, perform a short single-axis physical validation
    with stop-after-step status verification.
 
-The executor should stay disabled until step 7 has explicit approval and
+The executor should stay disabled until step 8 has explicit approval and
 hardware-backed feedback evidence.

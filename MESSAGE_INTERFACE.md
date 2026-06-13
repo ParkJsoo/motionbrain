@@ -463,7 +463,11 @@ base 상대각 제어는 다음 종료 이유를 가진다.
       "fresh": false,
       "referenced": false,
       "faulted": true,
+      "hardwareReady": false,
       "readyForRoutineExecution": false,
+      "signalActive": false,
+      "pin": 36,
+      "activeLow": true,
       "ageMs": 0,
       "lastUpdateMs": 0,
       "positionDeg": 0.0,
@@ -525,7 +529,11 @@ base 상대각 제어는 다음 종료 이유를 가진다.
       "fresh": false,
       "referenced": false,
       "faulted": true,
+      "hardwareReady": false,
       "readyForRoutineExecution": false,
+      "signalActive": false,
+      "pin": 36,
+      "activeLow": true,
       "lastStopReason": "NOT_INSTALLED",
       "fault": "not_installed"
     }
@@ -841,6 +849,15 @@ preflight 판단의 근거를 표시하기 위한 읽기 전용 요약이다. `s
   confirmation/state/safety/fault/sequence/perception gate를 통과해도
   `base_yaw_reference` 가 `not_installed` 이므로 `feedback_required` 로 막힌다.
   이때 event log에는 `ROUTINE_FEEDBACK_BLOCK` 을 남긴다.
+- `baseYaw.hardwareReady`는 선택한 feedback 입력 자체가 bench 기준으로
+  사용 가능한지를 나타낸다. `readyForRoutineExecution`은 별도 physical
+  routine gate까지 포함한 값이다. 현재 기본 빌드는
+  `MOTIONBRAIN_BASE_YAW_REFERENCE_ENABLED=0` 및
+  `MOTIONBRAIN_BASE_YAW_REFERENCE_PHYSICAL_ROUTINE_ALLOWED=0`이므로
+  `hardwareReady=false`, `readyForRoutineExecution=false`,
+  `fault=not_installed` 상태가 정상이다. GPIO36 active-low index 입력을 bench
+  빌드에서 켜더라도 physical routine gate가 닫혀 있으면 routine 실행은 계속
+  `feedback_required` 또는 executor policy 경계에서 막혀야 한다.
 - `executePreflight.executeReady=true` 는 preflight만 통과했다는 뜻이다.
   현재 skeleton에서는 그래도 `executeImplemented=false` 이므로 실제 execute는
   실패해야 한다.

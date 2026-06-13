@@ -178,7 +178,39 @@ ESP32 GND ──┬── TB6612FNG #1 GND
 ### ❌ 사용 금지 핀
 
 - **GPIO 0**: 부팅 모드 핀 — 코드 상수로만 정의, `pinMode`/`digitalWrite` 호출 제거됨 (실제 미사용)
-- **GPIO 35**: INPUT ONLY 핀 — 코드 상수로만 정의, 실제 미사용
+- **GPIO 35**: INPUT ONLY 핀 — TB6612FNG #3 미사용 PWMB 후보에서 제거됨. 출력으로 사용 금지.
+
+### Base Yaw Reference Feedback 후보
+
+물리 routine 실행 전 첫 feedback closure target은
+`base_yaw_reference`다. 현재 기본 firmware 빌드는 이 입력을 사용하지 않고
+`MOTIONBRAIN_BASE_YAW_REFERENCE_ENABLED=0`으로 `not_installed` 상태를
+보고한다.
+
+선택한 첫 배선 후보는 ESP32 입력 전용 핀 `GPIO36`에 active-low index/reference
+신호를 넣는 방식이다.
+
+| 용도 | ESP32 GPIO | 방향 | 기본 firmware macro | 배선 규칙 | 비고 |
+| ---- | ---------- | ---- | ------------------- | --------- | ---- |
+| base yaw reference/index | GPIO 36 | INPUT only | `MOTIONBRAIN_BASE_YAW_REFERENCE_PIN=36` | 센서/switch output -> GPIO36, 외부 10k pull-up -> 3V3, active state -> GND | `GPIO36`은 내부 pull-up이 없으므로 외부 pull-up 필요 |
+
+권장 물리 센서:
+
+- 1차 후보: base 기준점에 붙인 magnet + digital Hall/index switch output.
+- 단순 bench 후보: normally-open microswitch 또는 reed switch가 기준점에서
+  GPIO36을 GND로 당기는 active-low index.
+
+주의:
+
+- ESP32 `GPIO34-39` 계열은 입력 전용이며 내부 pull-up/down을 기대하지 않는다.
+- `GPIO36`은 모터 출력, teleop UART RX(`GPIO34`), ESP32-CAM, STM32 배선과
+  분리된 read-only feedback 입력으로만 쓴다.
+- 단일 digital index 입력은 절대각 encoder가 아니다. 기준점을 한 번 본 뒤
+  `referenced=true`로 보고할 수 있지만, 연속 absolute pose나 contact/stall을
+  증명하지 않는다.
+- 현재 adapter는 이 feedback을 읽어도
+  `MOTIONBRAIN_BASE_YAW_REFERENCE_PHYSICAL_ROUTINE_ALLOWED=0`이면
+  `readyForRoutineExecution=false`로 유지하므로 routine executor를 열지 않는다.
 
 ---
 

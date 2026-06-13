@@ -15,6 +15,7 @@
 #include "control/event_log.h"
 #include "control/dispatcher.h"
 #include "control/guarded_routine_executor.h"
+#include "control/hardware_feedback.h"
 #include "control/safety_gate.h"
 #include "safety/safety_monitor.h"
 #include "debug/debug_log.h"
@@ -109,6 +110,7 @@ void setup() {
   stm32Bridge.init();
   safetyMonitor.init(&systemState, &motorControl, &motionSequence);
   angleController.init(&systemState, &robotArm, &safetyMonitor);
+  HardwareFeedback::initBaseYawReference();
 
   // 9. 모션 시퀀스 초기화 (base angle step 지원)
   motionSequence.init(&robotArm, &systemState, &angleController);
@@ -195,6 +197,10 @@ void loop() {
 
   // base 상대각 폐루프 업데이트
   angleController.update(safetySnapshot);
+
+  // Read-only hardware feedback sampling. This never enables physical routine
+  // execution by itself.
+  HardwareFeedback::updateBaseYawReference();
 
   // 공통 명령 처리
   dispatcher.dispatchPending(commandBus);
