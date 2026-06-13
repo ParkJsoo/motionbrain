@@ -1031,7 +1031,11 @@ ROS2 routine command 규칙:
   현재 scaffold에서 기대값은
   `feedback_selected_target=base_yaw_reference`, `feedback_ready=false`,
   `physical_routine_execution_allowed=false`,
-  `base_yaw_feedback_fault=not_installed` 이다.
+  `base_yaw_feedback_fault=not_installed`,
+  `base_yaw_feedback_hardware_ready=false`,
+  `base_yaw_feedback_signal_active=false`,
+  `base_yaw_feedback_pin=36`,
+  `base_yaw_feedback_active_low=true` 이다.
 - `/motionbrain/diagnostics`는 `motionbrain/feedback` status를 포함한다. 현재
   feedback hardware가 없는 상태는 polling 실패가 아니므로 ERROR가 아니라
   WARN `feedback not ready for physical routines` 로 보고한다.

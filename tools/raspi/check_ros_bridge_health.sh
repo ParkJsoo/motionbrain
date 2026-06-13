@@ -9,6 +9,14 @@ STRICT_CAMERA_AVAILABLE="${STRICT_CAMERA_AVAILABLE:-0}"
 TOPIC_WAIT_SECONDS="${TOPIC_WAIT_SECONDS:-20}"
 TOPIC_POLL_SECONDS="${TOPIC_POLL_SECONDS:-1}"
 SAMPLE_TIMEOUT_SECONDS="${SAMPLE_TIMEOUT_SECONDS:-20}"
+EXPECTED_FEEDBACK_SELECTED_TARGET="${EXPECTED_FEEDBACK_SELECTED_TARGET:-base_yaw_reference}"
+EXPECTED_FEEDBACK_READY="${EXPECTED_FEEDBACK_READY:-false}"
+EXPECTED_PHYSICAL_ROUTINE_ALLOWED="${EXPECTED_PHYSICAL_ROUTINE_ALLOWED:-false}"
+EXPECTED_BASE_YAW_FEEDBACK_FAULT="${EXPECTED_BASE_YAW_FEEDBACK_FAULT:-not_installed}"
+EXPECTED_BASE_YAW_FEEDBACK_HARDWARE_READY="${EXPECTED_BASE_YAW_FEEDBACK_HARDWARE_READY:-}"
+EXPECTED_BASE_YAW_FEEDBACK_SIGNAL_ACTIVE="${EXPECTED_BASE_YAW_FEEDBACK_SIGNAL_ACTIVE:-}"
+EXPECTED_BASE_YAW_FEEDBACK_PIN="${EXPECTED_BASE_YAW_FEEDBACK_PIN:-36}"
+EXPECTED_BASE_YAW_FEEDBACK_ACTIVE_LOW="${EXPECTED_BASE_YAW_FEEDBACK_ACTIVE_LOW:-true}"
 
 required_topics=(
   "/motionbrain/status_typed"
@@ -115,20 +123,42 @@ timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo /motionbrain/routine --once 
 echo "OK routine diagnostics sample"
 
 routine_typed_sample="$(timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo /motionbrain/routine_typed --once)"
-if ! grep -Fq 'feedback_selected_target: base_yaw_reference' <<< "${routine_typed_sample}"; then
-  echo "FAIL routine typed sample missing feedback_selected_target=base_yaw_reference" >&2
-  echo "${routine_typed_sample}" >&2
-  exit 1
+expect_routine_typed_pattern() {
+  local pattern="$1"
+  local label="$2"
+  if ! grep -Fq "${pattern}" <<< "${routine_typed_sample}"; then
+    echo "FAIL routine typed sample missing ${label}: ${pattern}" >&2
+    echo "${routine_typed_sample}" >&2
+    exit 1
+  fi
+}
+expect_routine_typed_pattern \
+  "feedback_selected_target: ${EXPECTED_FEEDBACK_SELECTED_TARGET}" \
+  "feedback selected target"
+expect_routine_typed_pattern \
+  "feedback_ready: ${EXPECTED_FEEDBACK_READY}" \
+  "feedback ready state"
+expect_routine_typed_pattern \
+  "physical_routine_execution_allowed: ${EXPECTED_PHYSICAL_ROUTINE_ALLOWED}" \
+  "physical routine execution gate"
+expect_routine_typed_pattern \
+  "base_yaw_feedback_fault: ${EXPECTED_BASE_YAW_FEEDBACK_FAULT}" \
+  "base yaw feedback fault"
+expect_routine_typed_pattern \
+  "base_yaw_feedback_pin: ${EXPECTED_BASE_YAW_FEEDBACK_PIN}" \
+  "base yaw feedback pin"
+expect_routine_typed_pattern \
+  "base_yaw_feedback_active_low: ${EXPECTED_BASE_YAW_FEEDBACK_ACTIVE_LOW}" \
+  "base yaw feedback polarity"
+if [[ -n "${EXPECTED_BASE_YAW_FEEDBACK_HARDWARE_READY}" ]]; then
+  expect_routine_typed_pattern \
+    "base_yaw_feedback_hardware_ready: ${EXPECTED_BASE_YAW_FEEDBACK_HARDWARE_READY}" \
+    "base yaw hardware readiness"
 fi
-if ! grep -Fq 'feedback_ready: false' <<< "${routine_typed_sample}"; then
-  echo "FAIL routine typed sample missing feedback_ready=false" >&2
-  echo "${routine_typed_sample}" >&2
-  exit 1
-fi
-if ! grep -Fq 'base_yaw_feedback_fault: not_installed' <<< "${routine_typed_sample}"; then
-  echo "FAIL routine typed sample missing base_yaw_feedback_fault=not_installed" >&2
-  echo "${routine_typed_sample}" >&2
-  exit 1
+if [[ -n "${EXPECTED_BASE_YAW_FEEDBACK_SIGNAL_ACTIVE}" ]]; then
+  expect_routine_typed_pattern \
+    "base_yaw_feedback_signal_active: ${EXPECTED_BASE_YAW_FEEDBACK_SIGNAL_ACTIVE}" \
+    "base yaw signal state"
 fi
 echo "OK routine typed feedback readiness sample"
 

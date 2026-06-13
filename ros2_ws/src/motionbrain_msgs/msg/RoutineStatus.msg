@@ -39,6 +39,10 @@ bool base_yaw_feedback_connected
 bool base_yaw_feedback_fresh
 bool base_yaw_feedback_referenced
 bool base_yaw_feedback_faulted
+bool base_yaw_feedback_hardware_ready
+bool base_yaw_feedback_signal_active
+uint32 base_yaw_feedback_pin
+bool base_yaw_feedback_active_low
 uint32 base_yaw_feedback_age_ms
 uint32 base_yaw_feedback_last_update_ms
 float32 base_yaw_feedback_position_deg

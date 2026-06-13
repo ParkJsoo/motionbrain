@@ -354,7 +354,33 @@ The default capture is read-only. It now always samples `/motionbrain/routine`
 and validates typed feedback readiness from `/motionbrain/routine_typed`;
 the current no-feedback scaffold should report
 `feedback_selected_target=base_yaw_reference`, `feedback_ready=false`, and
-`base_yaw_feedback_fault=not_installed`.
+`base_yaw_feedback_fault=not_installed`. GPIO36 bench validation can override
+the expected fault and optional GPIO state with
+`EXPECTED_BASE_YAW_FEEDBACK_FAULT`,
+`EXPECTED_BASE_YAW_FEEDBACK_HARDWARE_READY`, and
+`EXPECTED_BASE_YAW_FEEDBACK_SIGNAL_ACTIVE` while keeping
+`feedback_ready=false`.
+
+For the base yaw reference input specifically, use the focused read-only helper:
+
+```bash
+tools/raspi/capture_base_yaw_reference_evidence.sh
+```
+
+After wiring GPIO36 and uploading a firmware build with
+`MOTIONBRAIN_BASE_YAW_REFERENCE_ENABLED=1`, repeat that helper with the expected
+bench state, for example `EXPECTED_BASE_YAW_FEEDBACK_FAULT=unreferenced` before
+the index is observed or this after the index has been observed:
+
+```bash
+EXPECTED_BASE_YAW_FEEDBACK_FAULT=ready \
+EXPECTED_BASE_YAW_FEEDBACK_HARDWARE_READY=true \
+EXPECTED_BASE_YAW_FEEDBACK_REFERENCED=true \
+tools/raspi/capture_base_yaw_reference_evidence.sh
+```
+
+Keep `EXPECTED_FEEDBACK_READY=false` unless the physical routine gate has been
+explicitly opened in a later validation pass.
 
 For compact bag evidence, opt in explicitly:
 

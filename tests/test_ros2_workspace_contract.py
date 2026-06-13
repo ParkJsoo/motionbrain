@@ -203,6 +203,10 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
             "bool base_yaw_feedback_fresh",
             "bool base_yaw_feedback_referenced",
             "bool base_yaw_feedback_faulted",
+            "bool base_yaw_feedback_hardware_ready",
+            "bool base_yaw_feedback_signal_active",
+            "uint32 base_yaw_feedback_pin",
+            "bool base_yaw_feedback_active_low",
             "uint32 base_yaw_feedback_age_ms",
             "uint32 base_yaw_feedback_last_update_ms",
             "float32 base_yaw_feedback_position_deg",
@@ -296,9 +300,22 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
 
         self.assertIn("OK routine diagnostics sample", script_text)
         self.assertIn("OK routine typed feedback readiness sample", script_text)
-        self.assertIn("feedback_selected_target: base_yaw_reference", script_text)
-        self.assertIn("feedback_ready: false", script_text)
-        self.assertIn("base_yaw_feedback_fault: not_installed", script_text)
+        self.assertIn(
+            'EXPECTED_FEEDBACK_SELECTED_TARGET="${EXPECTED_FEEDBACK_SELECTED_TARGET:-base_yaw_reference}"',
+            script_text,
+        )
+        self.assertIn("feedback_selected_target: ${EXPECTED_FEEDBACK_SELECTED_TARGET}", script_text)
+        self.assertIn("feedback_ready: ${EXPECTED_FEEDBACK_READY}", script_text)
+        self.assertIn(
+            "physical_routine_execution_allowed: ${EXPECTED_PHYSICAL_ROUTINE_ALLOWED}",
+            script_text,
+        )
+        self.assertIn("base_yaw_feedback_fault: ${EXPECTED_BASE_YAW_FEEDBACK_FAULT}", script_text)
+        self.assertIn("EXPECTED_BASE_YAW_FEEDBACK_FAULT", script_text)
+        self.assertIn("base_yaw_feedback_hardware_ready", script_text)
+        self.assertIn("base_yaw_feedback_signal_active", script_text)
+        self.assertIn("base_yaw_feedback_pin: ${EXPECTED_BASE_YAW_FEEDBACK_PIN}", script_text)
+        self.assertIn("base_yaw_feedback_active_low", script_text)
         self.assertIn("expected_lifecycle_nodes=(", script_text)
         self.assertIn("motionbrain_status_node", script_text)
         self.assertIn("motionbrain_joint_state_node", script_text)
@@ -327,6 +344,9 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
             / "motionbrain_status_node.py"
         ).read_text()
         evidence_text = (REPO_ROOT / "tools" / "raspi" / "capture_ros2_evidence.sh").read_text()
+        base_yaw_evidence_text = (
+            REPO_ROOT / "tools" / "raspi" / "capture_base_yaw_reference_evidence.sh"
+        ).read_text()
 
         self.assertIn('self.create_publisher(String, "/motionbrain/routine", 10)', bridge_text)
         self.assertIn(
@@ -339,10 +359,25 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         self.assertIn('capture_topic "/motionbrain/routine_typed"', evidence_text)
         self.assertIn("capture_feedback_readiness", evidence_text)
         self.assertIn("Read-only feedback readiness capture", evidence_text)
-        self.assertIn("base_yaw_feedback_fault: not_installed", evidence_text)
+        self.assertIn("physical_routine_execution_allowed: ${EXPECTED_PHYSICAL_ROUTINE_ALLOWED}", evidence_text)
+        self.assertIn("base_yaw_feedback_fault: ${EXPECTED_BASE_YAW_FEEDBACK_FAULT}", evidence_text)
+        self.assertIn("EXPECTED_BASE_YAW_FEEDBACK_FAULT", evidence_text)
+        self.assertIn("base_yaw_feedback_hardware_ready", evidence_text)
+        self.assertIn("base_yaw_feedback_signal_active", evidence_text)
+        self.assertIn("base_yaw_feedback_pin: ${EXPECTED_BASE_YAW_FEEDBACK_PIN}", evidence_text)
+        self.assertIn("base_yaw_feedback_active_low", evidence_text)
         self.assertIn('capture_topic "/motionbrain/lifecycle_typed"', evidence_text)
         self.assertIn('capture_topic "/motionbrain/lifecycle"', evidence_text)
         self.assertIn('capture_topic "/motionbrain/diagnostics"', evidence_text)
+        self.assertIn("ESP32 status", base_yaw_evidence_text)
+        self.assertIn("ESP32 routine", base_yaw_evidence_text)
+        self.assertIn("Dashboard status", base_yaw_evidence_text)
+        self.assertIn("Validate ${label}", base_yaw_evidence_text)
+        self.assertIn("ROS2 bridge health with base yaw expectations", base_yaw_evidence_text)
+        self.assertIn("Full ROS2 read-only evidence with base yaw expectations", base_yaw_evidence_text)
+        self.assertIn("EXPECTED_BASE_YAW_FEEDBACK_HARDWARE_READY", base_yaw_evidence_text)
+        self.assertIn("EXPECTED_BASE_YAW_FEEDBACK_SIGNAL_ACTIVE", base_yaw_evidence_text)
+        self.assertIn("EXPECTED_BASE_YAW_FEEDBACK_REFERENCED", base_yaw_evidence_text)
 
     def test_status_bridge_publishes_standard_diagnostics(self):
         bridge_text = (
@@ -367,6 +402,10 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
             "feedback not ready for physical routines",
             "feedback_ready",
             "base_yaw_fault",
+            "base_yaw_hardware_ready",
+            "base_yaw_signal_active",
+            "base_yaw_pin",
+            "base_yaw_active_low",
         ]
         for fragment in expected_fragments:
             with self.subTest(fragment=fragment):

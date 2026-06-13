@@ -84,10 +84,13 @@ HTTP boundary, but rejects `run`/`execute` locally with
 disabled by policy and `queue_apply_allowed=false` remains visible on
 `/motionbrain/routine_typed`. The same typed message mirrors the firmware
 feedback scaffold through `feedback_selected_target`, `feedback_ready`,
-`physical_routine_execution_allowed`, and `base_yaw_feedback_fault`; the current
-read-only scaffold reports `base_yaw_reference`, `false`, `false`, and
-`not_installed`. The `/motionbrain/routine_command` service uses the same policy
-and result schema for request/response clients. The
+`physical_routine_execution_allowed`, `base_yaw_feedback_fault`, and the GPIO36
+adapter fields `base_yaw_feedback_hardware_ready`,
+`base_yaw_feedback_signal_active`, `base_yaw_feedback_pin`, and
+`base_yaw_feedback_active_low`; the current read-only scaffold reports
+`base_yaw_reference`, `false`, `false`, `not_installed`, `false`, `false`, `36`,
+and `true`. The `/motionbrain/routine_command` service uses the same policy and
+result schema for request/response clients. The
 `/motionbrain/guarded_routine` action uses the same policy for action clients
 that expect feedback and a terminal result.
 

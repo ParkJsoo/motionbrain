@@ -139,7 +139,11 @@ The same state must be reflected in:
 - event log entries
 - dashboard readiness UI (`Routine Readiness` feedback tile)
 - ROS2 diagnostics or typed status (`motionbrain/feedback`,
-  `RoutineStatus.feedback_ready`, and `RoutineStatus.base_yaw_feedback_fault`)
+  `RoutineStatus.feedback_ready`, `RoutineStatus.base_yaw_feedback_fault`,
+  `RoutineStatus.base_yaw_feedback_hardware_ready`,
+  `RoutineStatus.base_yaw_feedback_signal_active`,
+  `RoutineStatus.base_yaw_feedback_pin`, and
+  `RoutineStatus.base_yaw_feedback_active_low`)
 - evidence helper output (`/motionbrain/routine` and typed feedback capture)
 
 ## Current Firmware Scaffold
@@ -200,6 +204,11 @@ marks the axis `referenced` after the index signal is observed, reports
 updating, and keeps `readyForRoutineExecution=false` while
 `MOTIONBRAIN_BASE_YAW_REFERENCE_PHYSICAL_ROUTINE_ALLOWED=0`.
 The wiring note is mirrored in `PIN_MAP.md`.
+
+Read-only bench evidence should be captured with
+`tools/raspi/capture_base_yaw_reference_evidence.sh`. The helper records ESP32
+`/status`, ESP32 `/routine`, dashboard `/api/status`, ROS2 health, and ROS2
+readiness evidence without sending actuator or routine commands.
 
 ## Mandatory Blocks
 

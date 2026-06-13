@@ -210,6 +210,10 @@ class GuardedRoutineContractTest(unittest.TestCase):
         self.assertIn('"feedbackRequired": true', doc)
         self.assertIn('"feedbackReady": false', doc)
         self.assertIn('"fault": "not_installed"', doc)
+        self.assertIn("base_yaw_feedback_hardware_ready", doc)
+        self.assertIn("base_yaw_feedback_signal_active", doc)
+        self.assertIn("base_yaw_feedback_pin", doc)
+        self.assertIn("base_yaw_feedback_active_low", doc)
 
     def test_hardware_feedback_gap_spec_blocks_physical_routine_execution(self):
         spec = (ROOT / "docs" / "HARDWARE_FEEDBACK_GAP.md").read_text()

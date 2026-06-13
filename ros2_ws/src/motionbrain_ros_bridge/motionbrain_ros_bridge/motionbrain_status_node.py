@@ -360,6 +360,10 @@ class MotionBrainStatusNode(Node):
                 "base_yaw_fresh": as_bool(base_yaw.get("fresh")),
                 "base_yaw_referenced": as_bool(base_yaw.get("referenced")),
                 "base_yaw_faulted": as_bool(base_yaw.get("faulted")),
+                "base_yaw_hardware_ready": as_bool(base_yaw.get("hardwareReady")),
+                "base_yaw_signal_active": as_bool(base_yaw.get("signalActive")),
+                "base_yaw_pin": as_uint(base_yaw.get("pin")),
+                "base_yaw_active_low": as_bool(base_yaw.get("activeLow")),
                 "base_yaw_fault": fault,
                 "base_yaw_age_ms": as_uint(base_yaw.get("ageMs")),
                 "base_yaw_last_update_ms": as_uint(base_yaw.get("lastUpdateMs")),
@@ -567,6 +571,14 @@ class MotionBrainStatusNode(Node):
                 message.base_yaw_feedback_fresh = as_bool(base_yaw.get("fresh"))
                 message.base_yaw_feedback_referenced = as_bool(base_yaw.get("referenced"))
                 message.base_yaw_feedback_faulted = as_bool(base_yaw.get("faulted"))
+                message.base_yaw_feedback_hardware_ready = as_bool(
+                    base_yaw.get("hardwareReady")
+                )
+                message.base_yaw_feedback_signal_active = as_bool(
+                    base_yaw.get("signalActive")
+                )
+                message.base_yaw_feedback_pin = as_uint(base_yaw.get("pin"))
+                message.base_yaw_feedback_active_low = as_bool(base_yaw.get("activeLow"))
                 message.base_yaw_feedback_age_ms = as_uint(base_yaw.get("ageMs"))
                 message.base_yaw_feedback_last_update_ms = as_uint(
                     base_yaw.get("lastUpdateMs")
