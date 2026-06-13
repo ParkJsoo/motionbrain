@@ -97,7 +97,7 @@ ROS2 타입 지정 토픽, control guard, mission supervisor
 - `firmware/stm32/MotionBrainSensor/`: STM32 센서/텔레오퍼레이션 펌웨어
 - `tools/`: 대시보드, 인식 서비스, 상태 감시기, STM32 보조 스크립트
 - `ros2_ws/src/`: ROS2 메시지, 브리지, 제어 guard, mission, URDF 패키지
-- `docs/`: 데모 절차, Raspberry Pi 배포, 아키텍처, 검증 기록
+- `docs/assets/`: README/포트폴리오용 공개 데모 이미지와 영상
 - `config/`: 비전 모델 라벨 등 런타임 설정 파일
 
 ## 빠른 실행
@@ -130,8 +130,7 @@ colcon test --packages-select motionbrain_msgs motionbrain_control motionbrain_m
 colcon test-result --verbose
 ```
 
-Pi 대시보드/인식 서비스는 systemd로 부팅 자동 실행할 수 있다. 설치 절차는
-`docs/RASPBERRY_PI_DEPLOYMENT.md`를 기준으로 한다.
+Pi 대시보드/인식 서비스는 `deploy/systemd/`의 unit 파일로 부팅 자동 실행할 수 있다.
 
 수동 fallback 대시보드 예시:
 
@@ -169,21 +168,12 @@ python3 tools/motionbrain_dashboard.py \
 
 현재 cup known-object demo는 ESP32-CAM `qvga` / JPEG quality `4`, Pi
 YOLOv5s object mode, confidence gate `0.25`, dashboard proxy 조합을 사용한다.
-systemd wrapper는 ESP32-CAM 재부팅 후에도 이 카메라 프로필을 다시 적용한다. 자세한 실행 명령은
-`docs/HOME_WIFI_MODE.md`와 `docs/DEMO_RUNBOOK.md`를 기준으로 한다.
+systemd wrapper는 ESP32-CAM 재부팅 후에도 이 카메라 프로필을 다시 적용한다.
 
 ## 문서
 
 - [PORTFOLIO.md](PORTFOLIO.md): 한국어 포트폴리오 요약
 - [PORTFOLIO.en.md](PORTFOLIO.en.md): 영어 포트폴리오 요약
-- [MESSAGE_INTERFACE.md](MESSAGE_INTERFACE.md): 시리얼/HTTP/ROS2 명령과 상태 경계
-- [PIN_MAP.md](PIN_MAP.md): 핀과 배선 기준
-- [docs/HARDWARE_FEEDBACK_GAP.md](docs/HARDWARE_FEEDBACK_GAP.md): 물리 routine 실행 전 하드웨어 피드백 gap 기준
-- [docs/DEMO_RUNBOOK.md](docs/DEMO_RUNBOOK.md): 데모 캡처 절차
-- [docs/RASPBERRY_PI_DEPLOYMENT.md](docs/RASPBERRY_PI_DEPLOYMENT.md): Raspberry Pi systemd 배포
-- [docs/RASPBERRY_PI_ROS2_BRINGUP.md](docs/RASPBERRY_PI_ROS2_BRINGUP.md): Raspberry Pi ROS2 bring-up 기록
-- [docs/VISION_DATASET_EVALUATION.md](docs/VISION_DATASET_EVALUATION.md): 물체 인식 frame capture와 offline 평가 절차
-- [docs/EMBEDDED_FIRMWARE_EVIDENCE.md](docs/EMBEDDED_FIRMWARE_EVIDENCE.md): 임베디드 펌웨어 검증 근거
 
 ## 라이선스
 

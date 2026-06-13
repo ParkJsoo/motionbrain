@@ -97,7 +97,7 @@ ROS2 typed topics, control guard, mission supervisor
 - `firmware/stm32/MotionBrainSensor/`: STM32 sensor/teleop firmware
 - `tools/`: dashboard, perception service, watcher, STM32 helper scripts
 - `ros2_ws/src/`: ROS2 messages, bridge, control guard, mission, and URDF packages
-- `docs/`: demo runbooks, Raspberry Pi deployment, architecture notes, validation records
+- `docs/assets/`: public demo images and video used by the README and portfolio
 - `config/`: runtime config such as vision labels
 
 ## Quick Start
@@ -130,8 +130,8 @@ colcon test --packages-select motionbrain_msgs motionbrain_control motionbrain_m
 colcon test-result --verbose
 ```
 
-The Pi dashboard and perception service can run as boot-time systemd services.
-Use `docs/RASPBERRY_PI_DEPLOYMENT.en.md` for the install procedure.
+The Pi dashboard and perception service can run as boot-time systemd services
+using the unit files in `deploy/systemd/`.
 
 Manual fallback dashboard command:
 
@@ -170,22 +170,12 @@ python3 tools/motionbrain_dashboard.py \
 
 The current cup known-object demo uses ESP32-CAM `qvga` / JPEG quality `4`, Pi
 YOLOv5s object mode, confidence gate `0.25`, and dashboard proxy mode. The
-systemd wrappers re-apply this camera profile after an ESP32-CAM reboot. Use
-`docs/HOME_WIFI_MODE.md` and `docs/DEMO_RUNBOOK.en.md` for the exact run
-commands.
+systemd wrappers re-apply this camera profile after an ESP32-CAM reboot.
 
 ## Documentation
 
 - [PORTFOLIO.en.md](PORTFOLIO.en.md): English portfolio summary
 - [PORTFOLIO.md](PORTFOLIO.md): Korean portfolio summary
-- [MESSAGE_INTERFACE.md](MESSAGE_INTERFACE.md): serial, HTTP, and ROS2 command/status boundary
-- [PIN_MAP.md](PIN_MAP.md): pin and wiring reference
-- [docs/HARDWARE_FEEDBACK_GAP.md](docs/HARDWARE_FEEDBACK_GAP.md): hardware feedback gap before physical routine execution
-- [docs/DEMO_RUNBOOK.en.md](docs/DEMO_RUNBOOK.en.md): demo capture runbook
-- [docs/RASPBERRY_PI_DEPLOYMENT.en.md](docs/RASPBERRY_PI_DEPLOYMENT.en.md): Raspberry Pi systemd deployment
-- [docs/RASPBERRY_PI_ROS2_BRINGUP.md](docs/RASPBERRY_PI_ROS2_BRINGUP.md): Raspberry Pi ROS2 bring-up notes
-- [docs/VISION_DATASET_EVALUATION.md](docs/VISION_DATASET_EVALUATION.md): vision frame capture and offline detector evaluation
-- [docs/EMBEDDED_FIRMWARE_EVIDENCE.md](docs/EMBEDDED_FIRMWARE_EVIDENCE.md): embedded firmware validation evidence
 
 ## License
 

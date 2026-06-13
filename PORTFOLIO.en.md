@@ -152,7 +152,4 @@ Current honest positioning:
 ## Related Documents
 
 - [README.en.md](README.en.md): project entry point
-- [MESSAGE_INTERFACE.md](MESSAGE_INTERFACE.md): command and status boundary
-- [docs/DEMO_RUNBOOK.en.md](docs/DEMO_RUNBOOK.en.md): demo capture runbook
-- [docs/RASPBERRY_PI_DEPLOYMENT.en.md](docs/RASPBERRY_PI_DEPLOYMENT.en.md): Pi systemd deployment
-- [docs/EMBEDDED_FIRMWARE_EVIDENCE.md](docs/EMBEDDED_FIRMWARE_EVIDENCE.md): embedded firmware validation evidence
+- [README.md](README.md): Korean project entry point

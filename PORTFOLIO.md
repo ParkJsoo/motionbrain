@@ -150,7 +150,4 @@ Pi에서 OpenCV DNN/ONNX 기반 객체 인식 경로는 구현했다. `config/co
 ## 관련 문서
 
 - [README.md](README.md): 프로젝트 진입점
-- [MESSAGE_INTERFACE.md](MESSAGE_INTERFACE.md): 명령/상태 메시지 경계
-- [docs/DEMO_RUNBOOK.md](docs/DEMO_RUNBOOK.md): 데모 촬영 절차
-- [docs/RASPBERRY_PI_DEPLOYMENT.md](docs/RASPBERRY_PI_DEPLOYMENT.md): Pi systemd 배포
-- [docs/EMBEDDED_FIRMWARE_EVIDENCE.md](docs/EMBEDDED_FIRMWARE_EVIDENCE.md): 임베디드 펌웨어 검증 근거
+- [README.en.md](README.en.md): 영어 프로젝트 진입점

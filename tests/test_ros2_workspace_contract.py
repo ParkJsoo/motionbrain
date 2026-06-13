@@ -596,7 +596,6 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         urdf_text = (package_dir / "urdf" / "motionbrain_mock_control.urdf").read_text()
         config_text = (package_dir / "config" / "controllers.yaml").read_text()
         launch_text = (package_dir / "launch" / "mock_control.launch.py").read_text()
-        readme_text = (package_dir / "README.md").read_text()
 
         expected_joints = [
             "base_yaw_joint",
@@ -618,16 +617,11 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         self.assertIn('executable="ros2_control_node"', launch_text)
         self.assertIn('name="controller_manager"', launch_text)
         self.assertIn("motionbrain_arm_controller", launch_text)
-        self.assertIn("does not connect to the ESP32 controller", readme_text)
-        self.assertIn("capture_ros2_control_mock_evidence.sh", readme_text)
-        self.assertIn("It is not a", readme_text)
-        self.assertIn("physical hardware interface", readme_text)
 
     def test_ros2_control_mock_evidence_helper_is_mock_only(self):
         helper_text = (
             REPO_ROOT / "tools" / "raspi" / "capture_ros2_control_mock_evidence.sh"
         ).read_text()
-        bringup_text = (REPO_ROOT / "docs" / "RASPBERRY_PI_ROS2_BRINGUP.md").read_text()
 
         expected_fragments = [
             'MOCK_ROS_DOMAIN_ID="${MOCK_ROS_DOMAIN_ID:-42}"',
@@ -646,9 +640,6 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         for fragment in expected_fragments:
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, helper_text)
-
-        self.assertIn("capture_ros2_control_mock_evidence.sh", bringup_text)
-        self.assertIn("separate `ROS_DOMAIN_ID`", bringup_text)
 
 
 if __name__ == "__main__":
