@@ -72,19 +72,21 @@ magnetic angle sensor, or a dedicated home/index switch plus bounded relative
 feedback. The repo should not claim closed-loop base routine execution until
 one concrete implementation is wired, reported, tested, and evidenced.
 
-Chosen first hardware path:
+Optional future hardware candidate:
 
 ```text
 GPIO36 active-low base index/reference input
 ```
 
-The first concrete path is a read-only digital index/reference input on ESP32
-`GPIO36`, using an external pull-up to 3V3 and an active-low sensor or switch
-that pulls the pin to GND at the base reference. The intended physical sensor is
-a base-mounted magnet with a digital Hall/index output, or a simple
-normally-open switch/reed switch for bench validation. `GPIO36` is input-only
-and has no internal pull-up, so the pull-up must be external. This is an index
-reference, not a continuous absolute encoder.
+The repository has an optional, disabled-by-default adapter for a read-only
+digital index/reference input on ESP32 `GPIO36`. No GPIO36 reference sensor is
+installed in the current bench setup. If a future build intentionally adds one,
+the expected electrical path is an external pull-up to 3V3 and an active-low
+sensor or switch that pulls the pin to GND at the base reference. Possible
+future parts include a base-mounted magnet with a digital Hall/index output, or
+a simple normally-open switch/reed switch for bench validation. `GPIO36` is
+input-only and has no internal pull-up, so the pull-up must be external. This
+would be an index reference, not a continuous absolute encoder.
 
 Firmware defaults stay conservative:
 
@@ -93,11 +95,12 @@ Firmware defaults stay conservative:
 - `MOTIONBRAIN_BASE_YAW_REFERENCE_ACTIVE_LOW=1`
 - `MOTIONBRAIN_BASE_YAW_REFERENCE_PHYSICAL_ROUTINE_ALLOWED=0`
 
-With the input disabled, status remains `not_installed`. With the input enabled
-for bench work, the adapter may report `installed`, `connected`, `fresh`,
-`signalActive`, `referenced`, and `hardwareReady`; physical routine execution
-still remains disabled unless the separate physical routine gate is explicitly
-opened in a later evidence-backed change.
+With the input disabled, which is the current real setup, status remains
+`not_installed`. If the optional input is enabled for future bench work, the
+adapter may report `installed`, `connected`, `fresh`, `signalActive`,
+`referenced`, and `hardwareReady`; physical routine execution still remains
+disabled unless the separate physical routine gate is explicitly opened in a
+later evidence-backed change.
 
 ## Required Telemetry Contract
 
@@ -291,8 +294,10 @@ Recommended next implementation sequence:
 5. Extend tests so routine execution remains blocked while feedback is not
    ready. Done for the scaffold contract.
 6. Capture read-only evidence on the Pi. Done for the scaffold contract.
-7. Wire the GPIO36 active-low index/reference input and capture bench evidence
-   for inactive, active/reference, unreferenced, stale, and reboot states.
+7. If a GPIO36 reference sensor/switch is intentionally added later, wire the
+   active-low index/reference input and capture bench evidence for inactive,
+   active/reference, unreferenced, stale, and reboot states. Skip this step
+   while no such sensor exists.
 8. Only after explicit approval, perform a short single-axis physical validation
    with stop-after-step status verification.
 

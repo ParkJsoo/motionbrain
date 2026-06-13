@@ -855,9 +855,10 @@ preflight 판단의 근거를 표시하기 위한 읽기 전용 요약이다. `s
   `MOTIONBRAIN_BASE_YAW_REFERENCE_ENABLED=0` 및
   `MOTIONBRAIN_BASE_YAW_REFERENCE_PHYSICAL_ROUTINE_ALLOWED=0`이므로
   `hardwareReady=false`, `readyForRoutineExecution=false`,
-  `fault=not_installed` 상태가 정상이다. GPIO36 active-low index 입력을 bench
-  빌드에서 켜더라도 physical routine gate가 닫혀 있으면 routine 실행은 계속
-  `feedback_required` 또는 executor policy 경계에서 막혀야 한다.
+  `fault=not_installed` 상태가 정상이다. 현재 bench에는 GPIO36 reference
+  센서/스위치가 설치되어 있지 않다. 나중에 GPIO36 active-low index 입력을
+  bench 빌드에서 켜더라도 physical routine gate가 닫혀 있으면 routine 실행은
+  계속 `feedback_required` 또는 executor policy 경계에서 막혀야 한다.
 - `executePreflight.executeReady=true` 는 preflight만 통과했다는 뜻이다.
   현재 skeleton에서는 그래도 `executeImplemented=false` 이므로 실제 execute는
   실패해야 한다.

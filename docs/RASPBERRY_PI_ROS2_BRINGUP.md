@@ -361,13 +361,16 @@ the expected fault and optional GPIO state with
 `EXPECTED_BASE_YAW_FEEDBACK_SIGNAL_ACTIVE` while keeping
 `feedback_ready=false`.
 
-For the base yaw reference input specifically, use the focused read-only helper:
+For the optional base yaw reference input specifically, use the focused
+read-only helper:
 
 ```bash
 tools/raspi/capture_base_yaw_reference_evidence.sh
 ```
 
-After wiring GPIO36 and uploading a firmware build with
+The current bench has no GPIO36 reference sensor installed, so the normal state
+is still `not_installed`. If a GPIO36 reference input is intentionally added in
+a future build and firmware is uploaded with
 `MOTIONBRAIN_BASE_YAW_REFERENCE_ENABLED=1`, repeat that helper with the expected
 bench state, for example `EXPECTED_BASE_YAW_FEEDBACK_FAULT=unreferenced` before
 the index is observed or this after the index has been observed:

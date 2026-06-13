@@ -103,9 +103,10 @@
   `docs/HARDWARE_FEEDBACK_GAP.md`에 정의한다. 현재 첫 closure target은
   `base_yaw_reference`이며, 이 증거가 생기기 전까지 routine executor는
   disabled 상태를 유지한다.
-- `base_yaw_reference`의 첫 실제 배선 후보는 ESP32 `GPIO36` active-low
-  index/reference 입력이다. GPIO36은 입력 전용이고 내부 pull-up이 없으므로
-  외부 10k pull-up과 Hall/index switch 또는 normally-open reference switch가
-  필요하다. 기본 firmware는 이 입력을 disabled 상태로 두며
-  `not_installed`를 보고한다.
+- `base_yaw_reference`의 선택형 미래 배선 후보는 ESP32 `GPIO36`
+  active-low index/reference 입력이다. 현재 bench에는 이 센서/스위치가
+  설치되어 있지 않다. GPIO36은 입력 전용이고 내부 pull-up이 없으므로,
+  나중에 의도적으로 추가할 때만 외부 10k pull-up과 Hall/index switch 또는
+  normally-open reference switch가 필요하다. 기본 firmware는 이 입력을
+  disabled 상태로 두며 `not_installed`를 보고한다.
 - 제품형 safety architecture 수준의 독립 safety MCU/channel은 아직 bench MVP 이후 과제다.

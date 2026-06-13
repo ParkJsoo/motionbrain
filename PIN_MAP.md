@@ -183,18 +183,20 @@ ESP32 GND ──┬── TB6612FNG #1 GND
 ### Base Yaw Reference Feedback 후보
 
 물리 routine 실행 전 첫 feedback closure target은
-`base_yaw_reference`다. 현재 기본 firmware 빌드는 이 입력을 사용하지 않고
+`base_yaw_reference`다. 현재 bench에는 GPIO36 reference 센서/스위치가
+설치되어 있지 않으며, 기본 firmware 빌드는 이 입력을 사용하지 않고
 `MOTIONBRAIN_BASE_YAW_REFERENCE_ENABLED=0`으로 `not_installed` 상태를
-보고한다.
+보고한다. 아래 내용은 즉시 해야 할 배선이 아니라, 나중에 해당 센서를
+의도적으로 추가할 때 쓰는 선택형 후보 경로다.
 
-선택한 첫 배선 후보는 ESP32 입력 전용 핀 `GPIO36`에 active-low index/reference
+선택형 배선 후보는 ESP32 입력 전용 핀 `GPIO36`에 active-low index/reference
 신호를 넣는 방식이다.
 
 | 용도 | ESP32 GPIO | 방향 | 기본 firmware macro | 배선 규칙 | 비고 |
 | ---- | ---------- | ---- | ------------------- | --------- | ---- |
 | base yaw reference/index | GPIO 36 | INPUT only | `MOTIONBRAIN_BASE_YAW_REFERENCE_PIN=36` | 센서/switch output -> GPIO36, 외부 10k pull-up -> 3V3, active state -> GND | `GPIO36`은 내부 pull-up이 없으므로 외부 pull-up 필요 |
 
-권장 물리 센서:
+나중에 추가할 경우의 후보 센서:
 
 - 1차 후보: base 기준점에 붙인 magnet + digital Hall/index switch output.
 - 단순 bench 후보: normally-open microswitch 또는 reed switch가 기준점에서
