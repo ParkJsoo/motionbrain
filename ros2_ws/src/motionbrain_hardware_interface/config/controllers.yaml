@@ -1,0 +1,28 @@
+controller_manager:
+  ros__parameters:
+    update_rate: 50
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    motionbrain_arm_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+motionbrain_arm_controller:
+  ros__parameters:
+    joints:
+      - base_yaw_joint
+      - shoulder_pitch_joint
+      - elbow_pitch_joint
+      - wrist_pitch_joint
+      - gripper_joint
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+      - velocity
+    allow_partial_joints_goal: true
+    interpolate_from_desired_state: true
+    constraints:
+      goal_time: 2.0
+      stopped_velocity_tolerance: 0.02

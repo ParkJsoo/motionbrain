@@ -90,7 +90,7 @@ void setup() {
   systemState.setTimeout(30000);
   DebugLog::debug("Safety timeout: 30000ms");
   
-  // 5. 모터 제어 모듈 초기화 (stub 모드)
+  // 5. TB6612FNG 기반 5축 모터 제어 모듈 초기화
   if (!motorControl.init()) {
     DebugLog::error("Motor control initialization failed");
     // 오류 발생 시 시스템을 FAULT 상태로 전환

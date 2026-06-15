@@ -50,6 +50,7 @@ Validated:
 - Pi-hosted dashboard for status, events, camera feed, target overlay, and safety-gated nudge actions
 - Raspberry Pi 4 + Ubuntu 24.04 + ROS2 Jazzy bridge
 - ROS2 typed topics for status, events, camera detection, joint states, kinematics, control guard, and mission state
+- `ros2_control` mock demo and safe open-loop `SystemInterface` scaffold
 - Pi perception service feeding `/camera/detection(_typed)`
 - ESP32-hosted camera mode split: `STREAM` for manual operation, `TRACKED` for recognition checks
 - Mac Docker/noVNC RViz visualization for RobotModel/TF and live ROS2 topics mirrored from the Pi dashboard
@@ -96,7 +97,7 @@ ROS2 typed topics, control guard, mission supervisor
 - `firmware/esp32cam/`: ESP32-CAM firmware
 - `firmware/stm32/MotionBrainSensor/`: STM32 sensor/teleop firmware
 - `tools/`: dashboard, perception service, watcher, STM32 helper scripts
-- `ros2_ws/src/`: ROS2 messages, bridge, control guard, mission, and URDF packages
+- `ros2_ws/src/`: ROS2 messages, bridge, control guard, mission, URDF, and `ros2_control` packages
 - `docs/assets/`: public demo images and video used by the README and portfolio
 - `config/`: runtime config such as vision labels
 
@@ -120,13 +121,24 @@ Run host tests:
 python3 -m unittest discover -s tests
 ```
 
+Check Raspberry Pi access:
+
+```bash
+python3 tools/raspi/check_pi_ssh_target.py
+ssh motionbrain-pi 'hostname; hostname -I; systemctl is-active ssh'
+```
+
+The Pi SSH alias should follow `motionbrain-pi.davolink` or
+`motionbrain-pi.local`, not a DHCP IP literal. See [OPERATIONS.md](OPERATIONS.md)
+for the access and recovery flow.
+
 Build and test the ROS2 workspace on Raspberry Pi:
 
 ```bash
 cd ros2_ws
 source /opt/ros/jazzy/setup.bash
-colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_mission motionbrain_ros_bridge motionbrain_description
-colcon test --packages-select motionbrain_msgs motionbrain_control motionbrain_mission motionbrain_ros_bridge motionbrain_description
+colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_hardware_interface motionbrain_mission motionbrain_ros_bridge motionbrain_description motionbrain_ros2_control_mock
+colcon test --packages-select motionbrain_msgs motionbrain_control motionbrain_hardware_interface motionbrain_mission motionbrain_ros_bridge motionbrain_description motionbrain_ros2_control_mock
 colcon test-result --verbose
 ```
 
@@ -176,6 +188,9 @@ systemd wrappers re-apply this camera profile after an ESP32-CAM reboot.
 
 - [PORTFOLIO.en.md](PORTFOLIO.en.md): English portfolio summary
 - [PORTFOLIO.md](PORTFOLIO.md): Korean portfolio summary
+- [ROBOTIS_READINESS.md](ROBOTIS_READINESS.md): ROS2 and hardware-boundary summary for ROBOTIS applications
+- [EMBEDDED_BRINGUP.md](EMBEDDED_BRINGUP.md): STM32/ESP32 bring-up and measurement checklist
+- [OPERATIONS.md](OPERATIONS.md): Pi/systemd/health-check operations notes
 
 ## License
 

@@ -10,6 +10,7 @@ ROS2_SRC = REPO_ROOT / "ros2_ws" / "src"
 EXPECTED_PACKAGES = {
     "motionbrain_msgs",
     "motionbrain_control",
+    "motionbrain_hardware_interface",
     "motionbrain_mission",
     "motionbrain_ros_bridge",
     "motionbrain_description",
@@ -56,6 +57,7 @@ EXPECTED_ACTION_FILES = {
 
 EXPECTED_PACKAGE_TEST_FILES = {
     "motionbrain_control/test/test_control_guard_logic.cpp",
+    "motionbrain_hardware_interface/test/test_load_motionbrain_hardware_interface.cpp",
     "motionbrain_mission/test/test_mission_flow.py",
     "motionbrain_ros_bridge/test/test_payload_utils.py",
 }
@@ -151,6 +153,17 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         self.assertIn("ros2_control_test_assets", mock_control_deps)
         self.assertIn("ros2_controllers", mock_control_deps)
         self.assertIn("ros2controlcli", mock_control_deps)
+
+        hardware_interface_deps = dependency_names(
+            package_xml("motionbrain_hardware_interface"),
+            {"depend", "exec_depend", "build_depend"},
+        )
+        self.assertIn("hardware_interface", hardware_interface_deps)
+        self.assertIn("pluginlib", hardware_interface_deps)
+        self.assertIn("rclcpp", hardware_interface_deps)
+        self.assertIn("rclcpp_lifecycle", hardware_interface_deps)
+        self.assertIn("controller_manager", hardware_interface_deps)
+        self.assertIn("joint_trajectory_controller", hardware_interface_deps)
 
     def test_motionbrain_message_inventory_is_explicit(self):
         message_files = {
@@ -640,6 +653,77 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         for fragment in expected_fragments:
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, helper_text)
+
+    def test_ros2_control_hardware_interface_scaffold_is_safe_open_loop(self):
+        package_dir = ROS2_SRC / "motionbrain_hardware_interface"
+        self.assertTrue((package_dir / "package.xml").exists())
+        self.assertTrue((package_dir / "CMakeLists.txt").exists())
+        self.assertTrue((package_dir / "README.md").exists())
+        self.assertTrue((package_dir / "motionbrain_hardware_interface.xml").exists())
+        self.assertTrue((package_dir / "launch" / "hardware_interface.launch.py").exists())
+        self.assertTrue((package_dir / "config" / "controllers.yaml").exists())
+        self.assertTrue((package_dir / "urdf" / "motionbrain_hardware_interface.urdf").exists())
+
+        header_text = (
+            package_dir
+            / "include"
+            / "motionbrain_hardware_interface"
+            / "motionbrain_hardware_interface.hpp"
+        ).read_text()
+        source_text = (
+            package_dir
+            / "src"
+            / "motionbrain_hardware_interface.cpp"
+        ).read_text()
+        plugin_text = (package_dir / "motionbrain_hardware_interface.xml").read_text()
+        urdf_text = (
+            package_dir
+            / "urdf"
+            / "motionbrain_hardware_interface.urdf"
+        ).read_text()
+        config_text = (package_dir / "config" / "controllers.yaml").read_text()
+        launch_text = (
+            package_dir
+            / "launch"
+            / "hardware_interface.launch.py"
+        ).read_text()
+        cmake_text = (package_dir / "CMakeLists.txt").read_text()
+
+        expected_fragments = [
+            "hardware_interface::SystemInterface",
+            "MotionBrainHardwareInterface",
+            "on_init",
+            "export_state_interfaces",
+            "export_command_interfaces",
+            "on_activate",
+            "on_cleanup",
+            "on_shutdown",
+            "on_error",
+            "read(",
+            "write(",
+            "command_timeout_sec_",
+            "last_command_change_time_",
+            "max_state_step_rad_",
+            "Physical actuation remains behind the firmware SafetyGate",
+            "PLUGINLIB_EXPORT_CLASS",
+        ]
+        for fragment in expected_fragments:
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, header_text + source_text)
+
+        self.assertIn("pluginlib_export_plugin_description_file", cmake_text)
+        self.assertIn("motionbrain_hardware_interface/MotionBrainHardwareInterface", plugin_text)
+        self.assertIn("Safe open-loop", plugin_text)
+        self.assertIn("<ros2_control", urdf_text)
+        self.assertIn("motionbrain_hardware_interface/MotionBrainHardwareInterface", urdf_text)
+        self.assertIn('<param name="transport_mode">dry_run</param>', urdf_text)
+        self.assertIn("joint_trajectory_controller/JointTrajectoryController", config_text)
+        self.assertIn("interpolate_from_desired_state: true", config_text)
+        self.assertIn('package="controller_manager"', launch_text)
+        self.assertIn('get_package_share_directory("motionbrain_hardware_interface")', launch_text)
+        self.assertIn("pluginlib::ClassLoader", (
+            package_dir / "test" / "test_load_motionbrain_hardware_interface.cpp"
+        ).read_text())
 
 
 if __name__ == "__main__":

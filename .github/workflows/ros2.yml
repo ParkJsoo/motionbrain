@@ -27,6 +27,17 @@ jobs:
             python3-opencv \
             python3-pytest \
             ros-jazzy-ament-cmake-gtest \
+            ros-jazzy-controller-manager \
+            ros-jazzy-hardware-interface \
+            ros-jazzy-joint-state-broadcaster \
+            ros-jazzy-joint-trajectory-controller \
+            ros-jazzy-pluginlib \
+            ros-jazzy-rclcpp-lifecycle \
+            ros-jazzy-robot-state-publisher \
+            ros-jazzy-ros2-control \
+            ros-jazzy-ros2-control-test-assets \
+            ros-jazzy-ros2-controllers \
+            ros-jazzy-ros2controlcli \
             ros-jazzy-rosidl-default-generators
 
       - name: Run host and ROS2 contract tests
@@ -41,9 +52,11 @@ jobs:
             --packages-select \
               motionbrain_msgs \
               motionbrain_control \
+              motionbrain_hardware_interface \
               motionbrain_mission \
               motionbrain_ros_bridge \
               motionbrain_description \
+              motionbrain_ros2_control_mock \
             --event-handlers console_direct+
 
       - name: Test ROS2 workspace
@@ -56,8 +69,10 @@ jobs:
             --packages-select \
               motionbrain_msgs \
               motionbrain_control \
+              motionbrain_hardware_interface \
               motionbrain_mission \
               motionbrain_ros_bridge \
               motionbrain_description \
+              motionbrain_ros2_control_mock \
             --event-handlers console_direct+
           colcon test-result --verbose
