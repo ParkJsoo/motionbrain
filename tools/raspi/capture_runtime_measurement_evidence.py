@@ -374,6 +374,14 @@ def build_report(args: argparse.Namespace) -> str:
             f"{fmt_ms(result['p95_ms'])} | {fmt_ms(result['min_ms'])} | {fmt_ms(result['max_ms'])} | "
             f"`{tail}` |"
         )
+    if all(int(result["ok"]) == 0 for _, result in topic_results):
+        lines.extend(
+            [
+                "",
+                "All topic probes hit the bounded timeout in this capture; no ROS2 message",
+                "sample latency value was captured.",
+            ]
+        )
 
     lines.extend(
         [
@@ -388,6 +396,13 @@ def build_report(args: argparse.Namespace) -> str:
         lines.append(
             f"| {result['label']} | {result['rc']} | {float(result['elapsed_ms']):.1f} | "
             f"`{str(result['success_true']).lower()}` |"
+        )
+    if all(int(result["rc"]) == 124 for result in service_results):
+        lines.extend(
+            [
+                "",
+                "Both ROS2 status probes hit the bounded timeout in this capture.",
+            ]
         )
 
     lines.extend(
@@ -407,9 +422,10 @@ def build_report(args: argparse.Namespace) -> str:
             "",
             "```text",
             "Captured read-only runtime measurements for MotionBrain on the live Raspberry Pi host:",
-            "HTTP endpoint latency, ROS2 topic sample acquisition latency, status service/action round trips,",
-            "Pi health, and hardware-instrument inventory. Physical waveform and voltage",
-            "measurements still require external instruments.",
+            "HTTP endpoint latency, bounded ROS2 topic/status CLI probes, Pi health, and",
+            "hardware-instrument inventory. In this capture, ROS2 CLI probes timed out",
+            "before returning message/status data. Physical waveform and voltage measurements",
+            "still require external instruments.",
             "```",
             "",
         ]
