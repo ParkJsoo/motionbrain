@@ -37,8 +37,10 @@ class RaspiPiAccessTest(unittest.TestCase):
         self.assertFalse(check_pi_ssh_target.is_ip_literal("motionbrain-pi.local"))
 
     def test_script_defaults_to_pi_hostnames(self) -> None:
-        self.assertIn("motionbrain-pi.davolink", check_pi_ssh_target.DEFAULT_CANDIDATES)
-        self.assertIn("motionbrain-pi.local", check_pi_ssh_target.DEFAULT_CANDIDATES)
+        self.assertEqual(
+            ("motionbrain-pi.local", "motionbrain-pi.davolink"),
+            check_pi_ssh_target.DEFAULT_CANDIDATES,
+        )
         self.assertTrue(os.access(SCRIPT_PATH, os.R_OK))
 
     def test_operations_docs_have_pi_ssh_recovery_contract(self) -> None:
@@ -47,12 +49,13 @@ class RaspiPiAccessTest(unittest.TestCase):
         required_fragments = [
             "Pi Access / SSH",
             "check_pi_ssh_target.py",
-            "HostName motionbrain-pi.davolink",
+            "HostName motionbrain-pi.local",
             "stale `192.168.219.110`",
             "motionbrain.local` is the ESP32 motion controller",
             "not a Pi SSH discovery tool",
             "ssh.socket",
             "SSH alias reaches old IP",
+            "router-DNS fallback",
         ]
         for fragment in required_fragments:
             with self.subTest(fragment=fragment):

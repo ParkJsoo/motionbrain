@@ -9,7 +9,7 @@ import subprocess
 import sys
 
 
-DEFAULT_CANDIDATES = ("motionbrain-pi.davolink", "motionbrain-pi.local")
+DEFAULT_CANDIDATES = ("motionbrain-pi.local", "motionbrain-pi.davolink")
 
 
 def run_command(args: list[str], timeout: float) -> subprocess.CompletedProcess[str]:

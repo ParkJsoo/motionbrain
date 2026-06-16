@@ -16,7 +16,7 @@ Recommended `~/.ssh/config` entry on the Mac:
 
 ```sshconfig
 Host motionbrain-pi motionbrain-pi.local motionbrain-pi.davolink
-    HostName motionbrain-pi.davolink
+    HostName motionbrain-pi.local
     User motionbrain
     HostKeyAlias motionbrain-pi.local
     AddressFamily inet
@@ -27,13 +27,15 @@ First check from the Mac:
 ```bash
 python3 tools/raspi/check_pi_ssh_target.py
 ssh -o ConnectTimeout=5 motionbrain-pi 'hostname; hostname -I; systemctl is-active ssh'
-nc -vz motionbrain-pi.davolink 22
 nc -vz motionbrain-pi.local 22
+nc -vz motionbrain-pi.davolink 22
 ```
 
 Interpretation:
 
-- `motionbrain-pi.davolink` / `motionbrain-pi.local` are the Pi SSH targets.
+- `motionbrain-pi.local` is the primary Pi SSH target.
+- `motionbrain-pi.davolink` is only a router-DNS fallback; it may disappear
+  even while `.local` and SSH still work.
 - `motionbrain.local` is the ESP32 motion controller, not the Pi.
 - `motionbrain-cam.local` is the ESP32-CAM, not the Pi.
 - `tools/raspi/discover_device_url.py` discovers ESP32 controller/camera HTTP
@@ -207,7 +209,7 @@ present.
 | Symptom | First checks | Recovery |
 | --- | --- | --- |
 | dashboard unavailable | `check_dashboard_health.sh`, service status | restart dashboard and perception services |
-| Pi hostname not resolving | `python3 tools/raspi/check_pi_ssh_target.py --skip-remote`, router DHCP lease, mDNS | use `motionbrain-pi.davolink` or fix local DNS/mDNS |
+| Pi hostname not resolving | `python3 tools/raspi/check_pi_ssh_target.py --skip-remote`, router DHCP lease, mDNS | use `motionbrain-pi.local` first; treat `.davolink` as fallback |
 | Pi port 22 closed | `nc -vz motionbrain-pi.davolink 22`, `ssh.socket` status on console | enable/start `ssh.socket` or `ssh.service` |
 | SSH alias reaches old IP | `ssh -G motionbrain-pi`, compare with router/`hostname -I` | remove literal `HostName` IP from `~/.ssh/config` |
 | SSH auth denied | `ssh -vv motionbrain-pi`, key path, user | use `User motionbrain` and the expected key |

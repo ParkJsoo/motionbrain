@@ -128,9 +128,9 @@ python3 tools/raspi/check_pi_ssh_target.py
 ssh motionbrain-pi 'hostname; hostname -I; systemctl is-active ssh'
 ```
 
-The Pi SSH alias should follow `motionbrain-pi.davolink` or
-`motionbrain-pi.local`, not a DHCP IP literal. See [OPERATIONS.md](OPERATIONS.md)
-for the access and recovery flow.
+The Pi SSH alias should primarily follow `motionbrain-pi.local`, not a DHCP IP
+literal. Treat `.davolink` as a router-DNS fallback. See
+[OPERATIONS.md](OPERATIONS.md) for the access and recovery flow.
 
 Build and test the ROS2 workspace on Raspberry Pi:
 

@@ -128,8 +128,8 @@ python3 tools/raspi/check_pi_ssh_target.py
 ssh motionbrain-pi 'hostname; hostname -I; systemctl is-active ssh'
 ```
 
-Pi SSH alias는 DHCP IP가 아니라 `motionbrain-pi.davolink` 또는
-`motionbrain-pi.local`을 따라가도록 설정한다. 자세한 접속/복구 절차는
+Pi SSH alias는 DHCP IP가 아니라 `motionbrain-pi.local`을 우선 따라가도록
+설정한다. `.davolink`은 라우터 DNS fallback으로만 쓴다. 자세한 접속/복구 절차는
 [OPERATIONS.md](OPERATIONS.md)를 본다.
 
 Raspberry Pi ROS2 빌드:

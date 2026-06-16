@@ -7,7 +7,7 @@
 TEST(MotionBrainHardwareInterfacePlugin, LoadsThroughPluginlib)
 {
   pluginlib::ClassLoader<hardware_interface::SystemInterface> loader(
-    "motionbrain_hardware_interface",
+    "hardware_interface",
     "hardware_interface::SystemInterface");
 
   const auto hardware = loader.createUniqueInstance(
