@@ -3,8 +3,7 @@
 [README](README.md) | [EMBEDDED_BRINGUP](EMBEDDED_BRINGUP.md)
 
 This is the operator-oriented view of MotionBrain on Raspberry Pi. It is useful
-for LG CNS-style system quality, Linux operations, and troubleshooting
-discussions.
+for system-quality, Linux operations, and troubleshooting discussions.
 
 ## Pi Access / SSH
 
@@ -74,25 +73,20 @@ Systemd units live in `deploy/systemd/`:
 Example install flow on the Pi:
 
 ```bash
-sudo install -d -o root -g root /etc/motionbrain
-sudo cp deploy/systemd/*.service /etc/systemd/system/
-sudo cp deploy/systemd/*.timer /etc/systemd/system/
-sudo cp deploy/systemd/*.env.example /etc/motionbrain/
-sudo systemctl daemon-reload
+tools/raspi/install_systemd_units.sh
 sudo systemctl enable --now motionbrain-perception.service
 sudo systemctl enable --now motionbrain-dashboard.service
 sudo systemctl enable --now motionbrain-ros-bridge.service
 ```
 
-Edit copied env files before enabling services on real hardware. Keep
+The installer copies service/timer units and writes env examples under
+`/etc/motionbrain/`. Override `MOTIONBRAIN_REPO` or `MOTIONBRAIN_SERVICE_USER`
+when installing from a different checkout path or Linux account. Edit copied
+env files before enabling services on real hardware. Keep
 `MOTIONBRAIN_HTTP_TOKEN` out of git, logs, screenshots, and public demos.
 Dashboard-side controls and ESP32 command tokens are separate boundaries: the
 dashboard can observe read-only state without exposing the controller token, and
 state-changing requests must still pass the controller firmware gate.
-
-The packaged units assume the Pi user is `motionbrain` and the repo path is
-`/home/motionbrain/develop/arduino/motionbrain`. If SSH works but services fail,
-check those user/path assumptions before debugging ROS.
 
 For ESP32 controller/camera `.local` or IP drift, use the discovery and reconcile
 helpers on the Pi instead of hard-coding stale device addresses:

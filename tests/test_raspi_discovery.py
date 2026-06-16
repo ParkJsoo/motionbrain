@@ -38,13 +38,13 @@ class RaspiDiscoveryTest(unittest.TestCase):
         self.assertFalse(discover_device_url.matches_kind({"node": "esp32cam"}, "controller"))
 
     def test_prefixes_from_ip_addr_limits_large_network_to_local_24(self) -> None:
-        output = "2 wlan0 inet 192.168.219.110/16 brd 192.168.255.255 scope global wlan0"
+        output = "2 wlan0 inet 10.42.219.110/16 brd 10.42.255.255 scope global wlan0"
         networks = discover_device_url.prefixes_from_ip_addr(output, max_hosts=512)
-        self.assertEqual(networks, [ipaddress.ip_network("192.168.219.0/24")])
+        self.assertEqual(networks, [ipaddress.ip_network("10.42.219.0/24")])
 
     def test_candidate_urls_uses_host_addresses(self) -> None:
-        urls = discover_device_url.candidate_urls([ipaddress.ip_network("192.168.7.0/30")])
-        self.assertEqual(urls, ["http://192.168.7.1", "http://192.168.7.2"])
+        urls = discover_device_url.candidate_urls([ipaddress.ip_network("10.42.7.0/30")])
+        self.assertEqual(urls, ["http://10.42.7.1", "http://10.42.7.2"])
 
 
 if __name__ == "__main__":

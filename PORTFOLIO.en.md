@@ -144,8 +144,8 @@ Current honest positioning:
 
 ## Next Steps
 
-1. Use the `demo-ready-20260608` snapshot and README GIF/MP4 as the reference links for applications.
-2. Tune the emphasis per role: embedded safety, multi-MCU teleop, Pi perception/dashboard, or ROS2 bridge.
+1. Keep the `demo-ready-20260608` snapshot and README GIF/MP4 as the stable public reference links.
+2. Tune the emphasis by context: embedded safety, multi-MCU teleop, Pi perception/dashboard, or ROS2 bridge.
 3. Design marker- or fixed-known-object-assisted grasping as a separate plan.
 4. Revisit autonomy only after adding a better camera, range/contact sensing, or a validated edge runtime.
 5. Do not expand arbitrary-object recognition or autonomous grasping claims without new hardware validation.

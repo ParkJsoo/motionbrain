@@ -62,7 +62,7 @@ Do not claim:
 
 ## Measurement Checklist
 
-Capture these before an embedded-focused interview if hardware is available:
+Capture these before making embedded-focused claims when hardware is available:
 
 | Signal | Expected evidence | Tool |
 | --- | --- | --- |

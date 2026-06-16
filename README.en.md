@@ -71,7 +71,7 @@ Important current limits:
 
 - Red target tracking is a separate reliable vision/alignment validation path.
 - The object-detection pipeline is implemented on the Pi, and the current bench validates constrained known-object `cup` detection with ESP32-CAM `qvga` / JPEG quality `4` plus YOLOv5s. The current perception demo uses only `cup` as the active target.
-- A label-less dark bottle, a sticker-heavy iPhone back side, and the secondary Z Flip phone target are out of scope for the current demo. Describe this as constrained workcell known-object detection/alignment, not arbitrary object recognition.
+- Dark low-texture objects and reflective phone-like targets are out of scope for the current demo. Describe this as constrained workcell known-object detection/alignment, not arbitrary object recognition.
 - Autonomous grasping is not enabled. The current cup dry-run path revalidates safety state and CENTER alignment, then returns a gripper open/close plan for operator review only.
 - Manual arm operation uses `STREAM` by default. `TRACKED` is a slower Pi-recognition view for checking fixed or slow-moving targets.
 - HC-SR04 is not installed for the final physical demo, and range telemetry is handled as a disabled/nonblocking demo state.
@@ -207,4 +207,5 @@ systemd wrappers re-apply this camera profile after an ESP32-CAM reboot.
 
 ## License
 
-Personal research, learning, making, and portfolio project.
+Project code is MIT licensed; see [LICENSE](LICENSE). STM32 HAL/CMSIS vendor
+files retain their upstream licenses under `firmware/stm32/MotionBrainSensor/Drivers/`.

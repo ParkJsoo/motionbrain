@@ -3,7 +3,7 @@
   <name>motionbrain_ros2_control_mock</name>
   <version>0.1.0</version>
   <description>Optional ros2_control mock hardware demo for MotionBrain.</description>
-  <maintainer email="jeongsoopark@example.com">Jeongsu Park</maintainer>
+  <maintainer email="ParkJsoo@users.noreply.github.com">Jeongsoo Park</maintainer>
   <license>MIT</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>

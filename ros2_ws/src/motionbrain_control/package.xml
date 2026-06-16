@@ -3,7 +3,7 @@
   <name>motionbrain_control</name>
   <version>0.1.0</version>
   <description>C++ ROS2 control guard node for MotionBrain typed status and camera detection.</description>
-  <maintainer email="jeongsoopark@example.com">Jeongsu Park</maintainer>
+  <maintainer email="ParkJsoo@users.noreply.github.com">Jeongsoo Park</maintainer>
   <license>MIT</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>

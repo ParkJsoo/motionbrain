@@ -3,7 +3,7 @@
   <name>motionbrain_mission</name>
   <version>0.1.0</version>
   <description>Lightweight mission supervisor for MotionBrain ROS2 demos.</description>
-  <maintainer email="jeongsoopark@example.com">Jeongsu Park</maintainer>
+  <maintainer email="ParkJsoo@users.noreply.github.com">Jeongsoo Park</maintainer>
   <license>MIT</license>
 
   <buildtool_depend>ament_python</buildtool_depend>

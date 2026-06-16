@@ -100,7 +100,7 @@ ROS2는 ESP32 내부 제어를 대체하지 않는다. 대신 `/status`, `/event
 
 ### 검증 가능한 데모 경계
 
-현재 공개 데모는 실물 텔레오퍼레이션이다. 지원 증거로는 `STREAM` 기반 수동 카메라 확인, Pi 호스트 대시보드, 빨간 타겟/known-object 타겟 오버레이, ROS2 타입 지정 토픽, 안전 게이트 기반 nudge 경로, 토큰 기반 조명/search 명령 경로가 있다. 자동 집기는 아직 활성화하지 않는다.
+현재 공개 데모는 실물 텔레오퍼레이션이다. 보조 검증 증거로는 `STREAM` 기반 수동 카메라 확인, Pi 호스트 대시보드, 빨간 타겟/known-object 타겟 오버레이, ROS2 타입 지정 토픽, 안전 게이트 기반 nudge 경로, 토큰 기반 조명/search 명령 경로가 있다. 자동 집기는 아직 활성화하지 않는다.
 
 ## 검증 결과
 
@@ -143,8 +143,8 @@ Pi에서 OpenCV DNN/ONNX 기반 객체 인식 경로는 구현했다. `config/co
 
 ## 다음 단계
 
-1. 지원 시 `demo-ready-20260608` 스냅샷과 README 데모 GIF/MP4를 기준 링크로 사용
-2. 직무별로 embedded safety, multi-MCU teleop, Pi perception/dashboard, ROS2 bridge 중 강조점을 선택
+1. `demo-ready-20260608` 스냅샷과 README 데모 GIF/MP4를 기준 공개 링크로 유지
+2. 설명 목적에 따라 embedded safety, multi-MCU teleop, Pi perception/dashboard, ROS2 bridge 중 강조점을 선택
 3. 마커 또는 고정 known-object 기반 제한 집기 계획을 별도 설계
 4. 더 좋은 카메라, 거리/접촉 센서, 검증된 edge runtime을 추가한 뒤 자율 동작 범위 재검토
 5. 새 하드웨어 검증 없이 임의 객체 인식이나 자율 집기 범위를 확장하지 않기

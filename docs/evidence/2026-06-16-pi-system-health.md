@@ -13,11 +13,11 @@ called with `action: status` only.
 
 | Item | Value |
 | --- | --- |
-| Capture time | `2026-06-16T22:41:53+09:00` |
+| Capture time | `2026-06-16T23:02:39+09:00` |
 | Host | `motionbrain-pi` |
 | OS/kernel | Ubuntu 24.04, Linux `6.8.0-1057-raspi`, `aarch64` |
-| Clean worktree | `~/develop/arduino/motionbrain-codex-generalized` |
-| Commit | `5cd287e Generalize robotics portfolio readiness` |
+| Clean worktree | `~/develop/arduino/motionbrain` |
+| Commit | `588a5bd Generalize robotics portfolio readiness` |
 
 ## SSH Reachability
 
@@ -27,7 +27,7 @@ Mac-to-Pi check using `tools/raspi/check_pi_ssh_target.py`:
 - configured host: `motionbrain-pi.local`
 - user: `motionbrain`
 - host key alias: `motionbrain-pi.local`
-- TCP/22 reachable at `192.168.219.109`
+- TCP/22 reachable at `192.168.219.109` and IPv6
 - remote check: `ok`
 - SSH service: `active`
 - SSH socket: `enabled`, `active`
@@ -43,7 +43,7 @@ capture; the primary `.local` path was reachable.
 | `motionbrain-perception.service` | active/running |
 | `motionbrain-ros-bridge.service` | active/running |
 | `motionbrain-dashboard-reconcile.timer` | active/waiting |
-| `motionbrain-dashboard-reconcile.service` | inactive/dead after the timer run |
+| `motionbrain-dashboard-reconcile.service` | static; timer-managed oneshot |
 
 ## Dashboard And Perception Health
 

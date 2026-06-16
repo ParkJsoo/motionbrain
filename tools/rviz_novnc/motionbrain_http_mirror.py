@@ -63,7 +63,7 @@ def discover_dashboard_url(configured_url: str, timeout: float) -> str:
             pass
 
     port = int(os.environ.get("MOTIONBRAIN_DASHBOARD_PORT", "8765"))
-    cidrs = env_list("MOTIONBRAIN_DASHBOARD_DISCOVERY_CIDRS", "192.168.219.0/24")
+    cidrs = env_list("MOTIONBRAIN_DASHBOARD_DISCOVERY_CIDRS", "")
     scan_urls: list[str] = []
     for cidr in cidrs:
         try:

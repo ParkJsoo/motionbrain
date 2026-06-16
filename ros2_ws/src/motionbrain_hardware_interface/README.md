@@ -39,7 +39,7 @@ Physical actuation remains behind:
 - deadman/teleop timeout paths
 - routine executor policy and feedback readiness checks
 
-Use this wording in applications:
+Use this wording for public claims:
 
 ```text
 Implemented a safe open-loop ros2_control SystemInterface scaffold for the

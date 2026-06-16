@@ -71,7 +71,7 @@ dry_run mode.
 - Vendor-specific actuator SDK integration
 - Physical ros2_control actuation
 - Encoder-verified trajectory tracking
-- Whole-body control
+- Full-platform motion control
 
 ## Reproduction Helper
 

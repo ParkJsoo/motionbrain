@@ -135,7 +135,7 @@ physical motors.
 | Open-loop trajectory | `FollowJointTrajectory` goal accepted and completed with `SUCCEEDED` |
 | `/joint_states` | changed from all `0.0` to the commanded scaffold positions |
 
-## Interview Talking Points
+## Claim Boundaries
 
 - I separated host-side ROS2 decision logic from firmware-level motor authority.
 - I used typed ROS2 topics for state, routine, detection, kinematics, guard, and
@@ -149,8 +149,8 @@ physical motors.
 
 ## Next Work
 
-1. Capture Pi operations evidence: SSH alias check, active systemd services,
-   and `check_ros_bridge_health.sh` passing on the live robot host.
+1. Capture measured embedded evidence: PWM duty/frequency, UART timing,
+   deadman release latency, I2C activity, and bounded motor voltage drop.
 2. Convert one real ESP32 status field into a read-only `ros2_control`
    diagnostic before exposing any write path to physical motion.
 3. If new actuator hardware becomes available, add only a small bench note:
