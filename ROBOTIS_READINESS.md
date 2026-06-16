@@ -107,6 +107,31 @@ source install/setup.bash
 ros2 launch motionbrain_ros2_control_mock mock_control.launch.py
 ```
 
+Open-loop hardware-interface evidence capture on the Pi:
+
+```bash
+tools/raspi/capture_ros2_control_hardware_evidence.sh
+```
+
+## Latest ros2_control Evidence
+
+Captured on Raspberry Pi 4 / ROS2 Jazzy on 2026-06-16. The capture used
+`ROS_DOMAIN_ID=43` and the hardware-interface URDF parameter
+`transport_mode=dry_run`, so it did not command the ESP32 controller or physical
+motors.
+
+| Evidence | Result |
+| --- | --- |
+| `motionbrain_hardware_interface` plugin load | `MotionBrainOpenLoopSystem` loaded, initialized, configured, and activated |
+| Controllers | `joint_state_broadcaster` active, `motionbrain_arm_controller` active |
+| Command interfaces | five position command interfaces available and claimed |
+| State interfaces | position and velocity state interfaces exported for five joints |
+| Open-loop trajectory | `FollowJointTrajectory` goal accepted and completed with `SUCCEEDED` |
+| `/joint_states` | changed from all `0.0` to the commanded scaffold positions |
+
+Local raw evidence path:
+`.codex/tmp/evidence/robotis-ros2-control-open-loop-20260616/capture.txt`.
+
 ## Interview Talking Points
 
 - I separated host-side ROS2 decision logic from firmware-level motor authority.
@@ -121,13 +146,9 @@ ros2 launch motionbrain_ros2_control_mock mock_control.launch.py
 
 ## Next ROBOTIS-Focused Work
 
-1. Add a short screen capture of `ros2 control list_hardware_interfaces` for
-   `motionbrain_hardware_interface`.
-2. Capture `/joint_states` while sending a small trajectory to the open-loop
-   scaffold.
-3. Capture Pi operations evidence: SSH alias check, active systemd services,
+1. Capture Pi operations evidence: SSH alias check, active systemd services,
    and `check_ros_bridge_health.sh` passing on the live robot host.
-4. If actual DYNAMIXEL hardware becomes available, add only a small SDK
+2. If actual DYNAMIXEL hardware becomes available, add only a small SDK
    ping/read/write bench note. Do not add a paper-only DYNAMIXEL claim.
-5. Convert one real ESP32 status field into a read-only ros2_control diagnostic
+3. Convert one real ESP32 status field into a read-only ros2_control diagnostic
    before exposing any write path to physical motion.

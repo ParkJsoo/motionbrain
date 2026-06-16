@@ -139,6 +139,12 @@ ros2_control mock evidence:
 tools/raspi/capture_ros2_control_mock_evidence.sh
 ```
 
+ros2_control open-loop hardware-interface evidence:
+
+```bash
+tools/raspi/capture_ros2_control_hardware_evidence.sh
+```
+
 ## Logs
 
 ```bash

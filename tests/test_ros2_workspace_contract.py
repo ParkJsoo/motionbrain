@@ -654,6 +654,28 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, helper_text)
 
+    def test_ros2_control_hardware_evidence_helper_is_dry_run_only(self):
+        helper_text = (
+            REPO_ROOT / "tools" / "raspi" / "capture_ros2_control_hardware_evidence.sh"
+        ).read_text()
+
+        expected_fragments = [
+            'HARDWARE_ROS_DOMAIN_ID="${HARDWARE_ROS_DOMAIN_ID:-43}"',
+            "Physical actuation: disabled",
+            "transport_mode is dry_run",
+            "motionbrain_hardware_interface",
+            "ros2 launch motionbrain_hardware_interface hardware_interface.launch.py",
+            "ros2 control list_controllers",
+            "ros2 control list_hardware_interfaces",
+            "/motionbrain_arm_controller/follow_joint_trajectory",
+            "control_msgs/action/FollowJointTrajectory",
+            "ros2 topic echo /joint_states --once",
+            "Stop hardware-interface launch",
+        ]
+        for fragment in expected_fragments:
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, helper_text)
+
     def test_ros2_control_hardware_interface_scaffold_is_safe_open_loop(self):
         package_dir = ROS2_SRC / "motionbrain_hardware_interface"
         self.assertTrue((package_dir / "package.xml").exists())
