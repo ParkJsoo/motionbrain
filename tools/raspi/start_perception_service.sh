@@ -54,9 +54,9 @@ args=(
   --port "${MOTIONBRAIN_PERCEPTION_PORT:-8766}"
   --camera-url "${CAMERA_URL}"
   --timeout "${MOTIONBRAIN_PERCEPTION_TIMEOUT:-2.0}"
-  --interval "${MOTIONBRAIN_PERCEPTION_INTERVAL:-0.35}"
-  --stale-seconds "${MOTIONBRAIN_PERCEPTION_STALE_SECONDS:-2.0}"
-  --display-hold-seconds "${MOTIONBRAIN_DISPLAY_HOLD_SECONDS:-1.5}"
+  --interval "${MOTIONBRAIN_PERCEPTION_INTERVAL:-1.0}"
+  --stale-seconds "${MOTIONBRAIN_PERCEPTION_STALE_SECONDS:-8.0}"
+  --display-hold-seconds "${MOTIONBRAIN_DISPLAY_HOLD_SECONDS:-2.5}"
   --detector-mode "${MOTIONBRAIN_DETECTOR_MODE:-object}"
   --detect-color "${MOTIONBRAIN_DETECT_COLOR:-red}"
   --align-deadband "${MOTIONBRAIN_ALIGN_DEADBAND:-0.15}"
@@ -68,6 +68,7 @@ args=(
   --object-nms-threshold "${MOTIONBRAIN_OBJECT_NMS_THRESHOLD:-0.45}"
   --object-input-size "${MOTIONBRAIN_OBJECT_INPUT_SIZE:-640}"
   --target-policy "${MOTIONBRAIN_TARGET_POLICY:-largest}"
+  --opencv-threads "${MOTIONBRAIN_OPENCV_THREADS:-1}"
 )
 
 if [[ -n "${MOTIONBRAIN_OBJECT_TARGET_ALIASES:-}" ]]; then

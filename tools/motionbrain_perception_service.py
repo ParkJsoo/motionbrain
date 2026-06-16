@@ -46,6 +46,7 @@ class PerceptionState:
         interval: float = 0.35,
         stale_seconds: float = 2.0,
         display_hold_seconds: float = 0.0,
+        opencv_threads: int | None = None,
     ) -> None:
         self.camera_url = camera_url.rstrip("/")
         self.config = config
@@ -54,6 +55,7 @@ class PerceptionState:
         self.interval = interval
         self.stale_seconds = stale_seconds
         self.display_hold_seconds = display_hold_seconds
+        self.opencv_threads = opencv_threads
         self.lock = threading.Lock()
         self.latest_frame: tuple[float, bytes, str] | None = None
         self.latest_detection: dict[str, Any] | None = None
@@ -64,6 +66,7 @@ class PerceptionState:
         self.frames_total = 0
         self.detect_total = 0
         self.error_total = 0
+        self.last_cycle_ms: float | None = None
 
     def target_key(self, detection: dict[str, Any]) -> tuple[str, str, int | None]:
         return (
@@ -130,6 +133,10 @@ class PerceptionState:
             self.last_error = str(exc)
             self.error_total += 1
 
+    def mark_cycle_duration(self, elapsed_seconds: float) -> None:
+        with self.lock:
+            self.last_cycle_ms = max(elapsed_seconds * 1000.0, 0.0)
+
     def run_loop(self, stop_event: threading.Event) -> None:
         while not stop_event.is_set():
             started = time.monotonic()
@@ -138,7 +145,8 @@ class PerceptionState:
             except Exception as exc:
                 self.mark_error(exc)
             elapsed = time.monotonic() - started
-            stop_event.wait(max(self.interval - elapsed, 0.0))
+            self.mark_cycle_duration(elapsed)
+            stop_event.wait(self.interval)
 
     def detection_payload(self) -> dict[str, Any]:
         with self.lock:
@@ -181,6 +189,7 @@ class PerceptionState:
             frames_total = self.frames_total
             detect_total = self.detect_total
             error_total = self.error_total
+            last_cycle_ms = self.last_cycle_ms
 
         now = time.time()
         frame_age_ms = None if frame is None else max((now - frame[0]) * 1000.0, 0.0)
@@ -200,12 +209,15 @@ class PerceptionState:
             "displayHoldSeconds": self.display_hold_seconds,
             "fresh": fresh,
             "frameAgeMs": frame_age_ms,
+            "intervalSeconds": self.interval,
+            "lastCycleMs": last_cycle_ms,
             "framesTotal": frames_total,
             "detectTotal": detect_total,
             "errorTotal": error_total,
             "lastError": last_error,
             "detector": detector,
             "detectorConfigured": self.detector is not None,
+            "opencvThreads": self.opencv_threads,
         }
 
     def frame_payload(self) -> tuple[bytes, str] | None:
@@ -368,7 +380,23 @@ def build_detector(config: DetectionConfig) -> DetectorBackend | None:
     raise ValueError(f"object backend not implemented: {config.object_backend}")
 
 
+def configure_opencv_runtime(thread_count: int) -> int | None:
+    if thread_count == 0:
+        return None
+    try:
+        import cv2  # type: ignore
+    except ImportError:
+        return None
+
+    cv2.setNumThreads(thread_count)
+    try:
+        return int(cv2.getNumThreads())
+    except AttributeError:
+        return thread_count
+
+
 def run(args: argparse.Namespace) -> int:
+    opencv_threads = configure_opencv_runtime(args.opencv_threads)
     config = build_detection_config(args)
     detector = build_detector(config)
     state = PerceptionState(
@@ -379,6 +407,7 @@ def run(args: argparse.Namespace) -> int:
         interval=args.interval,
         stale_seconds=args.stale_seconds,
         display_hold_seconds=args.display_hold_seconds,
+        opencv_threads=opencv_threads,
     )
     stop_event = threading.Event()
     worker = threading.Thread(target=state.run_loop, args=(stop_event,), daemon=True)
@@ -397,6 +426,8 @@ def run(args: argparse.Namespace) -> int:
         f"{args.detector_mode} backend={args.object_backend} name={detector_name} "
         f"color={args.detect_color} target={args.object_target or '-'}"
     )
+    if opencv_threads is not None:
+        print(f"opencv_threads={opencv_threads}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -450,6 +481,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--object-input-size", type=int, default=640)
     parser.add_argument("--target-policy", choices=("largest", "center", "highest-confidence"), default="largest")
     parser.add_argument(
+        "--opencv-threads",
+        type=int,
+        default=int(os.environ.get("MOTIONBRAIN_OPENCV_THREADS", "1")),
+        help="OpenCV worker thread count; use 0 to leave OpenCV defaults unchanged",
+    )
+    parser.add_argument(
         "--allow-origin",
         action="append",
         default=["*"],
@@ -472,6 +509,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("--object-nms-threshold must be between 0 and 1")
     if args.object_input_size < 32:
         parser.error("--object-input-size must be >= 32")
+    if args.opencv_threads < 0:
+        parser.error("--opencv-threads must be >= 0")
     args.object_target_aliases = parse_label_list(args.object_target_alias)
     return args
 

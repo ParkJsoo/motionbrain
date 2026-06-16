@@ -108,6 +108,44 @@ class PerceptionServiceTest(unittest.TestCase):
         self.assertEqual(detection["reason"], "no_frame")
         self.assertEqual(detection["alignment"], "LOST")
 
+    def test_run_loop_waits_interval_after_each_detection_cycle(self) -> None:
+        state = self.make_state()
+
+        class FakeStopEvent:
+            def __init__(self) -> None:
+                self.wait_calls: list[float] = []
+
+            def is_set(self) -> bool:
+                return bool(self.wait_calls)
+
+            def wait(self, timeout: float) -> bool:
+                self.wait_calls.append(timeout)
+                return False
+
+        stop_event = FakeStopEvent()
+
+        with patch.object(service.time, "monotonic", side_effect=[10.0, 10.25]):
+            with patch.object(state, "run_once"):
+                state.run_loop(stop_event)  # type: ignore[arg-type]
+
+        self.assertEqual(stop_event.wait_calls, [state.interval])
+        self.assertEqual(state.health_payload()["lastCycleMs"], 250.0)
+
+    def test_health_payload_reports_runtime_tuning_values(self) -> None:
+        state = PerceptionState(
+            "http://camera.local",
+            DetectionConfig(mode="color", color="red"),
+            timeout=0.2,
+            interval=1.25,
+            stale_seconds=10.0,
+            opencv_threads=1,
+        )
+
+        health = state.health_payload()
+
+        self.assertEqual(health["intervalSeconds"], 1.25)
+        self.assertEqual(health["opencvThreads"], 1)
+
     def test_parse_args_accepts_object_target_aliases(self) -> None:
         with patch(
             "sys.argv",
@@ -129,6 +167,21 @@ class PerceptionServiceTest(unittest.TestCase):
 
         self.assertEqual(config.object_target, "cup")
         self.assertEqual(config.object_target_aliases, ("toilet", "microwave", "coffee mug"))
+
+    def test_parse_args_accepts_opencv_thread_limit(self) -> None:
+        with patch(
+            "sys.argv",
+            [
+                "motionbrain_perception_service.py",
+                "--camera-url",
+                "http://camera.local",
+                "--opencv-threads",
+                "2",
+            ],
+        ):
+            args = service.parse_args()
+
+        self.assertEqual(args.opencv_threads, 2)
 
     def test_handler_routes_detection_health_and_frame_paths(self) -> None:
         state = self.make_state()
