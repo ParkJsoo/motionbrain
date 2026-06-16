@@ -55,6 +55,7 @@ Docker/noVNC RViz 화면은 Pi 대시보드 상태와 감지 결과를 읽기 �
 - `Dispatcher` + `SafetyGate` 기반 시리얼/HTTP 공통 명령 경로
 - STM32 `MPU-6050 + UART` 센서/텔레오퍼레이션 스트림과 HC-SR04 bench 검증 경로
 - 유선 핸드헬드 텔레오퍼레이션: 데드맨, 프레임 타임아웃, 안전 텔레메트리
+- 멀티미터 기반 전원/GND/버튼/출력 sanity check 기록과 claim boundary 문서화
 - ESP32-CAM `/status`, `/capture`, `/stream`, `/camera` 프로필 제어
 - 홈 Wi-Fi 기반 ESP32 제어기, ESP32-CAM, Raspberry Pi 연결
 - ESP32 내장 `MotionBrain Control` 웹 UI와 토큰 기반 상태 변경 명령
@@ -201,6 +202,7 @@ systemd wrapper는 ESP32-CAM 재부팅 후에도 이 카메라 프로필을 다�
 - [docs/evidence/2026-06-16-ros2-control-open-loop.md](docs/evidence/2026-06-16-ros2-control-open-loop.md): `ros2_control` dry-run 검증 요약
 - [docs/evidence/2026-06-16-pi-system-health.md](docs/evidence/2026-06-16-pi-system-health.md): Pi/systemd/ROS2 health 검증 요약
 - [docs/evidence/2026-06-16-runtime-measurements.md](docs/evidence/2026-06-16-runtime-measurements.md): Pi 런타임 endpoint latency, ROS2 CLI probe, 계측 장비 inventory 측정 기록
+- [docs/evidence/2026-06-16-embedded-bench-checks.md](docs/evidence/2026-06-16-embedded-bench-checks.md): 멀티미터 기반 embedded bench sanity check 복구 기록
 - [EMBEDDED_BRINGUP.md](EMBEDDED_BRINGUP.md): STM32/ESP32 bring-up 및 측정 체크리스트
 - [OPERATIONS.md](OPERATIONS.md): Pi/systemd/health-check 운영 절차
 

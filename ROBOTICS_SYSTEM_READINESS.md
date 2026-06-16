@@ -30,6 +30,8 @@ hardware integration, ROS2 system software, and real-robot issue analysis.
   [docs/evidence/2026-06-16-pi-system-health.md](docs/evidence/2026-06-16-pi-system-health.md)
 - Public Pi runtime measurement evidence:
   [docs/evidence/2026-06-16-runtime-measurements.md](docs/evidence/2026-06-16-runtime-measurements.md)
+- Public embedded bench-check evidence:
+  [docs/evidence/2026-06-16-embedded-bench-checks.md](docs/evidence/2026-06-16-embedded-bench-checks.md)
 - ESP32 safety gate and dispatcher: `src/control/`, `src/safety/`
 - ESP32 motor driver and pin mapping: `src/motor/motor_driver.*`
 - STM32 HAL sensor/teleop firmware: `firmware/stm32/MotionBrainSensor/`
@@ -146,6 +148,15 @@ oscilloscope, logic analyzer, serial adapter, or meter interface was visible to
 the Pi, so PWM/UART/I2C waveform and motor-voltage measurements remain gated by
 physical instrumentation.
 
+## Recovered Embedded Bench Evidence
+
+Recovered repository history records digital-multimeter-level checks for common
+ground continuity, obvious shorts, `3V3` logic rails, TB6612FNG `VCC`/`VM`,
+active-low button HIGH/LOW behavior, and simple output voltage sanity. This is
+useful embedded bring-up evidence, but it does not support UART timing, PWM
+duty/frequency, I2C signal-integrity, transient motor-voltage, or closed-loop
+joint-control claims.
+
 ## Claim Boundaries
 
 - I separated host-side ROS2 decision logic from firmware-level motor authority.
@@ -160,8 +171,9 @@ physical instrumentation.
 
 ## Next Work
 
-1. Capture measured embedded evidence: PWM duty/frequency, UART timing,
-   deadman release latency, I2C activity, and bounded motor voltage drop.
+1. Capture instrumented embedded evidence beyond DMM-level sanity checks: PWM
+   duty/frequency, UART timing, deadman release latency, I2C activity, and
+   bounded motor voltage drop.
 2. Convert one real ESP32 status field into a read-only `ros2_control`
    diagnostic before exposing any write path to physical motion.
 3. If new actuator hardware becomes available, add only a small bench note:
