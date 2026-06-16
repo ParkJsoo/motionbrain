@@ -88,6 +88,12 @@ Dashboard-side controls and ESP32 command tokens are separate boundaries: the
 dashboard can observe read-only state without exposing the controller token, and
 state-changing requests must still pass the controller firmware gate.
 
+For object-mode perception on the Raspberry Pi, keep CPU load bounded with
+`MOTIONBRAIN_OPENCV_THREADS`, `MOTIONBRAIN_PERCEPTION_INTERVAL`, and
+`MOTIONBRAIN_PERCEPTION_STALE_SECONDS` in `/etc/motionbrain/perception.env`.
+The default systemd wrapper uses one OpenCV worker thread and a conservative
+freshness window for YOLOv5s/OpenCV DNN.
+
 For ESP32 controller/camera `.local` or IP drift, use the discovery and reconcile
 helpers on the Pi instead of hard-coding stale device addresses:
 
@@ -218,6 +224,7 @@ present.
 | ROS2 topics missing | `check_ros_bridge_health.sh`, `ros2 topic list` | restart ROS bridge, confirm ROS workspace overlay |
 | ROS2 topics listed but samples hang | bridge journal, controller `/routine`, sample timeout | restart ROS bridge, then rerun with `SAMPLE_TIMEOUT_SECONDS=25` |
 | camera stale | ESP32-CAM `/status`, Wi-Fi, perception logs | apply camera profile and restart perception |
+| Pi load high | `uptime`, `vcgencmd get_throttled`, perception `/health` latency | lower OpenCV threads or increase perception interval, then restart perception |
 | controller command rejected | `/status`, fault latch, token, ARMED state | clear fault only after physical inspection |
 | routine blocked | `/routine`, feedback readiness, active sequence | keep dry-run, inspect feedback block reason |
 | token missing | service env file, dashboard status, ESP32 command rejection | restore `/etc/motionbrain/*.env`, restart service |

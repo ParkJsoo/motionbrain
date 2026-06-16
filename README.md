@@ -71,7 +71,7 @@ Docker/noVNC RViz 화면은 Pi 대시보드 상태와 감지 결과를 읽기 �
 현재 주의점:
 
 - 빨간 타겟 추적은 별도 비전/정렬 검증에서 안정적으로 동작한 경로다.
-- 객체 인식 흐름은 Pi에서 구현됐고, 현재 bench에서는 ESP32-CAM `qvga` / JPEG quality `4` + YOLOv5s 조합으로 제한된 known-object `cup` 인식이 검증됐다. 현재 인식 데모는 `cup` 하나만 활성 타겟으로 사용한다.
+- 객체 인식 흐름은 Pi에서 구현됐고, 현재 bench에서는 ESP32-CAM `qvga` / JPEG quality `10` + YOLOv5s 조합으로 제한된 known-object `cup` 인식이 검증됐다. 현재 인식 데모는 `cup` 하나만 활성 타겟으로 사용한다.
 - 어두운 저텍스처 물체와 반사가 강한 phone-like 타겟은 현재 데모 범위에서 제외한다. 이 결과는 임의 객체 인식이 아니라 제한된 작업공간의 known-object 인식/정렬 데모로 설명해야 한다.
 - 자동 grasp는 아직 하지 않는다. 현재 cup dry-run 경로는 안전 상태와 CENTER 정렬을 재확인한 뒤 작업자 확인용 그리퍼 open/close 계획만 반환한다.
 - 로봇팔을 조종하면서 카메라를 보는 작업은 `STREAM`이 기본이다. `TRACKED`는 Pi 인식 결과를 확인하는 느린 뷰로만 쓴다.
@@ -190,9 +190,10 @@ python3 tools/motionbrain_dashboard.py \
   --timeout 6
 ```
 
-현재 cup known-object demo는 ESP32-CAM `qvga` / JPEG quality `4`, Pi
+현재 cup known-object demo는 ESP32-CAM `qvga` / JPEG quality `10`, Pi
 YOLOv5s object mode, confidence gate `0.25`, dashboard proxy 조합을 사용한다.
-systemd wrapper는 ESP32-CAM 재부팅 후에도 이 카메라 프로필을 다시 적용한다.
+systemd wrapper는 ESP32-CAM 재부팅 후에도 이 카메라 프로필을 다시 적용하고,
+낮은 JPEG quality 설정은 안정 최소값으로 올린다.
 
 ## 문서
 

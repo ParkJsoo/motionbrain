@@ -71,7 +71,7 @@ Validated:
 Important current limits:
 
 - Red target tracking is a separate reliable vision/alignment validation path.
-- The object-detection pipeline is implemented on the Pi, and the current bench validates constrained known-object `cup` detection with ESP32-CAM `qvga` / JPEG quality `4` plus YOLOv5s. The current perception demo uses only `cup` as the active target.
+- The object-detection pipeline is implemented on the Pi, and the current bench validates constrained known-object `cup` detection with ESP32-CAM `qvga` / JPEG quality `10` plus YOLOv5s. The current perception demo uses only `cup` as the active target.
 - Dark low-texture objects and reflective phone-like targets are out of scope for the current demo. Describe this as constrained workcell known-object detection/alignment, not arbitrary object recognition.
 - Autonomous grasping is not enabled. The current cup dry-run path revalidates safety state and CENTER alignment, then returns a gripper open/close plan for operator review only.
 - Manual arm operation uses `STREAM` by default. `TRACKED` is a slower Pi-recognition view for checking fixed or slow-moving targets.
@@ -192,9 +192,10 @@ python3 tools/motionbrain_dashboard.py \
   --timeout 6
 ```
 
-The current cup known-object demo uses ESP32-CAM `qvga` / JPEG quality `4`, Pi
+The current cup known-object demo uses ESP32-CAM `qvga` / JPEG quality `10`, Pi
 YOLOv5s object mode, confidence gate `0.25`, and dashboard proxy mode. The
-systemd wrappers re-apply this camera profile after an ESP32-CAM reboot.
+systemd wrappers re-apply this camera profile after an ESP32-CAM reboot and
+raise lower JPEG quality settings to the stable minimum.
 
 ## Documentation
 
