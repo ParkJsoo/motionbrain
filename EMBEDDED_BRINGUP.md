@@ -1,6 +1,6 @@
 # Embedded Bring-Up
 
-[README](README.md) | [ROBOTIS_READINESS](ROBOTIS_READINESS.md)
+[README](README.md) | [ROBOTICS_SYSTEM_READINESS](ROBOTICS_SYSTEM_READINESS.md)
 
 This document summarizes the embedded evidence for firmware-heavy robotics
 roles. It is intentionally specific about what is implemented and what still
@@ -58,7 +58,7 @@ Do not claim:
 - CAN, USB, Ethernet, or SPI production implementation.
 - EMI/EMC certification work.
 - production/DFM ownership.
-- DYNAMIXEL integration.
+- vendor-specific smart-actuator integration.
 
 ## Measurement Checklist
 

@@ -154,6 +154,6 @@ Current honest positioning:
 
 - [README.en.md](README.en.md): project entry point
 - [README.md](README.md): Korean project entry point
-- [ROBOTIS_READINESS.md](ROBOTIS_READINESS.md): ROS2 and hardware-boundary summary for ROBOTIS applications
+- [ROBOTICS_SYSTEM_READINESS.md](ROBOTICS_SYSTEM_READINESS.md): ROS2 and hardware-boundary summary for robotics system roles
 - [EMBEDDED_BRINGUP.md](EMBEDDED_BRINGUP.md): STM32/ESP32 bring-up and measurement checklist
 - [OPERATIONS.md](OPERATIONS.md): Pi/systemd/health-check operations notes

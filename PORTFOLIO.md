@@ -153,3 +153,4 @@ Pi에서 OpenCV DNN/ONNX 기반 객체 인식 경로는 구현했다. `config/co
 
 - [README.md](README.md): 프로젝트 진입점
 - [README.en.md](README.en.md): 영어 프로젝트 진입점
+- [ROBOTICS_SYSTEM_READINESS.md](ROBOTICS_SYSTEM_READINESS.md): 로보틱스 시스템/ROS2 하드웨어 경계 요약

@@ -10,6 +10,17 @@ MotionBrain은 ESP32 기반 5축 로봇팔 제어기에서 시작해 STM32 센�
 입력 -> 판단 -> 상태 -> 움직임 -> 피드백
 ```
 
+## 로보틱스 시스템 역량
+
+이 저장소의 핵심 증거는 실제 하드웨어 통합과 ROS2 기반 시스템 경계 설계다.
+ROS2 Jazzy typed interface, C++ control guard, mission supervisor, RViz/TF
+시각화, `ros2_control` mock bring-up, 안전한 open-loop `SystemInterface`
+scaffold를 포함한다.
+
+실제 물리 모션은 ESP32 firmware `SafetyGate` 뒤에 남겨 두었고,
+`ros2_control` hardware-interface 경로는 현재 `dry_run` 전용이다. 검증
+요약은 [2026-06-16 ros2_control evidence note](docs/evidence/2026-06-16-ros2-control-open-loop.md)를 본다.
+
 ## 데모 영상
 
 아래 GIF는 최종 물리 텔레오퍼레이션 데모를 README 안에서 바로 보여준다.
@@ -186,7 +197,9 @@ systemd wrapper는 ESP32-CAM 재부팅 후에도 이 카메라 프로필을 다�
 
 - [PORTFOLIO.md](PORTFOLIO.md): 한국어 포트폴리오 요약
 - [PORTFOLIO.en.md](PORTFOLIO.en.md): 영어 포트폴리오 요약
-- [ROBOTIS_READINESS.md](ROBOTIS_READINESS.md): 로보티즈 지원용 ROS2/하드웨어 경계 요약
+- [ROBOTICS_SYSTEM_READINESS.md](ROBOTICS_SYSTEM_READINESS.md): 로보틱스 시스템/ROS2 하드웨어 경계 요약
+- [docs/evidence/2026-06-16-ros2-control-open-loop.md](docs/evidence/2026-06-16-ros2-control-open-loop.md): `ros2_control` dry-run 검증 요약
+- [docs/evidence/2026-06-16-pi-system-health.md](docs/evidence/2026-06-16-pi-system-health.md): Pi/systemd/ROS2 health 검증 요약
 - [EMBEDDED_BRINGUP.md](EMBEDDED_BRINGUP.md): STM32/ESP32 bring-up 및 측정 체크리스트
 - [OPERATIONS.md](OPERATIONS.md): Pi/systemd/health-check 운영 절차
 

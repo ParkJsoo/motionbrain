@@ -10,6 +10,17 @@ The project is not just a motor demo. It is structured around safety state manag
 input -> decision -> state -> motion -> feedback
 ```
 
+## Robotics System Fit
+
+The strongest system-level evidence in this repository is the combination of
+real hardware integration and ROS2 boundary design: ROS2 Jazzy typed
+interfaces, C++ guard logic, mission supervision, RViz/TF visualization,
+`ros2_control` mock bring-up, and a safe open-loop `SystemInterface` scaffold.
+
+Physical motion remains behind the ESP32 firmware `SafetyGate`, and the
+`ros2_control` hardware-interface path is currently `dry_run` only. See
+[the 2026-06-16 ros2_control evidence note](docs/evidence/2026-06-16-ros2-control-open-loop.md).
+
 ## Demo Video
 
 The GIF below shows the final physical teleoperation demo directly in the README.
@@ -188,7 +199,9 @@ systemd wrappers re-apply this camera profile after an ESP32-CAM reboot.
 
 - [PORTFOLIO.en.md](PORTFOLIO.en.md): English portfolio summary
 - [PORTFOLIO.md](PORTFOLIO.md): Korean portfolio summary
-- [ROBOTIS_READINESS.md](ROBOTIS_READINESS.md): ROS2 and hardware-boundary summary for ROBOTIS applications
+- [ROBOTICS_SYSTEM_READINESS.md](ROBOTICS_SYSTEM_READINESS.md): robotics system and ROS2 hardware-boundary summary
+- [docs/evidence/2026-06-16-ros2-control-open-loop.md](docs/evidence/2026-06-16-ros2-control-open-loop.md): public ros2_control dry-run evidence note
+- [docs/evidence/2026-06-16-pi-system-health.md](docs/evidence/2026-06-16-pi-system-health.md): public Pi/systemd/ROS2 health evidence note
 - [EMBEDDED_BRINGUP.md](EMBEDDED_BRINGUP.md): STM32/ESP32 bring-up and measurement checklist
 - [OPERATIONS.md](OPERATIONS.md): Pi/systemd/health-check operations notes
 

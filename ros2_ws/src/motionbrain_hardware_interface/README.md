@@ -18,6 +18,8 @@ pretending the current low-cost DC arm has encoder-grade joint feedback.
 - Provides position and velocity state interfaces for each joint.
 - Implements lifecycle callbacks, finite-command validation, command timeout,
   and open-loop state interpolation for ROS2 controller bring-up.
+- Rejects unsupported transport modes at initialization; the current scaffold
+  accepts only `transport_mode=dry_run`.
 - Includes launch/config/URDF files for controller-manager smoke tests.
 
 ## Safety Boundary
@@ -25,6 +27,9 @@ pretending the current low-cost DC arm has encoder-grade joint feedback.
 In the current repository state this package is non-physical. `write()` does
 not POST to the ESP32 controller, and no STM32, motor, gripper, camera, or light
 is contacted by this plugin.
+
+The URDF uses `transport_mode=dry_run`, and the plugin refuses other transport
+modes until a real backend is implemented and validated.
 
 Physical actuation remains behind:
 
@@ -45,8 +50,9 @@ integration, while physical motion remains guarded by ESP32 firmware.
 Do not claim:
 
 ```text
-Closed-loop trajectory execution, DYNAMIXEL integration, encoder-verified
-motion, humanoid control, or production hardware interface completion.
+Closed-loop trajectory execution, vendor-specific smart-actuator integration,
+encoder-verified motion, full-platform motion control, or production hardware
+interface completion.
 ```
 
 ## Build

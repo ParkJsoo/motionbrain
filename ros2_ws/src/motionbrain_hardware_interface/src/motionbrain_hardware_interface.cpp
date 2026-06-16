@@ -14,6 +14,7 @@ namespace motionbrain_hardware_interface
 namespace
 {
 constexpr std::size_t kExpectedJointCount = 5;
+constexpr const char * kDryRunTransportMode = "dry_run";
 
 bool is_finite_vector(const std::vector<double> & values)
 {
@@ -59,6 +60,9 @@ hardware_interface::CallbackReturn MotionBrainHardwareInterface::on_init(
   const auto transport_mode = info_.hardware_parameters.find("transport_mode");
   if (transport_mode != info_.hardware_parameters.end() && !transport_mode->second.empty()) {
     transport_mode_ = transport_mode->second;
+  }
+  if (transport_mode_ != kDryRunTransportMode) {
+    return hardware_interface::CallbackReturn::ERROR;
   }
 
   last_command_change_time_ = std::chrono::steady_clock::now();
