@@ -202,6 +202,7 @@ systemd wrappers re-apply this camera profile after an ESP32-CAM reboot.
 - [ROBOTICS_SYSTEM_READINESS.md](ROBOTICS_SYSTEM_READINESS.md): robotics system and ROS2 hardware-boundary summary
 - [docs/evidence/2026-06-16-ros2-control-open-loop.md](docs/evidence/2026-06-16-ros2-control-open-loop.md): public ros2_control dry-run evidence note
 - [docs/evidence/2026-06-16-pi-system-health.md](docs/evidence/2026-06-16-pi-system-health.md): public Pi/systemd/ROS2 health evidence note
+- [docs/evidence/2026-06-16-runtime-measurements.md](docs/evidence/2026-06-16-runtime-measurements.md): Pi runtime endpoint latency, ROS2 CLI probe, and instrument inventory record
 - [EMBEDDED_BRINGUP.md](EMBEDDED_BRINGUP.md): STM32/ESP32 bring-up and measurement checklist
 - [OPERATIONS.md](OPERATIONS.md): Pi/systemd/health-check operations notes
 

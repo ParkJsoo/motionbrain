@@ -28,6 +28,8 @@ hardware integration, ROS2 system software, and real-robot issue analysis.
   [docs/evidence/2026-06-16-ros2-control-open-loop.md](docs/evidence/2026-06-16-ros2-control-open-loop.md)
 - Public Pi/systemd/ROS2 health evidence note:
   [docs/evidence/2026-06-16-pi-system-health.md](docs/evidence/2026-06-16-pi-system-health.md)
+- Public Pi runtime measurement evidence:
+  [docs/evidence/2026-06-16-runtime-measurements.md](docs/evidence/2026-06-16-runtime-measurements.md)
 - ESP32 safety gate and dispatcher: `src/control/`, `src/safety/`
 - ESP32 motor driver and pin mapping: `src/motor/motor_driver.*`
 - STM32 HAL sensor/teleop firmware: `firmware/stm32/MotionBrainSensor/`
@@ -134,6 +136,15 @@ physical motors.
 | State interfaces | position and velocity state interfaces exported for five joints |
 | Open-loop trajectory | `FollowJointTrajectory` goal accepted and completed with `SUCCEEDED` |
 | `/joint_states` | changed from all `0.0` to the commanded scaffold positions |
+
+## Latest Runtime Measurement Evidence
+
+Captured on the live Raspberry Pi host on 2026-06-16 with read-only commands.
+HTTP dashboard/perception endpoints returned `200` with measured latency, while
+bounded ROS2 CLI probes timed out before returning topic/status data. No USB
+oscilloscope, logic analyzer, serial adapter, or meter interface was visible to
+the Pi, so PWM/UART/I2C waveform and motor-voltage measurements remain gated by
+physical instrumentation.
 
 ## Claim Boundaries
 

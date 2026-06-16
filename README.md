@@ -200,6 +200,7 @@ systemd wrapper는 ESP32-CAM 재부팅 후에도 이 카메라 프로필을 다�
 - [ROBOTICS_SYSTEM_READINESS.md](ROBOTICS_SYSTEM_READINESS.md): 로보틱스 시스템/ROS2 하드웨어 경계 요약
 - [docs/evidence/2026-06-16-ros2-control-open-loop.md](docs/evidence/2026-06-16-ros2-control-open-loop.md): `ros2_control` dry-run 검증 요약
 - [docs/evidence/2026-06-16-pi-system-health.md](docs/evidence/2026-06-16-pi-system-health.md): Pi/systemd/ROS2 health 검증 요약
+- [docs/evidence/2026-06-16-runtime-measurements.md](docs/evidence/2026-06-16-runtime-measurements.md): Pi 런타임 endpoint latency, ROS2 CLI probe, 계측 장비 inventory 측정 기록
 - [EMBEDDED_BRINGUP.md](EMBEDDED_BRINGUP.md): STM32/ESP32 bring-up 및 측정 체크리스트
 - [OPERATIONS.md](OPERATIONS.md): Pi/systemd/health-check 운영 절차
 
