@@ -10,6 +10,17 @@ The project is not just a motor demo. It is structured around safety state manag
 input -> decision -> state -> motion -> feedback
 ```
 
+## Robotics System Fit
+
+The strongest system-level evidence in this repository is the combination of
+real hardware integration and ROS2 boundary design: ROS2 Jazzy typed
+interfaces, C++ guard logic, mission supervision, RViz/TF visualization,
+`ros2_control` mock bring-up, and a safe open-loop `SystemInterface` scaffold.
+
+Physical motion remains behind the ESP32 firmware `SafetyGate`, and the
+`ros2_control` hardware-interface path is currently `dry_run` only. See
+[the 2026-06-16 ros2_control evidence note](docs/evidence/2026-06-16-ros2-control-open-loop.md).
+
 ## Demo Video
 
 The GIF below shows the final physical teleoperation demo directly in the README.
@@ -50,6 +61,7 @@ Validated:
 - Pi-hosted dashboard for status, events, camera feed, target overlay, and safety-gated nudge actions
 - Raspberry Pi 4 + Ubuntu 24.04 + ROS2 Jazzy bridge
 - ROS2 typed topics for status, events, camera detection, joint states, kinematics, control guard, and mission state
+- `ros2_control` mock demo and safe open-loop `SystemInterface` scaffold
 - Pi perception service feeding `/camera/detection(_typed)`
 - ESP32-hosted camera mode split: `STREAM` for manual operation, `TRACKED` for recognition checks
 - Mac Docker/noVNC RViz visualization for RobotModel/TF and live ROS2 topics mirrored from the Pi dashboard
@@ -96,7 +108,7 @@ ROS2 typed topics, control guard, mission supervisor
 - `firmware/esp32cam/`: ESP32-CAM firmware
 - `firmware/stm32/MotionBrainSensor/`: STM32 sensor/teleop firmware
 - `tools/`: dashboard, perception service, watcher, STM32 helper scripts
-- `ros2_ws/src/`: ROS2 messages, bridge, control guard, mission, and URDF packages
+- `ros2_ws/src/`: ROS2 messages, bridge, control guard, mission, URDF, and `ros2_control` packages
 - `docs/assets/`: public demo images and video used by the README and portfolio
 - `config/`: runtime config such as vision labels
 
@@ -120,13 +132,24 @@ Run host tests:
 python3 -m unittest discover -s tests
 ```
 
+Check Raspberry Pi access:
+
+```bash
+python3 tools/raspi/check_pi_ssh_target.py
+ssh motionbrain-pi 'hostname; hostname -I; systemctl is-active ssh'
+```
+
+The Pi SSH alias should primarily follow `motionbrain-pi.local`, not a DHCP IP
+literal. Treat `.davolink` as a router-DNS fallback. See
+[OPERATIONS.md](OPERATIONS.md) for the access and recovery flow.
+
 Build and test the ROS2 workspace on Raspberry Pi:
 
 ```bash
 cd ros2_ws
 source /opt/ros/jazzy/setup.bash
-colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_mission motionbrain_ros_bridge motionbrain_description
-colcon test --packages-select motionbrain_msgs motionbrain_control motionbrain_mission motionbrain_ros_bridge motionbrain_description
+colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_hardware_interface motionbrain_mission motionbrain_ros_bridge motionbrain_description motionbrain_ros2_control_mock
+colcon test --packages-select motionbrain_msgs motionbrain_control motionbrain_hardware_interface motionbrain_mission motionbrain_ros_bridge motionbrain_description motionbrain_ros2_control_mock
 colcon test-result --verbose
 ```
 
@@ -176,6 +199,11 @@ systemd wrappers re-apply this camera profile after an ESP32-CAM reboot.
 
 - [PORTFOLIO.en.md](PORTFOLIO.en.md): English portfolio summary
 - [PORTFOLIO.md](PORTFOLIO.md): Korean portfolio summary
+- [ROBOTICS_SYSTEM_READINESS.md](ROBOTICS_SYSTEM_READINESS.md): robotics system and ROS2 hardware-boundary summary
+- [docs/evidence/2026-06-16-ros2-control-open-loop.md](docs/evidence/2026-06-16-ros2-control-open-loop.md): public ros2_control dry-run evidence note
+- [docs/evidence/2026-06-16-pi-system-health.md](docs/evidence/2026-06-16-pi-system-health.md): public Pi/systemd/ROS2 health evidence note
+- [EMBEDDED_BRINGUP.md](EMBEDDED_BRINGUP.md): STM32/ESP32 bring-up and measurement checklist
+- [OPERATIONS.md](OPERATIONS.md): Pi/systemd/health-check operations notes
 
 ## License
 

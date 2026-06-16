@@ -37,6 +37,7 @@ I designed and implemented:
 - OpenCV-based red target detection and target overlay
 - Safety-gated short base nudge actions
 - ROS2 Jazzy bridge, typed messages, C++ control guard, and mission supervisor
+- `ros2_control` mock demo and safe open-loop `SystemInterface` scaffold
 - Raspberry Pi systemd deployment and health checks
 - GitHub Actions quality gates for PlatformIO, Python tests, and ROS2 build/test
 
@@ -153,3 +154,6 @@ Current honest positioning:
 
 - [README.en.md](README.en.md): project entry point
 - [README.md](README.md): Korean project entry point
+- [ROBOTICS_SYSTEM_READINESS.md](ROBOTICS_SYSTEM_READINESS.md): ROS2 and hardware-boundary summary for robotics system roles
+- [EMBEDDED_BRINGUP.md](EMBEDDED_BRINGUP.md): STM32/ESP32 bring-up and measurement checklist
+- [OPERATIONS.md](OPERATIONS.md): Pi/systemd/health-check operations notes

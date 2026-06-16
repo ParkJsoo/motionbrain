@@ -1,0 +1,12 @@
+<library path="motionbrain_hardware_interface">
+  <class
+    name="motionbrain_hardware_interface/MotionBrainHardwareInterface"
+    type="motionbrain_hardware_interface::MotionBrainHardwareInterface"
+    base_class_type="hardware_interface::SystemInterface">
+    <description>
+      Safe open-loop SystemInterface scaffold for MotionBrain. The plugin
+      mirrors accepted joint commands into internal state for ros2_control
+      integration tests and does not directly actuate the ESP32 controller.
+    </description>
+  </class>
+</library>

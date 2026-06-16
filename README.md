@@ -10,6 +10,17 @@ MotionBrain은 ESP32 기반 5축 로봇팔 제어기에서 시작해 STM32 센�
 입력 -> 판단 -> 상태 -> 움직임 -> 피드백
 ```
 
+## 로보틱스 시스템 역량
+
+이 저장소의 핵심 증거는 실제 하드웨어 통합과 ROS2 기반 시스템 경계 설계다.
+ROS2 Jazzy typed interface, C++ control guard, mission supervisor, RViz/TF
+시각화, `ros2_control` mock bring-up, 안전한 open-loop `SystemInterface`
+scaffold를 포함한다.
+
+실제 물리 모션은 ESP32 firmware `SafetyGate` 뒤에 남겨 두었고,
+`ros2_control` hardware-interface 경로는 현재 `dry_run` 전용이다. 검증
+요약은 [2026-06-16 ros2_control evidence note](docs/evidence/2026-06-16-ros2-control-open-loop.md)를 본다.
+
 ## 데모 영상
 
 아래 GIF는 최종 물리 텔레오퍼레이션 데모를 README 안에서 바로 보여준다.
@@ -50,6 +61,7 @@ Docker/noVNC RViz 화면은 Pi 대시보드 상태와 감지 결과를 읽기 �
 - Pi 호스트 대시보드: 상태, 이벤트, 카메라, 타겟 오버레이, 안전 게이트 기반 짧은 보정 동작
 - Raspberry Pi 4 + Ubuntu 24.04 + ROS2 Jazzy 브리지
 - ROS2 타입 지정 토픽: 상태, 이벤트, 카메라 감지, 조인트 상태, 기구학, 제어 guard, mission 상태
+- `ros2_control` mock 데모와 안전한 open-loop `SystemInterface` 스캐폴드
 - Pi 인식 서비스를 통한 `/camera/detection(_typed)` 연동
 - ESP32 내장 제어 페이지의 카메라 모드 분리: 수동 조작은 `STREAM`, 인식 확인은 `TRACKED`
 - Mac Docker/noVNC RViz에서 RobotModel/TF와 Pi dashboard mirror 기반 live ROS2 topic 시각화
@@ -96,7 +108,7 @@ ROS2 타입 지정 토픽, control guard, mission supervisor
 - `firmware/esp32cam/`: ESP32-CAM 펌웨어
 - `firmware/stm32/MotionBrainSensor/`: STM32 센서/텔레오퍼레이션 펌웨어
 - `tools/`: 대시보드, 인식 서비스, 상태 감시기, STM32 보조 스크립트
-- `ros2_ws/src/`: ROS2 메시지, 브리지, 제어 guard, mission, URDF 패키지
+- `ros2_ws/src/`: ROS2 메시지, 브리지, 제어 guard, mission, URDF, `ros2_control` 패키지
 - `docs/assets/`: README/포트폴리오용 공개 데모 이미지와 영상
 - `config/`: 비전 모델 라벨 등 런타임 설정 파일
 
@@ -120,13 +132,24 @@ pio run -d firmware/esp32cam
 python3 -m unittest discover -s tests
 ```
 
+Raspberry Pi 접속 확인:
+
+```bash
+python3 tools/raspi/check_pi_ssh_target.py
+ssh motionbrain-pi 'hostname; hostname -I; systemctl is-active ssh'
+```
+
+Pi SSH alias는 DHCP IP가 아니라 `motionbrain-pi.local`을 우선 따라가도록
+설정한다. `.davolink`은 라우터 DNS fallback으로만 쓴다. 자세한 접속/복구 절차는
+[OPERATIONS.md](OPERATIONS.md)를 본다.
+
 Raspberry Pi ROS2 빌드:
 
 ```bash
 cd ros2_ws
 source /opt/ros/jazzy/setup.bash
-colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_mission motionbrain_ros_bridge motionbrain_description
-colcon test --packages-select motionbrain_msgs motionbrain_control motionbrain_mission motionbrain_ros_bridge motionbrain_description
+colcon build --packages-select motionbrain_msgs motionbrain_control motionbrain_hardware_interface motionbrain_mission motionbrain_ros_bridge motionbrain_description motionbrain_ros2_control_mock
+colcon test --packages-select motionbrain_msgs motionbrain_control motionbrain_hardware_interface motionbrain_mission motionbrain_ros_bridge motionbrain_description motionbrain_ros2_control_mock
 colcon test-result --verbose
 ```
 
@@ -174,6 +197,11 @@ systemd wrapper는 ESP32-CAM 재부팅 후에도 이 카메라 프로필을 다�
 
 - [PORTFOLIO.md](PORTFOLIO.md): 한국어 포트폴리오 요약
 - [PORTFOLIO.en.md](PORTFOLIO.en.md): 영어 포트폴리오 요약
+- [ROBOTICS_SYSTEM_READINESS.md](ROBOTICS_SYSTEM_READINESS.md): 로보틱스 시스템/ROS2 하드웨어 경계 요약
+- [docs/evidence/2026-06-16-ros2-control-open-loop.md](docs/evidence/2026-06-16-ros2-control-open-loop.md): `ros2_control` dry-run 검증 요약
+- [docs/evidence/2026-06-16-pi-system-health.md](docs/evidence/2026-06-16-pi-system-health.md): Pi/systemd/ROS2 health 검증 요약
+- [EMBEDDED_BRINGUP.md](EMBEDDED_BRINGUP.md): STM32/ESP32 bring-up 및 측정 체크리스트
+- [OPERATIONS.md](OPERATIONS.md): Pi/systemd/health-check 운영 절차
 
 ## 라이선스
 

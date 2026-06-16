@@ -35,6 +35,7 @@ MotionBrain은 ESP32 모션 제어기, STM32 센서/텔레오퍼레이션 계층
 - OpenCV 기반 빨간 타겟 검출과 타겟 오버레이
 - 안전 게이트 기반 짧은 베이스 보정 동작
 - ROS2 Jazzy 브리지, 타입 지정 메시지, C++ 제어 guard, mission supervisor
+- `ros2_control` mock 데모와 안전한 open-loop `SystemInterface` 스캐폴드
 - Raspberry Pi systemd 배포와 상태 점검
 - GitHub Actions 기반 PlatformIO/Python/ROS2 품질 게이트
 
@@ -95,7 +96,7 @@ ESP32-CAM은 카메라 노드로만 두고, Raspberry Pi에서 감지와 오버�
 
 ### ROS2 호스트 경계
 
-ROS2는 ESP32 내부 제어를 대체하지 않는다. 대신 `/status`, `/events`, `/camera/detection`을 타입 지정 토픽으로 승격하고, C++ 제어 guard와 mission supervisor가 현재 상태와 타겟 정렬을 판단한다.
+ROS2는 ESP32 내부 제어를 대체하지 않는다. 대신 `/status`, `/events`, `/camera/detection`을 타입 지정 토픽으로 승격하고, C++ 제어 guard와 mission supervisor가 현재 상태와 타겟 정렬을 판단한다. `ros2_control`은 mock controller와 open-loop `SystemInterface` 스캐폴드까지만 제공하며, 물리 출력은 여전히 ESP32 firmware safety 경계 뒤에 둔다.
 
 ### 검증 가능한 데모 경계
 
@@ -117,6 +118,7 @@ ROS2는 ESP32 내부 제어를 대체하지 않는다. 대신 `/status`, `/event
 - `/motionbrain/status_typed`, `/camera/detection_typed`, `/joint_states`, `/motionbrain/kinematics_typed`, `/motionbrain/control_guard_typed`, `/motionbrain/mission_state_typed` 상태 점검 통과
 - Pi 인식 서비스 결과가 ROS2 `/camera/detection_typed`까지 전달되는 것 확인
 - Mac Docker/noVNC RViz에서 RobotModel/TF와 Pi dashboard mirror 기반 live ROS2 topic 시각화 확인
+- `motionbrain_ros2_control_mock`과 `motionbrain_hardware_interface`로 `ros2_control` controller/hardware interface 표면 추가
 - GitHub Actions에서 PlatformIO, Python 테스트, ROS2 workspace 검증
 
 ## 객체 인식 현황
@@ -151,3 +153,4 @@ Pi에서 OpenCV DNN/ONNX 기반 객체 인식 경로는 구현했다. `config/co
 
 - [README.md](README.md): 프로젝트 진입점
 - [README.en.md](README.en.md): 영어 프로젝트 진입점
+- [ROBOTICS_SYSTEM_READINESS.md](ROBOTICS_SYSTEM_READINESS.md): 로보틱스 시스템/ROS2 하드웨어 경계 요약
