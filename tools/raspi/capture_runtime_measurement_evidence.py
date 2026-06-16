@@ -13,6 +13,7 @@ import signal
 import socket
 import statistics
 import subprocess
+import sys
 import time
 import urllib.request
 from pathlib import Path
@@ -42,8 +43,11 @@ def run_command(
                 os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
-            stdout, _ = process.communicate()
-            return 124, stdout.strip()
+            try:
+                stdout, _ = process.communicate(timeout=1.0)
+            except subprocess.TimeoutExpired:
+                return 124, "timeout"
+            return 124, stdout.strip() or "timeout"
         return 124, "timeout"
     except OSError as exc:
         return 124, str(exc)
@@ -51,6 +55,10 @@ def run_command(
 
 def run_shell(command: str, *, timeout: float, cwd: Path | None = None) -> tuple[int, str]:
     return run_command(["bash", "-lc", command], timeout=timeout, cwd=cwd)
+
+
+def note(message: str) -> None:
+    print(f"[capture] {message}", file=sys.stderr, flush=True)
 
 
 def discover_url(repo: Path, kind: str, preferred: str, timeout: float) -> str:
@@ -195,6 +203,7 @@ def build_report(args: argparse.Namespace) -> str:
     workspace = Path(args.workspace).expanduser().resolve()
     capture_time = dt.datetime.now().astimezone().isoformat(timespec="seconds")
 
+    note("discovering device URLs")
     controller_url = args.controller_url or discover_url(
         repo, "controller", "http://motionbrain.local", args.discovery_timeout
     )
@@ -219,6 +228,7 @@ def build_report(args: argparse.Namespace) -> str:
         ]
     )
 
+    note("sampling HTTP endpoints")
     http_results = [
         (name, url, display_label, fetch_latency(url, args.samples, args.http_timeout))
         for name, url, display_label in urls
@@ -231,10 +241,12 @@ def build_report(args: argparse.Namespace) -> str:
         "/motionbrain/control_guard_typed",
         "/motionbrain/mission_state_typed",
     ]
+    note("sampling ROS2 topic acquisition latency")
     topic_results = [
         (topic, capture_topic_latency(workspace, topic, args.topic_samples, args.topic_seconds)) for topic in topics
     ]
 
+    note("calling ROS2 status interfaces")
     service_results = [
         timed_ros_status(
             workspace,
@@ -252,6 +264,7 @@ def build_report(args: argparse.Namespace) -> str:
         ),
     ]
 
+    note("collecting Pi inventory")
     _, git_head = run_command(["git", "log", "--oneline", "-1"], timeout=5, cwd=repo)
     _, git_status = run_command(["git", "status", "-sb"], timeout=5, cwd=repo)
     _, uname = run_command(["uname", "-a"], timeout=5)
