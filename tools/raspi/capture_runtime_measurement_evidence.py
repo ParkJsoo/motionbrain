@@ -7,6 +7,7 @@ import glob
 import json
 import os
 import re
+import shlex
 import shutil
 import signal
 import socket
@@ -123,7 +124,10 @@ def fetch_latency(url: str, samples: int, timeout: float) -> dict[str, object]:
 
 def ros_command(workspace: Path, command: str, timeout: float) -> tuple[int, str]:
     setup = "source /opt/ros/jazzy/setup.bash && source install/setup.bash"
-    return run_shell(f"{setup} && {command}", timeout=timeout, cwd=workspace)
+    bounded_command = f"{setup} && {command}"
+    seconds = max(1.0, float(timeout))
+    hard_timeout = f"timeout --kill-after=2s {seconds:g}s bash -lc {shlex.quote(bounded_command)}"
+    return run_shell(hard_timeout, timeout=seconds + 5.0, cwd=workspace)
 
 
 def capture_topic_latency(workspace: Path, topic: str, samples: int, timeout: float) -> dict[str, object]:
