@@ -29,7 +29,7 @@ hardware integration, ROS2 system software, and real-robot issue analysis.
 - Public Pi/systemd/ROS2 health evidence note:
   [docs/evidence/2026-06-16-pi-system-health.md](docs/evidence/2026-06-16-pi-system-health.md)
 - Public Pi runtime measurement evidence:
-  [docs/evidence/2026-06-16-runtime-measurements.md](docs/evidence/2026-06-16-runtime-measurements.md)
+  [docs/evidence/2026-06-17-runtime-measurements.md](docs/evidence/2026-06-17-runtime-measurements.md)
 - Public embedded bench-check evidence:
   [docs/evidence/2026-06-16-embedded-bench-checks.md](docs/evidence/2026-06-16-embedded-bench-checks.md)
 - ESP32 safety gate and dispatcher: `src/control/`, `src/safety/`
@@ -141,12 +141,14 @@ physical motors.
 
 ## Latest Runtime Measurement Evidence
 
-Captured on the live Raspberry Pi host on 2026-06-16 with read-only commands.
-HTTP dashboard/perception endpoints returned `200` with measured latency, while
-bounded ROS2 CLI probes timed out before returning topic/status data. No USB
-oscilloscope, logic analyzer, serial adapter, or meter interface was visible to
-the Pi, so PWM/UART/I2C waveform and motor-voltage measurements remain gated by
-physical instrumentation.
+Captured on the live Raspberry Pi host on 2026-06-17 with read-only commands.
+HTTP controller, camera, dashboard, and perception endpoints returned `200`.
+ROS2 graph discovery showed the bridge, joint-state, kinematics, control-guard,
+and mission nodes. With a 15 s bounded CLI acquisition window, sampled ROS2
+topic probes and routine status service/action probes completed successfully.
+No USB oscilloscope, logic analyzer, serial adapter, or meter interface was
+visible to the Pi, so PWM/UART/I2C waveform and motor-voltage measurements
+remain gated by physical instrumentation.
 
 ## Recovered Embedded Bench Evidence
 

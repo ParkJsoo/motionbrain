@@ -202,6 +202,7 @@ def build_report(args: argparse.Namespace) -> str:
     repo = Path(args.repo).expanduser().resolve()
     workspace = Path(args.workspace).expanduser().resolve()
     capture_time = dt.datetime.now().astimezone().isoformat(timespec="seconds")
+    capture_date = capture_time.split("T", 1)[0]
 
     note("discovering device URLs")
     controller_url = args.controller_url or discover_url(
@@ -293,7 +294,7 @@ def build_report(args: argparse.Namespace) -> str:
     }
 
     lines: list[str] = [
-        "# 2026-06-16 Runtime Measurement Evidence",
+        f"# {capture_date} Runtime Measurement Evidence",
         "",
         "[README](../../README.md) | [Robotics system readiness](../../ROBOTICS_SYSTEM_READINESS.md)",
         "",
@@ -374,7 +375,18 @@ def build_report(args: argparse.Namespace) -> str:
             f"{fmt_ms(result['p95_ms'])} | {fmt_ms(result['min_ms'])} | {fmt_ms(result['max_ms'])} | "
             f"`{tail}` |"
         )
-    if all(int(result["ok"]) == 0 for _, result in topic_results):
+    all_topics_ok = all(int(result["ok"]) > 0 for _, result in topic_results)
+    all_topics_timeout = all(int(result["ok"]) == 0 for _, result in topic_results)
+    if all_topics_ok:
+        lines.extend(
+            [
+                "",
+                "All configured topic probes returned one sample within the bounded timeout.",
+                "The latency values include ROS2 CLI startup, environment setup, DDS discovery,",
+                "subscription matching, and first-sample wait; they are not publisher periods.",
+            ]
+        )
+    elif all_topics_timeout:
         lines.extend(
             [
                 "",
@@ -397,13 +409,47 @@ def build_report(args: argparse.Namespace) -> str:
             f"| {result['label']} | {result['rc']} | {float(result['elapsed_ms']):.1f} | "
             f"`{str(result['success_true']).lower()}` |"
         )
-    if all(int(result["rc"]) == 124 for result in service_results):
+    all_status_ok = all(
+        int(result["rc"]) == 0 and bool(result["success_true"]) for result in service_results
+    )
+    if all_status_ok:
+        lines.extend(
+            [
+                "",
+                "Both ROS2 status probes completed successfully within the bounded timeout.",
+            ]
+        )
+    elif all(int(result["rc"]) == 124 for result in service_results):
         lines.extend(
             [
                 "",
                 "Both ROS2 status probes hit the bounded timeout in this capture.",
             ]
         )
+
+    if all_topics_ok and all_status_ok:
+        claim_lines = [
+            "Captured read-only runtime measurements for MotionBrain on the live Raspberry Pi host:",
+            "HTTP endpoint latency, bounded ROS2 topic acquisition, ROS2 routine status",
+            "service/action round trips, Pi health, and hardware-instrument inventory. Topic",
+            "latencies include ROS2 CLI startup and DDS discovery overhead. Physical waveform",
+            "and voltage measurements still require external instruments.",
+        ]
+    elif all_topics_timeout:
+        claim_lines = [
+            "Captured read-only runtime measurements for MotionBrain on the live Raspberry Pi host:",
+            "HTTP endpoint latency, bounded ROS2 topic/status CLI probes, Pi health, and",
+            "hardware-instrument inventory. In this capture, ROS2 CLI probes timed out",
+            "before returning message/status data. Physical waveform and voltage measurements",
+            "still require external instruments.",
+        ]
+    else:
+        claim_lines = [
+            "Captured read-only runtime measurements for MotionBrain on the live Raspberry Pi host:",
+            "HTTP endpoint latency, mixed ROS2 topic/status CLI probe results, Pi health, and",
+            "hardware-instrument inventory. Physical waveform and voltage measurements still",
+            "require external instruments.",
+        ]
 
     lines.extend(
         [
@@ -421,11 +467,7 @@ def build_report(args: argparse.Namespace) -> str:
             "## Correct Claim",
             "",
             "```text",
-            "Captured read-only runtime measurements for MotionBrain on the live Raspberry Pi host:",
-            "HTTP endpoint latency, bounded ROS2 topic/status CLI probes, Pi health, and",
-            "hardware-instrument inventory. In this capture, ROS2 CLI probes timed out",
-            "before returning message/status data. Physical waveform and voltage measurements",
-            "still require external instruments.",
+            *claim_lines,
             "```",
             "",
         ]
@@ -442,7 +484,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--http-timeout", type=float, default=3.0)
     parser.add_argument("--discovery-timeout", type=float, default=8.0)
     parser.add_argument("--topic-samples", type=int, default=3)
-    parser.add_argument("--topic-seconds", type=float, default=10.0)
+    parser.add_argument("--topic-seconds", type=float, default=15.0)
     parser.add_argument("--ros-timeout", type=float, default=25.0)
     parser.add_argument("--controller-url", default="")
     parser.add_argument("--camera-url", default="")
