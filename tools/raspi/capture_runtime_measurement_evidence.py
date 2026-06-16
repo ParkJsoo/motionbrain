@@ -126,34 +126,34 @@ def ros_command(workspace: Path, command: str, timeout: float) -> tuple[int, str
     return run_shell(f"{setup} && {command}", timeout=timeout, cwd=workspace)
 
 
-def capture_topic_hz(workspace: Path, topic: str, seconds: int) -> dict[str, object]:
-    rc, output = ros_command(
-        workspace,
-        f"timeout {seconds} ros2 topic hz {topic} --window 5",
-        timeout=seconds + 5,
-    )
-    average_hz: float | None = None
-    min_s: float | None = None
-    max_s: float | None = None
-    window: int | None = None
+def capture_topic_latency(workspace: Path, topic: str, samples: int, timeout: float) -> dict[str, object]:
+    values: list[float] = []
+    failures: list[str] = []
+    last_rc: int | None = None
+    last_tail = ""
 
-    match = re.search(r"average rate:\s*([0-9.]+)", output)
-    if match:
-        average_hz = float(match.group(1))
-
-    match = re.search(r"min:\s*([0-9.]+)s\s+max:\s*([0-9.]+)s.*window:\s*(\d+)", output)
-    if match:
-        min_s = float(match.group(1))
-        max_s = float(match.group(2))
-        window = int(match.group(3))
+    for _ in range(samples):
+        start = time.perf_counter()
+        rc, output = ros_command(workspace, f"ros2 topic echo {topic} --once >/dev/null", timeout=timeout)
+        elapsed_ms = (time.perf_counter() - start) * 1000.0
+        last_rc = rc
+        last_tail = " | ".join(output.splitlines()[-3:])
+        if rc == 0:
+            values.append(elapsed_ms)
+        else:
+            failures.append(last_tail or f"rc={rc}")
+        time.sleep(0.15)
 
     return {
-        "rc": rc,
-        "average_hz": average_hz,
-        "min_s": min_s,
-        "max_s": max_s,
-        "window": window,
-        "tail": " | ".join(output.splitlines()[-3:]),
+        "ok": len(values),
+        "fail": len(failures),
+        "median_ms": statistics.median(values) if values else None,
+        "p95_ms": percentile(values, 0.95),
+        "min_ms": min(values) if values else None,
+        "max_ms": max(values) if values else None,
+        "last_rc": last_rc,
+        "tail": last_tail,
+        "failures": failures[:3],
     }
 
 
@@ -227,7 +227,9 @@ def build_report(args: argparse.Namespace) -> str:
         "/motionbrain/control_guard_typed",
         "/motionbrain/mission_state_typed",
     ]
-    topic_results = [(topic, capture_topic_hz(workspace, topic, args.topic_seconds)) for topic in topics]
+    topic_results = [
+        (topic, capture_topic_latency(workspace, topic, args.topic_samples, args.topic_seconds)) for topic in topics
+    ]
 
     service_results = [
         timed_ros_status(
@@ -340,21 +342,21 @@ def build_report(args: argparse.Namespace) -> str:
     lines.extend(
         [
             "",
-            "## ROS2 Topic Rate Samples",
+            "## ROS2 Topic Sample Latency",
             "",
-            f"`ros2 topic hz` was sampled for {args.topic_seconds} seconds per topic.",
+            f"`ros2 topic echo --once` was sampled {args.topic_samples} times per topic with a {args.topic_seconds} s per-sample timeout.",
             "",
-            "| Topic | avg Hz | min interval s | max interval s | window | result |",
-            "| --- | ---: | ---: | ---: | ---: | --- |",
+            "| Topic | OK/fail | median ms | p95 ms | min ms | max ms | result |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | --- |",
         ]
     )
     for topic, result in topic_results:
-        average = result["average_hz"] if result["average_hz"] is not None else "n/a"
-        min_s = result["min_s"] if result["min_s"] is not None else "n/a"
-        max_s = result["max_s"] if result["max_s"] is not None else "n/a"
-        window = result["window"] if result["window"] is not None else "n/a"
         tail = markdown_table_value(str(result["tail"]))
-        lines.append(f"| `{topic}` | {average} | {min_s} | {max_s} | {window} | `{tail}` |")
+        lines.append(
+            f"| `{topic}` | {result['ok']}/{result['fail']} | {fmt_ms(result['median_ms'])} | "
+            f"{fmt_ms(result['p95_ms'])} | {fmt_ms(result['min_ms'])} | {fmt_ms(result['max_ms'])} | "
+            f"`{tail}` |"
+        )
 
     lines.extend(
         [
@@ -388,7 +390,7 @@ def build_report(args: argparse.Namespace) -> str:
             "",
             "```text",
             "Captured read-only runtime measurements for MotionBrain on the live Raspberry Pi host:",
-            "HTTP endpoint latency, ROS2 topic rate samples, status service/action round trips,",
+            "HTTP endpoint latency, ROS2 topic sample acquisition latency, status service/action round trips,",
             "Pi health, and hardware-instrument inventory. Physical waveform and voltage",
             "measurements still require external instruments.",
             "```",
@@ -406,7 +408,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--samples", type=int, default=8)
     parser.add_argument("--http-timeout", type=float, default=3.0)
     parser.add_argument("--discovery-timeout", type=float, default=8.0)
-    parser.add_argument("--topic-seconds", type=int, default=10)
+    parser.add_argument("--topic-samples", type=int, default=3)
+    parser.add_argument("--topic-seconds", type=float, default=10.0)
     parser.add_argument("--ros-timeout", type=float, default=25.0)
     parser.add_argument("--controller-url", default="")
     parser.add_argument("--camera-url", default="")
