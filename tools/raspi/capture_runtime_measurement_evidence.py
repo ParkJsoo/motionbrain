@@ -5,8 +5,10 @@ import argparse
 import datetime as dt
 import glob
 import json
+import os
 import re
 import shutil
+import signal
 import socket
 import statistics
 import subprocess
@@ -21,19 +23,29 @@ def run_command(
     timeout: float,
     cwd: Path | None = None,
 ) -> tuple[int, str]:
+    process: subprocess.Popen[str] | None = None
     try:
-        result = subprocess.run(
+        process = subprocess.Popen(
             args,
             cwd=cwd,
-            check=False,
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            timeout=timeout,
+            start_new_session=True,
         )
-    except (OSError, subprocess.TimeoutExpired) as exc:
+        stdout, _ = process.communicate(timeout=timeout)
+        return process.returncode, stdout.strip()
+    except subprocess.TimeoutExpired:
+        if process is not None:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            stdout, _ = process.communicate()
+            return 124, stdout.strip()
+        return 124, "timeout"
+    except OSError as exc:
         return 124, str(exc)
-    return result.returncode, result.stdout.strip()
 
 
 def run_shell(command: str, *, timeout: float, cwd: Path | None = None) -> tuple[int, str]:
