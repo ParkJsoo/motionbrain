@@ -2,7 +2,7 @@
 
 [Korean README](README.md) | [Korean Portfolio](PORTFOLIO.md) | [Portfolio One-Pager](PORTFOLIO.en.md)
 
-MotionBrain is an embedded robotics portfolio project that starts with an ESP32-based 5-axis robotic arm controller and extends into an STM32 sensor/teleop layer, ESP32-CAM vision input, and a Raspberry Pi + ROS2 host bridge.
+MotionBrain is an embedded robotics system project that starts with an ESP32-based 5-axis robotic arm controller and extends into an STM32 sensor/teleop layer, ESP32-CAM vision input, and a Raspberry Pi + ROS2 host bridge.
 
 The project is not just a motor demo. It is structured around safety state management, clear command boundaries, sensor feedback, camera input, and ROS2 integration on real hardware.
 
@@ -10,12 +10,31 @@ The project is not just a motor demo. It is structured around safety state manag
 input -> decision -> state -> motion -> feedback
 ```
 
+## Evidence At A Glance
+
+| Capability | Evidence |
+| --- | --- |
+| Real robot integration | ESP32 5-axis motion controller, STM32 wired teleop layer, ESP32-CAM, and Raspberry Pi host integrated into one arm stack |
+| Embedded safety boundary | `BOOT -> IDLE -> ARMED -> FAULT`, `Dispatcher` + `SafetyGate`, token-gated commands, deadman release stop, and frame timeouts |
+| ROS2 system software | ROS2 Jazzy typed topics, C++ control guard, mission supervisor, URDF/RViz, and a `ros2_control` dry-run mock/open-loop `SystemInterface` |
+| Operations and validation | Pi systemd services, health-check scripts, runtime evidence, `ros2_control` evidence, PlatformIO/Python/ROS2 GitHub Actions, and a physical teleoperation demo |
+
+Good first evidence links for reviewers:
+
+- [PORTFOLIO.en.md](PORTFOLIO.en.md)
+- [ROBOTICS_SYSTEM_READINESS.md](ROBOTICS_SYSTEM_READINESS.md)
+- [OPERATIONS.md](OPERATIONS.md)
+- [docs/evidence/2026-06-16-ros2-control-open-loop.md](docs/evidence/2026-06-16-ros2-control-open-loop.md)
+- [docs/evidence/2026-06-16-pi-system-health.md](docs/evidence/2026-06-16-pi-system-health.md)
+- [docs/evidence/2026-06-17-runtime-measurements.md](docs/evidence/2026-06-17-runtime-measurements.md)
+
 ## Robotics System Fit
 
 The strongest system-level evidence in this repository is the combination of
 real hardware integration and ROS2 boundary design: ROS2 Jazzy typed
 interfaces, C++ guard logic, mission supervision, RViz/TF visualization,
-`ros2_control` mock bring-up, and a safe open-loop `SystemInterface` scaffold.
+`ros2_control` dry-run mock bring-up, and a safe open-loop `SystemInterface`
+scaffold.
 
 Physical motion remains behind the ESP32 firmware `SafetyGate`, and the
 `ros2_control` hardware-interface path is currently `dry_run` only. See
@@ -29,7 +48,7 @@ The GIF below shows the final physical teleoperation demo directly in the README
 
 [Download the MP4 file](https://raw.githubusercontent.com/ParkJsoo/motionbrain/demo-ready-20260608/docs/assets/demo/motionbrain-demo.mp4)
 
-Stable portfolio snapshot: `demo-ready-20260608`
+Physical teleoperation demo media snapshot: `demo-ready-20260608`
 
 ## Operator Screens
 
@@ -41,7 +60,7 @@ The ESP32-hosted `MotionBrain Control` page brings manual operation, token-gated
 
 ![MotionBrain Pi dashboard](docs/assets/motionbrain-dashboard.png)
 
-The Pi-hosted dashboard observes controller state, teleop, events, camera frames, and target detection while exposing only safety-gated corrective actions.
+The Pi-hosted dashboard observes controller state, teleop, events, camera frames, and target detection while exposing only operator-triggered, token/safety-gated bounded base-nudge controls.
 
 ![MotionBrain RViz RobotModel](docs/assets/motionbrain-rviz-robotmodel.png)
 
@@ -57,15 +76,15 @@ Validated:
 - Wired handheld teleop with deadman, frame timeout, and embedded safety telemetry
 - Documented DMM-level power/GND/button/output sanity checks and claim boundaries
 - ESP32-CAM `/status`, `/capture`, `/stream`, and `/camera` profile control
-- Home Wi-Fi operation across the ESP32 controller, ESP32-CAM, and Raspberry Pi
+- Local LAN operation across the ESP32 controller, ESP32-CAM, and Raspberry Pi
 - ESP32-hosted `MotionBrain Control` UI with token-gated state-changing commands
-- Pi-hosted dashboard for status, events, camera feed, target overlay, and safety-gated nudge actions
+- Pi-hosted dashboard for status, events, camera feed, target overlay, and a safety-gated bounded nudge control surface
 - Raspberry Pi 4 + Ubuntu 24.04 + ROS2 Jazzy bridge
-- ROS2 typed topics for status, events, camera detection, joint states, kinematics, control guard, and mission state
-- `ros2_control` mock demo and safe open-loop `SystemInterface` scaffold
+- ROS2 typed topics for status, events, camera detection, status-derived/open-loop joint states, kinematics diagnostics, control guard, and mission state
+- `ros2_control` dry-run mock demo and safe open-loop `SystemInterface` scaffold
 - Pi perception service feeding `/camera/detection(_typed)`
 - ESP32-hosted camera mode split: `STREAM` for manual operation, `TRACKED` for recognition checks
-- Mac Docker/noVNC RViz visualization for RobotModel/TF and live ROS2 topics mirrored from the Pi dashboard
+- Docker/noVNC RViz validation for RobotModel/TF and live ROS2 topics mirrored from the Pi dashboard
 - GitHub Actions checks for PlatformIO builds, Python tests, and ROS2 `colcon build/test`
 
 Important current limits:
@@ -193,7 +212,7 @@ python3 tools/motionbrain_dashboard.py \
 ```
 
 The current cup known-object demo uses ESP32-CAM `qvga` / JPEG quality `10`, Pi
-YOLOv5s object mode, confidence gate `0.25`, and dashboard proxy mode. The
+YOLOv5s object mode, a configured confidence gate, and dashboard proxy mode. The
 systemd wrappers re-apply this camera profile after an ESP32-CAM reboot and
 raise lower JPEG quality settings to the stable minimum.
 

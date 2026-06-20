@@ -4,11 +4,39 @@
 
 ## Summary
 
-MotionBrain is an embedded robotics portfolio project that integrates an ESP32 motion controller, STM32 sensor/teleop layer, ESP32-CAM vision input, and a Raspberry Pi + ROS2 host bridge into one robotic-arm system.
+MotionBrain is an embedded robotics system project that integrates an ESP32 motion controller, STM32 sensor/teleop layer, ESP32-CAM vision input, and a Raspberry Pi + ROS2 host bridge into one robotic-arm system.
 
 The project is designed to demonstrate reliable embedded control, not just motor movement. The main engineering signal is the separation between low-level motion execution, safety state, structured sensor feedback, host-side perception, and ROS2 orchestration.
 
-The stable portfolio snapshot is tagged as `demo-ready-20260608`.
+The physical teleoperation demo media snapshot is tagged as `demo-ready-20260608`.
+
+## Screening Signals
+
+- Real hardware: ESP32 motion controller, STM32 wired teleop layer, ESP32-CAM,
+  and Raspberry Pi were integrated in an actual networked robot stack.
+- Safety boundary: state changes and physical output must pass token checks,
+  state-machine checks, `SafetyGate`, deadman handling, and freshness timeouts.
+- ROS2 systems work: typed messages, ROS2 bridge, C++ control guard, mission
+  supervisor, URDF/RViz, and a `ros2_control` dry-run mock/open-loop
+  `SystemInterface` with no physical actuation through `ros2_control`.
+- Operations readiness: Pi systemd services, SSH/DNS recovery notes, health
+  checks, runtime evidence, `ros2_control` evidence, and CI validation are
+  documented.
+- Honest boundaries: the project does not overclaim closed-loop joint control,
+  arbitrary-object recognition, or autonomous grasping on the current DC arm.
+
+## Fast Evidence
+
+- [Physical teleoperation GIF](https://raw.githubusercontent.com/ParkJsoo/motionbrain/demo-ready-20260608/docs/assets/demo/motionbrain-demo.gif)
+  / [MP4](https://raw.githubusercontent.com/ParkJsoo/motionbrain/demo-ready-20260608/docs/assets/demo/motionbrain-demo.mp4)
+- [`ros2_control` dry-run evidence](docs/evidence/2026-06-16-ros2-control-open-loop.md):
+  controller manager, hardware-interface plugin, command/state interfaces,
+  `FollowJointTrajectory`, and `/joint_states` dry-run state mirror
+- [Pi/systemd/ROS2 health evidence](docs/evidence/2026-06-16-pi-system-health.md):
+  dashboard, perception, ROS2 bridge services, typed topics, service, and action
+- [Pi runtime measurements](docs/evidence/2026-06-17-runtime-measurements.md):
+  HTTP endpoints returned `200`, 15 s bounded ROS2 topic acquisition passed,
+  `/joint_states` was about 4.9-5.0 Hz, and the capture was read-only/no actuation
 
 ## Engineering Problem
 
@@ -35,9 +63,9 @@ I designed and implemented:
 - ESP32-CAM capture/stream firmware
 - Raspberry Pi dashboard and perception service
 - OpenCV-based red target detection and target overlay
-- Safety-gated short base nudge actions
+- Safety-gated bounded base-nudge control surface
 - ROS2 Jazzy bridge, typed messages, C++ control guard, and mission supervisor
-- `ros2_control` mock demo and safe open-loop `SystemInterface` scaffold
+- `ros2_control` dry-run mock demo and safe open-loop `SystemInterface` scaffold
 - Raspberry Pi systemd deployment and health checks
 - GitHub Actions quality gates for PlatformIO, Python tests, and ROS2 build/test
 
@@ -102,7 +130,7 @@ ROS2 does not replace the embedded controller. It promotes ESP32 status/events/c
 
 ### Demo-Ready Scope
 
-The public demo is physical teleoperation. Supporting evidence covers `STREAM`-based manual camera feedback, Pi-hosted dashboard, red-target or known-object overlay, ROS2 typed topics, a safety-gated nudge path, and token-gated light/search commands. Autonomous grasping remains out of scope for the current hardware state.
+The public demo is physical teleoperation. Supporting evidence covers `STREAM`-based manual camera feedback, Pi-hosted dashboard, red-target or known-object overlay, ROS2 typed topics, a safety-gated bounded nudge control surface, and token-gated search-light on/off commands. Autonomous grasping remains out of scope for the current hardware state.
 
 ## Validation
 
@@ -112,21 +140,22 @@ The public demo is physical teleoperation. Supporting evidence covers `STREAM`-b
 - Wired teleop produced real motor output under deadman control and stopped on release.
 - The final physical teleoperation demo was captured and published as README GIF/MP4 assets.
 - ESP32-CAM `/status`, `/capture`, and `/stream` were verified.
-- Home Wi-Fi operation was validated across ESP32 controller, ESP32-CAM, and Raspberry Pi.
+- Local LAN operation was validated across ESP32 controller, ESP32-CAM, and Raspberry Pi.
 - The ESP32-hosted `MotionBrain Control` page accepted a runtime token and executed state-changing commands.
-- The Pi dashboard verified the camera feed, red target box, and safety-gated nudge path.
-- The Pi perception service recognized the `cup` target with ESP32-CAM `qvga` / JPEG quality `4` and YOLOv5s.
+- The Pi dashboard verified the camera feed, red target box, and safety-gated bounded nudge control surface.
+- The Pi perception service recognized the `cup` target with ESP32-CAM `qvga` / JPEG quality `10` and YOLOv5s.
 - Raspberry Pi 4 + Ubuntu 24.04 + ROS2 Jazzy `colcon build/test` passed.
-- Health checks passed for `/motionbrain/status_typed`, `/camera/detection_typed`, `/joint_states`, `/motionbrain/kinematics_typed`, `/motionbrain/control_guard_typed`, and `/motionbrain/mission_state_typed`.
+- Health checks passed for `/motionbrain/status_typed`, `/camera/detection_typed`, status-derived/open-loop `/joint_states`, `/motionbrain/kinematics_typed`, `/motionbrain/control_guard_typed`, and `/motionbrain/mission_state_typed`.
 - Pi perception service output was verified through ROS2 `/camera/detection_typed`.
-- Mac Docker/noVNC RViz visualized RobotModel/TF and live ROS2 topics mirrored from the Pi dashboard.
+- `motionbrain_ros2_control_mock` and `motionbrain_hardware_interface` validated the `ros2_control` mock/controller and hardware-interface dry-run boundary, not physical `ros2_control` actuation.
+- Docker/noVNC RViz validation visualized RobotModel/TF and live ROS2 topics mirrored from the Pi dashboard.
 - GitHub Actions validates PlatformIO firmware builds, Python tests, and ROS2 workspace build/test.
 
 ## Object Detection Status
 
-The Pi object-detection path exists: OpenCV DNN/ONNX backend loading, explicit model/label paths, selected-target JSON, dashboard overlay, and ROS2 typed detection publishing. Model weights are intentionally not committed.
+The Pi constrained known-object detection path exists: OpenCV DNN/ONNX backend loading, explicit model/label paths, selected-target JSON, dashboard overlay, and ROS2 typed detection publishing. Model weights are intentionally not committed.
 
-The current reliable known-object bench path is constrained `cup` recognition with ESP32-CAM `qvga` / JPEG quality `4`, YOLOv5s, `--object-target cup`, and a confidence baseline of `0.25`. This path returned `cup` through the Pi dashboard/perception API. Manual camera operation is separated into `STREAM`, while `TRACKED` is used as the slower recognition/confirmation view.
+The current reliable known-object bench path is constrained `cup` recognition with ESP32-CAM `qvga` / JPEG quality `10`, YOLOv5s, `--object-target cup`, and a configured confidence gate. This path returned `cup` through the Pi dashboard/perception API. Manual camera operation is separated into `STREAM`, while `TRACKED` is used as the slower recognition/confirmation view.
 
 Current honest positioning:
 
@@ -140,11 +169,11 @@ Current honest positioning:
 - HC-SR04 is removed for the final physical demo, with range telemetry handled as disabled/nonblocking
 - ESP32-CAM QVGA input limits general object detection quality
 - No general text-prompt object search
-- The README physical teleop video and non-motion screenshots/evidence are captured; additional SearchLight or object-correction video should be captured only for a specific follow-up goal
+- The README physical teleop video and non-motion screenshots/evidence are captured; additional search-light toggle or bounded-nudge evidence should be captured only for a specific follow-up goal
 
 ## Next Steps
 
-1. Keep the `demo-ready-20260608` snapshot and README GIF/MP4 as the stable public reference links.
+1. Keep the `demo-ready-20260608` physical teleoperation demo media and README GIF/MP4 as the stable public reference links.
 2. Tune the emphasis by context: embedded safety, multi-MCU teleop, Pi perception/dashboard, or ROS2 bridge.
 3. Design marker- or fixed-known-object-assisted grasping as a separate plan.
 4. Revisit autonomy only after adding a better camera, range/contact sensing, or a validated edge runtime.
@@ -155,5 +184,8 @@ Current honest positioning:
 - [README.en.md](README.en.md): project entry point
 - [README.md](README.md): Korean project entry point
 - [ROBOTICS_SYSTEM_READINESS.md](ROBOTICS_SYSTEM_READINESS.md): ROS2 and hardware-boundary summary for robotics system roles
+- [docs/evidence/2026-06-16-ros2-control-open-loop.md](docs/evidence/2026-06-16-ros2-control-open-loop.md): ros2_control dry-run evidence summary
+- [docs/evidence/2026-06-16-pi-system-health.md](docs/evidence/2026-06-16-pi-system-health.md): Pi/systemd/ROS2 health evidence summary
+- [docs/evidence/2026-06-17-runtime-measurements.md](docs/evidence/2026-06-17-runtime-measurements.md): Pi runtime and ROS2 measurement note
 - [EMBEDDED_BRINGUP.md](EMBEDDED_BRINGUP.md): STM32/ESP32 bring-up and measurement checklist
 - [OPERATIONS.md](OPERATIONS.md): Pi/systemd/health-check operations notes

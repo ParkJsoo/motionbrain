@@ -2,7 +2,7 @@
 
 [영어 README](README.en.md) | [포트폴리오 요약](PORTFOLIO.md) | [영어 포트폴리오 요약](PORTFOLIO.en.md)
 
-MotionBrain은 ESP32 기반 5축 로봇팔 제어기에서 시작해 STM32 센서/텔레오퍼레이션 계층, ESP32-CAM 비전 입력, Raspberry Pi + ROS2 호스트 브리지까지 확장한 임베디드 로보틱스 포트폴리오 프로젝트다.
+MotionBrain은 ESP32 기반 5축 로봇팔 제어기에서 시작해 STM32 센서/텔레오퍼레이션 계층, ESP32-CAM 비전 입력, Raspberry Pi + ROS2 호스트 브리지까지 확장한 임베디드 로보틱스 시스템 프로젝트다.
 
 핵심 목표는 단순히 모터를 움직이는 것이 아니라, 실제 하드웨어에서 안전 상태, 명령 경계, 센서 피드백, 비전 입력, ROS2 연동을 한 흐름으로 검증하는 것이다.
 
@@ -10,11 +10,29 @@ MotionBrain은 ESP32 기반 5축 로봇팔 제어기에서 시작해 STM32 센�
 입력 -> 판단 -> 상태 -> 움직임 -> 피드백
 ```
 
+## 한눈에 보는 핵심 증거
+
+| 역량 | 구현 증거 |
+| --- | --- |
+| 실물 로봇 통합 | ESP32 5축 모션 제어기, STM32 유선 텔레오퍼레이션, ESP32-CAM, Raspberry Pi 호스트를 하나의 arm stack으로 통합 |
+| 임베디드 안전 경계 | `BOOT -> IDLE -> ARMED -> FAULT`, `Dispatcher` + `SafetyGate`, 토큰 기반 명령, deadman release stop, 프레임 타임아웃 |
+| ROS2 시스템 소프트웨어 | ROS2 Jazzy typed topics, C++ control guard, mission supervisor, URDF/RViz, `ros2_control` dry-run mock/open-loop `SystemInterface` |
+| 운영/검증 | Pi systemd 서비스, health-check 스크립트, runtime evidence, `ros2_control` evidence, PlatformIO/Python/ROS2 GitHub Actions, 물리 텔레오퍼레이션 데모 |
+
+검토자가 먼저 볼 만한 상세 근거:
+
+- [PORTFOLIO.md](PORTFOLIO.md)
+- [ROBOTICS_SYSTEM_READINESS.md](ROBOTICS_SYSTEM_READINESS.md)
+- [OPERATIONS.md](OPERATIONS.md)
+- [docs/evidence/2026-06-16-ros2-control-open-loop.md](docs/evidence/2026-06-16-ros2-control-open-loop.md)
+- [docs/evidence/2026-06-16-pi-system-health.md](docs/evidence/2026-06-16-pi-system-health.md)
+- [docs/evidence/2026-06-17-runtime-measurements.md](docs/evidence/2026-06-17-runtime-measurements.md)
+
 ## 로보틱스 시스템 역량
 
 이 저장소의 핵심 증거는 실제 하드웨어 통합과 ROS2 기반 시스템 경계 설계다.
 ROS2 Jazzy typed interface, C++ control guard, mission supervisor, RViz/TF
-시각화, `ros2_control` mock bring-up, 안전한 open-loop `SystemInterface`
+시각화, `ros2_control` dry-run mock bring-up, 안전한 open-loop `SystemInterface`
 scaffold를 포함한다.
 
 실제 물리 모션은 ESP32 firmware `SafetyGate` 뒤에 남겨 두었고,
@@ -29,7 +47,7 @@ scaffold를 포함한다.
 
 [MP4 파일 다운로드](https://raw.githubusercontent.com/ParkJsoo/motionbrain/demo-ready-20260608/docs/assets/demo/motionbrain-demo.mp4)
 
-안정 포트폴리오 스냅샷: `demo-ready-20260608`
+물리 텔레오퍼레이션 데모 미디어 스냅샷: `demo-ready-20260608`
 
 ## 운영 화면
 
@@ -41,7 +59,7 @@ ESP32 내장 `MotionBrain Control`은 수동 조작, 토큰 기반 명령 경계
 
 ![MotionBrain Pi 대시보드](docs/assets/motionbrain-dashboard.png)
 
-Pi 호스트 대시보드는 제어기 상태, 텔레오퍼레이션, 이벤트, 카메라 프레임, 타겟 감지 상태를 관찰하고 안전 게이트 기반 보정 명령을 제한적으로 노출한다.
+Pi 호스트 대시보드는 제어기 상태, 텔레오퍼레이션, 이벤트, 카메라 프레임, 타겟 감지 상태를 관찰하고 작업자가 명시적으로 누르는 토큰/안전 게이트 기반 bounded base nudge 제어만 제한적으로 노출한다.
 
 ![MotionBrain RViz RobotModel](docs/assets/motionbrain-rviz-robotmodel.png)
 
@@ -57,15 +75,15 @@ Docker/noVNC RViz 화면은 Pi 대시보드 상태와 감지 결과를 읽기 �
 - 유선 핸드헬드 텔레오퍼레이션: 데드맨, 프레임 타임아웃, 안전 텔레메트리
 - 멀티미터 기반 전원/GND/버튼/출력 sanity check 기록과 claim boundary 문서화
 - ESP32-CAM `/status`, `/capture`, `/stream`, `/camera` 프로필 제어
-- 홈 Wi-Fi 기반 ESP32 제어기, ESP32-CAM, Raspberry Pi 연결
+- 로컬 LAN 기반 ESP32 제어기, ESP32-CAM, Raspberry Pi 연결
 - ESP32 내장 `MotionBrain Control` 웹 UI와 토큰 기반 상태 변경 명령
-- Pi 호스트 대시보드: 상태, 이벤트, 카메라, 타겟 오버레이, 안전 게이트 기반 짧은 보정 동작
+- Pi 호스트 대시보드: 상태, 이벤트, 카메라, 타겟 오버레이, 안전 게이트 기반 bounded base nudge 제어 표면
 - Raspberry Pi 4 + Ubuntu 24.04 + ROS2 Jazzy 브리지
-- ROS2 타입 지정 토픽: 상태, 이벤트, 카메라 감지, 조인트 상태, 기구학, 제어 guard, mission 상태
-- `ros2_control` mock 데모와 안전한 open-loop `SystemInterface` 스캐폴드
+- ROS2 타입 지정 토픽: 상태, 이벤트, 카메라 감지, 상태 기반/open-loop 조인트 상태, 기구학 진단, 제어 guard, mission 상태
+- `ros2_control` dry-run mock 데모와 안전한 open-loop `SystemInterface` 스캐폴드
 - Pi 인식 서비스를 통한 `/camera/detection(_typed)` 연동
 - ESP32 내장 제어 페이지의 카메라 모드 분리: 수동 조작은 `STREAM`, 인식 확인은 `TRACKED`
-- Mac Docker/noVNC RViz에서 RobotModel/TF와 Pi dashboard mirror 기반 live ROS2 topic 시각화
+- Docker/noVNC RViz 검증 환경에서 RobotModel/TF와 Pi dashboard mirror 기반 live ROS2 topic 시각화
 - GitHub Actions 기반 PlatformIO 빌드, Python 테스트, ROS2 `colcon build/test`
 
 현재 주의점:
@@ -191,7 +209,7 @@ python3 tools/motionbrain_dashboard.py \
 ```
 
 현재 cup known-object demo는 ESP32-CAM `qvga` / JPEG quality `10`, Pi
-YOLOv5s object mode, confidence gate `0.25`, dashboard proxy 조합을 사용한다.
+YOLOv5s object mode, 설정된 confidence gate, dashboard proxy 조합을 사용한다.
 systemd wrapper는 ESP32-CAM 재부팅 후에도 이 카메라 프로필을 다시 적용하고,
 낮은 JPEG quality 설정은 안정 최소값으로 올린다.
 
