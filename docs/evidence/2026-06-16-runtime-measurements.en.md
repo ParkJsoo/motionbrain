@@ -1,16 +1,16 @@
-# 2026-06-16 Runtime Measurement 증거
+# 2026-06-16 Runtime Measurement Evidence
 
-[README](../../README.md) | [로보틱스 시스템 준비도](../../ROBOTICS_SYSTEM_READINESS.md) | [English](2026-06-16-runtime-measurements.en.md)
+[README](../../README.en.md) | [Robotics system readiness](../../ROBOTICS_SYSTEM_READINESS.en.md)
 
-Raspberry Pi host에서 read-only runtime measurement를 캡처했다. 물리 motion,
-motor command, routine execution command는 보내지 않았다. ROS2 service/action
-call은 `action: status`만 사용했다.
+Read-only runtime measurements captured on the Raspberry Pi host. No physical motion,
+motor command, or routine execution command was sent; ROS2 service/action calls used
+`action: status` only.
 
-## 환경
+## Environment
 
-| 항목 | 값 |
+| Item | Value |
 | --- | --- |
-| 캡처 시각 | `2026-06-16T23:39:11+09:00` |
+| Capture time | `2026-06-16T23:39:11+09:00` |
 | Host | `motionbrain-pi` |
 | Kernel | `Linux motionbrain-pi 6.8.0-1057-raspi #61-Ubuntu SMP PREEMPT_DYNAMIC Tue May 26 22:12:44 UTC 2026 aarch64 aarch64 aarch64 GNU/Linux` |
 | Git | `37be6c5 Clarify runtime probe timeout evidence` |
@@ -19,9 +19,9 @@ call은 `action: status`만 사용했다.
 | Pi temperature | `temp=49.1'C` |
 | Pi throttling | `throttled=0x50005` |
 
-## 계측 장비 inventory
+## Instrument Inventory
 
-| 항목 | 관찰 결과 |
+| Item | Observed |
 | --- | --- |
 | USB devices | `Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub; Bus 001 Device 002: ID 2109:3431 VIA Labs, Inc. Hub; Bus 002 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub; Bus 003 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub` |
 | USB serial devices | `none detected` |
@@ -36,13 +36,13 @@ call은 `action: status`만 사용했다.
 | `pigs` | `not installed` |
 | `vcgencmd` | `/usr/bin/vcgencmd` |
 
-이 캡처 시점에 Pi에서 USB oscilloscope, logic analyzer, USB serial adapter,
-multimeter interface가 보이지 않았다. 따라서 물리 PWM/UART/I2C waveform과
-motor-voltage 측정은 software 문제가 아니라 장비가 필요한 항목으로 남았다.
+No USB oscilloscope, logic analyzer, USB serial adapter, or multimeter interface
+was visible to the Pi during this capture. Physical PWM/UART/I2C waveform and
+motor-voltage measurements therefore remain equipment-gated, not software-gated.
 
 ## HTTP Endpoint Latency
 
-각 endpoint는 Pi에서 2회 sampling했고 request timeout은 0.7초였다.
+Each endpoint was sampled 2 times from the Pi with a 0.7 s request timeout.
 
 | Endpoint | URL | OK/fail | median ms | p95 ms | min ms | max ms | median bytes | status |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
@@ -51,12 +51,11 @@ motor-voltage 측정은 software 문제가 아니라 장비가 필요한 항목�
 | Pi perception /health | `perception discovered endpoint` | 2/0 | 9.5 | 9.7 | 9.3 | 9.7 | 717.0 | `200` |
 | Pi perception /api/detection | `perception discovered endpoint` | 2/0 | 7.0 | 7.8 | 6.3 | 7.8 | 753.0 | `200` |
 
-이 캡처에서는 직접 ESP32-CAM `/status` discovery가 반환되지 않았다. Camera
-evidence는 dashboard/perception endpoint를 통해 대표했다.
+Direct ESP32-CAM `/status` discovery did not return during this capture; camera evidence is represented through dashboard/perception endpoints.
 
 ## ROS2 Topic Sample Latency
 
-`ros2 topic echo --once`는 topic당 1회, sample timeout 1.0초로 실행했다.
+`ros2 topic echo --once` was sampled 1 times per topic with a 1.0 s per-sample timeout.
 
 | Topic | OK/fail | median ms | p95 ms | min ms | max ms | result |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
@@ -66,8 +65,8 @@ evidence는 dashboard/perception endpoint를 통해 대표했다.
 | `/motionbrain/control_guard_typed` | 0/1 | n/a | n/a | n/a | n/a | `` |
 | `/motionbrain/mission_state_typed` | 0/1 | n/a | n/a | n/a | n/a | `` |
 
-이 캡처의 topic probe는 모두 bounded timeout에 걸렸다. ROS2 message sample
-latency 값은 캡처되지 않았다.
+All topic probes hit the bounded timeout in this capture; no ROS2 message
+sample latency value was captured.
 
 ## ROS2 Status Round Trip
 
@@ -76,24 +75,24 @@ latency 값은 캡처되지 않았다.
 | routine service status | 124 | 5131.9 | `false` |
 | guarded routine action status | 124 | 5045.8 | `false` |
 
-두 ROS2 status probe 모두 bounded timeout에 걸렸다.
+Both ROS2 status probes hit the bounded timeout in this capture.
 
-## 물리 계측 상태
+## Physical Measurement Status
 
-| Signal | 상태 | 이유 |
+| Signal | Status | Reason |
 | --- | --- | --- |
-| ESP32 PWM frequency/duty | not captured | Pi에서 oscilloscope/logic analyzer/sigrok device가 보이지 않음 |
-| STM32-to-ESP32 UART timing | not captured | Pi에서 USB serial adapter 또는 logic analyzer가 보이지 않음 |
-| MPU-6050 I2C waveform | not captured | Pi I2C bus는 있지만 STM32 sensor bus가 Pi에 연결됐다고 증명되지 않았고 무작정 probe하면 안 됨 |
-| Deadman release-to-stop latency | not captured | synchronized physical input/video 또는 logic capture 필요 |
-| Motor voltage drop under bounded pulse | not captured | safe bounded pulse 중 motor supply 양단에 meter/scope 연결 필요 |
+| ESP32 PWM frequency/duty | not captured | no visible oscilloscope/logic analyzer/sigrok device on Pi |
+| STM32-to-ESP32 UART timing | not captured | no USB serial adapter or logic analyzer visible on Pi |
+| MPU-6050 I2C waveform | not captured | Pi I2C bus is available, but the STM32 sensor bus is not proven wired to Pi and should not be probed blindly |
+| Deadman release-to-stop latency | not captured | needs synchronized physical input/video or logic capture |
+| Motor voltage drop under bounded pulse | not captured | needs a meter/scope connected across motor supply during a safe bounded pulse |
 
-## 올바른 주장
+## Correct Claim
 
 ```text
-Live Raspberry Pi host에서 MotionBrain의 read-only runtime measurement를
-캡처했다: HTTP endpoint latency, bounded ROS2 topic/status CLI probe,
-Pi health, hardware-instrument inventory. 이 캡처에서는 ROS2 CLI probe가
-message/status data를 반환하기 전에 timeout됐다. 물리 waveform과 voltage
-측정은 여전히 외부 계측 장비가 필요하다.
+Captured read-only runtime measurements for MotionBrain on the live Raspberry Pi host:
+HTTP endpoint latency, bounded ROS2 topic/status CLI probes, Pi health, and
+hardware-instrument inventory. In this capture, ROS2 CLI probes timed out
+before returning message/status data. Physical waveform and voltage measurements
+still require external instruments.
 ```

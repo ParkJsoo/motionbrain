@@ -1,94 +1,93 @@
-# Robotics System Readiness
+# 로보틱스 시스템 준비도
 
-[README](README.md) | [PORTFOLIO](PORTFOLIO.md)
+[README](README.md) | [PORTFOLIO](PORTFOLIO.md) | [English](ROBOTICS_SYSTEM_READINESS.en.md)
 
-This note maps MotionBrain to robotics system-software roles. It separates
-implemented evidence from mock, scaffold, and known limitations.
+이 문서는 MotionBrain을 로보틱스 시스템 소프트웨어 관점에서 정리한다.
+구현된 증거와 mock/scaffold, 그리고 아직 주장하면 안 되는 한계를 분리한다.
 
-## Role Match
+## 역할 적합도
 
-MotionBrain is strongest as a real-hardware robotics integration project:
+MotionBrain의 강점은 실제 하드웨어를 붙여 운영한 로보틱스 통합 프로젝트라는 점이다.
 
-- ESP32 firmware drives five DC motor axes through TB6612FNG drivers.
-- STM32F446 firmware publishes structured sensor and teleoperation frames.
-- Raspberry Pi hosts dashboard, perception, and ROS2 Jazzy bridge processes.
-- ROS2 packages expose typed status, event, detection, kinematics, guard,
-  mission, URDF, RViz, and `ros2_control` surfaces.
-- `ros2_control` integration is intentionally safe: mock and dry-run surfaces
-  are validated, while physical actuation stays behind embedded safety gates.
+- ESP32 펌웨어가 TB6612FNG 드라이버를 통해 5축 DC 모터 출력을 담당한다.
+- STM32F446 펌웨어가 구조화된 센서/텔레오퍼레이션 프레임을 보낸다.
+- Raspberry Pi가 dashboard, perception, ROS2 Jazzy bridge 프로세스를 운영한다.
+- ROS2 패키지는 typed status, event, detection, kinematics, guard, mission,
+  URDF, RViz, `ros2_control` 표면을 제공한다.
+- `ros2_control`은 안전 경계 안에서만 검증했다. mock과 dry-run 표면은
+  검증되어 있지만, 실제 물리 구동은 embedded safety gate 뒤에 남겨뒀다.
 
-This is evidence for robotics platform work: embedded safety boundaries,
-hardware integration, ROS2 system software, and real-robot issue analysis.
+따라서 이 프로젝트는 embedded safety boundary, 하드웨어 통합, ROS2 시스템
+소프트웨어, 실제 로봇 문제 분석에 대한 증거로 쓰는 것이 맞다.
 
-## Evidence Already In Repo
+## Repo 안의 증거
 
-- Physical controller and dashboard overview: [README.md](README.md)
-- Portfolio problem framing and honest limitations: [PORTFOLIO.md](PORTFOLIO.md)
-- Public `ros2_control` dry-run evidence note:
+- 물리 컨트롤러와 dashboard 개요: [README.md](README.md)
+- 포트폴리오 문제 정의와 한계: [PORTFOLIO.md](PORTFOLIO.md)
+- 공개 `ros2_control` dry-run 증거:
   [docs/evidence/2026-06-16-ros2-control-open-loop.md](docs/evidence/2026-06-16-ros2-control-open-loop.md)
-- Public Pi/systemd/ROS2 health evidence note:
+- 공개 Pi/systemd/ROS2 health 증거:
   [docs/evidence/2026-06-16-pi-system-health.md](docs/evidence/2026-06-16-pi-system-health.md)
-- Public Pi runtime measurement evidence:
+- 공개 Pi runtime 측정 증거:
   [docs/evidence/2026-06-17-runtime-measurements.md](docs/evidence/2026-06-17-runtime-measurements.md)
-- Public embedded bench-check evidence:
+- 공개 embedded bench check 증거:
   [docs/evidence/2026-06-16-embedded-bench-checks.md](docs/evidence/2026-06-16-embedded-bench-checks.md)
-- ESP32 safety gate and dispatcher: `src/control/`, `src/safety/`
-- ESP32 motor driver and pin mapping: `src/motor/motor_driver.*`
+- ESP32 safety gate와 dispatcher: `src/control/`, `src/safety/`
+- ESP32 motor driver와 pin mapping: `src/motor/motor_driver.*`
 - STM32 HAL sensor/teleop firmware: `firmware/stm32/MotionBrainSensor/`
-- ROS2 typed messages and bridge: `ros2_ws/src/motionbrain_msgs/`,
-  `ros2_ws/src/motionbrain_ros_bridge/`
+- ROS2 typed messages와 bridge:
+  `ros2_ws/src/motionbrain_msgs/`, `ros2_ws/src/motionbrain_ros_bridge/`
 - C++ ROS2 control guard: `ros2_ws/src/motionbrain_control/`
 - URDF/RViz description: `ros2_ws/src/motionbrain_description/`
 - `ros2_control` mock demo: `ros2_ws/src/motionbrain_ros2_control_mock/`
-- safe open-loop `SystemInterface` scaffold:
+- 안전한 open-loop `SystemInterface` scaffold:
   `ros2_ws/src/motionbrain_hardware_interface/`
 
-## ros2_control Boundary
+## ros2_control 경계
 
-There are two separate `ros2_control` surfaces:
+`ros2_control` 표면은 두 가지로 분리되어 있다.
 
-| Surface | Package | Purpose | Physical actuation |
+| 표면 | 패키지 | 목적 | 물리 구동 |
 | --- | --- | --- | --- |
-| Mock controller | `motionbrain_ros2_control_mock` | Controller-manager, joint-state, and trajectory-controller bring-up with `mock_components/GenericSystem` | No |
-| Hardware interface scaffold | `motionbrain_hardware_interface` | Standard `hardware_interface::SystemInterface` shape, joint command/state interfaces, timeout, finite-command guard, launch/config/URDF surface | No direct actuation yet |
+| Mock controller | `motionbrain_ros2_control_mock` | `mock_components/GenericSystem`으로 controller-manager, joint-state, trajectory-controller bring-up 검증 | 없음 |
+| Hardware interface scaffold | `motionbrain_hardware_interface` | 표준 `hardware_interface::SystemInterface` 형태, joint command/state interface, timeout, finite-command guard, launch/config/URDF 표면 | 아직 직접 구동 없음 |
 
-The hardware interface scaffold is intentionally safe. Its `write()` method does
-not POST to the ESP32 controller. Physical motion remains behind the firmware
-`SafetyGate`, token-gated operator UI, deadman/teleop timeout, and routine
-execution policy.
+Hardware interface scaffold는 의도적으로 안전하게 막아둔 상태다. `write()`는
+ESP32 controller로 POST하지 않는다. 물리 motion authority는 firmware
+`SafetyGate`, token-gated operator UI, deadman/teleop timeout, routine execution
+policy 뒤에 남아 있다.
 
-Use this claim:
-
-```text
-Implemented a safe open-loop ros2_control SystemInterface scaffold and mock
-controller setup; physical ESP32 actuation remains guarded by firmware and is
-not exposed as an unchecked ros2_control write path.
-```
-
-Avoid these claims:
+사용 가능한 표현:
 
 ```text
-Completed closed-loop ros2_control hardware interface, vendor-specific smart
-actuator integration, full-platform motion control, or encoder-grade joint
-feedback.
+안전한 open-loop ros2_control SystemInterface scaffold와 mock controller setup을
+구현했다. 물리 ESP32 actuation은 firmware safety boundary 뒤에 남아 있으며,
+unchecked ros2_control write path로 노출하지 않았다.
 ```
 
-## Commands
+피해야 할 표현:
 
-Host tests:
+```text
+closed-loop ros2_control hardware interface 완료, vendor-specific smart actuator
+통합, 전체 플랫폼 motion control 완료, encoder-grade joint feedback 확보.
+```
+
+## 명령
+
+Host 테스트:
 
 ```bash
 python3 -m unittest discover -s tests
 ```
 
-Firmware builds:
+Firmware build:
 
 ```bash
 pio run
 pio run -d firmware/esp32cam
 ```
 
-ROS2 build on Raspberry Pi or Jazzy container:
+Raspberry Pi 또는 Jazzy container에서 ROS2 build:
 
 ```bash
 cd ros2_ws
@@ -117,67 +116,66 @@ source install/setup.bash
 ros2 launch motionbrain_ros2_control_mock mock_control.launch.py
 ```
 
-Open-loop hardware-interface evidence capture on the Pi:
+Pi에서 open-loop hardware-interface evidence capture:
 
 ```bash
 tools/raspi/capture_ros2_control_hardware_evidence.sh
 ```
 
-## Latest ros2_control Evidence
+## 최신 ros2_control 증거
 
-Captured on Raspberry Pi 4 / ROS2 Jazzy on 2026-06-16. The capture used
-`ROS_DOMAIN_ID=43` and the hardware-interface URDF parameter
-`transport_mode=dry_run`, so it did not command the ESP32 controller or
-physical motors.
+2026-06-16에 Raspberry Pi 4 / ROS2 Jazzy에서 캡처했다. 캡처는
+`ROS_DOMAIN_ID=43`과 hardware-interface URDF parameter
+`transport_mode=dry_run`을 사용했다. 따라서 ESP32 controller나 물리 모터를
+명령하지 않았다.
 
-| Evidence | Result |
+| 증거 | 결과 |
 | --- | --- |
-| `motionbrain_hardware_interface` plugin load | `MotionBrainOpenLoopSystem` loaded, initialized, configured, and activated |
+| `motionbrain_hardware_interface` plugin load | `MotionBrainOpenLoopSystem` loaded, initialized, configured, activated |
 | Controllers | `joint_state_broadcaster` active, `motionbrain_arm_controller` active |
-| Command interfaces | five position command interfaces available and claimed |
-| State interfaces | position and velocity state interfaces exported for five joints |
-| Open-loop trajectory | `FollowJointTrajectory` goal accepted and completed with `SUCCEEDED` |
-| `/joint_states` | changed from all `0.0` to the commanded scaffold positions |
+| Command interfaces | 5개 position command interface available/claimed |
+| State interfaces | 5개 joint position/velocity state interface exported |
+| Open-loop trajectory | `FollowJointTrajectory` goal accepted/completed with `SUCCEEDED` |
+| `/joint_states` | all `0.0`에서 commanded scaffold position으로 변경 |
 
-## Latest Runtime Measurement Evidence
+## 최신 runtime 측정 증거
 
-Captured on the live Raspberry Pi host on 2026-06-17 with read-only commands.
-HTTP controller, camera, dashboard, and perception endpoints returned `200`.
-ROS2 graph discovery showed the bridge, joint-state, kinematics, control-guard,
-and mission nodes. With a 15 s bounded CLI acquisition window, sampled ROS2
-topic probes and routine status service/action probes completed successfully.
-No USB oscilloscope, logic analyzer, serial adapter, or meter interface was
-visible to the Pi, so PWM/UART/I2C waveform and motor-voltage measurements
-remain gated by physical instrumentation.
+2026-06-17에 live Raspberry Pi host에서 read-only command로 캡처했다.
+HTTP controller, camera, dashboard, perception endpoint가 `200`을 반환했다.
+ROS2 graph discovery에서는 bridge, joint-state, kinematics, control-guard,
+mission node가 보였다. 15초 bounded CLI acquisition window 안에서 ROS2 topic
+sample과 routine status service/action probe가 성공했다. Pi에서 USB
+oscilloscope, logic analyzer, USB serial adapter, meter interface는 보이지
+않았으므로 PWM/UART/I2C waveform과 motor-voltage 측정은 여전히 외부 계측
+장비가 필요하다.
 
-## Recovered Embedded Bench Evidence
+## 복구된 embedded bench 증거
 
-Recovered repository history records digital-multimeter-level checks for common
-ground continuity, obvious shorts, `3V3` logic rails, TB6612FNG `VCC`/`VM`,
-active-low button HIGH/LOW behavior, and simple output voltage sanity. This is
-useful embedded bring-up evidence, but it does not support UART timing, PWM
-duty/frequency, I2C signal-integrity, transient motor-voltage, or closed-loop
-joint-control claims.
+Repository history에서 digital-multimeter 수준의 bench check 기록을 복구했다.
+공통 GND continuity, obvious short, `3V3` logic rail, TB6612FNG `VCC`/`VM`,
+active-low button HIGH/LOW 동작, 단순 output voltage sanity를 확인한 기록이다.
+이 증거는 embedded bring-up에는 유용하지만 UART timing, PWM duty/frequency,
+I2C signal integrity, transient motor voltage, closed-loop joint-control
+주장에는 사용할 수 없다.
 
-## Claim Boundaries
+## 주장 경계
 
-- I separated host-side ROS2 decision logic from firmware-level motor authority.
-- I used typed ROS2 topics for state, routine, detection, kinematics, guard, and
-  mission state instead of only string payloads.
-- I kept unsafe automation disabled until feedback and physical validation are
-  strong enough.
-- I added `ros2_control` surfaces without pretending the low-cost arm has
-  encoder feedback or production-grade joint control.
-- I documented failures and limits: no closed-loop joint feedback, no autonomous
-  grasping claim, and no production smart-actuator backend claim.
+- Host-side ROS2 decision logic과 firmware-level motor authority를 분리했다.
+- 문자열 payload만 쓰지 않고 state, routine, detection, kinematics, guard,
+  mission state를 typed ROS2 topic으로 노출했다.
+- Feedback과 physical validation이 충분해질 때까지 unsafe automation을
+  비활성화했다.
+- 저가 DC arm에 encoder feedback이나 production-grade joint control이 있는
+  것처럼 포장하지 않고 `ros2_control` 표면을 추가했다.
+- 한계를 문서화했다: closed-loop joint feedback 없음, autonomous grasping
+  주장 없음, production smart-actuator backend 주장 없음.
 
-## Next Work
+## 다음 작업
 
-1. Capture instrumented embedded evidence beyond DMM-level sanity checks: PWM
-   duty/frequency, UART timing, deadman release latency, I2C activity, and
-   bounded motor voltage drop.
-2. Convert one real ESP32 status field into a read-only `ros2_control`
-   diagnostic before exposing any write path to physical motion.
-3. If new actuator hardware becomes available, add only a small bench note:
-   ping, present-position read, and bounded goal-position write. Do not add
-   paper-only actuator claims.
+1. DMM 수준을 넘는 embedded 계측 증거를 캡처한다: PWM duty/frequency, UART
+   timing, deadman release latency, I2C activity, bounded motor voltage drop.
+2. 물리 motion write path를 열기 전에 ESP32 status field 하나를 read-only
+   `ros2_control` diagnostic으로 연결한다.
+3. 새 actuator hardware가 생기면 작은 bench note만 추가한다: ping,
+   present-position read, bounded goal-position write. 종이 위 주장만 추가하지
+   않는다.

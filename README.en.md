@@ -22,11 +22,11 @@ input -> decision -> state -> motion -> feedback
 Good first evidence links for reviewers:
 
 - [PORTFOLIO.en.md](PORTFOLIO.en.md)
-- [ROBOTICS_SYSTEM_READINESS.md](ROBOTICS_SYSTEM_READINESS.md)
+- [ROBOTICS_SYSTEM_READINESS.en.md](ROBOTICS_SYSTEM_READINESS.en.md)
 - [OPERATIONS.md](OPERATIONS.md)
-- [docs/evidence/2026-06-16-ros2-control-open-loop.md](docs/evidence/2026-06-16-ros2-control-open-loop.md)
-- [docs/evidence/2026-06-16-pi-system-health.md](docs/evidence/2026-06-16-pi-system-health.md)
-- [docs/evidence/2026-06-17-runtime-measurements.md](docs/evidence/2026-06-17-runtime-measurements.md)
+- [docs/evidence/2026-06-16-ros2-control-open-loop.en.md](docs/evidence/2026-06-16-ros2-control-open-loop.en.md)
+- [docs/evidence/2026-06-16-pi-system-health.en.md](docs/evidence/2026-06-16-pi-system-health.en.md)
+- [docs/evidence/2026-06-17-runtime-measurements.en.md](docs/evidence/2026-06-17-runtime-measurements.en.md)
 
 ## Robotics System Fit
 
@@ -38,7 +38,7 @@ scaffold.
 
 Physical motion remains behind the ESP32 firmware `SafetyGate`, and the
 `ros2_control` hardware-interface path is currently `dry_run` only. See
-[the 2026-06-16 ros2_control evidence note](docs/evidence/2026-06-16-ros2-control-open-loop.md).
+[the 2026-06-16 ros2_control evidence note](docs/evidence/2026-06-16-ros2-control-open-loop.en.md).
 
 ## Demo Video
 
@@ -220,11 +220,11 @@ raise lower JPEG quality settings to the stable minimum.
 
 - [PORTFOLIO.en.md](PORTFOLIO.en.md): English portfolio summary
 - [PORTFOLIO.md](PORTFOLIO.md): Korean portfolio summary
-- [ROBOTICS_SYSTEM_READINESS.md](ROBOTICS_SYSTEM_READINESS.md): robotics system and ROS2 hardware-boundary summary
-- [docs/evidence/2026-06-16-ros2-control-open-loop.md](docs/evidence/2026-06-16-ros2-control-open-loop.md): public ros2_control dry-run evidence note
-- [docs/evidence/2026-06-16-pi-system-health.md](docs/evidence/2026-06-16-pi-system-health.md): public Pi/systemd/ROS2 health evidence note
-- [docs/evidence/2026-06-17-runtime-measurements.md](docs/evidence/2026-06-17-runtime-measurements.md): Pi runtime endpoint latency, ROS2 topic/status probe, and instrument inventory record
-- [docs/evidence/2026-06-16-embedded-bench-checks.md](docs/evidence/2026-06-16-embedded-bench-checks.md): recovered DMM-level embedded bench sanity-check evidence
+- [ROBOTICS_SYSTEM_READINESS.en.md](ROBOTICS_SYSTEM_READINESS.en.md): robotics system and ROS2 hardware-boundary summary
+- [docs/evidence/2026-06-16-ros2-control-open-loop.en.md](docs/evidence/2026-06-16-ros2-control-open-loop.en.md): public ros2_control dry-run evidence note
+- [docs/evidence/2026-06-16-pi-system-health.en.md](docs/evidence/2026-06-16-pi-system-health.en.md): public Pi/systemd/ROS2 health evidence note
+- [docs/evidence/2026-06-17-runtime-measurements.en.md](docs/evidence/2026-06-17-runtime-measurements.en.md): Pi runtime endpoint latency, ROS2 topic/status probe, and instrument inventory record
+- [docs/evidence/2026-06-16-embedded-bench-checks.en.md](docs/evidence/2026-06-16-embedded-bench-checks.en.md): recovered DMM-level embedded bench sanity-check evidence
 - [EMBEDDED_BRINGUP.md](EMBEDDED_BRINGUP.md): STM32/ESP32 bring-up and measurement checklist
 - [OPERATIONS.md](OPERATIONS.md): Pi/systemd/health-check operations notes
 

@@ -1,15 +1,14 @@
-# 2026-06-16 ros2_control Open-Loop Evidence
+# 2026-06-16 ros2_control Open-Loop 증거
 
-[README](../../README.md) | [Portfolio](../../PORTFOLIO.en.md)
+[README](../../README.md) | [PORTFOLIO](../../PORTFOLIO.md) | [English](2026-06-16-ros2-control-open-loop.en.md)
 
-This note summarizes a Raspberry Pi 4 / ROS2 Jazzy run of the
-`motionbrain_hardware_interface` package. It is public-facing evidence for the
-ROS2 controller and hardware-interface boundary. It is not evidence of physical
-actuation.
+이 문서는 Raspberry Pi 4 / ROS2 Jazzy에서 `motionbrain_hardware_interface`
+package를 실행한 결과를 요약한다. ROS2 controller와 hardware-interface 경계에
+대한 공개 증거이며, 물리 구동 증거는 아니다.
 
-## Environment
+## 환경
 
-| Item | Value |
+| 항목 | 값 |
 | --- | --- |
 | Host | Raspberry Pi 4, `motionbrain-pi` |
 | OS/kernel | Ubuntu 24.04, Linux `6.8.0-1057-raspi`, `aarch64` |
@@ -18,54 +17,55 @@ actuation.
 | Workspace | `/home/motionbrain/develop/arduino/motionbrain/ros2_ws` |
 | Physical actuation | Disabled |
 | Hardware transport | `transport_mode=dry_run` |
-| Capture time | `2026-06-16T20:52:45+09:00` |
+| 캡처 시각 | `2026-06-16T20:52:45+09:00` |
 
-## What Was Verified
+## 검증한 내용
 
-- Required ROS2 runtime packages were present:
+- 필요한 ROS2 runtime package가 설치되어 있었다:
   `controller_manager`, `hardware_interface`, `joint_state_broadcaster`,
-  `joint_trajectory_controller`, `ros2_control`, `ros2controlcli`, and
+  `joint_trajectory_controller`, `ros2_control`, `ros2controlcli`,
   `motionbrain_hardware_interface`.
-- The hardware interface package resolved through `ros2 pkg prefix`.
-- The installed URDF contained `<param name="transport_mode">dry_run</param>`.
-- `ros2 launch motionbrain_hardware_interface hardware_interface.launch.py`
-  loaded `MotionBrainOpenLoopSystem`.
-- The hardware plugin initialized, configured, and activated successfully.
-- `joint_state_broadcaster` and `motionbrain_arm_controller` reached `active`.
-- Five position command interfaces were available and claimed:
+- Hardware interface package가 `ros2 pkg prefix`로 resolve됐다.
+- 설치된 URDF에 `<param name="transport_mode">dry_run</param>`이 들어 있었다.
+- `ros2 launch motionbrain_hardware_interface hardware_interface.launch.py`가
+  `MotionBrainOpenLoopSystem`을 load했다.
+- Hardware plugin이 initialize/configure/activate에 성공했다.
+- `joint_state_broadcaster`와 `motionbrain_arm_controller`가 `active` 상태가
+  됐다.
+- 다섯 개 position command interface가 available/claimed 상태였다:
   `base_yaw_joint`, `shoulder_pitch_joint`, `elbow_pitch_joint`,
-  `wrist_pitch_joint`, and `gripper_joint`.
-- Position and velocity state interfaces were exported for all five joints.
-- A `control_msgs/action/FollowJointTrajectory` goal was accepted and finished
-  with `SUCCEEDED`.
-- `/joint_states` moved from all-zero positions to the commanded dry-run state:
-  base yaw `0.2`, shoulder pitch `0.1`, elbow pitch `-0.1`, wrist pitch `0.05`,
-  gripper `0.0`.
+  `wrist_pitch_joint`, `gripper_joint`.
+- 다섯 joint 모두 position/velocity state interface를 export했다.
+- `control_msgs/action/FollowJointTrajectory` goal이 accepted 상태가 되었고
+  `SUCCEEDED`로 끝났다.
+- `/joint_states`가 all-zero position에서 commanded dry-run state로 바뀌었다:
+  base yaw `0.2`, shoulder pitch `0.1`, elbow pitch `-0.1`,
+  wrist pitch `0.05`, gripper `0.0`.
 
-## Boundary Diagram
+## 경계 다이어그램
 
 ```mermaid
 flowchart LR
   A[JointTrajectoryController] --> B[MotionBrainOpenLoopSystem]
   B --> C[dry_run state mirror]
-  B -. blocked until validated .-> D[ESP32 HTTP backend]
+  B -. validated 전까지 blocked .-> D[ESP32 HTTP backend]
   D --> E[ESP32 SafetyGate]
   E --> F[TB6612FNG motor drivers]
 ```
 
-The solid path is the verified path. The dotted path is intentionally not
-enabled in this repository state.
+실선 경로가 검증된 경로다. 점선 경로는 이 repository 상태에서 의도적으로
+활성화하지 않았다.
 
-## Correct Claim
+## 올바른 주장
 
 ```text
-MotionBrain has a safe open-loop ros2_control SystemInterface scaffold. It can
-load under controller_manager, expose command/state interfaces, accept a
-FollowJointTrajectory goal, and mirror accepted commands into /joint_states in
-dry_run mode.
+MotionBrain은 안전한 open-loop ros2_control SystemInterface scaffold를 갖고
+있다. controller_manager에서 load되고, command/state interface를 노출하며,
+FollowJointTrajectory goal을 받을 수 있고, dry_run mode에서 accepted command를
+/joint_states에 mirror한다.
 ```
 
-## Claims To Avoid
+## 피해야 할 주장
 
 - Closed-loop joint control
 - Vendor-specific actuator SDK integration
@@ -73,7 +73,7 @@ dry_run mode.
 - Encoder-verified trajectory tracking
 - Full-platform motion control
 
-## Reproduction Helper
+## 재현 helper
 
 ```bash
 cd ros2_ws

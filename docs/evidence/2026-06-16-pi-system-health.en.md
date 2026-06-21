@@ -1,43 +1,43 @@
-# 2026-06-16 Raspberry Pi System Health 증거
+# 2026-06-16 Raspberry Pi System Health Evidence
 
-[README](../../README.md) | [로보틱스 시스템 준비도](../../ROBOTICS_SYSTEM_READINESS.md) | [English](2026-06-16-pi-system-health.en.md)
+[README](../../README.en.md) | [Robotics system readiness](../../ROBOTICS_SYSTEM_READINESS.en.md)
 
-이 문서는 MotionBrain Raspberry Pi host의 read-only health check를 요약한다.
-확인 범위는 SSH reachability, systemd service, dashboard/perception HTTP
-health, ROS2 bridge topic/service/action availability다.
+This note summarizes a read-only health check of the MotionBrain Raspberry Pi
+host. It covers SSH reachability, systemd services, dashboard/perception HTTP
+health, and ROS2 bridge topic/service/action availability.
 
-물리 구동 명령은 보내지 않았다. ROS2 routine service와 action은
-`action: status`만 호출했다.
+No physical actuation command was sent. The ROS2 routine service and action were
+called with `action: status` only.
 
-## 환경
+## Environment
 
-| 항목 | 값 |
+| Item | Value |
 | --- | --- |
-| 캡처 시각 | `2026-06-16T23:02:39+09:00` |
+| Capture time | `2026-06-16T23:02:39+09:00` |
 | Host | `motionbrain-pi` |
 | OS/kernel | Ubuntu 24.04, Linux `6.8.0-1057-raspi`, `aarch64` |
 | Clean worktree | `~/develop/arduino/motionbrain` |
 | Commit | `588a5bd Generalize robotics portfolio readiness` |
 
-## SSH 접근성
+## SSH Reachability
 
-Mac에서 Pi로 `tools/raspi/check_pi_ssh_target.py`를 실행했다.
+Mac-to-Pi check using `tools/raspi/check_pi_ssh_target.py`:
 
 - alias: `motionbrain-pi`
 - configured host: `motionbrain-pi.local`
 - user: `motionbrain`
 - host key alias: `motionbrain-pi.local`
-- TCP/22 reachable: `192.168.219.109` 및 IPv6
+- TCP/22 reachable at `192.168.219.109` and IPv6
 - remote check: `ok`
 - SSH service: `active`
 - SSH socket: `enabled`, `active`
 
-이 캡처 시점에 router DNS fallback인 `motionbrain-pi.davolink`는 resolve되지
-않았다. Primary `.local` 경로는 정상 접근 가능했다.
+The router DNS fallback `motionbrain-pi.davolink` was unresolved during this
+capture; the primary `.local` path was reachable.
 
-## systemd Unit
+## systemd Units
 
-| Unit | 상태 |
+| Unit | State |
 | --- | --- |
 | `motionbrain-dashboard.service` | active/running |
 | `motionbrain-perception.service` | active/running |
@@ -45,10 +45,9 @@ Mac에서 Pi로 `tools/raspi/check_pi_ssh_target.py`를 실행했다.
 | `motionbrain-dashboard-reconcile.timer` | active/waiting |
 | `motionbrain-dashboard-reconcile.service` | static; timer-managed oneshot |
 
-## Dashboard / Perception Health
+## Dashboard And Perception Health
 
-`tools/raspi/check_dashboard_health.sh`를 service check enabled 상태로 실행했고
-통과했다.
+`tools/raspi/check_dashboard_health.sh` passed with service checks enabled:
 
 - perception service active
 - dashboard service active
@@ -59,10 +58,9 @@ Mac에서 Pi로 `tools/raspi/check_pi_ssh_target.py`를 실행했다.
 
 ## ROS2 Bridge Health
 
-`tools/raspi/check_ros_bridge_health.sh`를 service check enabled 상태로 실행했고
-통과했다.
+`tools/raspi/check_ros_bridge_health.sh` passed with service checks enabled.
 
-확인된 topic:
+Verified topics:
 
 - `/motionbrain/status_typed`
 - `/motionbrain/routine`
@@ -76,12 +74,12 @@ Mac에서 Pi로 `tools/raspi/check_pi_ssh_target.py`를 실행했다.
 - `/motionbrain/control_guard_typed`
 - `/motionbrain/mission_state_typed`
 
-확인된 service/action:
+Verified service/action:
 
 - `/motionbrain/routine_command`
 - `/motionbrain/guarded_routine`
 
-확인된 sample:
+Verified samples:
 
 - status typed sample
 - routine diagnostics sample
@@ -97,17 +95,17 @@ Mac에서 Pi로 `tools/raspi/check_pi_ssh_target.py`를 실행했다.
 - control guard typed sample
 - mission state typed sample
 
-## 올바른 주장
+## Correct Claim
 
 ```text
-Raspberry Pi host에 접근 가능했고, dashboard/perception/ROS2 bridge service가
-active였으며, ROS2 bridge가 기대한 typed topics, service, action,
-read-only status samples를 노출했다.
+The Raspberry Pi host was reachable, the dashboard/perception/ROS2 bridge
+services were active, and the ROS2 bridge exposed the expected typed topics,
+service, action, and read-only status samples.
 ```
 
-## 피해야 할 주장
+## Claims To Avoid
 
 - Physical routine execution
 - Autonomous motion
 - Closed-loop joint convergence
-- Production uptime 또는 reliability guarantee
+- Production uptime or reliability guarantees

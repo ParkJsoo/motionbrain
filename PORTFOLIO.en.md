@@ -29,12 +29,12 @@ The physical teleoperation demo media snapshot is tagged as `demo-ready-20260608
 
 - [Physical teleoperation GIF](https://raw.githubusercontent.com/ParkJsoo/motionbrain/demo-ready-20260608/docs/assets/demo/motionbrain-demo.gif)
   / [MP4](https://raw.githubusercontent.com/ParkJsoo/motionbrain/demo-ready-20260608/docs/assets/demo/motionbrain-demo.mp4)
-- [`ros2_control` dry-run evidence](docs/evidence/2026-06-16-ros2-control-open-loop.md):
+- [`ros2_control` dry-run evidence](docs/evidence/2026-06-16-ros2-control-open-loop.en.md):
   controller manager, hardware-interface plugin, command/state interfaces,
   `FollowJointTrajectory`, and `/joint_states` dry-run state mirror
-- [Pi/systemd/ROS2 health evidence](docs/evidence/2026-06-16-pi-system-health.md):
+- [Pi/systemd/ROS2 health evidence](docs/evidence/2026-06-16-pi-system-health.en.md):
   dashboard, perception, ROS2 bridge services, typed topics, service, and action
-- [Pi runtime measurements](docs/evidence/2026-06-17-runtime-measurements.md):
+- [Pi runtime measurements](docs/evidence/2026-06-17-runtime-measurements.en.md):
   HTTP endpoints returned `200`, 15 s bounded ROS2 topic acquisition passed,
   `/joint_states` was about 4.9-5.0 Hz, and the capture was read-only/no actuation
 
@@ -183,9 +183,9 @@ Current honest positioning:
 
 - [README.en.md](README.en.md): project entry point
 - [README.md](README.md): Korean project entry point
-- [ROBOTICS_SYSTEM_READINESS.md](ROBOTICS_SYSTEM_READINESS.md): ROS2 and hardware-boundary summary for robotics system roles
-- [docs/evidence/2026-06-16-ros2-control-open-loop.md](docs/evidence/2026-06-16-ros2-control-open-loop.md): ros2_control dry-run evidence summary
-- [docs/evidence/2026-06-16-pi-system-health.md](docs/evidence/2026-06-16-pi-system-health.md): Pi/systemd/ROS2 health evidence summary
-- [docs/evidence/2026-06-17-runtime-measurements.md](docs/evidence/2026-06-17-runtime-measurements.md): Pi runtime and ROS2 measurement note
+- [ROBOTICS_SYSTEM_READINESS.en.md](ROBOTICS_SYSTEM_READINESS.en.md): ROS2 and hardware-boundary summary for robotics system roles
+- [docs/evidence/2026-06-16-ros2-control-open-loop.en.md](docs/evidence/2026-06-16-ros2-control-open-loop.en.md): ros2_control dry-run evidence summary
+- [docs/evidence/2026-06-16-pi-system-health.en.md](docs/evidence/2026-06-16-pi-system-health.en.md): Pi/systemd/ROS2 health evidence summary
+- [docs/evidence/2026-06-17-runtime-measurements.en.md](docs/evidence/2026-06-17-runtime-measurements.en.md): Pi runtime and ROS2 measurement note
 - [EMBEDDED_BRINGUP.md](EMBEDDED_BRINGUP.md): STM32/ESP32 bring-up and measurement checklist
 - [OPERATIONS.md](OPERATIONS.md): Pi/systemd/health-check operations notes
