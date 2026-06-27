@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "control/angle_controller.h"
+#include "control/shoulder_angle_controller.h"
 #include "control/command.h"
 #include "control/command_bus.h"
 #include "control/dispatcher.h"
@@ -144,6 +145,7 @@ TeleopAdapter::TeleopAdapter()
   , motionSequence_(nullptr)
   , safetyMonitor_(nullptr)
   , angleController_(nullptr)
+  , shoulderAngleController_(nullptr)
   , commandBus_(nullptr)
   , dispatcher_(nullptr)
   , lastFrame_()
@@ -175,6 +177,7 @@ bool TeleopAdapter::init(SystemStateManager* systemState,
                          MotionSequence* motionSequence,
                          SafetyMonitor* safetyMonitor,
                          AngleController* angleController,
+                         ShoulderAngleController* shoulderAngleController,
                          CommandBus* commandBus,
                          Dispatcher* dispatcher) {
   systemState_ = systemState;
@@ -182,6 +185,7 @@ bool TeleopAdapter::init(SystemStateManager* systemState,
   motionSequence_ = motionSequence;
   safetyMonitor_ = safetyMonitor;
   angleController_ = angleController;
+  shoulderAngleController_ = shoulderAngleController;
   commandBus_ = commandBus;
   dispatcher_ = dispatcher;
 
@@ -221,6 +225,7 @@ bool TeleopAdapter::isReady() const {
       && motorControl_ != nullptr
       && safetyMonitor_ != nullptr
       && angleController_ != nullptr
+      && shoulderAngleController_ != nullptr
       && commandBus_ != nullptr
       && dispatcher_ != nullptr;
 }
@@ -602,6 +607,12 @@ void TeleopAdapter::applyContinuousOutputs() {
   int8_t elbowPercent = quantizeNormalized(elbow, armOutputCapPercent);
   int8_t shoulderPercent = quantizeNormalized(shoulder, armOutputCapPercent);
   int8_t basePercent = quantizeNormalized(base, BASE_OUTPUT_CAP_PERCENT);
+
+  if (shoulderPercent != 0 && shoulderAngleController_ != nullptr &&
+      shoulderAngleController_->isActive()) {
+    shoulderAngleController_->cancel(ShoulderAngleStopReason::OVERRIDDEN,
+                                     "teleop shoulder");
+  }
 
   if (basePercent != 0 && angleController_ != nullptr && angleController_->isActive()) {
     angleController_->cancel(AngleControllerStopReason::OVERRIDDEN, "teleop twist");

@@ -21,8 +21,8 @@ MotionBrain은 ESP32 모션 제어기, STM32 센서/텔레오퍼레이션 계층
   `SystemInterface`를 갖췄고, `ros2_control`을 통한 물리 출력은 열지 않았다.
 - 운영 가능성: Pi systemd 서비스, SSH/DNS 복구 절차, health check,
   runtime evidence, `ros2_control` evidence, CI 검증까지 문서화했다.
-- 주장 경계: DC 모터 arm의 한계를 인정하고 closed-loop joint control,
-  임의 객체 인식, 자율 집기를 과장하지 않는다.
+- 주장 경계: M4 어깨 한 축의 제한 폐루프 검증과 로봇팔 전체의 위치 제어를
+  구분하고, 임의 객체 인식이나 자율 집기를 과장하지 않는다.
 
 ## 빠른 증거 링크
 
@@ -36,10 +36,15 @@ MotionBrain은 ESP32 모션 제어기, STM32 센서/텔레오퍼레이션 계층
 - [Pi runtime 측정](docs/evidence/2026-06-17-runtime-measurements.md):
   HTTP endpoints `200`, 15초 bounded ROS2 topic acquisition,
   `/joint_states` 약 4.9-5.0 Hz 확인, read-only/no actuation capture
+- [M4 어깨 폐루프 검증](docs/evidence/2026-06-28-m4-shoulder-closed-loop.md):
+  AS5600 절대각 I2C 피드백, 센서 고장 차단, 230-245° 제한 목표각 수렴
 
 ## 문제 정의
 
-저가형 5축 DC 모터 로봇팔은 엔코더, 힘 센서, 절대 위치 피드백이 부족하다. 이 조건에서 무리하게 완전 자율 집기를 주장하면 시스템 신뢰도가 떨어진다.
+저가형 5축 DC 모터 로봇팔은 기본적으로 엔코더, 힘 센서, 신뢰할 수 있는
+전체 관절 절대 위치가 부족하다. 2026-06-28에 M4 어깨 한 축은 AS5600
+절대각 피드백과 좁은 범위의 폐루프 목표각 제어를 검증했지만, 이를 전체
+로봇팔 위치 제어나 완전 자율 집기로 확대해서 주장하지 않는다.
 
 그래서 MotionBrain은 다음 기준으로 설계했다.
 
@@ -57,6 +62,7 @@ MotionBrain은 ESP32 모션 제어기, STM32 센서/텔레오퍼레이션 계층
 - 토큰 기반 HTTP 상태 변경 명령
 - STM32 `MPU-6050 + UART` 센서/텔레오퍼레이션 펌웨어와 HC-SR04 bench 검증 경로
 - 데드맨, 프레임 최신성 타임아웃, 센서 고장 래치
+- M4 어깨 AS5600 I2C 절대각 피드백과 제한 폐루프 목표각 제어
 - ESP32-CAM 캡처/스트림 펌웨어
 - Raspberry Pi 대시보드와 인식 서비스
 - OpenCV 기반 빨간 타겟 검출과 타겟 오버레이
@@ -133,6 +139,8 @@ ROS2는 ESP32 내부 제어를 대체하지 않는다. 대신 `/status`, `/event
 
 - ESP32 제어기와 ESP32-CAM PlatformIO 빌드 통과
 - `TB6612FNG x3`와 `M1~M5` 실제 모터 출력 확인
+- M4 어깨 AS5600 I2C 각도/자석 상태 확인, 제한 범위 폐루프 목표
+  238°에서 238.10°, 234°에서 233.96°로 안정화
 - STM32 `MPU-6050 + UART` 텔레오퍼레이션과 HC-SR04 bench 경로 검증
 - 유선 텔레오퍼레이션 데드맨 입력으로 실제 모터 출력 및 release 정지 확인
 - 최종 물리 텔레오퍼레이션 데모 영상 캡처와 README GIF/MP4 반영
@@ -162,7 +170,10 @@ Pi에서 OpenCV DNN/ONNX 기반 constrained known-object detection 경로는 구
 
 ## 현재 한계
 
-- 로봇팔에 엔코더, 힘 피드백, 신뢰할 수 있는 절대 관절 위치가 없다.
+- M4 어깨 한 축만 임시 장착 AS5600 피드백을 사용한다. 나머지 네 축에는
+  위치 피드백이 없고 전체 관절 절대 위치나 `ros2_control` 물리 폐루프는 없다.
+- M4의 GPIO0/GPIO15 I2C 배선, 테이프 장착, 230-245° 보정 범위와 방향별
+  정지 선행값은 시험 조건이며 영구 기구/핀 설계와 반복 검증이 필요하다.
 - HC-SR04는 최종 물리 데모에서 제거됐고, range telemetry는 disabled/nonblocking 상태로 처리한다.
 - ESP32-CAM QVGA 입력은 일반 객체 인식에는 품질 한계가 있다.
 - 일반 텍스트 명령으로 임의 물체를 찾아 집는 수준은 아직 아니다.
@@ -181,6 +192,7 @@ Pi에서 OpenCV DNN/ONNX 기반 constrained known-object detection 경로는 구
 - [README.md](README.md): 프로젝트 진입점
 - [README.en.md](README.en.md): 영어 프로젝트 진입점
 - [ROBOTICS_SYSTEM_READINESS.md](ROBOTICS_SYSTEM_READINESS.md): 로보틱스 시스템/ROS2 하드웨어 경계 요약
+- [docs/evidence/2026-06-28-m4-shoulder-closed-loop.md](docs/evidence/2026-06-28-m4-shoulder-closed-loop.md): M4 어깨 단일축 폐루프 실물 검증
 - [docs/evidence/2026-06-16-ros2-control-open-loop.md](docs/evidence/2026-06-16-ros2-control-open-loop.md): `ros2_control` dry-run 검증 요약
 - [docs/evidence/2026-06-16-pi-system-health.md](docs/evidence/2026-06-16-pi-system-health.md): Pi/systemd/ROS2 health 검증 요약
 - [docs/evidence/2026-06-17-runtime-measurements.md](docs/evidence/2026-06-17-runtime-measurements.md): Pi runtime/ROS2 측정 기록

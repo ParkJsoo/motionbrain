@@ -22,8 +22,9 @@ The physical teleoperation demo media snapshot is tagged as `demo-ready-20260608
 - Operations readiness: Pi systemd services, SSH/DNS recovery notes, health
   checks, runtime evidence, `ros2_control` evidence, and CI validation are
   documented.
-- Honest boundaries: the project does not overclaim closed-loop joint control,
-  arbitrary-object recognition, or autonomous grasping on the current DC arm.
+- Honest boundaries: the project separates the bounded M4 single-axis
+  closed-loop result from full-arm position control and does not overclaim
+  arbitrary-object recognition or autonomous grasping.
 
 ## Fast Evidence
 
@@ -37,10 +38,16 @@ The physical teleoperation demo media snapshot is tagged as `demo-ready-20260608
 - [Pi runtime measurements](docs/evidence/2026-06-17-runtime-measurements.en.md):
   HTTP endpoints returned `200`, 15 s bounded ROS2 topic acquisition passed,
   `/joint_states` was about 4.9-5.0 Hz, and the capture was read-only/no actuation
+- [M4 shoulder closed-loop evidence](docs/evidence/2026-06-28-m4-shoulder-closed-loop.en.md):
+  AS5600 absolute I2C feedback, sensor-fault stops, and bounded target convergence
 
 ## Engineering Problem
 
-The current arm is a low-cost 5-axis DC motor platform without encoders, force feedback, or reliable absolute joint pose. Claiming fully autonomous grasping on this hardware would be misleading.
+The arm is a low-cost 5-axis DC motor platform that still lacks force feedback
+and reliable full-arm absolute joint pose. On 2026-06-28, the M4 shoulder alone
+was validated with AS5600 absolute feedback and closed-loop targets over a
+narrow trial range. That result does not justify a full-arm position-control or
+autonomous-grasping claim.
 
 MotionBrain therefore uses a constrained architecture:
 
@@ -60,6 +67,7 @@ I designed and implemented:
 - Token-gated HTTP state-changing commands
 - STM32 `MPU-6050 + UART` sensor/teleop firmware and bench-validated HC-SR04 path
 - Deadman handling, frame freshness timeout, and sensor fault latching
+- M4 shoulder AS5600 I2C absolute-angle feedback and bounded closed-loop targets
 - ESP32-CAM capture/stream firmware
 - Raspberry Pi dashboard and perception service
 - OpenCV-based red target detection and target overlay
@@ -136,6 +144,8 @@ The public demo is physical teleoperation. Supporting evidence covers `STREAM`-b
 
 - ESP32 controller and ESP32-CAM PlatformIO builds pass.
 - `TB6612FNG x3` and `M1~M5` motor outputs were physically tested.
+- M4 shoulder AS5600 angle/magnet status was validated over I2C; bounded targets
+  settled at 238.10 deg for 238 deg and 233.96 deg for 234 deg.
 - STM32 `MPU-6050 + UART` teleop and the HC-SR04 bench path were validated.
 - Wired teleop produced real motor output under deadman control and stopped on release.
 - The final physical teleoperation demo was captured and published as README GIF/MP4 assets.
@@ -165,7 +175,12 @@ Current honest positioning:
 
 ## Current Limitations
 
-- No joint encoders, force feedback, or reliable absolute joint pose
+- Only the M4 shoulder has trial-mounted AS5600 position feedback. The other
+  four axes have no position feedback, and there is no full-arm absolute pose
+  or physical closed-loop `ros2_control` path.
+- M4 GPIO0/GPIO15 I2C wiring, taped mounting, 230-245 deg calibrated range, and
+  directional stop leads remain trial conditions pending permanent mechanics,
+  pin allocation, and repeated validation.
 - HC-SR04 is removed for the final physical demo, with range telemetry handled as disabled/nonblocking
 - ESP32-CAM QVGA input limits general object detection quality
 - No general text-prompt object search
@@ -184,6 +199,7 @@ Current honest positioning:
 - [README.en.md](README.en.md): project entry point
 - [README.md](README.md): Korean project entry point
 - [ROBOTICS_SYSTEM_READINESS.en.md](ROBOTICS_SYSTEM_READINESS.en.md): ROS2 and hardware-boundary summary for robotics system roles
+- [docs/evidence/2026-06-28-m4-shoulder-closed-loop.en.md](docs/evidence/2026-06-28-m4-shoulder-closed-loop.en.md): physical M4 single-axis closed-loop evidence
 - [docs/evidence/2026-06-16-ros2-control-open-loop.en.md](docs/evidence/2026-06-16-ros2-control-open-loop.en.md): ros2_control dry-run evidence summary
 - [docs/evidence/2026-06-16-pi-system-health.en.md](docs/evidence/2026-06-16-pi-system-health.en.md): Pi/systemd/ROS2 health evidence summary
 - [docs/evidence/2026-06-17-runtime-measurements.en.md](docs/evidence/2026-06-17-runtime-measurements.en.md): Pi runtime and ROS2 measurement note

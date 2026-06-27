@@ -10,6 +10,9 @@ implemented evidence from mock, scaffold, and known limitations.
 MotionBrain is strongest as a real-hardware robotics integration project:
 
 - ESP32 firmware drives five DC motor axes through TB6612FNG drivers.
+- The M4 shoulder alone has physically validated AS5600 absolute I2C feedback
+  and bounded closed-loop targets. Other axes and the physical `ros2_control`
+  path remain open loop.
 - STM32F446 firmware publishes structured sensor and teleoperation frames.
 - Raspberry Pi hosts dashboard, perception, and ROS2 Jazzy bridge processes.
 - ROS2 packages expose typed status, event, detection, kinematics, guard,
@@ -32,6 +35,8 @@ hardware integration, ROS2 system software, and real-robot issue analysis.
   [docs/evidence/2026-06-17-runtime-measurements.en.md](docs/evidence/2026-06-17-runtime-measurements.en.md)
 - Public embedded bench-check evidence:
   [docs/evidence/2026-06-16-embedded-bench-checks.en.md](docs/evidence/2026-06-16-embedded-bench-checks.en.md)
+- Public M4 shoulder closed-loop evidence:
+  [docs/evidence/2026-06-28-m4-shoulder-closed-loop.en.md](docs/evidence/2026-06-28-m4-shoulder-closed-loop.en.md)
 - ESP32 safety gate and dispatcher: `src/control/`, `src/safety/`
 - ESP32 motor driver and pin mapping: `src/motor/motor_driver.*`
 - STM32 HAL sensor/teleop firmware: `firmware/stm32/MotionBrainSensor/`
@@ -166,10 +171,12 @@ joint-control claims.
   mission state instead of only string payloads.
 - I kept unsafe automation disabled until feedback and physical validation are
   strong enough.
-- I added `ros2_control` surfaces without pretending the low-cost arm has
-  encoder feedback or production-grade joint control.
-- I documented failures and limits: no closed-loop joint feedback, no autonomous
-  grasping claim, and no production smart-actuator backend claim.
+- I kept the trial M4 single-axis feedback result separate from full-arm
+  encoder feedback, production-grade joint control, and the `ros2_control`
+  dry-run surface.
+- I documented failures and limits: no position feedback on the other four
+  axes, no full-arm closed loop, no autonomous grasping claim, and no
+  production smart-actuator backend claim.
 
 ## Next Work
 

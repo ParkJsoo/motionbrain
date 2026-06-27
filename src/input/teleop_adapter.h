@@ -10,6 +10,7 @@ class MotorControl;
 class MotionSequence;
 class SafetyMonitor;
 class AngleController;
+class ShoulderAngleController;
 class CommandBus;
 class Dispatcher;
 
@@ -66,6 +67,7 @@ public:
             MotionSequence* motionSequence,
             SafetyMonitor* safetyMonitor,
             AngleController* angleController,
+            ShoulderAngleController* shoulderAngleController,
             CommandBus* commandBus,
             Dispatcher* dispatcher);
   void update();
@@ -109,6 +111,7 @@ private:
   MotionSequence*     motionSequence_;
   SafetyMonitor*      safetyMonitor_;
   AngleController*    angleController_;
+  ShoulderAngleController* shoulderAngleController_;
   CommandBus*         commandBus_;
   Dispatcher*         dispatcher_;
 

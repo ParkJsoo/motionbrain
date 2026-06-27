@@ -7,6 +7,7 @@
 #include "control/dispatcher.h"
 #include "control/guarded_routine.h"
 #include "control/guarded_routine_executor.h"
+#include "control/shoulder_angle_controller.h"
 #include "input/teleop_adapter.h"
 #include "safety/safety_monitor.h"
 #include "system/system_init.h"
@@ -15,11 +16,14 @@
 #include "motion/motion_sequence.h"
 #include "network/wifi_provisioning.h"
 #include "peripheral/search_light.h"
+#include "peripheral/shoulder_angle_sensor.h"
 
 extern Stm32Bridge stm32Bridge;
 extern SafetyMonitor safetyMonitor;
 extern AngleController angleController;
 extern TeleopAdapter teleopAdapter;
+extern ShoulderAngleSensor shoulderAngleSensor;
+extern ShoulderAngleController shoulderAngleController;
 
 namespace {
 
@@ -49,6 +53,7 @@ const char* commandTypeToString(CommandType type) {
     case CommandType::JOINT_STOP:              return "joint stop";
     case CommandType::JOINT_STOP_ALL:          return "joint stop all";
     case CommandType::BASE_ANGLE_RUN:          return "base angle";
+    case CommandType::SHOULDER_ANGLE_RUN:      return "shoulder angle";
     case CommandType::SEQUENCE_ADD:            return "sequence add";
     case CommandType::SEQUENCE_RUN:            return "sequence run";
     case CommandType::SEQUENCE_STOP:           return "sequence stop";
@@ -348,6 +353,9 @@ void SerialCommand::processCommand(const char* cmdName, const char* args) {
   else if (strcasecmp(cmdName, "base") == 0) {
     handleBase(args);
   }
+  else if (strcasecmp(cmdName, "shoulder") == 0) {
+    handleShoulder(args);
+  }
   else if (strcasecmp(cmdName, "sequence") == 0) {
     handleSequence(args);
   }
@@ -417,6 +425,10 @@ void SerialCommand::handleHelp() {
   DebugLog::info("  joint stop              - Stop all joints (stay ARMED)");
   DebugLog::info("  base angle <dir> <deg> [%%] - Base relative angle (left/right, 3-180 deg)");
   DebugLog::info("  base stop               - Stop base / cancel angle control");
+  DebugLog::info("  shoulder angle <deg> [%%] - M4 absolute angle (temporary %.0f-%.0f deg)",
+                 ShoulderAngleController::SOFT_MIN_DEGREES,
+                 ShoulderAngleController::SOFT_MAX_DEGREES);
+  DebugLog::info("  shoulder stop|status      - Stop M4 / show closed-loop state");
   DebugLog::info("");
   DebugLog::info("=== Sequence Commands (Phase 2-B) ===");
   DebugLog::info("  sequence add <joint> <dir> <speed%%> <ms>  - Add command to queue");
@@ -450,6 +462,7 @@ void SerialCommand::handleHelp() {
   DebugLog::info("");
   DebugLog::info("=== Sensor Simulation Commands ===");
   DebugLog::info("  sensor status                 - Show sensor + simulation state");
+  DebugLog::info("  sensor watch <on|off>         - Stream M4 AS5600 VP value at 10Hz");
   DebugLog::info("  sensor sim healthy [dist]     - Continuous healthy packets");
   DebugLog::info("  sensor sim obstacle [dist]    - Continuous obstacle packets");
   DebugLog::info("  sensor sim vibration [vibe]   - Continuous vibration fault packets");
@@ -535,6 +548,23 @@ void SerialCommand::handleStatus() {
   DebugLog::info("I2C pins: SCL=%s SDA=%s",
                  snapshot.i2cSclHigh ? "HIGH" : "LOW",
                  snapshot.i2cSdaHigh ? "HIGH" : "LOW");
+  DebugLog::info("M4 AS5600 OUT: VP/GPIO%d raw=%u mV=%lu angle_est=%.2fdeg",
+                 ShoulderAngleSensor::ADC_PIN,
+                 shoulderAngleSensor.getRaw(),
+                 static_cast<unsigned long>(shoulderAngleSensor.getMilliVolts()),
+                 shoulderAngleSensor.getEstimatedDegrees());
+  DebugLog::info(
+    "M4 AS5600 I2C: SDA=GPIO%d SCL=GPIO%d connected=%s raw=%u angle=%.2fdeg MD=%s ML=%s MH=%s AGC=%u MAG=%u",
+    ShoulderAngleSensor::I2C_SDA_PIN,
+    ShoulderAngleSensor::I2C_SCL_PIN,
+    shoulderAngleSensor.isI2cConnected() ? "YES" : "NO",
+    shoulderAngleSensor.getI2cRawAngle(),
+    shoulderAngleSensor.getI2cDegrees(),
+    shoulderAngleSensor.isMagnetDetected() ? "YES" : "NO",
+    shoulderAngleSensor.isMagnetTooWeak() ? "YES" : "NO",
+    shoulderAngleSensor.isMagnetTooStrong() ? "YES" : "NO",
+    shoulderAngleSensor.getAgc(),
+    shoulderAngleSensor.getMagnitude());
   DebugLog::info("Motion blocked: %s", safetyMonitor.isMotionBlocked() ? "YES" : "NO");
   DebugLog::info("Block reason: %s", safetyMonitor.getBlockReasonString());
   DebugLog::info("Fault latched: %s", safetyMonitor.hasLatchedFault() ? "YES" : "NO");
@@ -575,6 +605,23 @@ void SerialCommand::handleStatus() {
                  angleController.getProcessedSamples(),
                  angleController.getLastRateDegreesPerSecond());
   DebugLog::info("Last stop reason: %s", angleController.getLastStopReasonString());
+  DebugLog::info("=== Shoulder Absolute Angle Control ===");
+  DebugLog::info("Active: %s", shoulderAngleController.isActive() ? "YES" : "NO");
+  DebugLog::info("Soft limits: %.1f / %.1f deg",
+                 ShoulderAngleController::SOFT_MIN_DEGREES,
+                 ShoulderAngleController::SOFT_MAX_DEGREES);
+  DebugLog::info("Start / Target / Current / Error: %.2f / %.2f / %.2f / %.2f deg",
+                 shoulderAngleController.getStartDegrees(),
+                 shoulderAngleController.getTargetDegrees(),
+                 shoulderAngleController.getCurrentDegrees(),
+                 shoulderAngleController.getErrorDegrees());
+  DebugLog::info("Requested / Applied speed: %u%% / %u%%",
+                 shoulderAngleController.getRequestedPercent(),
+                 shoulderAngleController.getAppliedPercent());
+  DebugLog::info("Samples / Last stop / Final error: %lu / %s / %.2f deg",
+                 shoulderAngleController.getProcessedSamples(),
+                 shoulderAngleController.getLastStopReasonString(),
+                 shoulderAngleController.getFinalErrorDegrees());
 }
 
 void SerialCommand::handleSensor(const char* args) {
@@ -594,8 +641,22 @@ void SerialCommand::handleSensor(const char* args) {
   while (args[i] == ' ' || args[i] == '\t') i++;
   const char* rest = &args[i];
 
+  if (strcasecmp(action, "watch") == 0) {
+    if (strcasecmp(rest, "on") == 0) {
+      shoulderAngleSensor.setWatchEnabled(true);
+      DebugLog::info("M4 AS5600 watch: ON");
+    } else if (strcasecmp(rest, "off") == 0) {
+      shoulderAngleSensor.setWatchEnabled(false);
+      DebugLog::info("M4 AS5600 watch: OFF");
+    } else {
+      DebugLog::info("M4 AS5600 watch: %s (usage: sensor watch <on|off>)",
+                     shoulderAngleSensor.isWatchEnabled() ? "ON" : "OFF");
+    }
+    return;
+  }
+
   if (strcasecmp(action, "sim") != 0) {
-    DebugLog::warn("sensor: unknown action '%s' (status/sim)", action);
+    DebugLog::warn("sensor: unknown action '%s' (status/watch/sim)", action);
     return;
   }
 
@@ -1255,6 +1316,104 @@ void SerialCommand::handleBase(const char* args) {
   command.direction = direction;
   command.percent = static_cast<uint8_t>(percent);
   command.targetDegrees = degrees;
+
+  CommandResult result;
+  submitCommand(command, result);
+  logCommandResult(result);
+}
+
+void SerialCommand::handleShoulder(const char* args) {
+  if (args == nullptr || args[0] == '\0') {
+    DebugLog::warn("Usage: shoulder <angle|stop|status> ...");
+    DebugLog::info("  shoulder angle <absolute-degrees> [percent]");
+    DebugLog::info("  shoulder stop");
+    DebugLog::info("  shoulder status");
+    return;
+  }
+
+  char action[CMD_NAME_SIZE];
+  size_t i = 0;
+  while (args[i] != '\0' && args[i] != ' ' && args[i] != '\t' &&
+         i < sizeof(action) - 1) {
+    action[i] = args[i];
+    i++;
+  }
+  action[i] = '\0';
+  while (args[i] == ' ' || args[i] == '\t') i++;
+  const char* rest = &args[i];
+
+  if (strcasecmp(action, "status") == 0) {
+    DebugLog::info("=== M4 Shoulder Closed Loop ===");
+    DebugLog::info("Sensor: connected=%s fresh=%s ready=%s MD=%s ML=%s MH=%s",
+                   shoulderAngleSensor.isI2cConnected() ? "YES" : "NO",
+                   shoulderAngleSensor.isI2cFresh(
+                     ShoulderAngleController::SENSOR_STALE_MS) ? "YES" : "NO",
+                   shoulderAngleSensor.isReadyForMotion(
+                     ShoulderAngleController::SENSOR_STALE_MS) ? "YES" : "NO",
+                   shoulderAngleSensor.isMagnetDetected() ? "YES" : "NO",
+                   shoulderAngleSensor.isMagnetTooWeak() ? "YES" : "NO",
+                   shoulderAngleSensor.isMagnetTooStrong() ? "YES" : "NO");
+    DebugLog::info("Angle: raw=%u current=%.2fdeg age=%lums AGC=%u MAG=%u",
+                   shoulderAngleSensor.getI2cRawAngle(),
+                   shoulderAngleSensor.getI2cDegrees(),
+                   static_cast<unsigned long>(shoulderAngleSensor.getI2cAgeMs()),
+                   shoulderAngleSensor.getAgc(),
+                   shoulderAngleSensor.getMagnitude());
+    DebugLog::info("Controller: active=%s start=%.2f target=%.2f current=%.2f error=%.2f",
+                   shoulderAngleController.isActive() ? "YES" : "NO",
+                   shoulderAngleController.getStartDegrees(),
+                   shoulderAngleController.getTargetDegrees(),
+                   shoulderAngleController.getCurrentDegrees(),
+                   shoulderAngleController.getErrorDegrees());
+    DebugLog::info("Stop reason=%s final_error=%.2fdeg samples=%lu",
+                   shoulderAngleController.getLastStopReasonString(),
+                   shoulderAngleController.getFinalErrorDegrees(),
+                   shoulderAngleController.getProcessedSamples());
+    return;
+  }
+
+  if (strcasecmp(action, "stop") == 0) {
+    Command command;
+    command.source = CommandSource::SERIAL_INPUT;
+    command.type = CommandType::JOINT_STOP;
+    command.joint = MotionJoint::SHOULDER;
+    CommandResult result;
+    submitCommand(command, result);
+    logCommandResult(result);
+    return;
+  }
+
+  if (strcasecmp(action, "angle") != 0) {
+    DebugLog::warn("shoulder: unknown action '%s' (angle/stop/status)", action);
+    return;
+  }
+
+  float targetDegrees = 0.0f;
+  int percent = ShoulderAngleController::DEFAULT_PERCENT;
+  const int parsed = sscanf(rest, "%f %d", &targetDegrees, &percent);
+  if (parsed < 1) {
+    DebugLog::warn("shoulder angle: needs <absolute-degrees> [percent]");
+    return;
+  }
+  if (targetDegrees < ShoulderAngleController::SOFT_MIN_DEGREES ||
+      targetDegrees > ShoulderAngleController::SOFT_MAX_DEGREES) {
+    DebugLog::warn("shoulder angle: target must be %.1f-%.1f deg",
+                   ShoulderAngleController::SOFT_MIN_DEGREES,
+                   ShoulderAngleController::SOFT_MAX_DEGREES);
+    return;
+  }
+  if (percent < ShoulderAngleController::MIN_DRIVE_PERCENT || percent > 100) {
+    DebugLog::warn("shoulder angle: percent must be %u-100",
+                   ShoulderAngleController::MIN_DRIVE_PERCENT);
+    return;
+  }
+
+  Command command;
+  command.source = CommandSource::SERIAL_INPUT;
+  command.type = CommandType::SHOULDER_ANGLE_RUN;
+  command.joint = MotionJoint::SHOULDER;
+  command.targetDegrees = targetDegrees;
+  command.percent = static_cast<uint8_t>(percent);
 
   CommandResult result;
   submitCommand(command, result);

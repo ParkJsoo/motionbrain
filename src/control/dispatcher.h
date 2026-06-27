@@ -13,6 +13,7 @@ class SearchLight;
 class CommandBus;
 class SafetyGate;
 class AngleController;
+class ShoulderAngleController;
 
 struct DispatcherCommandAudit {
   bool seen;
@@ -44,7 +45,8 @@ public:
             MotionSequence* motionSequence,
             SearchLight* searchLight,
             SafetyGate* safetyGate,
-            AngleController* angleController);
+            AngleController* angleController,
+            ShoulderAngleController* shoulderAngleController);
 
   bool isReady() const;
   bool execute(const Command& command, CommandResult& result);
@@ -61,12 +63,14 @@ private:
   SearchLight*        searchLight_;
   SafetyGate*         safetyGate_;
   AngleController*    angleController_;
+  ShoulderAngleController* shoulderAngleController_;
   DispatcherCommandAudit lastCommand_;
 
   bool hasCoreDependencies() const;
   bool hasDependenciesFor(CommandType type, const char** missingDependency) const;
   bool commandExtendsTimeout(CommandType type) const;
   void cancelBaseAngleIfNeeded(const Command& command);
+  void cancelShoulderAngleIfNeeded(const Command& command);
   void recordCommandResult(const Command& command, const CommandResult& result);
   void setResult(CommandResult& result, uint32_t commandId, bool success, const char* format, ...) const;
   bool executeJointRun(MotionJoint joint, MotionDirection direction, uint8_t percent);

@@ -168,6 +168,12 @@ private:
   void handleBase(const char* args);
 
   /**
+   * shoulder angle <absolute-degrees> [percent]
+   * shoulder stop | status
+   */
+  void handleShoulder(const char* args);
+
+  /**
    * sequence 명령어 처리 (Phase 2-B)
    * 모션 시퀀스 큐 제어
    * @param args 명령어 인자

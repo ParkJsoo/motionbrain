@@ -10,6 +10,8 @@
 MotionBrain의 강점은 실제 하드웨어를 붙여 운영한 로보틱스 통합 프로젝트라는 점이다.
 
 - ESP32 펌웨어가 TB6612FNG 드라이버를 통해 5축 DC 모터 출력을 담당한다.
+- M4 어깨 한 축은 AS5600 절대각 I2C 피드백과 제한 폐루프 목표각 제어를
+  실물에서 검증했다. 나머지 축과 `ros2_control` 물리 경로는 개루프다.
 - STM32F446 펌웨어가 구조화된 센서/텔레오퍼레이션 프레임을 보낸다.
 - Raspberry Pi가 dashboard, perception, ROS2 Jazzy bridge 프로세스를 운영한다.
 - ROS2 패키지는 typed status, event, detection, kinematics, guard, mission,
@@ -32,6 +34,8 @@ MotionBrain의 강점은 실제 하드웨어를 붙여 운영한 로보틱스 �
   [docs/evidence/2026-06-17-runtime-measurements.md](docs/evidence/2026-06-17-runtime-measurements.md)
 - 공개 embedded bench check 증거:
   [docs/evidence/2026-06-16-embedded-bench-checks.md](docs/evidence/2026-06-16-embedded-bench-checks.md)
+- 공개 M4 어깨 폐루프 증거:
+  [docs/evidence/2026-06-28-m4-shoulder-closed-loop.md](docs/evidence/2026-06-28-m4-shoulder-closed-loop.md)
 - ESP32 safety gate와 dispatcher: `src/control/`, `src/safety/`
 - ESP32 motor driver와 pin mapping: `src/motor/motor_driver.*`
 - STM32 HAL sensor/teleop firmware: `firmware/stm32/MotionBrainSensor/`
@@ -165,10 +169,11 @@ I2C signal integrity, transient motor voltage, closed-loop joint-control
   mission state를 typed ROS2 topic으로 노출했다.
 - Feedback과 physical validation이 충분해질 때까지 unsafe automation을
   비활성화했다.
-- 저가 DC arm에 encoder feedback이나 production-grade joint control이 있는
-  것처럼 포장하지 않고 `ros2_control` 표면을 추가했다.
-- 한계를 문서화했다: closed-loop joint feedback 없음, autonomous grasping
-  주장 없음, production smart-actuator backend 주장 없음.
+- 저가 DC arm의 M4 단일축 시험 피드백을 전체 관절 encoder feedback이나
+  production-grade joint control처럼 포장하지 않고 `ros2_control` 표면과
+  분리했다.
+- 한계를 문서화했다: 나머지 네 축과 전체 로봇팔 폐루프 없음, autonomous
+  grasping 주장 없음, production smart-actuator backend 주장 없음.
 
 ## 다음 작업
 

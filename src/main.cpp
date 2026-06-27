@@ -9,6 +9,7 @@
 #include "network/wifi_provisioning.h" // Wi-Fi NVS provisioning
 #include "network/web_server.h"        // MotionBrainWebServer 사용
 #include "peripheral/search_light.h"   // SearchLight 사용
+#include "peripheral/shoulder_angle_sensor.h"
 #include "bridge/stm32_bridge.h"
 #include "control/angle_controller.h"
 #include "control/command_bus.h"
@@ -17,6 +18,7 @@
 #include "control/guarded_routine_executor.h"
 #include "control/hardware_feedback.h"
 #include "control/safety_gate.h"
+#include "control/shoulder_angle_controller.h"
 #include "safety/safety_monitor.h"
 #include "debug/debug_log.h"
 
@@ -34,9 +36,11 @@ TeleopAdapter teleopAdapter;      // 유선 handheld teleop adapter
 WiFiAP wifiAP;                    // WiFiAP 객체 생성
 MotionBrainWebServer webServer;   // MotionBrainWebServer 객체 생성
 SearchLight searchLight;          // SearchLight 객체 생성
+ShoulderAngleSensor shoulderAngleSensor; // M4 AS5600 I2C feedback + VP diagnostic
 Stm32Bridge stm32Bridge;          // STM32 센서 브리지
 SafetyMonitor safetyMonitor;      // 센서 기반 safety 모니터
 AngleController angleController;  // base 상대각 폐루프 제어
+ShoulderAngleController shoulderAngleController; // M4 AS5600 절대각 폐루프
 EventLog eventLog;                // 최근 시스템 이벤트 로그
 CommandBus commandBus;            // 공통 명령 버스
 Dispatcher dispatcher;            // 공통 명령 디스패처
@@ -97,6 +101,9 @@ void setup() {
     systemState.transitionTo(SystemState::FAULT);
     return;  // 더 이상 진행하지 않음
   }
+
+  // M4 shoulder AS5600 feedback (temporary I2C pins) and VP analog diagnostic.
+  shoulderAngleSensor.init();
   
   // 6. BOOT → IDLE 자동 전환 (시스템 초기화 완료)
   if (systemState.getState() == SystemState::BOOT) {
@@ -110,6 +117,8 @@ void setup() {
   stm32Bridge.init();
   safetyMonitor.init(&systemState, &motorControl, &motionSequence);
   angleController.init(&systemState, &robotArm, &safetyMonitor);
+  shoulderAngleController.init(&systemState, &robotArm, &motorControl,
+                               &safetyMonitor, &shoulderAngleSensor);
   HardwareFeedback::initBaseYawReference();
 
   // 9. 모션 시퀀스 초기화 (base angle step 지원)
@@ -117,7 +126,7 @@ void setup() {
 
   safetyGate.init(&systemState, &safetyMonitor);
   dispatcher.init(&systemState, &motorControl, &robotArm, &motionSequence, &searchLight,
-                  &safetyGate, &angleController);
+                  &safetyGate, &angleController, &shoulderAngleController);
 
   // 10. 시리얼 명령 모듈 초기화
   serialCommand.init(&systemState, &motorControl, &robotArm, &motionSequence, &searchLight,
@@ -125,7 +134,7 @@ void setup() {
 
   // 10-B. 유선 handheld teleop adapter 초기화
   teleopAdapter.init(&systemState, &motorControl, &motionSequence, &safetyMonitor,
-                     &angleController, &commandBus, &dispatcher);
+                     &angleController, &shoulderAngleController, &commandBus, &dispatcher);
   
   // 11. Wi-Fi 초기화
   WifiProvisioning::clearRequestedOnBoot();
@@ -194,6 +203,11 @@ void loop() {
   // 센서 기반 safety 평가
   const SensorSnapshot& safetySnapshot = getActiveSafetySnapshot();
   safetyMonitor.update(safetySnapshot);
+
+  // M4 AS5600 절대각 갱신 및 폐루프 제어. 모터 출력 업데이트 전에
+  // 실행해 목표 도달/센서 고장 시 즉시 M4를 차단한다.
+  shoulderAngleSensor.update(motorControl.getSpeed(MotorControl::MOTOR_4));
+  shoulderAngleController.update();
 
   // base 상대각 폐루프 업데이트
   angleController.update(safetySnapshot);

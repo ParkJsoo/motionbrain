@@ -10,6 +10,7 @@
 #include "control/guarded_routine_executor.h"
 #include "control/hardware_feedback.h"
 #include "control/safety_gate.h"
+#include "control/shoulder_angle_controller.h"
 #include "debug/debug_log.h"
 #include "motion/robot_arm.h"
 #include "motion/motion_sequence.h"
@@ -36,6 +37,7 @@ const char* commandTypeToString(CommandType type) {
     case CommandType::JOINT_STOP:              return "joint stop";
     case CommandType::JOINT_STOP_ALL:          return "joint stop all";
     case CommandType::BASE_ANGLE_RUN:          return "base angle";
+    case CommandType::SHOULDER_ANGLE_RUN:      return "shoulder angle";
     case CommandType::SEQUENCE_ADD:            return "sequence add";
     case CommandType::SEQUENCE_RUN:            return "sequence run";
     case CommandType::SEQUENCE_STOP:           return "sequence stop";
@@ -123,6 +125,7 @@ Dispatcher::Dispatcher()
   , searchLight_(nullptr) {
   safetyGate_ = nullptr;
   angleController_ = nullptr;
+  shoulderAngleController_ = nullptr;
 }
 
 void Dispatcher::init(SystemStateManager* systemState,
@@ -131,7 +134,8 @@ void Dispatcher::init(SystemStateManager* systemState,
                       MotionSequence* motionSequence,
                       SearchLight* searchLight,
                       SafetyGate* safetyGate,
-                      AngleController* angleController) {
+                      AngleController* angleController,
+                      ShoulderAngleController* shoulderAngleController) {
   systemState_ = systemState;
   motorControl_ = motorControl;
   robotArm_ = robotArm;
@@ -139,6 +143,7 @@ void Dispatcher::init(SystemStateManager* systemState,
   searchLight_ = searchLight;
   safetyGate_ = safetyGate;
   angleController_ = angleController;
+  shoulderAngleController_ = shoulderAngleController;
 }
 
 bool Dispatcher::isReady() const {
@@ -173,6 +178,15 @@ bool Dispatcher::hasDependenciesFor(CommandType type, const char** missingDepend
       if (angleController_ == nullptr) {
         if (missingDependency != nullptr) {
           *missingDependency = "angle controller";
+        }
+        return false;
+      }
+      break;
+
+    case CommandType::SHOULDER_ANGLE_RUN:
+      if (shoulderAngleController_ == nullptr) {
+        if (missingDependency != nullptr) {
+          *missingDependency = "shoulder angle controller";
         }
         return false;
       }
@@ -218,6 +232,7 @@ bool Dispatcher::commandExtendsTimeout(CommandType type) const {
     case CommandType::JOINT_STOP:
     case CommandType::JOINT_STOP_ALL:
     case CommandType::BASE_ANGLE_RUN:
+    case CommandType::SHOULDER_ANGLE_RUN:
     case CommandType::SEQUENCE_RUN:
     case CommandType::SEQUENCE_STOP:
       return true;
@@ -241,6 +256,7 @@ bool Dispatcher::execute(const Command& command, CommandResult& result) {
   }
 
   cancelBaseAngleIfNeeded(command);
+  cancelShoulderAngleIfNeeded(command);
 
   bool success = false;
 
@@ -353,6 +369,28 @@ bool Dispatcher::execute(const Command& command, CommandResult& result) {
         setResult(result, command.id, false, "%s", message);
       } else {
         setResult(result, command.id, false, "Failed to start base angle control");
+      }
+      break;
+    }
+
+    case CommandType::SHOULDER_ANGLE_RUN: {
+      if (motionSequence_ != nullptr &&
+          motionSequence_->getState() == SequenceState::RUNNING) {
+        setResult(result, command.id, false, "Stop active sequence before shoulder angle control");
+        success = false;
+        break;
+      }
+      char message[sizeof(result.message)] = {0};
+      success = shoulderAngleController_->startAbsolute(command.targetDegrees,
+                                                        command.percent,
+                                                        message,
+                                                        sizeof(message));
+      if (success) {
+        setResult(result, command.id, true, "%s", message);
+      } else if (message[0] != '\0') {
+        setResult(result, command.id, false, "%s", message);
+      } else {
+        setResult(result, command.id, false, "Failed to start shoulder angle control");
       }
       break;
     }
@@ -636,6 +674,69 @@ void Dispatcher::cancelBaseAngleIfNeeded(const Command& command) {
                                    : AngleControllerStopReason::OVERRIDDEN,
                                  "base joint override");
       }
+      return;
+
+    default:
+      return;
+  }
+}
+
+void Dispatcher::cancelShoulderAngleIfNeeded(const Command& command) {
+  if (shoulderAngleController_ == nullptr || !shoulderAngleController_->isActive()) {
+    return;
+  }
+
+  switch (command.type) {
+    case CommandType::STOP:
+    case CommandType::DISARM:
+      shoulderAngleController_->cancel(ShoulderAngleStopReason::STATE_CHANGED,
+                                       commandTypeToString(command.type));
+      return;
+
+    case CommandType::SEQUENCE_RUN:
+    case CommandType::SEQUENCE_STOP:
+    case CommandType::SEQUENCE_CLEAR:
+      shoulderAngleController_->cancel(ShoulderAngleStopReason::OVERRIDDEN,
+                                       commandTypeToString(command.type));
+      return;
+
+    case CommandType::MOTOR_STOP_ALL:
+    case CommandType::JOINT_STOP_ALL:
+      shoulderAngleController_->cancel(ShoulderAngleStopReason::MANUAL_STOP,
+                                       commandTypeToString(command.type));
+      return;
+
+    case CommandType::MOTOR_RUN:
+      if (command.motorId == MotorControl::MOTOR_4) {
+        shoulderAngleController_->cancel(ShoulderAngleStopReason::OVERRIDDEN,
+                                         "shoulder motor override");
+      }
+      return;
+
+    case CommandType::MOTOR_STOP:
+      if (command.motorId == MotorControl::MOTOR_4) {
+        shoulderAngleController_->cancel(ShoulderAngleStopReason::MANUAL_STOP,
+                                         "shoulder motor stop");
+      }
+      return;
+
+    case CommandType::JOINT_RUN:
+      if (command.joint == MotionJoint::SHOULDER) {
+        shoulderAngleController_->cancel(ShoulderAngleStopReason::OVERRIDDEN,
+                                         "shoulder joint override");
+      }
+      return;
+
+    case CommandType::JOINT_STOP:
+      if (command.joint == MotionJoint::SHOULDER) {
+        shoulderAngleController_->cancel(ShoulderAngleStopReason::MANUAL_STOP,
+                                         "shoulder joint stop");
+      }
+      return;
+
+    case CommandType::SHOULDER_ANGLE_RUN:
+      shoulderAngleController_->cancel(ShoulderAngleStopReason::OVERRIDDEN,
+                                       "new shoulder target");
       return;
 
     default:
