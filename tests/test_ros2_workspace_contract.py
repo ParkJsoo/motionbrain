@@ -199,6 +199,34 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
             with self.subTest(field=field):
                 self.assertIn(field, lifecycle_text)
 
+        motion_status_text = (
+            ROS2_SRC
+            / "motionbrain_msgs"
+            / "msg"
+            / "MotionStatus.msg"
+        ).read_text()
+        expected_shoulder_fields = [
+            "bool shoulder_feedback_available",
+            "bool shoulder_sensor_connected",
+            "bool shoulder_sensor_fresh",
+            "bool shoulder_sensor_ready",
+            "bool shoulder_magnet_detected",
+            "bool shoulder_control_active",
+            "bool shoulder_manual_guard_blocked",
+            "uint32 shoulder_sensor_age_ms",
+            "uint32 shoulder_agc",
+            "uint32 shoulder_magnitude",
+            "float32 shoulder_raw_angle_deg",
+            "float32 shoulder_angle_deg",
+            "float32 shoulder_mount_offset_deg",
+            "float32 shoulder_target_deg",
+            "float32 shoulder_error_deg",
+            "string shoulder_stop_reason",
+        ]
+        for field in expected_shoulder_fields:
+            with self.subTest(field=field):
+                self.assertIn(field, motion_status_text)
+
         routine_status_text = (
             ROS2_SRC
             / "motionbrain_msgs"
@@ -406,6 +434,7 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
             '"/motionbrain/diagnostics"',
             "publish_diagnostics(status_payload, routine_payload, detection_payload)",
             "motionbrain/controller",
+            "motionbrain/shoulder_feedback",
             "motionbrain/routine_executor",
             "motionbrain/feedback",
             "motionbrain/teleop_sensor",
@@ -419,6 +448,10 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
             "base_yaw_signal_active",
             "base_yaw_pin",
             "base_yaw_active_low",
+            "M4 shoulder feedback ready",
+            "shoulder_feedback_available",
+            "shoulder_sensor_ready",
+            "shoulder_angle_deg",
         ]
         for fragment in expected_fragments:
             with self.subTest(fragment=fragment):

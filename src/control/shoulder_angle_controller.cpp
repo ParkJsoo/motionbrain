@@ -289,6 +289,76 @@ bool ShoulderAngleController::manualDirectionAllowed(bool directionUp,
   return allowed;
 }
 
+void ShoulderAngleController::appendShoulderStatusJson(String& json) const {
+  const bool available = isReady();
+  const bool connected = available && sensor_->isI2cConnected();
+  const bool fresh = available && sensor_->isI2cFresh(SENSOR_STALE_MS);
+  const bool sensorReady = available && sensor_->isReadyForMotion(SENSOR_STALE_MS);
+  const float angleDegrees = connected ? sensor_->getI2cDegrees() : 0.0f;
+  const float errorDegrees = active_ ? targetDegrees_ - angleDegrees : finalErrorDegrees_;
+
+  json += "\"shoulderAngle\":{";
+  json += "\"available\":";
+  json += available ? "true" : "false";
+  json += ",\"sensorConnected\":";
+  json += connected ? "true" : "false";
+  json += ",\"sensorFresh\":";
+  json += fresh ? "true" : "false";
+  json += ",\"sensorReady\":";
+  json += sensorReady ? "true" : "false";
+  json += ",\"i2cAddress\":";
+  json += String(ShoulderAngleSensor::I2C_ADDRESS);
+  json += ",\"sdaPin\":";
+  json += String(ShoulderAngleSensor::I2C_SDA_PIN);
+  json += ",\"sclPin\":";
+  json += String(ShoulderAngleSensor::I2C_SCL_PIN);
+  json += ",\"adcPin\":";
+  json += String(ShoulderAngleSensor::ADC_PIN);
+  json += ",\"raw\":";
+  json += String(connected ? sensor_->getI2cRawAngle() : 0);
+  json += ",\"rawDeg\":";
+  json += String(connected ? sensor_->getI2cRawDegrees() : 0.0f, 2);
+  json += ",\"angleDeg\":";
+  json += String(angleDegrees, 2);
+  json += ",\"mountOffsetDeg\":";
+  json += String(ShoulderAngleSensor::MOUNT_OFFSET_DEGREES, 2);
+  json += ",\"magnetDetected\":";
+  json += available && sensor_->isMagnetDetected() ? "true" : "false";
+  json += ",\"magnetTooWeak\":";
+  json += available && sensor_->isMagnetTooWeak() ? "true" : "false";
+  json += ",\"magnetTooStrong\":";
+  json += available && sensor_->isMagnetTooStrong() ? "true" : "false";
+  json += ",\"agc\":";
+  json += String(connected ? sensor_->getAgc() : 0);
+  json += ",\"magnitude\":";
+  json += String(connected ? sensor_->getMagnitude() : 0);
+  json += ",\"ageMs\":";
+  json += String(available ? sensor_->getI2cAgeMs() : 0);
+  json += ",\"active\":";
+  json += active_ ? "true" : "false";
+  json += ",\"targetDeg\":";
+  json += String(targetDegrees_, 2);
+  json += ",\"errorDeg\":";
+  json += String(errorDegrees, 2);
+  json += ",\"requestedPercent\":";
+  json += String(requestedPercent_);
+  json += ",\"appliedPercent\":";
+  json += String(appliedPercent_);
+  json += ",\"softMinDeg\":";
+  json += String(SOFT_MIN_DEGREES, 2);
+  json += ",\"softMaxDeg\":";
+  json += String(SOFT_MAX_DEGREES, 2);
+  json += ",\"manualDownBoundaryDeg\":";
+  json += String(SOFT_MIN_DEGREES + DOWN_STOP_LEAD_DEGREES, 2);
+  json += ",\"manualUpBoundaryDeg\":";
+  json += String(SOFT_MAX_DEGREES - UP_STOP_LEAD_DEGREES, 2);
+  json += ",\"manualGuardBlocked\":";
+  json += manualGuardBlocked_ ? "true" : "false";
+  json += ",\"lastStopReason\":\"";
+  json += getLastStopReasonString();
+  json += "\"}";
+}
+
 float ShoulderAngleController::getTargetDegrees() const { return targetDegrees_; }
 float ShoulderAngleController::getCurrentDegrees() const { return currentDegrees_; }
 float ShoulderAngleController::getErrorDegrees() const { return targetDegrees_ - currentDegrees_; }

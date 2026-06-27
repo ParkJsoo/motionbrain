@@ -442,6 +442,32 @@ INDEX_HTML = """<!doctype html>
       </div>
 
       <section>
+        <h2>M4 Shoulder Feedback</h2>
+        <div class="grid">
+          <div class="metric">
+            <div class="label">Joint Angle</div>
+            <div class="value" id="m4Angle">-</div>
+            <div class="subvalue" id="m4Raw">-</div>
+          </div>
+          <div class="metric">
+            <div class="label">AS5600</div>
+            <div class="value" id="m4Sensor">-</div>
+            <div class="subvalue" id="m4Magnet">-</div>
+          </div>
+          <div class="metric">
+            <div class="label">Closed Loop</div>
+            <div class="value" id="m4Control">-</div>
+            <div class="subvalue" id="m4Target">-</div>
+          </div>
+          <div class="metric">
+            <div class="label">Guard</div>
+            <div class="value" id="m4Guard">-</div>
+            <div class="subvalue" id="m4Stop">-</div>
+          </div>
+        </div>
+      </section>
+
+      <section>
         <h2>Events</h2>
         <div class="panel-body">
           <table>
@@ -573,6 +599,7 @@ INDEX_HTML = """<!doctype html>
       lastStatus = status;
       const sensor = status.sensor || {};
       const base = status.baseAngle || {};
+      const shoulder = status.shoulderAngle || {};
       const teleop = status.teleop || {};
       const state = status.state || "UNKNOWN";
       const blocked = Boolean(sensor.blocked);
@@ -591,6 +618,15 @@ INDEX_HTML = """<!doctype html>
       document.getElementById("baseDir").textContent = base.active ? `${base.direction || "-"} @ ${base.percent || "-"}%` : "no active base command";
       setText("baseProgress", `${fmtNum(base.currentDeg)} / ${fmtNum(base.targetDeg)} deg`);
       document.getElementById("baseStop").textContent = base.lastStopReason || "NONE";
+
+      setText("m4Angle", `${fmtNum(shoulder.angleDeg, 2)} deg`, shoulder.sensorReady ? "ok" : "warn");
+      document.getElementById("m4Raw").textContent = `raw ${fmtNum(shoulder.rawDeg, 2)} deg, offset ${fmtNum(shoulder.mountOffsetDeg, 2)} deg`;
+      setText("m4Sensor", shoulder.sensorReady ? "READY" : shoulder.sensorConnected ? "NOT READY" : "DOWN", shoulder.sensorReady ? "ok" : "bad");
+      document.getElementById("m4Magnet").textContent = `magnet ${fmtBool(shoulder.magnetDetected)} AGC ${shoulder.agc ?? "-"} MAG ${shoulder.magnitude ?? "-"} age ${shoulder.ageMs ?? "-"}ms`;
+      setText("m4Control", shoulder.active ? "ACTIVE" : "IDLE", shoulder.active ? "ok" : "");
+      document.getElementById("m4Target").textContent = `target ${fmtNum(shoulder.targetDeg, 2)} deg, error ${fmtNum(shoulder.errorDeg, 2)} deg, output ${shoulder.appliedPercent ?? 0}%`;
+      setText("m4Guard", shoulder.manualGuardBlocked ? "BLOCKED" : "CLEAR", shoulder.manualGuardBlocked ? "bad" : "ok");
+      document.getElementById("m4Stop").textContent = `${shoulder.lastStopReason || "NONE"}; limits ${fmtNum(shoulder.softMinDeg, 1)}-${fmtNum(shoulder.softMaxDeg, 1)} deg`;
 
       setText("teleopConn", teleop.connected ? "UP" : "DOWN", teleop.connected ? "ok" : "warn");
       document.getElementById("teleopDeadman").textContent = `deadman ${fmtBool(teleop.deadman)} active ${fmtBool(teleop.controlActive)}`;

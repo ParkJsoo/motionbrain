@@ -11,6 +11,7 @@
 #include "control/guarded_routine.h"
 #include "control/guarded_routine_executor.h"
 #include "control/hardware_feedback.h"
+#include "control/shoulder_angle_controller.h"
 #include "safety/safety_monitor.h"
 #include "input/teleop_adapter.h"
 #include "system/system_init.h"       // SystemStateManager 사용
@@ -23,6 +24,7 @@
 extern Stm32Bridge stm32Bridge;
 extern SafetyMonitor safetyMonitor;
 extern AngleController angleController;
+extern ShoulderAngleController shoulderAngleController;
 extern EventLog eventLog;
 extern TeleopAdapter teleopAdapter;
 
@@ -199,6 +201,8 @@ void MotionBrainWebServer::appendStateSummaryJson(String& json) const {
   json += ",\"baseAngleReason\":\"";
   json += angleController.getLastStopReasonString();
   json += "\",";
+  shoulderAngleController.appendShoulderStatusJson(json);
+  json += ",";
   HardwareFeedback::appendStatusJson(json, &angleController);
   json += ",";
   appendRecoveryJson(json);
@@ -830,7 +834,7 @@ void MotionBrainWebServer::handleStatus() {
   
   // JSON 응답 생성
   String json;
-  json.reserve(1200);  // pre-allocate to avoid realloc
+  json.reserve(1900);  // pre-allocate to avoid realloc
   json = "{\"schemaVersion\":\"";
   json += MESSAGE_SCHEMA_VERSION;
   json += "\",\"messageType\":\"status\",\"uptimeMs\":";
@@ -984,6 +988,9 @@ void MotionBrainWebServer::handleStatus() {
   json += ",\"lastTransitionMs\":";
   json += String(angleController.getLastTransitionMs());
   json += "}";
+
+  json += ",";
+  shoulderAngleController.appendShoulderStatusJson(json);
 
   json += ",";
   HardwareFeedback::appendStatusJson(json, &angleController);

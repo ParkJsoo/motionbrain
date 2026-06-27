@@ -11,8 +11,10 @@ class ShoulderClosedLoopContractTest(unittest.TestCase):
         source = (ROOT / "src" / "peripheral" / "shoulder_angle_sensor.cpp").read_text()
 
         for fragment in {
-            "I2C_SDA_PIN = 0",
-            "I2C_SCL_PIN = 15",
+            "MOTIONBRAIN_SHOULDER_I2C_SDA_PIN 0",
+            "MOTIONBRAIN_SHOULDER_I2C_SCL_PIN 15",
+            "I2C_SDA_PIN = MOTIONBRAIN_SHOULDER_I2C_SDA_PIN",
+            "I2C_SCL_PIN = MOTIONBRAIN_SHOULDER_I2C_SCL_PIN",
             "I2C_ADDRESS = 0x36",
             "MOUNT_OFFSET_DEGREES = -24.35f",
             "I2C_POLL_INTERVAL_MS = 20",
@@ -54,6 +56,34 @@ class ShoulderClosedLoopContractTest(unittest.TestCase):
         self.assertIn("sensor_->isReadyForMotion(SENSOR_STALE_MS)", source)
         self.assertIn("manualDirectionAllowed", source)
         self.assertIn("enforceManualDriveLimits", source)
+        self.assertIn("appendShoulderStatusJson", header + source)
+        for field in {
+            "shoulderAngle",
+            "sensorReady",
+            "magnetDetected",
+            "mountOffsetDeg",
+            "manualGuardBlocked",
+            "lastStopReason",
+        }:
+            with self.subTest(status_field=field):
+                self.assertIn(field, source)
+
+    def test_http_dashboard_exposes_read_only_shoulder_feedback(self):
+        web = (ROOT / "src" / "network" / "web_server.cpp").read_text()
+        dashboard = (ROOT / "tools" / "motionbrain_dashboard.py").read_text()
+
+        self.assertIn("extern ShoulderAngleController shoulderAngleController", web)
+        self.assertGreaterEqual(web.count("appendShoulderStatusJson"), 2)
+        for fragment in {
+            "M4 Shoulder Feedback",
+            'id="m4Angle"',
+            'id="m4Sensor"',
+            "status.shoulderAngle",
+            "shoulder.magnetDetected",
+            "shoulder.manualGuardBlocked",
+        }:
+            with self.subTest(dashboard_fragment=fragment):
+                self.assertIn(fragment, dashboard)
 
     def test_all_manual_shoulder_paths_cancel_or_block_conflicts(self):
         dispatcher = (ROOT / "src" / "control" / "dispatcher.cpp").read_text()

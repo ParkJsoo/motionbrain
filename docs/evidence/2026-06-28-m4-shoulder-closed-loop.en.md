@@ -11,7 +11,7 @@ It does not claim position feedback on the other four joints or full-arm closed-
 
 - Sensor: AS5600 magnetic angle sensor, address `0x36`
 - Joint: M4 shoulder
-- ESP32 temporary I2C bus: SDA `GPIO0`, SCL `GPIO15`
+- ESP32 supported I2C allocation: SDA `GPIO0`, SCL `GPIO15` ([pin map](../../PIN_MAP.en.md))
 - Analog OUT remained connected to VP/GPIO36 for comparison
 - Magnet and sensor were mounted so they rotate relative to each other with the shoulder joint
 
@@ -100,7 +100,9 @@ Final state: `IDLE`, M1-M5 speed 0, M4 235.89 deg, sensor `ready=YES`,
 ## Remaining limits
 
 - The taped mount is suitable for bring-up, not long-term repeatability or vibration testing.
-- GPIO0/GPIO15 are temporary pins; GPIO0 is a boot strap and requires a permanent pin-allocation decision.
+- GPIO0/GPIO15 is the supported allocation under the current pin budget but
+  requires boot-strap discipline. GPIO0 must not be held LOW at reset, and boot
+  and upload regression must be repeated after wiring changes.
 - The `-24.35 deg` mount offset is valid only for the current trial mount and must be recalibrated after remounting.
 - Only a narrow, supervised shoulder range has been calibrated.
 - Directional stop-lead values need repeated trials across load and battery-voltage conditions.

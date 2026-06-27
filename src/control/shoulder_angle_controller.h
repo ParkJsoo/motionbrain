@@ -66,6 +66,7 @@ public:
   bool manualDirectionAllowed(bool directionUp,
                               char* message = nullptr,
                               size_t messageSize = 0) const;
+  void appendShoulderStatusJson(String& json) const;
 
   float getTargetDegrees() const;
   float getCurrentDegrees() const;

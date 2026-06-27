@@ -215,6 +215,7 @@ class MotionBrainStatusNode(Node):
         message.header.stamp = self.get_clock().now().to_msg()
         message.status = [
             self.controller_diagnostic(status_payload),
+            self.shoulder_feedback_diagnostic(status_payload),
             self.routine_diagnostic(routine_payload),
             self.feedback_diagnostic(routine_payload),
             self.teleop_sensor_diagnostic(routine_payload),
@@ -267,6 +268,64 @@ class MotionBrainStatusNode(Node):
                 "last_command_type": as_str(last_command.get("type")),
             },
             "esp32_motion_controller",
+        )
+
+    def shoulder_feedback_diagnostic(
+        self,
+        payload: dict[str, Any] | None,
+    ) -> DiagnosticStatus:
+        shoulder = payload.get("shoulderAngle") if isinstance(payload, dict) else None
+        shoulder = shoulder if isinstance(shoulder, dict) else {}
+
+        available = as_bool(shoulder.get("available"))
+        connected = as_bool(shoulder.get("sensorConnected"))
+        fresh = as_bool(shoulder.get("sensorFresh"))
+        ready = as_bool(shoulder.get("sensorReady"))
+        angle = as_float(shoulder.get("angleDeg"))
+        soft_min = as_float(shoulder.get("softMinDeg"))
+        soft_max = as_float(shoulder.get("softMaxDeg"))
+        outside_limits = ready and (angle < soft_min or angle > soft_max)
+
+        if not available or not connected:
+            level = DiagnosticStatus.ERROR
+            text = "M4 shoulder feedback unavailable"
+        elif not fresh or not ready:
+            level = DiagnosticStatus.ERROR
+            text = "M4 shoulder sensor not ready"
+        elif outside_limits:
+            level = DiagnosticStatus.WARN
+            text = "M4 shoulder outside calibrated limits"
+        else:
+            level = DiagnosticStatus.OK
+            text = "M4 shoulder feedback ready"
+
+        return self.diagnostic_status(
+            "motionbrain/shoulder_feedback",
+            level,
+            text,
+            {
+                "available": available,
+                "connected": connected,
+                "fresh": fresh,
+                "ready": ready,
+                "angle_deg": angle,
+                "raw_angle_deg": as_float(shoulder.get("rawDeg")),
+                "mount_offset_deg": as_float(shoulder.get("mountOffsetDeg")),
+                "target_deg": as_float(shoulder.get("targetDeg")),
+                "error_deg": as_float(shoulder.get("errorDeg")),
+                "soft_min_deg": soft_min,
+                "soft_max_deg": soft_max,
+                "magnet_detected": as_bool(shoulder.get("magnetDetected")),
+                "magnet_too_weak": as_bool(shoulder.get("magnetTooWeak")),
+                "magnet_too_strong": as_bool(shoulder.get("magnetTooStrong")),
+                "agc": as_uint(shoulder.get("agc")),
+                "magnitude": as_uint(shoulder.get("magnitude")),
+                "age_ms": as_uint(shoulder.get("ageMs")),
+                "control_active": as_bool(shoulder.get("active")),
+                "manual_guard_blocked": as_bool(shoulder.get("manualGuardBlocked")),
+                "stop_reason": as_str(shoulder.get("lastStopReason"), "NONE"),
+            },
+            "esp32_m4_as5600",
         )
 
     def routine_diagnostic(self, payload: dict[str, Any] | None) -> DiagnosticStatus:
@@ -477,6 +536,44 @@ class MotionBrainStatusNode(Node):
             message.moving = message.moving or as_bool(teleop.get("controlActive"))
             if not message.stop_reason:
                 message.stop_reason = as_str(teleop.get("lastStopReason"))
+
+        shoulder = payload.get("shoulderAngle")
+        if isinstance(shoulder, dict):
+            message.shoulder_feedback_available = as_bool(shoulder.get("available"))
+            message.shoulder_sensor_connected = as_bool(shoulder.get("sensorConnected"))
+            message.shoulder_sensor_fresh = as_bool(shoulder.get("sensorFresh"))
+            message.shoulder_sensor_ready = as_bool(shoulder.get("sensorReady"))
+            message.shoulder_magnet_detected = as_bool(shoulder.get("magnetDetected"))
+            message.shoulder_magnet_too_weak = as_bool(shoulder.get("magnetTooWeak"))
+            message.shoulder_magnet_too_strong = as_bool(shoulder.get("magnetTooStrong"))
+            message.shoulder_control_active = as_bool(shoulder.get("active"))
+            message.shoulder_manual_guard_blocked = as_bool(
+                shoulder.get("manualGuardBlocked")
+            )
+            message.shoulder_sensor_age_ms = as_uint(shoulder.get("ageMs"))
+            message.shoulder_agc = as_uint(shoulder.get("agc"))
+            message.shoulder_magnitude = as_uint(shoulder.get("magnitude"))
+            message.shoulder_raw_angle_deg = as_float(shoulder.get("rawDeg"))
+            message.shoulder_angle_deg = as_float(shoulder.get("angleDeg"))
+            message.shoulder_mount_offset_deg = as_float(shoulder.get("mountOffsetDeg"))
+            message.shoulder_target_deg = as_float(shoulder.get("targetDeg"))
+            message.shoulder_error_deg = as_float(shoulder.get("errorDeg"))
+            message.shoulder_soft_min_deg = as_float(shoulder.get("softMinDeg"))
+            message.shoulder_soft_max_deg = as_float(shoulder.get("softMaxDeg"))
+            message.shoulder_manual_down_boundary_deg = as_float(
+                shoulder.get("manualDownBoundaryDeg")
+            )
+            message.shoulder_manual_up_boundary_deg = as_float(
+                shoulder.get("manualUpBoundaryDeg")
+            )
+            message.shoulder_stop_reason = as_str(
+                shoulder.get("lastStopReason"),
+                "NONE",
+            )
+            message.tilt_angle_deg = message.shoulder_angle_deg
+            message.moving = message.moving or message.shoulder_control_active
+            if message.shoulder_control_active or not message.stop_reason:
+                message.stop_reason = message.shoulder_stop_reason
 
         message.raw_json = compact_json(payload)
         self.status_typed_pub.publish(message)

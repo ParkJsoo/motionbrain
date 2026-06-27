@@ -62,7 +62,7 @@ MotionBrain은 ESP32 모션 제어기, STM32 센서/텔레오퍼레이션 계층
 - 토큰 기반 HTTP 상태 변경 명령
 - STM32 `MPU-6050 + UART` 센서/텔레오퍼레이션 펌웨어와 HC-SR04 bench 검증 경로
 - 데드맨, 프레임 최신성 타임아웃, 센서 고장 래치
-- M4 어깨 AS5600 I2C 절대각 피드백과 제한 폐루프 목표각 제어
+- M4 어깨 AS5600 I2C 절대각 피드백, 제한 폐루프 목표각 제어와 HTTP/대시보드/ROS2 상태 노출
 - ESP32-CAM 캡처/스트림 펌웨어
 - Raspberry Pi 대시보드와 인식 서비스
 - OpenCV 기반 빨간 타겟 검출과 타겟 오버레이
@@ -144,6 +144,8 @@ ROS2는 ESP32 내부 제어를 대체하지 않는다. 대신 `/status`, `/event
 - 텔레오퍼레이션 어깨 입력이 활성 목표를 53ms 만에 `OVERRIDDEN`으로
   취소하는 것을 확인하고, 직접/sequence/teleop M4 경로에 공통 소프트
   리밋 가드를 적용
+- M4 보정각, raw 각도, 자석 상태, 센서 최신성, 제어/가드 상태를 ESP32
+  `/status`, Pi 대시보드, ROS2 typed status와 diagnostics에 연결
 - STM32 `MPU-6050 + UART` 텔레오퍼레이션과 HC-SR04 bench 경로 검증
 - 유선 텔레오퍼레이션 데드맨 입력으로 실제 모터 출력 및 release 정지 확인
 - 최종 물리 텔레오퍼레이션 데모 영상 캡처와 README GIF/MP4 반영
@@ -175,8 +177,9 @@ Pi에서 OpenCV DNN/ONNX 기반 constrained known-object detection 경로는 구
 
 - M4 어깨 한 축만 임시 장착 AS5600 피드백을 사용한다. 나머지 네 축에는
   위치 피드백이 없고 전체 관절 절대 위치나 `ros2_control` 물리 폐루프는 없다.
-- M4의 GPIO0/GPIO15 I2C 배선, 테이프 장착, 230-245° 보정 범위와 방향별
-  정지 선행값은 시험 조건이며 영구 기구/핀 설계와 반복 검증이 필요하다.
+- M4 GPIO0/GPIO15는 현재 핀 점유에서 유지하는 지원 배치지만 부트 스트랩
+  조건을 준수해야 한다. 테이프 장착, 230-245° 보정 범위와 방향별 정지
+  선행값은 시험 조건이며 영구 기구 설계와 반복 검증이 필요하다.
 - 현재 `-24.35°` 각도 오프셋은 시험 장착에 종속되므로 재장착 시 다시
   보정해야 한다.
 - HC-SR04는 최종 물리 데모에서 제거됐고, range telemetry는 disabled/nonblocking 상태로 처리한다.
@@ -197,6 +200,7 @@ Pi에서 OpenCV DNN/ONNX 기반 constrained known-object detection 경로는 구
 - [README.md](README.md): 프로젝트 진입점
 - [README.en.md](README.en.md): 영어 프로젝트 진입점
 - [ROBOTICS_SYSTEM_READINESS.md](ROBOTICS_SYSTEM_READINESS.md): 로보틱스 시스템/ROS2 하드웨어 경계 요약
+- [PIN_MAP.md](PIN_MAP.md): ESP32 핀 점유와 M4 AS5600 배치 정책
 - [docs/evidence/2026-06-28-m4-shoulder-closed-loop.md](docs/evidence/2026-06-28-m4-shoulder-closed-loop.md): M4 어깨 단일축 폐루프 실물 검증
 - [docs/evidence/2026-06-16-ros2-control-open-loop.md](docs/evidence/2026-06-16-ros2-control-open-loop.md): `ros2_control` dry-run 검증 요약
 - [docs/evidence/2026-06-16-pi-system-health.md](docs/evidence/2026-06-16-pi-system-health.md): Pi/systemd/ROS2 health 검증 요약

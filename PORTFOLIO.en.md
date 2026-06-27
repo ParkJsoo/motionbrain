@@ -67,7 +67,8 @@ I designed and implemented:
 - Token-gated HTTP state-changing commands
 - STM32 `MPU-6050 + UART` sensor/teleop firmware and bench-validated HC-SR04 path
 - Deadman handling, frame freshness timeout, and sensor fault latching
-- M4 shoulder AS5600 I2C absolute-angle feedback and bounded closed-loop targets
+- M4 shoulder AS5600 I2C absolute-angle feedback, bounded closed-loop targets,
+  and HTTP/dashboard/ROS2 status exposure
 - ESP32-CAM capture/stream firmware
 - Raspberry Pi dashboard and perception service
 - OpenCV-based red target detection and target overlay
@@ -150,6 +151,9 @@ The public demo is physical teleoperation. Supporting evidence covers `STREAM`-b
 - Shoulder teleoperation cancelled an active target as `OVERRIDDEN` within
   53 ms, followed by a shared soft-limit guard for direct, sequence, and
   teleoperation M4 paths.
+- M4 calibrated/raw angle, magnet health, sensor freshness, controller state,
+  and manual guard state are exposed through ESP32 `/status`, the Pi dashboard,
+  ROS2 typed status, and diagnostics.
 - STM32 `MPU-6050 + UART` teleop and the HC-SR04 bench path were validated.
 - Wired teleop produced real motor output under deadman control and stopped on release.
 - The final physical teleoperation demo was captured and published as README GIF/MP4 assets.
@@ -182,9 +186,10 @@ Current honest positioning:
 - Only the M4 shoulder has trial-mounted AS5600 position feedback. The other
   four axes have no position feedback, and there is no full-arm absolute pose
   or physical closed-loop `ros2_control` path.
-- M4 GPIO0/GPIO15 I2C wiring, taped mounting, 230-245 deg calibrated range, and
-  directional stop leads remain trial conditions pending permanent mechanics,
-  pin allocation, and repeated validation.
+- M4 GPIO0/GPIO15 is the supported allocation under the current pin budget but
+  requires boot-strap discipline. The taped mounting, 230-245 deg calibrated
+  range, and directional stop leads remain trial conditions pending permanent
+  mechanics and repeated validation.
 - The current `-24.35 deg` angle offset is trial-mount-specific and requires
   recalibration after remounting.
 - HC-SR04 is removed for the final physical demo, with range telemetry handled as disabled/nonblocking
@@ -205,6 +210,7 @@ Current honest positioning:
 - [README.en.md](README.en.md): project entry point
 - [README.md](README.md): Korean project entry point
 - [ROBOTICS_SYSTEM_READINESS.en.md](ROBOTICS_SYSTEM_READINESS.en.md): ROS2 and hardware-boundary summary for robotics system roles
+- [PIN_MAP.en.md](PIN_MAP.en.md): ESP32 allocation and M4 AS5600 wiring policy
 - [docs/evidence/2026-06-28-m4-shoulder-closed-loop.en.md](docs/evidence/2026-06-28-m4-shoulder-closed-loop.en.md): physical M4 single-axis closed-loop evidence
 - [docs/evidence/2026-06-16-ros2-control-open-loop.en.md](docs/evidence/2026-06-16-ros2-control-open-loop.en.md): ros2_control dry-run evidence summary
 - [docs/evidence/2026-06-16-pi-system-health.en.md](docs/evidence/2026-06-16-pi-system-health.en.md): Pi/systemd/ROS2 health evidence summary

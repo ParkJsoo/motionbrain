@@ -4,6 +4,18 @@
 #include <Arduino.h>
 #include <stdint.h>
 
+#ifndef MOTIONBRAIN_SHOULDER_I2C_SDA_PIN
+#define MOTIONBRAIN_SHOULDER_I2C_SDA_PIN 0
+#endif
+
+#ifndef MOTIONBRAIN_SHOULDER_I2C_SCL_PIN
+#define MOTIONBRAIN_SHOULDER_I2C_SCL_PIN 15
+#endif
+
+#ifndef MOTIONBRAIN_SHOULDER_ADC_PIN
+#define MOTIONBRAIN_SHOULDER_ADC_PIN 36
+#endif
+
 /**
  * AS5600 absolute-angle feedback reader for the shoulder joint.
  *
@@ -13,9 +25,9 @@
  */
 class ShoulderAngleSensor {
 public:
-  static constexpr uint8_t ADC_PIN = 36;
-  static constexpr uint8_t I2C_SDA_PIN = 0;
-  static constexpr uint8_t I2C_SCL_PIN = 15;
+  static constexpr uint8_t ADC_PIN = MOTIONBRAIN_SHOULDER_ADC_PIN;
+  static constexpr uint8_t I2C_SDA_PIN = MOTIONBRAIN_SHOULDER_I2C_SDA_PIN;
+  static constexpr uint8_t I2C_SCL_PIN = MOTIONBRAIN_SHOULDER_I2C_SCL_PIN;
   static constexpr uint8_t I2C_ADDRESS = 0x36;
   // Trial-mount calibration: raw 258.93 deg corresponds to the previously
   // established shoulder coordinate 234.58 deg after the 2026-06-28 remount.
