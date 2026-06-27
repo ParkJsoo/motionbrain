@@ -17,6 +17,9 @@ public:
   static constexpr uint8_t I2C_SDA_PIN = 0;
   static constexpr uint8_t I2C_SCL_PIN = 15;
   static constexpr uint8_t I2C_ADDRESS = 0x36;
+  // Trial-mount calibration: raw 258.93 deg corresponds to the previously
+  // established shoulder coordinate 234.58 deg after the 2026-06-28 remount.
+  static constexpr float MOUNT_OFFSET_DEGREES = -24.35f;
 
   ShoulderAngleSensor();
 
@@ -35,6 +38,7 @@ public:
   bool isMagnetTooWeak() const;
   bool isMagnetTooStrong() const;
   uint16_t getI2cRawAngle() const;
+  float getI2cRawDegrees() const;
   float getI2cDegrees() const;
   uint8_t getAgc() const;
   uint16_t getMagnitude() const;

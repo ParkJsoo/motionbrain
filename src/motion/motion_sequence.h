@@ -8,6 +8,7 @@
 class RobotArm;
 class SystemStateManager;
 class AngleController;
+class ShoulderAngleController;
 
 /**
  * 모션 관절 종류
@@ -85,7 +86,8 @@ public:
    * @param angleController base 상대각 폐루프 제어기 참조
    */
   void init(RobotArm* robotArm, SystemStateManager* systemState,
-            AngleController* angleController = nullptr);
+            AngleController* angleController = nullptr,
+            ShoulderAngleController* shoulderAngleController = nullptr);
 
   /**
    * 업데이트 — loop()에서 주기 호출 필수
@@ -168,6 +170,7 @@ private:
   RobotArm*           robotArm_;
   SystemStateManager* systemState_;
   AngleController*    angleController_;
+  ShoulderAngleController* shoulderAngleController_;
 
   bool isBaseAngleCommand(const MotionCommand& cmd) const;
   bool executeCommand(const MotionCommand& cmd, char* errorMessage, size_t errorMessageSize);

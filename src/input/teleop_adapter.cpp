@@ -169,7 +169,8 @@ TeleopAdapter::TeleopAdapter()
   , appliedWristPercent_(0)
   , appliedElbowPercent_(0)
   , appliedShoulderPercent_(0)
-  , appliedBasePercent_(0) {
+  , appliedBasePercent_(0)
+  , shoulderGuardBlocked_(false) {
 }
 
 bool TeleopAdapter::init(SystemStateManager* systemState,
@@ -612,6 +613,26 @@ void TeleopAdapter::applyContinuousOutputs() {
       shoulderAngleController_->isActive()) {
     shoulderAngleController_->cancel(ShoulderAngleStopReason::OVERRIDDEN,
                                      "teleop shoulder");
+  }
+
+  if (shoulderPercent != 0 && shoulderAngleController_ != nullptr) {
+    char message[96] = {0};
+    if (!shoulderAngleController_->manualDirectionAllowed(shoulderPercent > 0,
+                                                          message,
+                                                          sizeof(message))) {
+      motorControl_->hardStop(MotorControl::MOTOR_4);
+      appliedShoulderPercent_ = 0;
+      shoulderPercent = 0;
+      if (!shoulderGuardBlocked_) {
+        shoulderGuardBlocked_ = true;
+        DebugLog::warn("Teleop shoulder blocked: %s", message);
+        eventLog.push("teleop", "SHOULDER_GUARD", EventSeverity::WARN, message);
+      }
+    } else {
+      shoulderGuardBlocked_ = false;
+    }
+  } else {
+    shoulderGuardBlocked_ = false;
   }
 
   if (basePercent != 0 && angleController_ != nullptr && angleController_->isActive()) {

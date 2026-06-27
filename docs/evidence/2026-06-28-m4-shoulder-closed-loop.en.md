@@ -64,10 +64,44 @@ then waits `600ms` and records the settled sensor position.
 
 Both runs ended with `TARGET_REACHED`; I2C stayed fresh and magnet status stayed valid.
 
+## Final deployment regression after remount
+
+After the sensor/magnet remount, magnetic quality improved to `AGC=102-104`,
+magnitude approximately `2107-2136`, `MD=YES`, `ML=NO`, and `MH=NO`. The new
+mount orientation made raw `258.93 deg` correspond to the established shoulder
+coordinate `234.58 deg`, so a provisional `-24.35 deg` mount offset was added.
+Diagnostics retain both raw and calibrated angles.
+
+Target regression after redeployment:
+
+| Command | Start | Settled result | Final error |
+| --- | ---: | ---: | ---: |
+| `shoulder angle 238 100` | 234.58 deg | 238.09 deg | -0.09 deg |
+| `shoulder angle 234 100` | 238.09 deg | 234.14 deg | -0.14 deg |
+
+Conflict-path regression:
+
+- A new absolute target was rejected while an M4 1% sequence was running with
+  `Stop active sequence before shoulder angle control`.
+- Shoulder teleoperation input cancelled an active absolute target as
+  `OVERRIDDEN` and hard-stopped M4 within 53 ms.
+- The first teleoperation timing attempt exposed that manual input arriving
+  after target completion could continue beyond the closed-loop trial range.
+  M4 reached 256.99 deg, was stopped/disarmed immediately, and was returned
+  under supervision to 235.89 deg.
+- The resulting fix makes direct M4, sequence, and teleoperation paths share
+  AS5600 readiness and direction-aware coast margins. Manual boundaries are
+  244.10 deg upward and 231.50 deg downward; when outside the range, only
+  motion back toward the safe range is allowed.
+
+Final state: `IDLE`, M1-M5 speed 0, M4 235.89 deg, sensor `ready=YES`,
+`ML=NO`, and no latched fault.
+
 ## Remaining limits
 
 - The taped mount is suitable for bring-up, not long-term repeatability or vibration testing.
 - GPIO0/GPIO15 are temporary pins; GPIO0 is a boot strap and requires a permanent pin-allocation decision.
+- The `-24.35 deg` mount offset is valid only for the current trial mount and must be recalibrated after remounting.
 - Only a narrow, supervised shoulder range has been calibrated.
 - Directional stop-lead values need repeated trials across load and battery-voltage conditions.
 - The analog OUT/VP path is still saturated and is intentionally excluded from control.

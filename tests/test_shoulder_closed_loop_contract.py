@@ -14,6 +14,7 @@ class ShoulderClosedLoopContractTest(unittest.TestCase):
             "I2C_SDA_PIN = 0",
             "I2C_SCL_PIN = 15",
             "I2C_ADDRESS = 0x36",
+            "MOUNT_OFFSET_DEGREES = -24.35f",
             "I2C_POLL_INTERVAL_MS = 20",
             "isI2cFresh",
             "isMagnetDetected",
@@ -25,6 +26,7 @@ class ShoulderClosedLoopContractTest(unittest.TestCase):
 
         self.assertIn("isI2cFresh(maxAgeMs) && isMagnetDetected()", source)
         self.assertIn("!isMagnetTooWeak() && !isMagnetTooStrong()", source)
+        self.assertIn("getI2cRawDegrees() + MOUNT_OFFSET_DEGREES", source)
 
     def test_controller_has_bounded_motion_and_stop_reasons(self):
         header = (ROOT / "src" / "control" / "shoulder_angle_controller.h").read_text()
@@ -50,6 +52,8 @@ class ShoulderClosedLoopContractTest(unittest.TestCase):
 
         self.assertIn("hardStop(MotorControl::MOTOR_4)", source)
         self.assertIn("sensor_->isReadyForMotion(SENSOR_STALE_MS)", source)
+        self.assertIn("manualDirectionAllowed", source)
+        self.assertIn("enforceManualDriveLimits", source)
 
     def test_all_manual_shoulder_paths_cancel_or_block_conflicts(self):
         dispatcher = (ROOT / "src" / "control" / "dispatcher.cpp").read_text()
@@ -61,6 +65,11 @@ class ShoulderClosedLoopContractTest(unittest.TestCase):
         self.assertIn('"Stop active sequence before shoulder angle control"', dispatcher)
         self.assertIn('"teleop shoulder"', teleop)
         self.assertIn("shoulderAngleController_->cancel", teleop)
+        self.assertIn("shoulderAngleController_->manualDirectionAllowed", teleop)
+        self.assertIn("SHOULDER_GUARD", teleop)
+
+        sequence = (ROOT / "src" / "motion" / "motion_sequence.cpp").read_text()
+        self.assertIn("shoulderAngleController_->manualDirectionAllowed", sequence)
 
     def test_serial_command_is_safety_gated(self):
         serial = (ROOT / "src" / "input" / "serial_command.cpp").read_text()

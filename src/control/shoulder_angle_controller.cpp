@@ -34,7 +34,8 @@ ShoulderAngleController::ShoulderAngleController()
   , lastProgressMs_(0)
   , lastSensorUpdateMs_(0)
   , processedSamples_(0)
-  , lastStopReason_(ShoulderAngleStopReason::NONE) {}
+  , lastStopReason_(ShoulderAngleStopReason::NONE)
+  , manualGuardBlocked_(false) {}
 
 void ShoulderAngleController::init(SystemStateManager* systemState,
                                    RobotArm* robotArm,
@@ -53,6 +54,7 @@ void ShoulderAngleController::init(SystemStateManager* systemState,
 
 void ShoulderAngleController::update() {
   if (!active_) {
+    enforceManualDriveLimits();
     return;
   }
 
@@ -260,6 +262,33 @@ bool ShoulderAngleController::cancel(ShoulderAngleStopReason reason,
   return true;
 }
 
+bool ShoulderAngleController::manualDirectionAllowed(bool directionUp,
+                                                      char* message,
+                                                      size_t messageSize) const {
+  if (message != nullptr && messageSize > 0) {
+    message[0] = '\0';
+  }
+  if (!isReady() || !sensorAllowsMotion()) {
+    if (message != nullptr && messageSize > 0) {
+      snprintf(message, messageSize, "M4 AS5600 not ready");
+    }
+    return false;
+  }
+
+  const float currentDegrees = sensor_->getI2cDegrees();
+  const float boundaryDegrees = directionUp
+    ? SOFT_MAX_DEGREES - UP_STOP_LEAD_DEGREES
+    : SOFT_MIN_DEGREES + DOWN_STOP_LEAD_DEGREES;
+  const bool allowed = directionUp
+    ? currentDegrees < boundaryDegrees
+    : currentDegrees > boundaryDegrees;
+  if (!allowed && message != nullptr && messageSize > 0) {
+    snprintf(message, messageSize, "M4 %s blocked at %.2f deg (manual boundary %.2f deg)",
+             directionUp ? "up" : "down", currentDegrees, boundaryDegrees);
+  }
+  return allowed;
+}
+
 float ShoulderAngleController::getTargetDegrees() const { return targetDegrees_; }
 float ShoulderAngleController::getCurrentDegrees() const { return currentDegrees_; }
 float ShoulderAngleController::getErrorDegrees() const { return targetDegrees_ - currentDegrees_; }
@@ -307,6 +336,34 @@ bool ShoulderAngleController::applyDrive(uint8_t percent) {
     appliedPercent_ = percent;
   }
   return success;
+}
+
+void ShoulderAngleController::enforceManualDriveLimits() {
+  if (!isReady()) {
+    return;
+  }
+
+  const int16_t speed = motorControl_->getSpeed(MotorControl::MOTOR_4);
+  if (speed == 0) {
+    manualGuardBlocked_ = false;
+    return;
+  }
+
+  const bool rawForward = speed > 0;
+  const bool directionUp = rawForward == RobotArm::SHOULDER_UP_IS_FORWARD;
+  char message[96] = {0};
+  if (manualDirectionAllowed(directionUp, message, sizeof(message))) {
+    manualGuardBlocked_ = false;
+    return;
+  }
+
+  motorControl_->hardStop(MotorControl::MOTOR_4);
+  if (!manualGuardBlocked_) {
+    manualGuardBlocked_ = true;
+    DebugLog::warn("[SHOULDER_GUARD] %s", message);
+    eventLog.push("shoulder_angle", "SHOULDER_MANUAL_GUARD",
+                  EventSeverity::WARN, message);
+  }
 }
 
 void ShoulderAngleController::beginSettling() {

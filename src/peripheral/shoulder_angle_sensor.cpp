@@ -130,8 +130,19 @@ uint16_t ShoulderAngleSensor::getI2cRawAngle() const {
   return i2cRawAngle_;
 }
 
-float ShoulderAngleSensor::getI2cDegrees() const {
+float ShoulderAngleSensor::getI2cRawDegrees() const {
   return static_cast<float>(i2cRawAngle_) * 360.0f / 4096.0f;
+}
+
+float ShoulderAngleSensor::getI2cDegrees() const {
+  float degrees = getI2cRawDegrees() + MOUNT_OFFSET_DEGREES;
+  while (degrees < 0.0f) {
+    degrees += 360.0f;
+  }
+  while (degrees >= 360.0f) {
+    degrees -= 360.0f;
+  }
+  return degrees;
 }
 
 uint8_t ShoulderAngleSensor::getAgc() const {
@@ -236,12 +247,13 @@ void ShoulderAngleSensor::logSample(const char* phase,
   }
 
   DebugLog::info(
-    "[SHOULDER_AS5600] %s speed=%d adc_raw=%u mV=%lu i2c_raw=%u angle=%.2fdeg MD=%s ML=%s MH=%s AGC=%u MAG=%u",
+    "[SHOULDER_AS5600] %s speed=%d adc_raw=%u mV=%lu i2c_raw=%u raw_angle=%.2fdeg angle=%.2fdeg MD=%s ML=%s MH=%s AGC=%u MAG=%u",
     phase,
     shoulderMotorSpeed,
     raw_,
     static_cast<unsigned long>(milliVolts_),
     i2cRawAngle_,
+    getI2cRawDegrees(),
     getI2cDegrees(),
     isMagnetDetected() ? "YES" : "NO",
     isMagnetTooWeak() ? "YES" : "NO",

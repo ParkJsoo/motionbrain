@@ -145,7 +145,11 @@ The public demo is physical teleoperation. Supporting evidence covers `STREAM`-b
 - ESP32 controller and ESP32-CAM PlatformIO builds pass.
 - `TB6612FNG x3` and `M1~M5` motor outputs were physically tested.
 - M4 shoulder AS5600 angle/magnet status was validated over I2C; bounded targets
-  settled at 238.10 deg for 238 deg and 233.96 deg for 234 deg.
+  settled at 238.10/233.96 deg initially and 238.09/234.14 deg in the remount
+  regression.
+- Shoulder teleoperation cancelled an active target as `OVERRIDDEN` within
+  53 ms, followed by a shared soft-limit guard for direct, sequence, and
+  teleoperation M4 paths.
 - STM32 `MPU-6050 + UART` teleop and the HC-SR04 bench path were validated.
 - Wired teleop produced real motor output under deadman control and stopped on release.
 - The final physical teleoperation demo was captured and published as README GIF/MP4 assets.
@@ -181,6 +185,8 @@ Current honest positioning:
 - M4 GPIO0/GPIO15 I2C wiring, taped mounting, 230-245 deg calibrated range, and
   directional stop leads remain trial conditions pending permanent mechanics,
   pin allocation, and repeated validation.
+- The current `-24.35 deg` angle offset is trial-mount-specific and requires
+  recalibration after remounting.
 - HC-SR04 is removed for the final physical demo, with range telemetry handled as disabled/nonblocking
 - ESP32-CAM QVGA input limits general object detection quality
 - No general text-prompt object search

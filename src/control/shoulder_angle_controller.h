@@ -63,6 +63,9 @@ public:
   bool startAbsolute(float targetDegrees, uint8_t percent,
                      char* message, size_t messageSize);
   bool cancel(ShoulderAngleStopReason reason, const char* detail = nullptr);
+  bool manualDirectionAllowed(bool directionUp,
+                              char* message = nullptr,
+                              size_t messageSize = 0) const;
 
   float getTargetDegrees() const;
   float getCurrentDegrees() const;
@@ -101,9 +104,11 @@ private:
   uint32_t lastSensorUpdateMs_;
   uint32_t processedSamples_;
   ShoulderAngleStopReason lastStopReason_;
+  bool manualGuardBlocked_;
 
   bool sensorAllowsMotion() const;
   bool applyDrive(uint8_t percent);
+  void enforceManualDriveLimits();
   void beginSettling();
   void stopInternal(ShoulderAngleStopReason reason, const char* detail);
 };

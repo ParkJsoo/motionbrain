@@ -1,5 +1,6 @@
 #include "motion_sequence.h"
 #include "control/angle_controller.h"
+#include "control/shoulder_angle_controller.h"
 #include "safety/safety_monitor.h"
 #include "motion/robot_arm.h"
 #include "system/system_init.h"
@@ -18,6 +19,7 @@ MotionSequence::MotionSequence()
   , robotArm_(nullptr)
   , systemState_(nullptr)
   , angleController_(nullptr)
+  , shoulderAngleController_(nullptr)
 {
 }
 
@@ -25,10 +27,12 @@ MotionSequence::MotionSequence()
  * 초기화
  */
 void MotionSequence::init(RobotArm* robotArm, SystemStateManager* systemState,
-                          AngleController* angleController) {
+                          AngleController* angleController,
+                          ShoulderAngleController* shoulderAngleController) {
   robotArm_    = robotArm;
   systemState_ = systemState;
   angleController_ = angleController;
+  shoulderAngleController_ = shoulderAngleController;
   DebugLog::info("MotionSequence: initialized (max %d commands)", MAX_COMMANDS);
 }
 
@@ -73,6 +77,18 @@ void MotionSequence::update() {
       stopWithReason(reason);
     }
     return;
+  }
+
+  if (cmd.joint == MotionJoint::SHOULDER && shoulderAngleController_ != nullptr) {
+    char message[96] = {0};
+    const bool directionUp = cmd.direction == MotionDirection::UP;
+    if (!shoulderAngleController_->manualDirectionAllowed(directionUp,
+                                                          message,
+                                                          sizeof(message))) {
+      stopCurrentJoint(cmd);
+      stopWithReason(message);
+      return;
+    }
   }
 
   uint32_t elapsed = millis() - stepStartMs_;
@@ -349,8 +365,22 @@ bool MotionSequence::executeCommand(const MotionCommand& cmd, char* errorMessage
       else if (cmd.direction == MotionDirection::DOWN) return robotArm_->elbowDown(cmd.speed);
       return false;
     case MotionJoint::SHOULDER:
-      if      (cmd.direction == MotionDirection::UP)   return robotArm_->shoulderUp(cmd.speed);
-      else if (cmd.direction == MotionDirection::DOWN) return robotArm_->shoulderDown(cmd.speed);
+      if (shoulderAngleController_ == nullptr) {
+        if (errorMessage != nullptr && errorMessageSize > 0) {
+          strlcpy(errorMessage, "ShoulderAngleController not initialized", errorMessageSize);
+        }
+        return false;
+      }
+      if (cmd.direction == MotionDirection::UP || cmd.direction == MotionDirection::DOWN) {
+        const bool directionUp = cmd.direction == MotionDirection::UP;
+        if (!shoulderAngleController_->manualDirectionAllowed(directionUp,
+                                                              errorMessage,
+                                                              errorMessageSize)) {
+          return false;
+        }
+        return directionUp ? robotArm_->shoulderUp(cmd.speed)
+                           : robotArm_->shoulderDown(cmd.speed);
+      }
       return false;
     case MotionJoint::BASE:
       if      (cmd.direction == MotionDirection::LEFT)  return robotArm_->baseLeft(cmd.speed);

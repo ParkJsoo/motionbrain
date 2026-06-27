@@ -554,11 +554,12 @@ void SerialCommand::handleStatus() {
                  static_cast<unsigned long>(shoulderAngleSensor.getMilliVolts()),
                  shoulderAngleSensor.getEstimatedDegrees());
   DebugLog::info(
-    "M4 AS5600 I2C: SDA=GPIO%d SCL=GPIO%d connected=%s raw=%u angle=%.2fdeg MD=%s ML=%s MH=%s AGC=%u MAG=%u",
+    "M4 AS5600 I2C: SDA=GPIO%d SCL=GPIO%d connected=%s raw=%u raw_angle=%.2fdeg angle=%.2fdeg MD=%s ML=%s MH=%s AGC=%u MAG=%u",
     ShoulderAngleSensor::I2C_SDA_PIN,
     ShoulderAngleSensor::I2C_SCL_PIN,
     shoulderAngleSensor.isI2cConnected() ? "YES" : "NO",
     shoulderAngleSensor.getI2cRawAngle(),
+    shoulderAngleSensor.getI2cRawDegrees(),
     shoulderAngleSensor.getI2cDegrees(),
     shoulderAngleSensor.isMagnetDetected() ? "YES" : "NO",
     shoulderAngleSensor.isMagnetTooWeak() ? "YES" : "NO",
@@ -1353,8 +1354,9 @@ void SerialCommand::handleShoulder(const char* args) {
                    shoulderAngleSensor.isMagnetDetected() ? "YES" : "NO",
                    shoulderAngleSensor.isMagnetTooWeak() ? "YES" : "NO",
                    shoulderAngleSensor.isMagnetTooStrong() ? "YES" : "NO");
-    DebugLog::info("Angle: raw=%u current=%.2fdeg age=%lums AGC=%u MAG=%u",
+    DebugLog::info("Angle: raw=%u raw_angle=%.2fdeg current=%.2fdeg age=%lums AGC=%u MAG=%u",
                    shoulderAngleSensor.getI2cRawAngle(),
+                   shoulderAngleSensor.getI2cRawDegrees(),
                    shoulderAngleSensor.getI2cDegrees(),
                    static_cast<unsigned long>(shoulderAngleSensor.getI2cAgeMs()),
                    shoulderAngleSensor.getAgc(),

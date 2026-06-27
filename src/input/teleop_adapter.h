@@ -138,6 +138,7 @@ private:
   int8_t appliedElbowPercent_;
   int8_t appliedShoulderPercent_;
   int8_t appliedBasePercent_;
+  bool shoulderGuardBlocked_;
 
   void processIncomingByte(char c);
   bool parseTeleopLine(const char* line, TeleopFrame& outFrame) const;

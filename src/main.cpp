@@ -122,7 +122,8 @@ void setup() {
   HardwareFeedback::initBaseYawReference();
 
   // 9. 모션 시퀀스 초기화 (base angle step 지원)
-  motionSequence.init(&robotArm, &systemState, &angleController);
+  motionSequence.init(&robotArm, &systemState, &angleController,
+                      &shoulderAngleController);
 
   safetyGate.init(&systemState, &safetyMonitor);
   dispatcher.init(&systemState, &motorControl, &robotArm, &motionSequence, &searchLight,

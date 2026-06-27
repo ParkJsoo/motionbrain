@@ -297,6 +297,16 @@ bool Dispatcher::execute(const Command& command, CommandResult& result) {
     }
 
     case CommandType::MOTOR_RUN:
+      if (command.motorId == MotorControl::MOTOR_4) {
+        char message[sizeof(result.message)] = {0};
+        if (!shoulderAngleController_->manualDirectionAllowed(command.forward,
+                                                              message,
+                                                              sizeof(message))) {
+          setResult(result, command.id, false, "%s", message);
+          success = false;
+          break;
+        }
+      }
       success = resolveMotorRunForward(command.motorId, command.forward)
         ? motorControl_->forward(command.motorId, command.percent)
         : motorControl_->reverse(command.motorId, command.percent);
@@ -811,8 +821,14 @@ bool Dispatcher::executeJointRun(MotionJoint joint, MotionDirection direction, u
       break;
 
     case MotionJoint::SHOULDER:
-      if (direction == MotionDirection::UP)   return robotArm_->shoulderUp(percent);
-      if (direction == MotionDirection::DOWN) return robotArm_->shoulderDown(percent);
+      if (direction == MotionDirection::UP) {
+        if (!shoulderAngleController_->manualDirectionAllowed(true)) return false;
+        return robotArm_->shoulderUp(percent);
+      }
+      if (direction == MotionDirection::DOWN) {
+        if (!shoulderAngleController_->manualDirectionAllowed(false)) return false;
+        return robotArm_->shoulderDown(percent);
+      }
       break;
 
     case MotionJoint::BASE:
