@@ -37,8 +37,10 @@ class ShoulderClosedLoopContractTest(unittest.TestCase):
         expected = {
             "SOFT_MIN_DEGREES = 230.0f",
             "SOFT_MAX_DEGREES = 245.0f",
+            "TARGET_TOLERANCE_DEGREES = 0.50f",
+            "STOP_THRESHOLD_WINDOW_DEGREES = 0.35f",
             "SENSOR_STALE_MS = 150",
-            "COMMAND_TIMEOUT_MS = 5000",
+            "COMMAND_TIMEOUT_MS = 7000",
             "PROGRESS_TIMEOUT_MS = 900",
             "UP_STOP_LEAD_DEGREES = 0.90f",
             "DOWN_STOP_LEAD_DEGREES = 1.50f",
@@ -47,6 +49,12 @@ class ShoulderClosedLoopContractTest(unittest.TestCase):
             "SAFETY_BLOCK",
             "NO_PROGRESS",
             "SOFT_LIMIT",
+            "TARGET_MISSED",
+            "UP_CORRECTION_PERCENT = 75",
+            "DOWN_CORRECTION_PERCENT = 35",
+            "UP_CORRECTION_PULSE_MS = 250",
+            "DOWN_CORRECTION_PULSE_MS = 250",
+            "MAX_CORRECTION_ATTEMPTS = 4",
         }
         for fragment in expected:
             with self.subTest(fragment=fragment):
@@ -57,12 +65,24 @@ class ShoulderClosedLoopContractTest(unittest.TestCase):
         self.assertIn("manualDirectionAllowed", source)
         self.assertIn("enforceManualDriveLimits", source)
         self.assertIn("appendShoulderStatusJson", header + source)
+        self.assertIn("fabsf(finalErrorDegrees_) <= TARGET_TOLERANCE_DEGREES", source)
+        self.assertIn("beginCorrection(now)", source)
+        self.assertIn("SHOULDER_ANGLE_CORRECTION", source)
+        self.assertIn("correcting_ ? correctionPercent() : requestedPercent_", source)
+        self.assertIn("correctionPulseExpired", source)
         for field in {
             "shoulderAngle",
             "sensorReady",
             "magnetDetected",
             "mountOffsetDeg",
             "manualGuardBlocked",
+            "correctionActive",
+            "correctionAttempts",
+            "maxCorrectionAttempts",
+            "targetToleranceDeg",
+            "stopThresholdWindowDeg",
+            "upCorrectionPulseMs",
+            "downCorrectionPulseMs",
             "lastStopReason",
         }:
             with self.subTest(status_field=field):

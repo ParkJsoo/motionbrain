@@ -35,9 +35,9 @@ Observed magnitude remained approximately `1917-2055` during this run.
 The first implementation deliberately limits absolute targets to the already exercised range:
 
 - temporary soft limits: `230-245 deg`
-- target tolerance: `0.35 deg`
+- final target tolerance: `+/-0.50 deg` (the initial coast-stop window remains `0.35 deg`)
 - sensor freshness limit: `150ms`
-- command timeout: `5s`
+- command timeout: `7s`
 - no-progress stop
 - immediate M4 output cutoff on stale/disconnected I2C, missing magnet, weak/strong magnet, safety block, state change, timeout, or soft-limit violation
 
@@ -97,6 +97,43 @@ Conflict-path regression:
 Final state: `IDLE`, M1-M5 speed 0, M4 235.89 deg, sensor `ready=YES`,
 `ML=NO`, and no latched fault.
 
+## Fixed-mount repeatability and settled-error validation
+
+Repeated targets after mechanical fastening exposed an important controller
+defect. The first short 235.81-to-234 deg move stopped at 235.37 deg, but the
+controller returned `TARGET_REACHED` without checking the settled error again.
+Before the fix, three 238-to-234 deg cycles produced upward errors of
+`+0.26/+0.17/-0.27 deg` and downward errors of `-0.75/-0.58/-0.14 deg`.
+Magnitude stayed at `2095-2106` and maximum sensor age was `37ms`, ruling out a
+sensor-health failure.
+
+The revised controller now:
+
+- rechecks final error after settling instead of returning unconditional success;
+- applies bounded correction pulses: 75% upward, 35% downward, 250ms, at most four attempts;
+- stops as `TARGET_MISSED` if the result remains outside `+/-0.50 deg`;
+- exposes correction state, attempts, tolerance, and failure reason through HTTP, dashboard, and ROS2.
+
+Wide-range regression under the current load and battery state:
+
+| Speed | Target | Start | Stable after 1s | Final error | Corrections |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 100% | 236 deg | 243.10 deg | 235.72 deg | +0.28 deg | 0 |
+| 100% | 243 deg | 235.72 deg | 243.36 deg | -0.36 deg | 1 |
+| 75% | 240 deg | 243.36 deg | 240.20 deg | -0.20 deg | 1 |
+| 75% | 232 deg | 240.20 deg | 232.20 deg | -0.20 deg | 1 |
+| 100% | 236 deg | 232.20 deg | 235.98 deg | +0.02 deg | 0 |
+
+All 5 runs passed. Mean absolute error was `0.212 deg`, maximum absolute error
+was `0.36 deg`, travel covered `3.36-8.20 deg`, magnitude stayed at
+`2091-2105`, and maximum sensor age was `41ms`. No additional drift was
+observed one second after command completion.
+
+The final three 238-to-234 deg cycles also passed 6/6, with `0.213 deg` mean
+absolute error, `0.44 deg` maximum absolute error, and at most four correction
+attempts. Final state was `IDLE`, M1-M5 speed 0, M4 234.05 deg, sensor ready,
+AGC 100, and magnitude 2100.
+
 ## Remaining limits
 
 - The sensor and magnet are secured, but long-term repeatability and vibration conditions remain unvalidated.
@@ -106,6 +143,7 @@ Final state: `IDLE`, M1-M5 speed 0, M4 235.89 deg, sensor `ready=YES`,
 - The `-24.35 deg` mount offset is valid only for the current trial mount and must be recalibrated after remounting.
 - Only a narrow, supervised shoulder range has been calibrated.
 - Directional stop-lead values need repeated trials across load and battery-voltage conditions.
+- These repeatability results cover one session under the current load and battery state; battery voltage was not separately instrumented.
 - The analog OUT/VP path is still saturated and is intentionally excluded from control.
 
 ## Reproduction commands

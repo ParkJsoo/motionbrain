@@ -212,7 +212,10 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
             "bool shoulder_sensor_ready",
             "bool shoulder_magnet_detected",
             "bool shoulder_control_active",
+            "bool shoulder_correction_active",
             "bool shoulder_manual_guard_blocked",
+            "uint32 shoulder_correction_attempts",
+            "uint32 shoulder_max_correction_attempts",
             "uint32 shoulder_sensor_age_ms",
             "uint32 shoulder_agc",
             "uint32 shoulder_magnitude",
@@ -221,6 +224,7 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
             "float32 shoulder_mount_offset_deg",
             "float32 shoulder_target_deg",
             "float32 shoulder_error_deg",
+            "float32 shoulder_target_tolerance_deg",
             "string shoulder_stop_reason",
         ]
         for field in expected_shoulder_fields:
@@ -452,6 +456,10 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
             "shoulder_feedback_available",
             "shoulder_sensor_ready",
             "shoulder_angle_deg",
+            "shoulder_correction_active",
+            "shoulder_correction_attempts",
+            "M4 shoulder target missed",
+            "target_tolerance_deg",
         ]
         for fragment in expected_fragments:
             with self.subTest(fragment=fragment):

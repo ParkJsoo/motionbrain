@@ -154,6 +154,9 @@ The public demo is physical teleoperation. Supporting evidence covers `STREAM`-b
 - M4 calibrated/raw angle, magnet health, sensor freshness, controller state,
   and manual guard state are exposed through ESP32 `/status`, the Pi dashboard,
   ROS2 typed status, and diagnostics.
+- Fixed-mount regression passed 5/5 across 232-243 deg and 75/100% cases plus
+  6/6 repeated 238-to-234 deg cycles. Maximum absolute error was 0.44 deg, with
+  settled-error revalidation and an explicit `TARGET_MISSED` failure state.
 - STM32 `MPU-6050 + UART` teleop and the HC-SR04 bench path were validated.
 - Wired teleop produced real motor output under deadman control and stopped on release.
 - The final physical teleoperation demo was captured and published as README GIF/MP4 assets.

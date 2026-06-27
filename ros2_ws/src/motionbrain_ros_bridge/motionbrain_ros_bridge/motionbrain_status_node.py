@@ -285,6 +285,7 @@ class MotionBrainStatusNode(Node):
         soft_min = as_float(shoulder.get("softMinDeg"))
         soft_max = as_float(shoulder.get("softMaxDeg"))
         outside_limits = ready and (angle < soft_min or angle > soft_max)
+        stop_reason = as_str(shoulder.get("lastStopReason"), "NONE")
 
         if not available or not connected:
             level = DiagnosticStatus.ERROR
@@ -295,6 +296,9 @@ class MotionBrainStatusNode(Node):
         elif outside_limits:
             level = DiagnosticStatus.WARN
             text = "M4 shoulder outside calibrated limits"
+        elif stop_reason == "TARGET_MISSED":
+            level = DiagnosticStatus.WARN
+            text = "M4 shoulder target missed"
         else:
             level = DiagnosticStatus.OK
             text = "M4 shoulder feedback ready"
@@ -315,6 +319,9 @@ class MotionBrainStatusNode(Node):
                 "error_deg": as_float(shoulder.get("errorDeg")),
                 "soft_min_deg": soft_min,
                 "soft_max_deg": soft_max,
+                "target_tolerance_deg": as_float(
+                    shoulder.get("targetToleranceDeg")
+                ),
                 "magnet_detected": as_bool(shoulder.get("magnetDetected")),
                 "magnet_too_weak": as_bool(shoulder.get("magnetTooWeak")),
                 "magnet_too_strong": as_bool(shoulder.get("magnetTooStrong")),
@@ -322,8 +329,13 @@ class MotionBrainStatusNode(Node):
                 "magnitude": as_uint(shoulder.get("magnitude")),
                 "age_ms": as_uint(shoulder.get("ageMs")),
                 "control_active": as_bool(shoulder.get("active")),
+                "correction_active": as_bool(shoulder.get("correctionActive")),
+                "correction_attempts": as_uint(shoulder.get("correctionAttempts")),
+                "max_correction_attempts": as_uint(
+                    shoulder.get("maxCorrectionAttempts")
+                ),
                 "manual_guard_blocked": as_bool(shoulder.get("manualGuardBlocked")),
-                "stop_reason": as_str(shoulder.get("lastStopReason"), "NONE"),
+                "stop_reason": stop_reason,
             },
             "esp32_m4_as5600",
         )
@@ -547,8 +559,17 @@ class MotionBrainStatusNode(Node):
             message.shoulder_magnet_too_weak = as_bool(shoulder.get("magnetTooWeak"))
             message.shoulder_magnet_too_strong = as_bool(shoulder.get("magnetTooStrong"))
             message.shoulder_control_active = as_bool(shoulder.get("active"))
+            message.shoulder_correction_active = as_bool(
+                shoulder.get("correctionActive")
+            )
             message.shoulder_manual_guard_blocked = as_bool(
                 shoulder.get("manualGuardBlocked")
+            )
+            message.shoulder_correction_attempts = as_uint(
+                shoulder.get("correctionAttempts")
+            )
+            message.shoulder_max_correction_attempts = as_uint(
+                shoulder.get("maxCorrectionAttempts")
             )
             message.shoulder_sensor_age_ms = as_uint(shoulder.get("ageMs"))
             message.shoulder_agc = as_uint(shoulder.get("agc"))
@@ -560,6 +581,9 @@ class MotionBrainStatusNode(Node):
             message.shoulder_error_deg = as_float(shoulder.get("errorDeg"))
             message.shoulder_soft_min_deg = as_float(shoulder.get("softMinDeg"))
             message.shoulder_soft_max_deg = as_float(shoulder.get("softMaxDeg"))
+            message.shoulder_target_tolerance_deg = as_float(
+                shoulder.get("targetToleranceDeg")
+            )
             message.shoulder_manual_down_boundary_deg = as_float(
                 shoulder.get("manualDownBoundaryDeg")
             )

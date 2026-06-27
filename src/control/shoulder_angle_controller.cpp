@@ -20,6 +20,7 @@ ShoulderAngleController::ShoulderAngleController()
   , sensor_(nullptr)
   , active_(false)
   , settling_(false)
+  , correcting_(false)
   , directionUp_(true)
   , targetDegrees_(0.0f)
   , stopThresholdDegrees_(0.0f)
@@ -31,9 +32,11 @@ ShoulderAngleController::ShoulderAngleController()
   , appliedPercent_(0)
   , startedAtMs_(0)
   , settleStartedAtMs_(0)
+  , correctionStartedAtMs_(0)
   , lastProgressMs_(0)
   , lastSensorUpdateMs_(0)
   , processedSamples_(0)
+  , correctionAttempts_(0)
   , lastStopReason_(ShoulderAngleStopReason::NONE)
   , manualGuardBlocked_(false) {}
 
@@ -99,16 +102,32 @@ void ShoulderAngleController::update() {
 
   if (settling_) {
     if ((now - settleStartedAtMs_) >= SETTLE_TIME_MS) {
-      stopInternal(ShoulderAngleStopReason::TARGET_REACHED, "settled feedback");
+      finalErrorDegrees_ = targetDegrees_ - currentDegrees_;
+      if (fabsf(finalErrorDegrees_) <= TARGET_TOLERANCE_DEGREES) {
+        stopInternal(ShoulderAngleStopReason::TARGET_REACHED, "settled within tolerance");
+      } else if (correctionAttempts_ >= MAX_CORRECTION_ATTEMPTS) {
+        stopInternal(ShoulderAngleStopReason::TARGET_MISSED,
+                     "settled outside tolerance after corrections");
+      } else if (!beginCorrection(now)) {
+        stopInternal(ShoulderAngleStopReason::START_FAILED,
+                     "failed to start bounded correction");
+      }
     }
     return;
   }
 
   const float error = targetDegrees_ - currentDegrees_;
   const float stopError = stopThresholdDegrees_ - currentDegrees_;
-  const bool reachedStopThreshold = directionUp_
-    ? stopError <= TARGET_TOLERANCE_DEGREES
-    : stopError >= -TARGET_TOLERANCE_DEGREES;
+  const bool reachedCorrectionTarget = directionUp_
+    ? error <= CORRECTION_CUTOFF_ERROR_DEGREES
+    : error >= -CORRECTION_CUTOFF_ERROR_DEGREES;
+  const bool correctionPulseExpired = correcting_ &&
+    (now - correctionStartedAtMs_) >= correctionPulseMs();
+  const bool reachedStopThreshold = correcting_
+    ? (reachedCorrectionTarget || correctionPulseExpired)
+    : (directionUp_
+         ? stopError <= STOP_THRESHOLD_WINDOW_DEGREES
+         : stopError >= -STOP_THRESHOLD_WINDOW_DEGREES);
   if (reachedStopThreshold) {
     beginSettling();
     return;
@@ -123,8 +142,8 @@ void ShoulderAngleController::update() {
     return;
   }
 
-  uint8_t desiredPercent = requestedPercent_;
-  if (fabsf(error) <= SLOW_ZONE_DEGREES && desiredPercent > SLOW_PERCENT) {
+  uint8_t desiredPercent = correcting_ ? correctionPercent() : requestedPercent_;
+  if (!correcting_ && fabsf(error) <= SLOW_ZONE_DEGREES && desiredPercent > SLOW_PERCENT) {
     desiredPercent = SLOW_PERCENT;
   }
   if (desiredPercent != appliedPercent_ && !applyDrive(desiredPercent)) {
@@ -193,6 +212,9 @@ bool ShoulderAngleController::startAbsolute(float targetDegrees, uint8_t percent
     return false;
   }
 
+  settling_ = false;
+  correcting_ = false;
+  correctionAttempts_ = 0;
   const float initialError = targetDegrees - currentDegrees_;
   if (fabsf(initialError) <= TARGET_TOLERANCE_DEGREES) {
     targetDegrees_ = targetDegrees;
@@ -212,7 +234,7 @@ bool ShoulderAngleController::startAbsolute(float targetDegrees, uint8_t percent
     : DOWN_STOP_LEAD_DEGREES;
   const float usableLead = fminf(requestedLead,
                                  fmaxf(0.0f, fabsf(initialError) -
-                                                   TARGET_TOLERANCE_DEGREES));
+                                                   STOP_THRESHOLD_WINDOW_DEGREES));
   stopThresholdDegrees_ = targetDegrees_ + (directionUp_ ? -usableLead : usableLead);
   startDegrees_ = currentDegrees_;
   finalErrorDegrees_ = initialError;
@@ -221,11 +243,11 @@ bool ShoulderAngleController::startAbsolute(float targetDegrees, uint8_t percent
   appliedPercent_ = 0;
   startedAtMs_ = millis();
   settleStartedAtMs_ = 0;
+  correctionStartedAtMs_ = 0;
   lastProgressMs_ = startedAtMs_;
   lastSensorUpdateMs_ = sensor_->getI2cLastUpdateMs();
   processedSamples_ = 0;
   lastStopReason_ = ShoulderAngleStopReason::NONE;
-  settling_ = false;
 
   if (!applyDrive(requestedPercent_)) {
     lastStopReason_ = ShoulderAngleStopReason::START_FAILED;
@@ -336,6 +358,12 @@ void ShoulderAngleController::appendShoulderStatusJson(String& json) const {
   json += String(available ? sensor_->getI2cAgeMs() : 0);
   json += ",\"active\":";
   json += active_ ? "true" : "false";
+  json += ",\"correctionActive\":";
+  json += correcting_ && !settling_ ? "true" : "false";
+  json += ",\"correctionAttempts\":";
+  json += String(correctionAttempts_);
+  json += ",\"maxCorrectionAttempts\":";
+  json += String(MAX_CORRECTION_ATTEMPTS);
   json += ",\"targetDeg\":";
   json += String(targetDegrees_, 2);
   json += ",\"errorDeg\":";
@@ -348,6 +376,18 @@ void ShoulderAngleController::appendShoulderStatusJson(String& json) const {
   json += String(SOFT_MIN_DEGREES, 2);
   json += ",\"softMaxDeg\":";
   json += String(SOFT_MAX_DEGREES, 2);
+  json += ",\"targetToleranceDeg\":";
+  json += String(TARGET_TOLERANCE_DEGREES, 2);
+  json += ",\"stopThresholdWindowDeg\":";
+  json += String(STOP_THRESHOLD_WINDOW_DEGREES, 2);
+  json += ",\"upCorrectionPercent\":";
+  json += String(UP_CORRECTION_PERCENT);
+  json += ",\"downCorrectionPercent\":";
+  json += String(DOWN_CORRECTION_PERCENT);
+  json += ",\"upCorrectionPulseMs\":";
+  json += String(UP_CORRECTION_PULSE_MS);
+  json += ",\"downCorrectionPulseMs\":";
+  json += String(DOWN_CORRECTION_PULSE_MS);
   json += ",\"manualDownBoundaryDeg\":";
   json += String(SOFT_MIN_DEGREES + DOWN_STOP_LEAD_DEGREES, 2);
   json += ",\"manualUpBoundaryDeg\":";
@@ -381,6 +421,7 @@ const char* ShoulderAngleController::stopReasonToString(ShoulderAngleStopReason 
   switch (reason) {
     case ShoulderAngleStopReason::NONE:           return "NONE";
     case ShoulderAngleStopReason::TARGET_REACHED: return "TARGET_REACHED";
+    case ShoulderAngleStopReason::TARGET_MISSED:  return "TARGET_MISSED";
     case ShoulderAngleStopReason::TIMEOUT:        return "TIMEOUT";
     case ShoulderAngleStopReason::SENSOR_FAULT:   return "SENSOR_FAULT";
     case ShoulderAngleStopReason::SAFETY_BLOCK:   return "SAFETY_BLOCK";
@@ -396,6 +437,14 @@ const char* ShoulderAngleController::stopReasonToString(ShoulderAngleStopReason 
 
 bool ShoulderAngleController::sensorAllowsMotion() const {
   return sensor_ != nullptr && sensor_->isReadyForMotion(SENSOR_STALE_MS);
+}
+
+uint8_t ShoulderAngleController::correctionPercent() const {
+  return directionUp_ ? UP_CORRECTION_PERCENT : DOWN_CORRECTION_PERCENT;
+}
+
+uint32_t ShoulderAngleController::correctionPulseMs() const {
+  return directionUp_ ? UP_CORRECTION_PULSE_MS : DOWN_CORRECTION_PULSE_MS;
 }
 
 bool ShoulderAngleController::applyDrive(uint8_t percent) {
@@ -444,8 +493,46 @@ void ShoulderAngleController::beginSettling() {
   settleStartedAtMs_ = millis();
   appliedPercent_ = 0;
   DebugLog::info(
-    "[SHOULDER_ANGLE] coast compensation stop current=%.2f stop_at=%.2f target=%.2f settle=%lums",
-    currentDegrees_, stopThresholdDegrees_, targetDegrees_, SETTLE_TIME_MS);
+    "[SHOULDER_ANGLE] settle phase=%s current=%.2f stop_at=%.2f target=%.2f settle=%lums",
+    correcting_ ? "correction" : "coast", currentDegrees_,
+    correcting_ ? targetDegrees_ : stopThresholdDegrees_, targetDegrees_,
+    SETTLE_TIME_MS);
+}
+
+bool ShoulderAngleController::beginCorrection(uint32_t now) {
+  const float error = targetDegrees_ - currentDegrees_;
+  if (fabsf(error) <= TARGET_TOLERANCE_DEGREES) {
+    return false;
+  }
+
+  correctionAttempts_++;
+  correcting_ = true;
+  settling_ = false;
+  directionUp_ = error > 0.0f;
+  progressReferenceDegrees_ = currentDegrees_;
+  lastProgressMs_ = now;
+  settleStartedAtMs_ = 0;
+  correctionStartedAtMs_ = now;
+
+  const uint8_t percent = correctionPercent();
+  const uint32_t pulseMs = correctionPulseMs();
+  if (!applyDrive(percent)) {
+    return false;
+  }
+
+  DebugLog::info(
+    "[SHOULDER_ANGLE] correction attempt=%u/%u current=%.2f target=%.2f error=%.2f dir=%s speed=%u%% pulse=%lums",
+    correctionAttempts_, MAX_CORRECTION_ATTEMPTS, currentDegrees_, targetDegrees_,
+    error, directionUp_ ? "up" : "down", percent,
+    pulseMs);
+  String detail = "attempt=" + String(correctionAttempts_) +
+                  " current_deg=" + String(currentDegrees_, 2) +
+                  " target_deg=" + String(targetDegrees_, 2) +
+                  " error_deg=" + String(error, 2) +
+                  " pulse_ms=" + String(pulseMs);
+  eventLog.push("shoulder_angle", "SHOULDER_ANGLE_CORRECTION",
+                EventSeverity::INFO, detail.c_str());
+  return true;
 }
 
 void ShoulderAngleController::stopInternal(ShoulderAngleStopReason reason,
@@ -462,6 +549,7 @@ void ShoulderAngleController::stopInternal(ShoulderAngleStopReason reason,
 
   active_ = false;
   settling_ = false;
+  correcting_ = false;
   appliedPercent_ = 0;
   lastStopReason_ = reason;
 

@@ -18,7 +18,10 @@ bool shoulder_magnet_detected
 bool shoulder_magnet_too_weak
 bool shoulder_magnet_too_strong
 bool shoulder_control_active
+bool shoulder_correction_active
 bool shoulder_manual_guard_blocked
+uint32 shoulder_correction_attempts
+uint32 shoulder_max_correction_attempts
 uint32 shoulder_sensor_age_ms
 uint32 shoulder_agc
 uint32 shoulder_magnitude
@@ -29,6 +32,7 @@ float32 shoulder_target_deg
 float32 shoulder_error_deg
 float32 shoulder_soft_min_deg
 float32 shoulder_soft_max_deg
+float32 shoulder_target_tolerance_deg
 float32 shoulder_manual_down_boundary_deg
 float32 shoulder_manual_up_boundary_deg
 string shoulder_stop_reason
