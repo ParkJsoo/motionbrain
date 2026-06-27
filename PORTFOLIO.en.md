@@ -183,13 +183,13 @@ Current honest positioning:
 
 ## Current Limitations
 
-- Only the M4 shoulder has trial-mounted AS5600 position feedback. The other
+- Only the M4 shoulder has mechanically secured AS5600 position feedback. The other
   four axes have no position feedback, and there is no full-arm absolute pose
   or physical closed-loop `ros2_control` path.
 - M4 GPIO0/GPIO15 is the supported allocation under the current pin budget but
-  requires boot-strap discipline. The taped mounting, 230-245 deg calibrated
-  range, and directional stop leads remain trial conditions pending permanent
-  mechanics and repeated validation.
+  requires boot-strap discipline. The sensor and magnet are mechanically
+  secured; the 230-245 deg calibrated range and directional stop leads still
+  require repeatability and vibration validation.
 - The current `-24.35 deg` angle offset is trial-mount-specific and requires
   recalibration after remounting.
 - HC-SR04 is removed for the final physical demo, with range telemetry handled as disabled/nonblocking

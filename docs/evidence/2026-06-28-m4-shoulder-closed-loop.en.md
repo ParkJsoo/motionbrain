@@ -66,7 +66,7 @@ Both runs ended with `TARGET_REACHED`; I2C stayed fresh and magnet status stayed
 
 ## Final deployment regression after remount
 
-After the sensor/magnet remount, magnetic quality improved to `AGC=102-104`,
+After mechanically securing the sensor and magnet, magnetic quality improved to `AGC=102-104`,
 magnitude approximately `2107-2136`, `MD=YES`, `ML=NO`, and `MH=NO`. The new
 mount orientation made raw `258.93 deg` correspond to the established shoulder
 coordinate `234.58 deg`, so a provisional `-24.35 deg` mount offset was added.
@@ -99,7 +99,7 @@ Final state: `IDLE`, M1-M5 speed 0, M4 235.89 deg, sensor `ready=YES`,
 
 ## Remaining limits
 
-- The taped mount is suitable for bring-up, not long-term repeatability or vibration testing.
+- The sensor and magnet are secured, but long-term repeatability and vibration conditions remain unvalidated.
 - GPIO0/GPIO15 is the supported allocation under the current pin budget but
   requires boot-strap discipline. GPIO0 must not be held LOW at reset, and boot
   and upload regression must be repeated after wiring changes.

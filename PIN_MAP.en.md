@@ -44,10 +44,10 @@ wiring and feature set.
   `MOTIONBRAIN_SHOULDER_I2C_SCL_PIN`, and `MOTIONBRAIN_SHOULDER_ADC_PIN`; boot
   and regression validation must then be repeated.
 
-The electrical allocation is now the supported prototype allocation. The taped
-mechanical mount, `-24.35 deg` offset, `230-245 deg` calibrated range, and
-directional stop leads remain trial conditions. Recalibrate after moving either
-the sensor or the magnet.
+The electrical allocation is now the supported prototype allocation, and the
+sensor and magnet are mechanically secured. The `-24.35 deg` offset,
+`230-245 deg` calibrated range, and directional stop leads remain specific to
+this mount. Recalibrate after moving either the sensor or the magnet.
 
 ## References
 
