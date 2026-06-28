@@ -60,6 +60,7 @@ EXPECTED_PACKAGE_TEST_FILES = {
     "motionbrain_control/test/test_control_guard_logic.cpp",
     "motionbrain_hardware_interface/test/test_load_motionbrain_hardware_interface.cpp",
     "motionbrain_mission/test/test_mission_flow.py",
+    "motionbrain_ros_bridge/test/test_fake_endpoint_bridge_integration.py",
     "motionbrain_ros_bridge/test/test_fake_motionbrain_endpoint.py",
     "motionbrain_ros_bridge/test/test_payload_utils.py",
 }
@@ -575,6 +576,11 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
     def test_bridge_package_installs_fake_fault_injection_endpoint(self):
         package_dir = ROS2_SRC / "motionbrain_ros_bridge"
         setup_text = (package_dir / "setup.py").read_text()
+        launch_text = (
+            package_dir
+            / "launch"
+            / "motionbrain_fake_fault_injection.launch.py"
+        ).read_text()
         fake_endpoint_text = (
             package_dir
             / "motionbrain_ros_bridge"
@@ -604,6 +610,11 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
 
         self.assertIn("fake_endpoint_read_only", fake_endpoint_text)
         self.assertIn("never forwards physical routine commands", fake_endpoint_text)
+        self.assertIn('executable="motionbrain_fake_endpoint"', launch_text)
+        self.assertIn('executable="motionbrain_status_node"', launch_text)
+        self.assertIn('"scenario"', launch_text)
+        self.assertIn('"perception_url"', launch_text)
+        self.assertIn('"http_token": ""', launch_text)
 
     def test_portfolio_nodes_publish_lifecycle_status(self):
         bridge_dir = ROS2_SRC / "motionbrain_ros_bridge" / "motionbrain_ros_bridge"

@@ -1,0 +1,210 @@
+from __future__ import annotations
+
+import time
+import unittest
+
+from motionbrain_ros_bridge.fake_motionbrain_endpoint import make_server
+
+try:
+    import rclpy
+    from diagnostic_msgs.msg import DiagnosticArray
+    from diagnostic_msgs.msg import DiagnosticStatus
+    from motionbrain_msgs.msg import CameraDetection
+    from motionbrain_msgs.msg import MotionStatus
+    from motionbrain_msgs.msg import RoutineStatus
+    from motionbrain_ros_bridge.motionbrain_status_node import MotionBrainStatusNode
+    from rclpy.parameter import Parameter
+except ImportError as exc:  # pragma: no cover - host-only fallback
+    ROS_IMPORT_ERROR = exc
+    ROS_AVAILABLE = False
+else:
+    ROS_IMPORT_ERROR = None
+    ROS_AVAILABLE = True
+
+
+class FakeEndpointServer:
+    def __init__(self, scenario: str) -> None:
+        self.server = make_server(
+            "127.0.0.1",
+            0,
+            scenario=scenario,
+            delay_sec=0.2,
+            quiet=True,
+        )
+
+    def __enter__(self) -> "FakeEndpointServer":
+        import threading
+
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join(timeout=2.0)
+
+    @property
+    def host(self) -> str:
+        return str(self.server.server_address[0])
+
+    @property
+    def port(self) -> int:
+        return int(self.server.server_address[1])
+
+    @property
+    def base_url(self) -> str:
+        return f"http://{self.host}:{self.port}"
+
+
+@unittest.skipUnless(
+    ROS_AVAILABLE,
+    f"ROS2 Python runtime is unavailable: {ROS_IMPORT_ERROR}",
+)
+class FakeEndpointBridgeIntegrationTest(unittest.TestCase):
+    def setUp(self) -> None:
+        rclpy.init(args=None)
+
+    def tearDown(self) -> None:
+        rclpy.shutdown()
+
+    def run_bridge_poll(self, scenario: str) -> dict[str, list]:
+        with FakeEndpointServer(scenario) as server:
+            bridge = MotionBrainStatusNode()
+            collector = rclpy.create_node(f"fake_endpoint_bridge_{scenario}_collector")
+            messages = {
+                "status": [],
+                "routine": [],
+                "detection": [],
+                "diagnostics": [],
+            }
+            collector.create_subscription(
+                MotionStatus,
+                "/motionbrain/status_typed",
+                messages["status"].append,
+                10,
+            )
+            collector.create_subscription(
+                RoutineStatus,
+                "/motionbrain/routine_typed",
+                messages["routine"].append,
+                10,
+            )
+            collector.create_subscription(
+                CameraDetection,
+                "/camera/detection_typed",
+                messages["detection"].append,
+                10,
+            )
+            collector.create_subscription(
+                DiagnosticArray,
+                "/motionbrain/diagnostics",
+                messages["diagnostics"].append,
+                10,
+            )
+
+            bridge.set_parameters(
+                [
+                    Parameter("motion_host", Parameter.Type.STRING, server.host),
+                    Parameter("motion_port", Parameter.Type.INTEGER, server.port),
+                    Parameter("perception_url", Parameter.Type.STRING, server.base_url),
+                    Parameter("camera_url", Parameter.Type.STRING, ""),
+                    Parameter("http_timeout", Parameter.Type.DOUBLE, 0.1),
+                    Parameter("events_limit", Parameter.Type.INTEGER, 1),
+                ]
+            )
+
+            expected_topics = [
+                "/motionbrain/status_typed",
+                "/motionbrain/routine_typed",
+                "/camera/detection_typed",
+                "/motionbrain/diagnostics",
+            ]
+            discovery_deadline = time.monotonic() + 2.0
+            while time.monotonic() < discovery_deadline:
+                rclpy.spin_once(bridge, timeout_sec=0.0)
+                rclpy.spin_once(collector, timeout_sec=0.05)
+                if all(bridge.count_subscribers(topic) > 0 for topic in expected_topics):
+                    break
+
+            bridge.poll_once()
+
+            deadline = time.monotonic() + 3.0
+            while time.monotonic() < deadline:
+                rclpy.spin_once(bridge, timeout_sec=0.0)
+                rclpy.spin_once(collector, timeout_sec=0.05)
+                if messages["routine"] and messages["diagnostics"]:
+                    if scenario == "malformed_status":
+                        break
+                    if messages["status"] and messages["detection"]:
+                        break
+
+            collector.destroy_node()
+            bridge.destroy_node()
+            return messages
+
+    def diagnostic_by_name(self, diagnostics: DiagnosticArray, name: str) -> DiagnosticStatus:
+        for status in diagnostics.status:
+            if status.name == name:
+                return status
+        self.fail(f"missing diagnostic status {name}")
+
+    def test_ready_fake_endpoint_publishes_typed_bridge_outputs(self) -> None:
+        messages = self.run_bridge_poll("ready")
+
+        self.assertEqual("IDLE", messages["status"][-1].state)
+        self.assertTrue(messages["status"][-1].shoulder_sensor_ready)
+        self.assertTrue(messages["routine"][-1].dry_run_only)
+        self.assertFalse(messages["routine"][-1].physical_routine_execution_allowed)
+        self.assertTrue(messages["detection"][-1].available)
+        self.assertTrue(messages["detection"][-1].detected)
+
+        diagnostics = messages["diagnostics"][-1]
+        self.assertEqual(
+            DiagnosticStatus.OK,
+            self.diagnostic_by_name(diagnostics, "motionbrain/controller").level,
+        )
+        self.assertEqual(
+            DiagnosticStatus.OK,
+            self.diagnostic_by_name(diagnostics, "motionbrain/shoulder_feedback").level,
+        )
+
+    def test_stale_shoulder_fault_is_visible_in_status_and_diagnostics(self) -> None:
+        messages = self.run_bridge_poll("stale_shoulder")
+
+        self.assertFalse(messages["status"][-1].shoulder_sensor_fresh)
+        self.assertFalse(messages["status"][-1].shoulder_sensor_ready)
+        shoulder = self.diagnostic_by_name(
+            messages["diagnostics"][-1],
+            "motionbrain/shoulder_feedback",
+        )
+        self.assertEqual(DiagnosticStatus.ERROR, shoulder.level)
+        self.assertEqual("M4 shoulder sensor not ready", shoulder.message)
+
+    def test_policy_mismatch_fault_is_visible_in_routine_and_diagnostics(self) -> None:
+        messages = self.run_bridge_poll("policy_mismatch")
+
+        self.assertTrue(messages["routine"][-1].physical_routine_execution_allowed)
+        self.assertFalse(messages["routine"][-1].feedback_ready)
+        feedback = self.diagnostic_by_name(
+            messages["diagnostics"][-1],
+            "motionbrain/feedback",
+        )
+        self.assertEqual(DiagnosticStatus.ERROR, feedback.level)
+        self.assertEqual("feedback policy mismatch", feedback.message)
+
+    def test_malformed_status_keeps_routine_and_diagnostics_available(self) -> None:
+        messages = self.run_bridge_poll("malformed_status")
+
+        self.assertEqual([], messages["status"])
+        self.assertTrue(messages["routine"][-1].dry_run_only)
+        controller = self.diagnostic_by_name(
+            messages["diagnostics"][-1],
+            "motionbrain/controller",
+        )
+        self.assertEqual(DiagnosticStatus.ERROR, controller.level)
+        self.assertEqual("status poll unavailable", controller.message)
+
+
+if __name__ == "__main__":
+    unittest.main()
