@@ -24,6 +24,7 @@ EXPECTED_RUNTIME_TOPICS = {
     "/motionbrain/lifecycle_typed",
     "/motionbrain/diagnostics",
     "/camera/detection_typed",
+    "/motionbrain/estimated_joint_states",
     "/joint_states",
     "/motionbrain/end_effector_pose",
     "/motionbrain/kinematics_typed",
@@ -103,11 +104,116 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
             '"enable_kinematics"',
             '"enable_control_guard"',
             '"enable_mission_supervisor"',
+            '"enable_joint_state_bridge"',
+            '"joint_states_topic"',
+            '"estimated_joint_states_topic"',
+            '"joint_states_output"',
+            '"shoulder_feedback_calibration_enabled"',
+            '"shoulder_sensor_zero_deg"',
+            '"shoulder_direction_sign"',
+            '"shoulder_ros_joint_zero_rad"',
             '"perception_url"',
         ]
         for fragment in required_fragments:
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, launch_text)
+
+    def test_joint_state_launch_exposes_calibration_and_single_owner_controls(self):
+        bridge_launch = (
+            ROS2_SRC
+            / "motionbrain_ros_bridge"
+            / "launch"
+            / "motionbrain_home_wifi.launch.py"
+        ).read_text()
+        display_launch = (
+            ROS2_SRC
+            / "motionbrain_description"
+            / "launch"
+            / "display.launch.py"
+        ).read_text()
+        start_script = (REPO_ROOT / "tools" / "raspi" / "start_ros_bridge.sh").read_text()
+        env_example = (
+            REPO_ROOT
+            / "deploy"
+            / "systemd"
+            / "motionbrain-ros-bridge.env.example"
+        ).read_text()
+
+        required_fragments = [
+            "enable_joint_state_bridge",
+            "joint_states_topic",
+            "estimated_joint_states_topic",
+            "joint_states_output",
+            "shoulder_feedback_calibration_enabled",
+            "shoulder_sensor_zero_deg",
+            "shoulder_direction_sign",
+            "shoulder_ros_joint_zero_rad",
+        ]
+        for fragment in required_fragments:
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, bridge_launch)
+
+        for fragment in required_fragments[1:]:
+            with self.subTest(display_fragment=fragment):
+                self.assertIn(fragment, display_launch)
+        self.assertIn(
+            'remappings=[("joint_states", joint_states_topic)]',
+            display_launch,
+        )
+
+        required_env = [
+            "MOTIONBRAIN_ENABLE_JOINT_STATE_BRIDGE",
+            "MOTIONBRAIN_JOINT_STATES_TOPIC",
+            "MOTIONBRAIN_ESTIMATED_JOINT_STATES_TOPIC",
+            "MOTIONBRAIN_JOINT_STATES_OUTPUT",
+            "MOTIONBRAIN_SHOULDER_FEEDBACK_CALIBRATION_ENABLED",
+            "MOTIONBRAIN_SHOULDER_SENSOR_ZERO_DEG",
+            "MOTIONBRAIN_SHOULDER_DIRECTION_SIGN",
+            "MOTIONBRAIN_SHOULDER_ROS_JOINT_ZERO_RAD",
+        ]
+        for fragment in required_env:
+            with self.subTest(env_fragment=fragment):
+                self.assertIn(fragment, start_script)
+                self.assertIn(fragment, env_example)
+
+    def test_m4_measured_ros2_control_is_state_only(self):
+        measured_urdf = (
+            ROS2_SRC
+            / "motionbrain_hardware_interface"
+            / "urdf"
+            / "motionbrain_m4_measured.urdf"
+        ).read_text()
+        measured_launch = (
+            ROS2_SRC
+            / "motionbrain_hardware_interface"
+            / "launch"
+            / "m4_measured_state.launch.py"
+        ).read_text()
+        measured_controllers = (
+            ROS2_SRC
+            / "motionbrain_hardware_interface"
+            / "config"
+            / "m4_measured_controllers.yaml"
+        ).read_text()
+
+        self.assertIn("<param name=\"transport_mode\">m4_state</param>", measured_urdf)
+        self.assertIn("<param name=\"status_topic\">/motionbrain/status_typed</param>", measured_urdf)
+        self.assertIn("<param name=\"feedback_source\">m4_as5600</param>", measured_urdf)
+        self.assertIn("shoulder_feedback_calibration_enabled", measured_urdf)
+        self.assertIn("<joint name=\"shoulder_pitch_joint\">", measured_urdf)
+        self.assertNotIn("<command_interface", measured_urdf)
+        self.assertIn("<state_interface name=\"position\"", measured_urdf)
+        self.assertIn("<state_interface name=\"velocity\"", measured_urdf)
+
+        self.assertIn("m4_measured_controllers.yaml", measured_launch)
+        self.assertIn("shoulder_sensor_zero_deg", measured_launch)
+        self.assertIn("joint_state_broadcaster", measured_launch)
+        self.assertNotIn("joint_trajectory_controller", measured_launch)
+        self.assertNotIn("motionbrain_arm_controller", measured_launch)
+
+        self.assertIn("joint_state_broadcaster", measured_controllers)
+        self.assertNotIn("joint_trajectory_controller", measured_controllers)
+        self.assertNotIn("motionbrain_arm_controller", measured_controllers)
 
     def test_package_dependencies_cover_launch_edges(self):
         bridge_deps = dependency_names(
@@ -717,7 +823,7 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, helper_text)
 
-    def test_ros2_control_hardware_interface_scaffold_is_safe_open_loop(self):
+    def test_ros2_control_hardware_interface_scaffold_is_safe_and_read_only_capable(self):
         package_dir = ROS2_SRC / "motionbrain_hardware_interface"
         self.assertTrue((package_dir / "package.xml").exists())
         self.assertTrue((package_dir / "CMakeLists.txt").exists())
@@ -767,6 +873,10 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
             "command_timeout_sec_",
             "last_command_change_time_",
             "max_state_step_rad_",
+            "status_subscription_",
+            "shoulder_feedback_calibration_enabled_",
+            "state_stale_timeout_sec_",
+            "handle_motion_status",
             "Physical actuation remains behind the firmware SafetyGate",
             "PLUGINLIB_EXPORT_CLASS",
         ]
@@ -776,7 +886,8 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
 
         self.assertIn("pluginlib_export_plugin_description_file", cmake_text)
         self.assertIn("motionbrain_hardware_interface/MotionBrainHardwareInterface", plugin_text)
-        self.assertIn("Safe open-loop", plugin_text)
+        self.assertIn("open-loop dry-run mode", plugin_text)
+        self.assertIn("read-only M4 measured-state mode", plugin_text)
         self.assertIn("<ros2_control", urdf_text)
         self.assertIn("motionbrain_hardware_interface/MotionBrainHardwareInterface", urdf_text)
         self.assertIn('<param name="transport_mode">dry_run</param>', urdf_text)

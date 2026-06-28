@@ -2,13 +2,14 @@
 <package format="3">
   <name>motionbrain_hardware_interface</name>
   <version>0.1.0</version>
-  <description>Safe open-loop ros2_control SystemInterface scaffold for the MotionBrain ESP32 controller.</description>
+  <description>Safe dry-run and read-only M4 ros2_control SystemInterface scaffold for MotionBrain.</description>
   <maintainer email="ParkJsoo@users.noreply.github.com">Jeongsoo Park</maintainer>
   <license>MIT</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
   <depend>hardware_interface</depend>
+  <depend>motionbrain_msgs</depend>
   <depend>pluginlib</depend>
   <depend>rclcpp</depend>
   <depend>rclcpp_lifecycle</depend>

@@ -4,9 +4,9 @@
     type="motionbrain_hardware_interface::MotionBrainHardwareInterface"
     base_class_type="hardware_interface::SystemInterface">
     <description>
-      Safe open-loop SystemInterface scaffold for MotionBrain. The plugin
-      mirrors accepted joint commands into internal state for ros2_control
-      integration tests and does not directly actuate the ESP32 controller.
+      Safe SystemInterface scaffold for MotionBrain. The plugin supports an
+      open-loop dry-run mode and a read-only M4 measured-state mode without
+      directly actuating the ESP32 controller.
     </description>
   </class>
 </library>

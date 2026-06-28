@@ -25,6 +25,7 @@ required_topics=(
   "/motionbrain/lifecycle_typed"
   "/motionbrain/diagnostics"
   "/camera/detection_typed"
+  "/motionbrain/estimated_joint_states"
   "/joint_states"
   "/motionbrain/end_effector_pose"
   "/motionbrain/kinematics_typed"
@@ -229,6 +230,9 @@ echo "OK camera detection typed sample"
 
 timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo /joint_states --once >/dev/null
 echo "OK joint state sample"
+
+timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo /motionbrain/estimated_joint_states --once >/dev/null
+echo "OK estimated joint state sample"
 
 timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo /motionbrain/end_effector_pose --once >/dev/null
 echo "OK end-effector pose sample"

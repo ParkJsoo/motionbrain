@@ -14,6 +14,16 @@ def generate_launch_description() -> LaunchDescription:
     poll_interval = LaunchConfiguration("poll_interval")
     http_timeout = LaunchConfiguration("http_timeout")
     events_limit = LaunchConfiguration("events_limit")
+    enable_joint_state_bridge = LaunchConfiguration("enable_joint_state_bridge")
+    joint_states_topic = LaunchConfiguration("joint_states_topic")
+    estimated_joint_states_topic = LaunchConfiguration("estimated_joint_states_topic")
+    joint_states_output = LaunchConfiguration("joint_states_output")
+    shoulder_feedback_calibration_enabled = LaunchConfiguration(
+        "shoulder_feedback_calibration_enabled"
+    )
+    shoulder_sensor_zero_deg = LaunchConfiguration("shoulder_sensor_zero_deg")
+    shoulder_direction_sign = LaunchConfiguration("shoulder_direction_sign")
+    shoulder_ros_joint_zero_rad = LaunchConfiguration("shoulder_ros_joint_zero_rad")
     enable_kinematics = LaunchConfiguration("enable_kinematics")
     enable_control_guard = LaunchConfiguration("enable_control_guard")
     enable_mission_supervisor = LaunchConfiguration("enable_mission_supervisor")
@@ -56,6 +66,46 @@ def generate_launch_description() -> LaunchDescription:
                 description="Number of recent ESP32 events to publish per poll.",
             ),
             DeclareLaunchArgument(
+                "enable_joint_state_bridge",
+                default_value="true",
+                description="Start bridge-derived JointState outputs.",
+            ),
+            DeclareLaunchArgument(
+                "joint_states_topic",
+                default_value="/joint_states",
+                description="Selected JointState topic consumed by kinematics and robot_state_publisher.",
+            ),
+            DeclareLaunchArgument(
+                "estimated_joint_states_topic",
+                default_value="/motionbrain/estimated_joint_states",
+                description="Explicit status-derived estimated JointState topic.",
+            ),
+            DeclareLaunchArgument(
+                "joint_states_output",
+                default_value="estimated",
+                description="Selected output for joint_states_topic: estimated, measured, or none.",
+            ),
+            DeclareLaunchArgument(
+                "shoulder_feedback_calibration_enabled",
+                default_value="false",
+                description="Use calibrated M4 AS5600 feedback for shoulder_pitch_joint.",
+            ),
+            DeclareLaunchArgument(
+                "shoulder_sensor_zero_deg",
+                default_value="0.0",
+                description="Explicit M4 sensor-space angle corresponding to the ROS joint zero.",
+            ),
+            DeclareLaunchArgument(
+                "shoulder_direction_sign",
+                default_value="1",
+                description="M4 sensor-to-ROS direction sign; must be -1 or 1.",
+            ),
+            DeclareLaunchArgument(
+                "shoulder_ros_joint_zero_rad",
+                default_value="0.0",
+                description="ROS shoulder joint value at shoulder_sensor_zero_deg.",
+            ),
+            DeclareLaunchArgument(
                 "enable_kinematics",
                 default_value="true",
                 description="Publish FK end-effector pose and kinematics diagnostics.",
@@ -92,6 +142,30 @@ def generate_launch_description() -> LaunchDescription:
                 executable="motionbrain_joint_state_node",
                 name="motionbrain_joint_state_node",
                 output="screen",
+                condition=IfCondition(enable_joint_state_bridge),
+                parameters=[
+                    {
+                        "joint_states_topic": joint_states_topic,
+                        "estimated_joint_states_topic": estimated_joint_states_topic,
+                        "joint_states_output": joint_states_output,
+                        "shoulder_feedback_calibration_enabled": ParameterValue(
+                            shoulder_feedback_calibration_enabled,
+                            value_type=bool,
+                        ),
+                        "shoulder_sensor_zero_deg": ParameterValue(
+                            shoulder_sensor_zero_deg,
+                            value_type=float,
+                        ),
+                        "shoulder_direction_sign": ParameterValue(
+                            shoulder_direction_sign,
+                            value_type=int,
+                        ),
+                        "shoulder_ros_joint_zero_rad": ParameterValue(
+                            shoulder_ros_joint_zero_rad,
+                            value_type=float,
+                        ),
+                    }
+                ],
             ),
             Node(
                 package="motionbrain_ros_bridge",
@@ -99,6 +173,7 @@ def generate_launch_description() -> LaunchDescription:
                 name="motionbrain_kinematics_node",
                 output="screen",
                 condition=IfCondition(enable_kinematics),
+                parameters=[{"joint_states_topic": joint_states_topic}],
             ),
             Node(
                 package="motionbrain_control",
