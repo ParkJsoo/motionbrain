@@ -115,6 +115,8 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
             '"shoulder_direction_sign"',
             '"shoulder_ros_joint_zero_rad"',
             '"perception_url"',
+            '"status_autostart"',
+            '"autostart"',
         ]
         for fragment in required_fragments:
             with self.subTest(fragment=fragment):
@@ -613,8 +615,10 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         self.assertIn('executable="motionbrain_fake_endpoint"', launch_text)
         self.assertIn('executable="motionbrain_status_node"', launch_text)
         self.assertIn('"scenario"', launch_text)
+        self.assertIn('"status_autostart"', launch_text)
         self.assertIn('"perception_url"', launch_text)
         self.assertIn('"http_token": ""', launch_text)
+        self.assertIn('"autostart"', launch_text)
 
     def test_portfolio_nodes_publish_lifecycle_status(self):
         bridge_dir = ROS2_SRC / "motionbrain_ros_bridge" / "motionbrain_ros_bridge"
@@ -633,6 +637,24 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
             / "src"
             / "control_guard_node.cpp"
         ).read_text()
+
+        status_lifecycle_fragments = [
+            "from rclpy.lifecycle import LifecycleNode",
+            "from rclpy.lifecycle import TransitionCallbackReturn",
+            "class MotionBrainStatusNode(LifecycleNode)",
+            "def on_configure(",
+            "def on_activate(",
+            "def on_deactivate(",
+            "def on_cleanup(",
+            "def on_shutdown(",
+            "self.trigger_configure()",
+            "self.trigger_activate()",
+            "if not self._polling_active:",
+            "return TransitionCallbackReturn.SUCCESS",
+        ]
+        for fragment in status_lifecycle_fragments:
+            with self.subTest(status_lifecycle_fragment=fragment):
+                self.assertIn(fragment, status_text)
 
         for text in [status_text, joint_state_text, kinematics_text]:
             with self.subTest(node="python_bridge_node"):

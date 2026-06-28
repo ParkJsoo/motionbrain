@@ -34,7 +34,8 @@ from motionbrain_ros_bridge.payload_utils import parse_light_action
 from motionbrain_ros_bridge.payload_utils import parse_routine_command
 from motionbrain_ros_bridge.vision_detection import detect_colored_target
 from rclpy.action import ActionServer
-from rclpy.node import Node
+from rclpy.lifecycle import LifecycleNode
+from rclpy.lifecycle import TransitionCallbackReturn
 from std_msgs.msg import String
 
 
@@ -68,8 +69,8 @@ def post_motionbrain(base_url: str, path: str, timeout: float, token: str = "") 
         return json.loads(response.read().decode("utf-8"))
 
 
-class MotionBrainStatusNode(Node):
-    def __init__(self) -> None:
+class MotionBrainStatusNode(LifecycleNode):
+    def __init__(self, autostart: bool | None = None) -> None:
         super().__init__("motionbrain_status_node")
 
         self.declare_parameter("motion_host", "192.168.4.1")
@@ -81,8 +82,109 @@ class MotionBrainStatusNode(Node):
         self.declare_parameter("http_timeout", 2.0)
         self.declare_parameter("events_limit", 8)
         self.declare_parameter("http_token", os.environ.get("MOTIONBRAIN_HTTP_TOKEN", ""))
+        self.declare_parameter("autostart", True if autostart is None else bool(autostart))
 
         self.motion_base_url = self._motion_base_url()
+        self.lifecycle = LifecycleStatusPublisher(
+            self,
+            detail=f"unconfigured bridge for {self.motion_base_url}",
+        )
+        self._polling_active = False
+        self._configured = False
+        self.timer = None
+        self.status_pub = None
+        self.routine_pub = None
+        self.events_pub = None
+        self.detection_pub = None
+        self.diagnostics_pub = None
+        self.light_result_pub = None
+        self.routine_result_pub = None
+        self.status_typed_pub = None
+        self.routine_typed_pub = None
+        self.events_typed_pub = None
+        self.detection_typed_pub = None
+        self.light_result_typed_pub = None
+        self.routine_result_typed_pub = None
+        self.light_sub = None
+        self.light_typed_sub = None
+        self.routine_sub = None
+        self.routine_typed_sub = None
+        self.routine_service = None
+        self.routine_action_server = None
+
+        if bool(self.get_parameter("autostart").value):
+            self.trigger_configure()
+            self.trigger_activate()
+
+    def on_configure(self, state: Any) -> TransitionCallbackReturn:
+        del state
+        try:
+            self.motion_base_url = self._motion_base_url()
+            self._create_configured_entities()
+            self.lifecycle.mark_inactive(
+                f"configured bridge for {self.motion_base_url}; waiting for activation"
+            )
+            self.get_logger().info(
+                f"MotionBrain ROS2 bridge configured for {self.motion_base_url}; "
+                "waiting for lifecycle activation"
+            )
+            return TransitionCallbackReturn.SUCCESS
+        except Exception as exc:
+            self.lifecycle.mark_error(f"configure failed: {exc}")
+            self.get_logger().error(f"MotionBrain ROS2 bridge configure failed: {exc}")
+            return TransitionCallbackReturn.FAILURE
+
+    def on_activate(self, state: Any) -> TransitionCallbackReturn:
+        del state
+        try:
+            self.motion_base_url = self._motion_base_url()
+            if not self._configured:
+                self._create_configured_entities()
+            self._create_poll_timer()
+            self._polling_active = True
+            self.lifecycle.mark_active(
+                "polling status/routine/camera and serving routine command/action boundaries"
+            )
+            self._log_bridge_active()
+            return TransitionCallbackReturn.SUCCESS
+        except Exception as exc:
+            self.lifecycle.mark_error(f"activate failed: {exc}")
+            self.get_logger().error(f"MotionBrain ROS2 bridge activate failed: {exc}")
+            return TransitionCallbackReturn.FAILURE
+
+    def on_deactivate(self, state: Any) -> TransitionCallbackReturn:
+        del state
+        self._polling_active = False
+        self._destroy_poll_timer()
+        self.lifecycle.mark_inactive(f"polling stopped for {self.motion_base_url}")
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_cleanup(self, state: Any) -> TransitionCallbackReturn:
+        del state
+        self._polling_active = False
+        self._destroy_poll_timer()
+        self._destroy_configured_entities()
+        self.lifecycle.mark_inactive(f"unconfigured bridge for {self.motion_base_url}")
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_shutdown(self, state: Any) -> TransitionCallbackReturn:
+        del state
+        self._polling_active = False
+        self._destroy_poll_timer()
+        self.lifecycle.mark_inactive(f"shutdown requested for {self.motion_base_url}")
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_error(self, state: Any) -> TransitionCallbackReturn:
+        del state
+        self._polling_active = False
+        self._destroy_poll_timer()
+        self.lifecycle.mark_error(f"lifecycle error for {self.motion_base_url}")
+        return TransitionCallbackReturn.SUCCESS
+
+    def _create_configured_entities(self) -> None:
+        if self._configured:
+            return
+
         self.status_pub = self.create_publisher(String, "/motionbrain/status", 10)
         self.routine_pub = self.create_publisher(String, "/motionbrain/routine", 10)
         self.events_pub = self.create_publisher(String, "/motionbrain/events", 10)
@@ -148,15 +250,61 @@ class MotionBrainStatusNode(Node):
             self.execute_routine_goal,
         )
 
+        self._configured = True
+
+    def _create_poll_timer(self) -> None:
+        self._destroy_poll_timer()
         interval = float(self.get_parameter("poll_interval").value)
         self.timer = self.create_timer(max(interval, 0.1), self.poll_once)
-        self.lifecycle = LifecycleStatusPublisher(
-            self,
-            detail=f"configuring bridge for {self.motion_base_url}",
-        )
-        self.lifecycle.mark_active(
-            "polling status/routine/camera and serving routine command/action boundaries"
-        )
+
+    def _destroy_poll_timer(self) -> None:
+        if self.timer is not None:
+            self.destroy_timer(self.timer)
+            self.timer = None
+
+    def _destroy_configured_entities(self) -> None:
+        for publisher_attr in [
+            "status_pub",
+            "routine_pub",
+            "events_pub",
+            "detection_pub",
+            "diagnostics_pub",
+            "light_result_pub",
+            "routine_result_pub",
+            "status_typed_pub",
+            "routine_typed_pub",
+            "events_typed_pub",
+            "detection_typed_pub",
+            "light_result_typed_pub",
+            "routine_result_typed_pub",
+        ]:
+            publisher = getattr(self, publisher_attr)
+            if publisher is not None:
+                self.destroy_publisher(publisher)
+                setattr(self, publisher_attr, None)
+
+        for subscription_attr in [
+            "light_sub",
+            "light_typed_sub",
+            "routine_sub",
+            "routine_typed_sub",
+        ]:
+            subscription = getattr(self, subscription_attr)
+            if subscription is not None:
+                self.destroy_subscription(subscription)
+                setattr(self, subscription_attr, None)
+
+        if self.routine_service is not None:
+            self.destroy_service(self.routine_service)
+            self.routine_service = None
+
+        if self.routine_action_server is not None:
+            self.routine_action_server.destroy()
+            self.routine_action_server = None
+
+        self._configured = False
+
+    def _log_bridge_active(self) -> None:
         self.get_logger().info(
             f"MotionBrain ROS2 bridge polling {self.motion_base_url}; "
             "topics: /motionbrain/status /motionbrain/status_typed "
@@ -850,6 +998,9 @@ class MotionBrainStatusNode(Node):
         return feedback
 
     def poll_once(self) -> None:
+        if not self._polling_active:
+            return
+
         self.motion_base_url = self._motion_base_url()
         timeout = self._timeout()
         status_payload = None

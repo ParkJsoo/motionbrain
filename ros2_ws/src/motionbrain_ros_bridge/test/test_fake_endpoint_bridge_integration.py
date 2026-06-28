@@ -13,6 +13,7 @@ try:
     from motionbrain_msgs.msg import MotionStatus
     from motionbrain_msgs.msg import RoutineStatus
     from motionbrain_ros_bridge.motionbrain_status_node import MotionBrainStatusNode
+    from rclpy.lifecycle import TransitionCallbackReturn
     from rclpy.parameter import Parameter
 except ImportError as exc:  # pragma: no cover - host-only fallback
     ROS_IMPORT_ERROR = exc
@@ -68,9 +69,59 @@ class FakeEndpointBridgeIntegrationTest(unittest.TestCase):
     def tearDown(self) -> None:
         rclpy.shutdown()
 
+    def wait_for_subscriber_discovery(
+        self,
+        bridge,
+        collector,
+        expected_topics: list[str],
+    ) -> None:
+        discovery_deadline = time.monotonic() + 2.0
+        while time.monotonic() < discovery_deadline:
+            rclpy.spin_once(bridge, timeout_sec=0.0)
+            rclpy.spin_once(collector, timeout_sec=0.05)
+            if all(bridge.count_subscribers(topic) > 0 for topic in expected_topics):
+                return
+
+    def wait_for_bridge_messages(
+        self,
+        scenario: str,
+        bridge,
+        collector,
+        messages: dict[str, list],
+        timeout_sec: float = 3.0,
+    ) -> None:
+        deadline = time.monotonic() + timeout_sec
+        while time.monotonic() < deadline:
+            rclpy.spin_once(bridge, timeout_sec=0.0)
+            rclpy.spin_once(collector, timeout_sec=0.05)
+            if messages["routine"] and messages["diagnostics"]:
+                if scenario == "malformed_status":
+                    return
+                if messages["status"] and messages["detection"]:
+                    return
+
+    def set_fake_endpoint_parameters(
+        self,
+        bridge,
+        server: FakeEndpointServer,
+    ) -> None:
+        bridge.set_parameters(
+            [
+                Parameter("motion_host", Parameter.Type.STRING, server.host),
+                Parameter("motion_port", Parameter.Type.INTEGER, server.port),
+                Parameter("perception_url", Parameter.Type.STRING, server.base_url),
+                Parameter("camera_url", Parameter.Type.STRING, ""),
+                Parameter("http_timeout", Parameter.Type.DOUBLE, 0.1),
+                Parameter("events_limit", Parameter.Type.INTEGER, 1),
+            ]
+        )
+
     def run_bridge_poll(self, scenario: str) -> dict[str, list]:
         with FakeEndpointServer(scenario) as server:
-            bridge = MotionBrainStatusNode()
+            bridge = MotionBrainStatusNode(autostart=False)
+            self.set_fake_endpoint_parameters(bridge, server)
+            self.assertEqual(TransitionCallbackReturn.SUCCESS, bridge.trigger_configure())
+
             collector = rclpy.create_node(f"fake_endpoint_bridge_{scenario}_collector")
             messages = {
                 "status": [],
@@ -103,41 +154,17 @@ class FakeEndpointBridgeIntegrationTest(unittest.TestCase):
                 10,
             )
 
-            bridge.set_parameters(
-                [
-                    Parameter("motion_host", Parameter.Type.STRING, server.host),
-                    Parameter("motion_port", Parameter.Type.INTEGER, server.port),
-                    Parameter("perception_url", Parameter.Type.STRING, server.base_url),
-                    Parameter("camera_url", Parameter.Type.STRING, ""),
-                    Parameter("http_timeout", Parameter.Type.DOUBLE, 0.1),
-                    Parameter("events_limit", Parameter.Type.INTEGER, 1),
-                ]
-            )
-
             expected_topics = [
                 "/motionbrain/status_typed",
                 "/motionbrain/routine_typed",
                 "/camera/detection_typed",
                 "/motionbrain/diagnostics",
             ]
-            discovery_deadline = time.monotonic() + 2.0
-            while time.monotonic() < discovery_deadline:
-                rclpy.spin_once(bridge, timeout_sec=0.0)
-                rclpy.spin_once(collector, timeout_sec=0.05)
-                if all(bridge.count_subscribers(topic) > 0 for topic in expected_topics):
-                    break
+            self.wait_for_subscriber_discovery(bridge, collector, expected_topics)
 
+            self.assertEqual(TransitionCallbackReturn.SUCCESS, bridge.trigger_activate())
             bridge.poll_once()
-
-            deadline = time.monotonic() + 3.0
-            while time.monotonic() < deadline:
-                rclpy.spin_once(bridge, timeout_sec=0.0)
-                rclpy.spin_once(collector, timeout_sec=0.05)
-                if messages["routine"] and messages["diagnostics"]:
-                    if scenario == "malformed_status":
-                        break
-                    if messages["status"] and messages["detection"]:
-                        break
+            self.wait_for_bridge_messages(scenario, bridge, collector, messages)
 
             collector.destroy_node()
             bridge.destroy_node()
@@ -204,6 +231,74 @@ class FakeEndpointBridgeIntegrationTest(unittest.TestCase):
         )
         self.assertEqual(DiagnosticStatus.ERROR, controller.level)
         self.assertEqual("status poll unavailable", controller.message)
+
+    def test_inactive_lifecycle_bridge_does_not_publish_poll_outputs(self) -> None:
+        with FakeEndpointServer("ready") as server:
+            bridge = MotionBrainStatusNode(autostart=False)
+            self.set_fake_endpoint_parameters(bridge, server)
+            self.assertEqual(TransitionCallbackReturn.SUCCESS, bridge.trigger_configure())
+
+            collector = rclpy.create_node("fake_endpoint_bridge_inactive_collector")
+            messages = {
+                "status": [],
+                "routine": [],
+                "detection": [],
+                "diagnostics": [],
+            }
+            collector.create_subscription(
+                MotionStatus,
+                "/motionbrain/status_typed",
+                messages["status"].append,
+                10,
+            )
+            collector.create_subscription(
+                RoutineStatus,
+                "/motionbrain/routine_typed",
+                messages["routine"].append,
+                10,
+            )
+            collector.create_subscription(
+                CameraDetection,
+                "/camera/detection_typed",
+                messages["detection"].append,
+                10,
+            )
+            collector.create_subscription(
+                DiagnosticArray,
+                "/motionbrain/diagnostics",
+                messages["diagnostics"].append,
+                10,
+            )
+
+            expected_topics = [
+                "/motionbrain/status_typed",
+                "/motionbrain/routine_typed",
+                "/camera/detection_typed",
+                "/motionbrain/diagnostics",
+            ]
+            self.wait_for_subscriber_discovery(bridge, collector, expected_topics)
+
+            bridge.poll_once()
+            inactive_deadline = time.monotonic() + 0.5
+            while time.monotonic() < inactive_deadline:
+                rclpy.spin_once(bridge, timeout_sec=0.0)
+                rclpy.spin_once(collector, timeout_sec=0.05)
+
+            self.assertEqual([], messages["status"])
+            self.assertEqual([], messages["routine"])
+            self.assertEqual([], messages["detection"])
+            self.assertEqual([], messages["diagnostics"])
+
+            self.assertEqual(TransitionCallbackReturn.SUCCESS, bridge.trigger_activate())
+            bridge.poll_once()
+            self.wait_for_bridge_messages("ready", bridge, collector, messages)
+            self.assertTrue(messages["status"])
+            self.assertTrue(messages["routine"])
+            self.assertTrue(messages["detection"])
+            self.assertTrue(messages["diagnostics"])
+
+            collector.destroy_node()
+            bridge.destroy_node()
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ import urllib.error
 import urllib.request
 
 from motionbrain_ros_bridge.fake_motionbrain_endpoint import make_server
+from motionbrain_ros_bridge.fake_motionbrain_endpoint import strip_ros_args
 
 
 class FakeEndpointServer:
@@ -97,6 +98,22 @@ class FakeMotionBrainEndpointTest(unittest.TestCase):
                 server.get_json("/missing")
 
         self.assertEqual(404, raised.exception.code)
+
+    def test_cli_ignores_ros_launch_arguments(self):
+        self.assertEqual(
+            ["--host", "127.0.0.1", "--port", "8767"],
+            strip_ros_args(
+                [
+                    "--host",
+                    "127.0.0.1",
+                    "--port",
+                    "8767",
+                    "--ros-args",
+                    "-r",
+                    "__node:=motionbrain_fake_endpoint",
+                ]
+            ),
+        )
 
 
 if __name__ == "__main__":

@@ -13,6 +13,7 @@ def generate_launch_description():
     poll_interval = LaunchConfiguration("poll_interval")
     http_timeout = LaunchConfiguration("http_timeout")
     events_limit = LaunchConfiguration("events_limit")
+    status_autostart = LaunchConfiguration("status_autostart")
 
     fake_base_url = ParameterValue(
         ["http://", fake_host, ":", fake_port],
@@ -59,6 +60,11 @@ def generate_launch_description():
                 default_value="1",
                 description="Number of fake events fetched per bridge poll.",
             ),
+            DeclareLaunchArgument(
+                "status_autostart",
+                default_value="true",
+                description="Automatically configure and activate the status bridge lifecycle node.",
+            ),
             Node(
                 package="motionbrain_ros_bridge",
                 executable="motionbrain_fake_endpoint",
@@ -91,6 +97,7 @@ def generate_launch_description():
                         "http_timeout": ParameterValue(http_timeout, value_type=float),
                         "events_limit": ParameterValue(events_limit, value_type=int),
                         "http_token": "",
+                        "autostart": ParameterValue(status_autostart, value_type=bool),
                     }
                 ],
             ),

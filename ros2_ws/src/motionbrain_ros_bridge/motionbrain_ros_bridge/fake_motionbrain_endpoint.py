@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import sys
 import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler
@@ -419,14 +420,20 @@ def make_server(
     return server
 
 
-def main() -> None:
+def strip_ros_args(argv: list[str]) -> list[str]:
+    if "--ros-args" not in argv:
+        return argv
+    return argv[: argv.index("--ros-args")]
+
+
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Run a fake MotionBrain HTTP/perception endpoint.")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8767)
     parser.add_argument("--scenario", choices=sorted(SCENARIOS), default="ready")
     parser.add_argument("--delay-sec", type=float, default=3.0)
     parser.add_argument("--quiet", action="store_true")
-    args = parser.parse_args()
+    args = parser.parse_args(strip_ros_args(sys.argv[1:] if argv is None else argv))
 
     server = make_server(
         args.host,

@@ -14,6 +14,7 @@ def generate_launch_description() -> LaunchDescription:
     poll_interval = LaunchConfiguration("poll_interval")
     http_timeout = LaunchConfiguration("http_timeout")
     events_limit = LaunchConfiguration("events_limit")
+    status_autostart = LaunchConfiguration("status_autostart")
     enable_joint_state_bridge = LaunchConfiguration("enable_joint_state_bridge")
     joint_states_topic = LaunchConfiguration("joint_states_topic")
     estimated_joint_states_topic = LaunchConfiguration("estimated_joint_states_topic")
@@ -64,6 +65,11 @@ def generate_launch_description() -> LaunchDescription:
                 "events_limit",
                 default_value="8",
                 description="Number of recent ESP32 events to publish per poll.",
+            ),
+            DeclareLaunchArgument(
+                "status_autostart",
+                default_value="true",
+                description="Automatically configure and activate the status bridge lifecycle node.",
             ),
             DeclareLaunchArgument(
                 "enable_joint_state_bridge",
@@ -134,6 +140,7 @@ def generate_launch_description() -> LaunchDescription:
                         "poll_interval": ParameterValue(poll_interval, value_type=float),
                         "http_timeout": ParameterValue(http_timeout, value_type=float),
                         "events_limit": ParameterValue(events_limit, value_type=int),
+                        "autostart": ParameterValue(status_autostart, value_type=bool),
                     }
                 ],
             ),
