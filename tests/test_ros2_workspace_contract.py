@@ -60,6 +60,7 @@ EXPECTED_PACKAGE_TEST_FILES = {
     "motionbrain_control/test/test_control_guard_logic.cpp",
     "motionbrain_hardware_interface/test/test_load_motionbrain_hardware_interface.cpp",
     "motionbrain_mission/test/test_mission_flow.py",
+    "motionbrain_ros_bridge/test/test_fake_motionbrain_endpoint.py",
     "motionbrain_ros_bridge/test/test_payload_utils.py",
 }
 
@@ -570,6 +571,39 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         for fragment in expected_fragments:
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, bridge_text)
+
+    def test_bridge_package_installs_fake_fault_injection_endpoint(self):
+        package_dir = ROS2_SRC / "motionbrain_ros_bridge"
+        setup_text = (package_dir / "setup.py").read_text()
+        fake_endpoint_text = (
+            package_dir
+            / "motionbrain_ros_bridge"
+            / "fake_motionbrain_endpoint.py"
+        ).read_text()
+
+        expected_fragments = [
+            "motionbrain_fake_endpoint",
+            "motionbrain_ros_bridge.fake_motionbrain_endpoint:main",
+        ]
+        for fragment in expected_fragments:
+            with self.subTest(setup_fragment=fragment):
+                self.assertIn(fragment, setup_text)
+
+        expected_scenarios = [
+            '"ready"',
+            '"controller_fault"',
+            '"malformed_status"',
+            '"policy_mismatch"',
+            '"stale_detection"',
+            '"stale_shoulder"',
+            '"timeout_status"',
+        ]
+        for fragment in expected_scenarios:
+            with self.subTest(scenario=fragment):
+                self.assertIn(fragment, fake_endpoint_text)
+
+        self.assertIn("fake_endpoint_read_only", fake_endpoint_text)
+        self.assertIn("never forwards physical routine commands", fake_endpoint_text)
 
     def test_portfolio_nodes_publish_lifecycle_status(self):
         bridge_dir = ROS2_SRC / "motionbrain_ros_bridge" / "motionbrain_ros_bridge"
