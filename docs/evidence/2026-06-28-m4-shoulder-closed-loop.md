@@ -229,6 +229,36 @@ HTTP 상태에는 `targetToleranceDeg=0.50`과
 `2094-2108`, 최대 age `39ms`였다. 최종 하중 회귀 종료 상태는 `IDLE`,
 M1-M5 정지, M4 234.31°, 센서 정상, fault latch 없음이다.
 
+## 전원 계측과 STM32 MPU 부팅 복구
+
+최종 회귀 뒤 같은 23.10g 하중에서 일반 멀티미터와 휴대폰 촬영으로 전원을
+별도 계측했다. 배터리 단자는 정지 시 `5.97-5.98V`, 100% 폐루프 상승 중
+최저 `5.86V`였고, XL4015 출력은 별도 100% 상승 실행에서 정지 시 `5.98V`,
+최저 `5.62V`였다. 각각 약 `2.0%`, `6.0%` 강하였지만, 두 지점을 동시에
+측정하지 않았고 멀티미터에 MIN/MAX 기능이 없었으므로 근사치다. 배터리
+내부저항만으로 차이를 설명할 수 없으며 XL4015 입력 여유, 배선·단자 저항,
+실행별 모터 전류 차이가 함께 남아 있다.
+
+계측 과정의 전원/리셋 순서에서 STM32 MPU-6050 부팅 probe 실패가 재현됐다.
+ESP32 상태는 `imuStatus=2`, `imuError=0x20`, SCL HIGH, SDA LOW를 보고했고
+SafetyGate는 모든 모션을 차단했다. STM32 reset만으로는 회복되지 않았고
+STM32와 MPU 전원을 함께 재인가한 뒤 `0x68`, error 0, SCL/SDA HIGH로
+복구됐다.
+
+기존 펌웨어는 부팅 전 bus recovery를 한 번 실행했지만 probe 실패 뒤 I2C
+peripheral 재초기화나 재시도가 없었다. 수정 펌웨어는 부팅 시 최대 4회까지
+`HAL_I2C_DeInit -> bus recovery -> MX_I2C2_Init`을 250ms 단위 지연과 함께
+수행하고, 부팅 뒤에도 MPU가 준비되지 않으면 5초 간격으로 같은 복구를
+재시도한다. 복구 전에는 `g_imu_ok`를 false로 유지하므로 기존 safety block을
+우회하지 않는다.
+
+검증은 전체 Python 101개 테스트, STM32CubeIDE 0 errors/0 warnings build,
+SWD write/verify, STM32 hardware reset 6회와 STM32+MPU cold power cycle 1회로
+수행했다. 각 최종 상태는 MPU `0x68`, error 0, SCL/SDA HIGH, safety clear,
+`IDLE`, M1-M5 정지였고 마지막 M4 값은 234.14°였다. 이 결과는 펌웨어의
+재시도 경로를 보강한 것이며, 배선·pull-up·센서 모듈 자체의 간헐 결함을
+배제하는 증거는 아니다.
+
 ## 남은 한계
 
 - 센서·자석 고정은 완료했지만 장기 반복성과 진동 조건은 아직 검증하지 않았다.
@@ -241,8 +271,9 @@ M1-M5 정지, M4 234.31°, 센서 정상, fault latch 없음이다.
 - 두 번의 전체 반복 결과는 같은 현재 장착/무부가 하중 조건이다. 알려진
   최종 보정은 무부하와 23.10g에서 각각 11/11 재검증했지만, 더 큰 하중과
   배터리 전압별 검증은 아직 수행하지 않았다.
-- STM32 MPU-6050 부팅 probe 실패는 리셋으로 복구됐지만, 재발하면 전원,
-  SDA/SCL 배선, pull-up, 부팅 순서와 I2C bus recovery를 별도로 조사해야 한다.
+- STM32 MPU-6050 부팅 probe에는 bounded recovery/retry가 배포됐지만,
+  장기 cold-boot 반복과 SDA/SCL 배선, pull-up, 센서 모듈 상태는 계속
+  관찰해야 한다.
 - analog OUT/VP 경로는 계속 포화 상태이므로 제어에서 의도적으로 제외했다.
 
 ## 재현 명령

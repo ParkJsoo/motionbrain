@@ -233,6 +233,39 @@ the 23.10 g run had magnitude `2094-2108` and `39ms` maximum age. Final loaded
 state was `IDLE`, M1-M5 stopped, M4 234.31 deg, sensors healthy, and no latched
 fault.
 
+## Power measurements and STM32 MPU boot recovery
+
+Power was measured separately after the final regressions with the same
+23.10 g load, a basic multimeter, and phone video. Battery-terminal voltage was
+`5.97-5.98 V` at rest and reached a visible minimum of `5.86 V` during a 100%
+closed-loop upward move. In a separate 100% upward run, the XL4015 output was
+`5.98 V` at rest and reached `5.62 V`. These are approximately `2.0%` and
+`6.0%` drops, but the two points were not measured simultaneously and the
+meter had no MIN/MAX capture, so they are approximate. Battery internal
+resistance alone does not explain the difference; XL4015 input headroom,
+wiring and terminal resistance, and run-to-run motor current remain factors.
+
+The power/reset sequence during measurement reproduced the STM32 MPU-6050 boot
+probe failure. ESP32 status reported `imuStatus=2`, `imuError=0x20`, SCL HIGH,
+and SDA LOW, and SafetyGate blocked all motion. Resetting only the STM32 did
+not recover it; removing power from both the STM32 and MPU restored address
+`0x68`, error 0, and SCL/SDA HIGH.
+
+The previous firmware ran bus recovery once before boot initialization but had
+no I2C peripheral reinitialization or retry after a failed probe. The deployed
+update performs up to four boot attempts with
+`HAL_I2C_DeInit -> bus recovery -> MX_I2C2_Init` and 250 ms stepped delays. If
+the MPU remains unavailable after boot, it repeats the same recovery every
+five seconds. `g_imu_ok` stays false until recovery completes, so the existing
+safety block is never bypassed.
+
+Verification included all 101 Python tests, an STM32CubeIDE build with zero
+errors and warnings, SWD write/verify, six STM32 hardware-reset cycles, and one
+combined STM32+MPU cold power cycle. Every final sample reported MPU `0x68`,
+error 0, SCL/SDA HIGH, safety clear, `IDLE`, and M1-M5 stopped; the final M4
+reading was 234.14 deg. This verifies the firmware retry path but does not rule
+out intermittent wiring, pull-up, or sensor-module faults.
+
 ## Remaining limits
 
 - The sensor and magnet are secured, but long-term repeatability and vibration conditions remain unvalidated.
@@ -245,9 +278,9 @@ fault.
 - The two complete repeatability runs used the same current mount and no-added-load
   condition. The final controller was rerun 11/11 both without load and at
   23.10 g, but larger loads and measured battery-voltage cases remain untested.
-- The STM32 MPU-6050 boot probe failure recovered after reset. If it recurs,
-  power, SDA/SCL wiring, pull-ups, boot order, and I2C bus recovery need a
-  separate investigation.
+- Bounded STM32 MPU-6050 boot recovery/retry is deployed, but longer cold-boot
+  repetition and the SDA/SCL wiring, pull-ups, and sensor module still require
+  observation.
 - The analog OUT/VP path is still saturated and is intentionally excluded from control.
 
 ## Reproduction commands

@@ -49,6 +49,9 @@
 #define TELEOP_TX_RATE_HZ 25U
 #define MPU_CALIBRATION_SAMPLES 400U
 #define MPU_FILTER_TAU_SEC 0.5f
+#define MPU_BOOT_PROBE_ATTEMPTS 4U
+#define MPU_PROBE_RETRY_DELAY_MS 250U
+#define MPU_RUNTIME_RETRY_INTERVAL_MS 5000U
 #define HCSR04_ENABLED 0U
 #define HCSR04_TRIGGER_INTERVAL_MS 100U
 #define HCSR04_TIMEOUT_US 30000U
@@ -151,6 +154,7 @@ static uint8_t g_mpu_ready = 0;
 static uint8_t g_imu_ok = 0;
 static uint32_t g_mpu_status = MPU_STATUS_NOT_PROBED;
 static uint32_t g_mpu_error = 0;
+static uint32_t g_last_mpu_retry_ms = 0;
 static volatile uint32_t g_sample_due_count = 0;
 static float g_gyro_bias_x_dps = 0.0f;
 static float g_gyro_bias_y_dps = 0.0f;
@@ -270,9 +274,20 @@ static void RecoverI2c2Bus(void)
     HAL_Delay(2);
 }
 
-static void ProbeMpu6050(I2C_HandleTypeDef *hi2c)
+static void ReinitializeI2c2Bus(void)
+{
+    HAL_StatusTypeDef deinit = HAL_I2C_DeInit(&hi2c2);
+    printf("I2C2 deinit before recovery: ret=%d\r\n", deinit);
+    RecoverI2c2Bus();
+    MX_I2C2_Init();
+}
+
+static uint8_t ProbeMpu6050(I2C_HandleTypeDef *hi2c)
 {
     const uint16_t addresses[] = {0x68 << 1, 0x69 << 1};
+    g_mpu_addr = 0;
+    g_mpu_ready = 0;
+    g_imu_ok = 0;
     g_mpu_status = MPU_STATUS_PROBE_FAIL;
     g_mpu_error = 0;
 
@@ -280,7 +295,6 @@ static void ProbeMpu6050(I2C_HandleTypeDef *hi2c)
         uint16_t addr = addresses[i];
         HAL_StatusTypeDef ready = HAL_I2C_IsDeviceReady(hi2c, addr, 3, 100);
         uint32_t err = HAL_I2C_GetError(hi2c);
-        g_mpu_addr = addr;
         g_mpu_error = err;
 
         printf("Probe 0x%02X: ready=%d err=0x%08lX\r\n",
@@ -317,10 +331,12 @@ static void ProbeMpu6050(I2C_HandleTypeDef *hi2c)
             g_mpu_addr = addr;
             g_mpu_ready = 1;
             g_mpu_status = MPU_STATUS_READY;
-            return;
+            return 1U;
         }
         g_mpu_status = MPU_STATUS_INIT_FAIL;
     }
+
+    return 0U;
 }
 
 static void PrintFixed3(const char *label, float value)
@@ -883,6 +899,50 @@ static HAL_StatusTypeDef CalibrateMpu6050(I2C_HandleTypeDef *hi2c)
     return HAL_OK;
 }
 
+static uint8_t InitializeMpu6050WithRetries(I2C_HandleTypeDef *hi2c,
+                                            uint32_t attempts,
+                                            uint8_t recover_before_first)
+{
+    if (attempts == 0U) {
+        return 0U;
+    }
+
+    for (uint32_t attempt = 0; attempt < attempts; ++attempt) {
+        if (recover_before_first || attempt > 0U) {
+            uint32_t delay_ms = MPU_PROBE_RETRY_DELAY_MS * (attempt + 1U);
+            ReinitializeI2c2Bus();
+            HAL_Delay(delay_ms);
+        }
+
+        printf("MPU-6050 probe attempt %lu/%lu\r\n",
+               (unsigned long)(attempt + 1U),
+               (unsigned long)attempts);
+
+        if (!ProbeMpu6050(hi2c)) {
+            continue;
+        }
+
+        g_attitude_ready = 0U;
+        if (CalibrateMpu6050(hi2c) == HAL_OK) {
+            __disable_irq();
+            g_sample_due_count = 0U;
+            __enable_irq();
+            g_last_mpu_retry_ms = HAL_GetTick();
+            return 1U;
+        }
+
+        g_mpu_ready = 0U;
+        g_imu_ok = 0U;
+        g_mpu_status = MPU_STATUS_CALIB_FAIL;
+        g_mpu_error = HAL_I2C_GetError(hi2c);
+        printf("MPU-6050 calibration failed: err=0x%08lX\r\n",
+               (unsigned long)g_mpu_error);
+    }
+
+    g_last_mpu_retry_ms = HAL_GetTick();
+    return 0U;
+}
+
 static HAL_StatusTypeDef ProcessMpu6050Sample(I2C_HandleTypeDef *hi2c)
 {
     const float dt_sec = 1.0f / (float)MPU_SAMPLE_RATE_HZ;
@@ -990,18 +1050,8 @@ int main(void)
   printf("HC-SR04 mapping: TRIG=PD4 (Arduino D2), ECHO=PC8 (Arduino D3)\r\n");
 #endif
 
-  ProbeMpu6050(&hi2c2);
-  if (!g_mpu_ready) {
+  if (!InitializeMpu6050WithRetries(&hi2c2, MPU_BOOT_PROBE_ATTEMPTS, 0U)) {
     printf("MPU-6050 not detected on I2C2.\r\n");
-  }
-  if (g_mpu_ready) {
-    if (CalibrateMpu6050(&hi2c2) != HAL_OK) {
-      g_mpu_ready = 0;
-      g_imu_ok = 0;
-      g_mpu_status = MPU_STATUS_CALIB_FAIL;
-      g_mpu_error = HAL_I2C_GetError(&hi2c2);
-      printf("MPU-6050 calibration failed.\r\n");
-    }
   }
 
   printf("Probe done. Check SWV and USART2 stream.\r\n");
@@ -1023,6 +1073,12 @@ int main(void)
 
     UpdateRangeMeasurement();
 #endif
+
+    if (!g_mpu_ready &&
+        (HAL_GetTick() - g_last_mpu_retry_ms) >= MPU_RUNTIME_RETRY_INTERVAL_MS) {
+      printf("Retrying MPU-6050 after boot-time failure.\r\n");
+      InitializeMpu6050WithRetries(&hi2c2, 1U, 1U);
+    }
 
     if (g_mpu_ready && g_sample_due_count > 0U) {
       uint32_t pending_samples;
