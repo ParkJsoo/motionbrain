@@ -16,7 +16,7 @@ input -> decision -> state -> motion -> feedback
 | --- | --- |
 | Real robot integration | ESP32 5-axis motion controller, STM32 wired teleop layer, ESP32-CAM, and Raspberry Pi host integrated into one arm stack |
 | Embedded safety boundary | `BOOT -> IDLE -> ARMED -> FAULT`, `Dispatcher` + `SafetyGate`, token-gated commands, deadman release stop, and frame timeouts |
-| Single-axis position feedback | M4 shoulder AS5600 sensing, magnet/sensor health, bounded 230-245 deg closed-loop targets, explicit `TARGET_MISSED`, 11/11 repeatability regression, and HTTP/dashboard/ROS2 telemetry |
+| Single-axis position feedback | M4 shoulder AS5600 sensing, magnet/sensor health, bounded 230-245 deg closed-loop targets, explicit `TARGET_MISSED`, 22/22 no-added-load plus 11/11 at 23.1 g on the fixed mount, and HTTP/dashboard/ROS2 telemetry |
 | ROS2 system software | ROS2 Jazzy typed topics, C++ control guard, mission supervisor, URDF/RViz, and a `ros2_control` dry-run mock/open-loop `SystemInterface` |
 | Operations and validation | Pi systemd services, health-check scripts, runtime evidence, `ros2_control` evidence, PlatformIO/Python/ROS2 GitHub Actions, and a physical teleoperation demo |
 

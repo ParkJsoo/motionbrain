@@ -626,7 +626,7 @@ INDEX_HTML = """<!doctype html>
       setText("m4Control", shoulder.active ? "ACTIVE" : "IDLE", shoulder.active ? "ok" : "");
       document.getElementById("m4Target").textContent = `target ${fmtNum(shoulder.targetDeg, 2)} deg, error ${fmtNum(shoulder.errorDeg, 2)} deg, output ${shoulder.appliedPercent ?? 0}%, correction ${shoulder.correctionAttempts ?? 0}/${shoulder.maxCorrectionAttempts ?? 0}`;
       setText("m4Guard", shoulder.manualGuardBlocked ? "BLOCKED" : "CLEAR", shoulder.manualGuardBlocked ? "bad" : "ok");
-      document.getElementById("m4Stop").textContent = `${shoulder.lastStopReason || "NONE"}; limits ${fmtNum(shoulder.softMinDeg, 1)}-${fmtNum(shoulder.softMaxDeg, 1)} deg, tolerance ±${fmtNum(shoulder.targetToleranceDeg, 2)} deg`;
+      document.getElementById("m4Stop").textContent = `${shoulder.lastStopReason || "NONE"}; limits ${fmtNum(shoulder.softMinDeg, 1)}-${fmtNum(shoulder.softMaxDeg, 1)} deg, acceptance ±${fmtNum(shoulder.targetToleranceDeg, 2)} deg, success ±${fmtNum(shoulder.settledSuccessToleranceDeg, 2)} deg`;
 
       setText("teleopConn", teleop.connected ? "UP" : "DOWN", teleop.connected ? "ok" : "warn");
       document.getElementById("teleopDeadman").textContent = `deadman ${fmtBool(teleop.deadman)} active ${fmtBool(teleop.controlActive)}`;

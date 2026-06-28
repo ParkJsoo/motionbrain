@@ -322,6 +322,9 @@ class MotionBrainStatusNode(Node):
                 "target_tolerance_deg": as_float(
                     shoulder.get("targetToleranceDeg")
                 ),
+                "settled_success_tolerance_deg": as_float(
+                    shoulder.get("settledSuccessToleranceDeg")
+                ),
                 "magnet_detected": as_bool(shoulder.get("magnetDetected")),
                 "magnet_too_weak": as_bool(shoulder.get("magnetTooWeak")),
                 "magnet_too_strong": as_bool(shoulder.get("magnetTooStrong")),

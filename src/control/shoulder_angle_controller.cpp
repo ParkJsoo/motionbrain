@@ -51,8 +51,9 @@ void ShoulderAngleController::init(SystemStateManager* systemState,
   safetyMonitor_ = safetyMonitor;
   sensor_ = sensor;
   DebugLog::info(
-    "Shoulder angle controller initialized (M4 absolute %.1f-%.1fdeg tolerance=%.2fdeg)",
-    SOFT_MIN_DEGREES, SOFT_MAX_DEGREES, TARGET_TOLERANCE_DEGREES);
+    "Shoulder angle controller initialized (M4 absolute %.1f-%.1fdeg acceptance=%.2fdeg success=%.2fdeg)",
+    SOFT_MIN_DEGREES, SOFT_MAX_DEGREES, TARGET_TOLERANCE_DEGREES,
+    SETTLED_SUCCESS_TOLERANCE_DEGREES);
 }
 
 void ShoulderAngleController::update() {
@@ -103,7 +104,7 @@ void ShoulderAngleController::update() {
   if (settling_) {
     if ((now - settleStartedAtMs_) >= SETTLE_TIME_MS) {
       finalErrorDegrees_ = targetDegrees_ - currentDegrees_;
-      if (fabsf(finalErrorDegrees_) <= TARGET_TOLERANCE_DEGREES) {
+      if (fabsf(finalErrorDegrees_) <= SETTLED_SUCCESS_TOLERANCE_DEGREES) {
         stopInternal(ShoulderAngleStopReason::TARGET_REACHED, "settled within tolerance");
       } else if (correctionAttempts_ >= MAX_CORRECTION_ATTEMPTS) {
         stopInternal(ShoulderAngleStopReason::TARGET_MISSED,
@@ -216,7 +217,7 @@ bool ShoulderAngleController::startAbsolute(float targetDegrees, uint8_t percent
   correcting_ = false;
   correctionAttempts_ = 0;
   const float initialError = targetDegrees - currentDegrees_;
-  if (fabsf(initialError) <= TARGET_TOLERANCE_DEGREES) {
+  if (fabsf(initialError) <= SETTLED_SUCCESS_TOLERANCE_DEGREES) {
     targetDegrees_ = targetDegrees;
     startDegrees_ = currentDegrees_;
     finalErrorDegrees_ = initialError;
@@ -378,6 +379,8 @@ void ShoulderAngleController::appendShoulderStatusJson(String& json) const {
   json += String(SOFT_MAX_DEGREES, 2);
   json += ",\"targetToleranceDeg\":";
   json += String(TARGET_TOLERANCE_DEGREES, 2);
+  json += ",\"settledSuccessToleranceDeg\":";
+  json += String(SETTLED_SUCCESS_TOLERANCE_DEGREES, 2);
   json += ",\"stopThresholdWindowDeg\":";
   json += String(STOP_THRESHOLD_WINDOW_DEGREES, 2);
   json += ",\"upCorrectionPercent\":";
@@ -501,7 +504,7 @@ void ShoulderAngleController::beginSettling() {
 
 bool ShoulderAngleController::beginCorrection(uint32_t now) {
   const float error = targetDegrees_ - currentDegrees_;
-  if (fabsf(error) <= TARGET_TOLERANCE_DEGREES) {
+  if (fabsf(error) <= SETTLED_SUCCESS_TOLERANCE_DEGREES) {
     return false;
   }
 

@@ -16,7 +16,7 @@ MotionBrain은 ESP32 기반 5축 로봇팔 제어기에서 시작해 STM32 센�
 | --- | --- |
 | 실물 로봇 통합 | ESP32 5축 모션 제어기, STM32 유선 텔레오퍼레이션, ESP32-CAM, Raspberry Pi 호스트를 하나의 arm stack으로 통합 |
 | 임베디드 안전 경계 | `BOOT -> IDLE -> ARMED -> FAULT`, `Dispatcher` + `SafetyGate`, 토큰 기반 명령, deadman release stop, 프레임 타임아웃 |
-| 단일축 위치 피드백 | M4 어깨 AS5600 절대각 측정, 센서/자석 상태 감시, 230-245° 제한 폐루프 목표각 제어, `TARGET_MISSED` 실패 판정, 11/11 반복 회귀와 HTTP/대시보드/ROS2 텔레메트리 |
+| 단일축 위치 피드백 | M4 어깨 AS5600 절대각 측정, 센서/자석 상태 감시, 230-245° 제한 폐루프 목표각 제어, `TARGET_MISSED` 실패 판정, 동일 고정 장착 무부하 22/22와 23.1g 하중 11/11 회귀, HTTP/대시보드/ROS2 텔레메트리 |
 | ROS2 시스템 소프트웨어 | ROS2 Jazzy typed topics, C++ control guard, mission supervisor, URDF/RViz, `ros2_control` dry-run mock/open-loop `SystemInterface` |
 | 운영/검증 | Pi systemd 서비스, health-check 스크립트, runtime evidence, `ros2_control` evidence, PlatformIO/Python/ROS2 GitHub Actions, 물리 텔레오퍼레이션 데모 |
 

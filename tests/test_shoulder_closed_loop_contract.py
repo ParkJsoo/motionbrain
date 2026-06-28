@@ -38,6 +38,7 @@ class ShoulderClosedLoopContractTest(unittest.TestCase):
             "SOFT_MIN_DEGREES = 230.0f",
             "SOFT_MAX_DEGREES = 245.0f",
             "TARGET_TOLERANCE_DEGREES = 0.50f",
+            "SETTLED_SUCCESS_TOLERANCE_DEGREES = 0.40f",
             "STOP_THRESHOLD_WINDOW_DEGREES = 0.35f",
             "SENSOR_STALE_MS = 150",
             "COMMAND_TIMEOUT_MS = 7000",
@@ -52,7 +53,7 @@ class ShoulderClosedLoopContractTest(unittest.TestCase):
             "TARGET_MISSED",
             "UP_CORRECTION_PERCENT = 75",
             "DOWN_CORRECTION_PERCENT = 35",
-            "UP_CORRECTION_PULSE_MS = 250",
+            "UP_CORRECTION_PULSE_MS = 500",
             "DOWN_CORRECTION_PULSE_MS = 250",
             "MAX_CORRECTION_ATTEMPTS = 4",
         }
@@ -65,7 +66,10 @@ class ShoulderClosedLoopContractTest(unittest.TestCase):
         self.assertIn("manualDirectionAllowed", source)
         self.assertIn("enforceManualDriveLimits", source)
         self.assertIn("appendShoulderStatusJson", header + source)
-        self.assertIn("fabsf(finalErrorDegrees_) <= TARGET_TOLERANCE_DEGREES", source)
+        self.assertIn(
+            "fabsf(finalErrorDegrees_) <= SETTLED_SUCCESS_TOLERANCE_DEGREES",
+            source,
+        )
         self.assertIn("beginCorrection(now)", source)
         self.assertIn("SHOULDER_ANGLE_CORRECTION", source)
         self.assertIn("correcting_ ? correctionPercent() : requestedPercent_", source)
@@ -80,6 +84,7 @@ class ShoulderClosedLoopContractTest(unittest.TestCase):
             "correctionAttempts",
             "maxCorrectionAttempts",
             "targetToleranceDeg",
+            "settledSuccessToleranceDeg",
             "stopThresholdWindowDeg",
             "upCorrectionPulseMs",
             "downCorrectionPulseMs",

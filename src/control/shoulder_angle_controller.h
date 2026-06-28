@@ -36,7 +36,10 @@ class ShoulderAngleController {
 public:
   static constexpr float SOFT_MIN_DEGREES = 230.0f;
   static constexpr float SOFT_MAX_DEGREES = 245.0f;
+  // External acceptance remains +/-0.50 deg. TARGET_REACHED uses a tighter
+  // window so one AS5600 step of post-stop variation stays inside acceptance.
   static constexpr float TARGET_TOLERANCE_DEGREES = 0.50f;
+  static constexpr float SETTLED_SUCCESS_TOLERANCE_DEGREES = 0.40f;
   static constexpr float STOP_THRESHOLD_WINDOW_DEGREES = 0.35f;
   static constexpr float SLOW_ZONE_DEGREES = 1.5f;
   static constexpr float UP_STOP_LEAD_DEGREES = 0.90f;
@@ -45,7 +48,10 @@ public:
   static constexpr float CORRECTION_CUTOFF_ERROR_DEGREES = 0.20f;
   static constexpr uint8_t UP_CORRECTION_PERCENT = 75;
   static constexpr uint8_t DOWN_CORRECTION_PERCENT = 35;
-  static constexpr uint32_t UP_CORRECTION_PULSE_MS = 250;
+  // Upward loaded moves need enough time for MotorControl's 50 ms / 10-count
+  // PWM ramp to cross static friction. Target cutoff, timeout, and the four
+  // attempt cap still bound the correction before this maximum duration.
+  static constexpr uint32_t UP_CORRECTION_PULSE_MS = 500;
   static constexpr uint32_t DOWN_CORRECTION_PULSE_MS = 250;
   static constexpr uint8_t MAX_CORRECTION_ATTEMPTS = 4;
   static constexpr uint8_t DEFAULT_PERCENT = 100;

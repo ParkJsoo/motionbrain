@@ -110,7 +110,8 @@ sensor-health failure.
 The revised controller now:
 
 - rechecks final error after settling instead of returning unconditional success;
-- applies bounded correction pulses: 75% upward, 35% downward, 250ms, at most four attempts;
+- applies bounded correction pulses: 75%/500ms upward and 35%/250ms downward,
+  at most four attempts;
 - stops as `TARGET_MISSED` if the result remains outside `+/-0.50 deg`;
 - exposes correction state, attempts, tolerance, and failure reason through HTTP, dashboard, and ROS2.
 
@@ -134,16 +135,119 @@ absolute error, `0.44 deg` maximum absolute error, and at most four correction
 attempts. Final state was `IDLE`, M1-M5 speed 0, M4 234.05 deg, sensor ready,
 AGC 100, and magnitude 2100.
 
+## Independent repeatability rerun
+
+The complete 11-run matrix was repeated with the same fixed mount and current
+no-added-load setup. Preflight initially found a STM32 MPU-6050 boot probe
+failure: `IMU_FAULT`, `imuStatus=2`, I2C timeout `0x20`, and SDA LOW. SafetyGate
+blocked motion, and no motion command was sent while the block was active.
+After a STM32 reset, the MPU-6050 recovered at address `0x68` with error 0,
+SCL/SDA HIGH, and `blockReason=NONE`; validation started only after those checks.
+
+| Group | Speed | Target | Start | Stable after 1s | Final error | Corrections |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Wide | 100% | 236 deg | 233.96 deg | 235.72 deg | +0.28 deg | 2 |
+| Wide | 100% | 243 deg | 235.72 deg | 243.19 deg | -0.19 deg | 1 |
+| Wide | 75% | 240 deg | 243.19 deg | 240.29 deg | -0.29 deg | 0 |
+| Wide | 75% | 232 deg | 240.29 deg | 232.29 deg | -0.29 deg | 2 |
+| Wide | 100% | 236 deg | 232.29 deg | 235.89 deg | +0.11 deg | 0 |
+| Repeat | 100% | 238 deg | 235.98 deg | 237.83 deg | +0.17 deg | 0 |
+| Repeat | 100% | 234 deg | 237.83 deg | 234.05 deg | -0.05 deg | 0 |
+| Repeat | 100% | 238 deg | 234.05 deg | 238.18 deg | -0.18 deg | 0 |
+| Repeat | 100% | 234 deg | 238.18 deg | 234.31 deg | -0.31 deg | 0 |
+| Repeat | 100% | 238 deg | 234.31 deg | 238.09 deg | -0.09 deg | 0 |
+| Repeat | 100% | 234 deg | 238.09 deg | 234.14 deg | -0.14 deg | 0 |
+
+The five wide-range runs had `0.232 deg` mean absolute error and `0.29 deg`
+maximum error. The six repeated-cycle runs had `0.157 deg` mean absolute error
+and `0.31 deg` maximum error. All 11 runs passed, with `0.191 deg` overall mean
+absolute error, `0.31 deg` maximum absolute error, and at most two correction
+attempts. Across 184 in-motion samples there were no non-M4 motor activations,
+safety blocks, IMU failures, or AS5600 readiness failures. AS5600 magnitude was
+`2093-2107`, and maximum sensor age was `37ms`.
+
+Final state was `IDLE`, M1-M5 stopped, M4 234.14 deg, AS5600 ready, MPU-6050
+healthy, and no latched fault. The two complete post-fix matrices on the same
+fixed mount therefore passed 22/22 in total. Neither run used a known added
+load or separately instrumented battery voltage.
+
+## 23.10 g load validation and correction update
+
+With three 500 KRW coins held directly by the gripper (`23.10 g`), a 75%
+238-to-234 deg retention smoke passed 2/2 with final errors of `+0.35/-0.40 deg`.
+The first short upward move in the full matrix then commanded 236 deg from
+234.40 deg but settled at 235.10 deg. It ended as `TARGET_MISSED` with
+`+0.90 deg` error after four corrections, and no later matrix step was run.
+
+Loaded coast after the initial cutoff was only 0.08 deg, which did not match
+the 0.90 deg upward stop lead characterized without a known load. Each 250 ms
+correction also restarted the shared motor ramp from zero; PWM speed reached
+only 40-50 before cutoff, and the later pulses did not overcome static friction.
+AS5600 and STM32 safety inputs stayed healthy, and no other motor moved. Battery
+voltage was not instrumented, so load and supply-voltage effects cannot be
+fully separated.
+
+Failure cleanup left the system `IDLE`, M1-M5 stopped, M4 235.10 deg, sensors
+healthy, and no latched fault. This does not prove that the arm cannot carry
+23.10 g; it shows that the unloaded short-move coast compensation and ramped
+correction pulse are not valid for this loaded case.
+
+The soft limits, `+/-0.50 deg` tolerance, sensor target cutoff, 7 s timeout,
+and four-attempt cap were preserved. Only the upward correction pulse maximum
+was increased from 250 to 500 ms, giving MotorControl's 50 ms/10-count PWM ramp
+time to cross loaded static friction. After the change, a 75% 238-to-234 deg
+smoke passed 2/2 before the complete matrix was retried.
+
+| Group | Result | Mean absolute error | Maximum absolute error | Maximum corrections |
+| --- | ---: | ---: | ---: | ---: |
+| 232-243 deg / 75-100% | 5/5 | 0.328 deg | 0.47 deg | 3 |
+| Repeated 238-to-234 deg | 6/6 | 0.245 deg | 0.49 deg | 1 |
+| Overall | 11/11 | 0.283 deg | 0.49 deg | 3 |
+
+The first short 236 deg target changed from `235.10 deg/TARGET_MISSED` before
+the fix to `236.42 deg/TARGET_REACHED` afterward. Across 180 motion samples
+there were no safety blocks, IMU/AS5600 failures, or non-M4 motor activations.
+AS5600 magnitude was `2093-2111`, and maximum age was `36ms`. Final state was
+`IDLE`, M1-M5 stopped, M4 234.14 deg, sensors healthy, and no latched fault.
+
+## Boundary success margin and final regressions
+
+The following no-added-load regression exposed another boundary defect on its
+ninth target. Firmware returned `TARGET_REACHED` at 234.49 deg, inside the
+`+/-0.50 deg` acceptance band, but one AS5600 step of variation produced
+234.58 deg one second later. Instead of loosening external acceptance to
+0.60 deg, the external `+/-0.50 deg` contract was preserved and internal
+success was tightened to `+/-0.40 deg`. HTTP status exposes these separately as
+`targetToleranceDeg=0.50` and `settledSuccessToleranceDeg=0.40`.
+
+Final complete regressions without and with the 23.10 g load:
+
+| Condition | Result | Mean absolute error | Maximum absolute error | Maximum corrections | Motion samples |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| No added load | 11/11 | 0.132 deg | 0.36 deg | 2 | 214 |
+| 23.10 g | 11/11 | 0.155 deg | 0.31 deg | 2 | 201 |
+
+Both runs had zero safety blocks, IMU/AS5600 failures, or non-M4 motor
+activations. No-load AS5600 magnitude was `2093-2107` with `36ms` maximum age;
+the 23.10 g run had magnitude `2094-2108` and `39ms` maximum age. Final loaded
+state was `IDLE`, M1-M5 stopped, M4 234.31 deg, sensors healthy, and no latched
+fault.
+
 ## Remaining limits
 
 - The sensor and magnet are secured, but long-term repeatability and vibration conditions remain unvalidated.
 - GPIO0/GPIO15 is the supported allocation under the current pin budget but
   requires boot-strap discipline. GPIO0 must not be held LOW at reset, and boot
   and upload regression must be repeated after wiring changes.
-- The `-24.35 deg` mount offset is valid only for the current trial mount and must be recalibrated after remounting.
+- The `-24.35 deg` mount offset is valid only for the current fixed mount and must be recalibrated after remounting.
 - Only a narrow, supervised shoulder range has been calibrated.
 - Directional stop-lead values need repeated trials across load and battery-voltage conditions.
-- These repeatability results cover one session under the current load and battery state; battery voltage was not separately instrumented.
+- The two complete repeatability runs used the same current mount and no-added-load
+  condition. The final controller was rerun 11/11 both without load and at
+  23.10 g, but larger loads and measured battery-voltage cases remain untested.
+- The STM32 MPU-6050 boot probe failure recovered after reset. If it recurs,
+  power, SDA/SCL wiring, pull-ups, boot order, and I2C bus recovery need a
+  separate investigation.
 - The analog OUT/VP path is still saturated and is intentionally excluded from control.
 
 ## Reproduction commands

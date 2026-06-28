@@ -154,9 +154,16 @@ The public demo is physical teleoperation. Supporting evidence covers `STREAM`-b
 - M4 calibrated/raw angle, magnet health, sensor freshness, controller state,
   and manual guard state are exposed through ESP32 `/status`, the Pi dashboard,
   ROS2 typed status, and diagnostics.
-- Fixed-mount regression passed 5/5 across 232-243 deg and 75/100% cases plus
-  6/6 repeated 238-to-234 deg cycles. Maximum absolute error was 0.44 deg, with
-  settled-error revalidation and an explicit `TARGET_MISSED` failure state.
+- Two fixed-mount regressions each covered five 232-243 deg and 75/100% cases
+  plus six repeated 238-to-234 deg cycles, passing 22/22 in total. The second
+  complete matrix had 0.191 deg mean absolute error and 0.31 deg maximum
+  absolute error, with settled-error revalidation and an explicit
+  `TARGET_MISSED` failure state.
+- A 23.1 g short upward move exposed a mismatch between PWM ramp time and the
+  correction pulse. Increasing only the upward correction maximum to 500 ms
+  and adding a separate 0.40 deg internal success margin produced final 11/11
+  regressions both without load (0.132 deg mean, 0.36 deg max) and at 23.1 g
+  (0.155 deg mean, 0.31 deg max).
 - STM32 `MPU-6050 + UART` teleop and the HC-SR04 bench path were validated.
 - Wired teleop produced real motor output under deadman control and stopped on release.
 - The final physical teleoperation demo was captured and published as README GIF/MP4 assets.
@@ -192,8 +199,8 @@ Current honest positioning:
 - M4 GPIO0/GPIO15 is the supported allocation under the current pin budget but
   requires boot-strap discipline. The sensor and magnet are mechanically
   secured; the 230-245 deg calibrated range and directional stop leads still
-  require repeatability and vibration validation.
-- The current `-24.35 deg` angle offset is trial-mount-specific and requires
+  require long-duration, vibration, load, and battery-voltage validation.
+- The current `-24.35 deg` angle offset is specific to the current fixed mount and requires
   recalibration after remounting.
 - HC-SR04 is removed for the final physical demo, with range telemetry handled as disabled/nonblocking
 - ESP32-CAM QVGA input limits general object detection quality
