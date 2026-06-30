@@ -178,6 +178,14 @@ class MotionBrainJointStateNode(LifecycleNode):
         self.joint_states_output = normalize_joint_states_output(
             self.get_parameter("joint_states_output").value
         )
+        if (
+            self.estimated_joint_states_topic == self.joint_states_topic
+            and self.joint_states_output != JOINT_STATES_OUTPUT_ESTIMATED
+        ):
+            raise ValueError(
+                "estimated_joint_states_topic must differ from joint_states_topic "
+                "unless joint_states_output is estimated"
+            )
         self.publish_rate_hz = max(float(self.get_parameter("publish_rate_hz").value), 0.1)
         self.publish_default_pose = bool(self.get_parameter("publish_default_pose").value)
         self.shoulder_feedback_calibration_enabled = bool(
@@ -204,7 +212,10 @@ class MotionBrainJointStateNode(LifecycleNode):
             self.estimated_joint_states_topic,
             10,
         )
-        if self.joint_states_output != JOINT_STATES_OUTPUT_NONE:
+        if (
+            self.joint_states_output != JOINT_STATES_OUTPUT_NONE
+            and self.joint_states_topic != self.estimated_joint_states_topic
+        ):
             self.joint_states_publisher = self.create_publisher(
                 JointState,
                 self.joint_states_topic,

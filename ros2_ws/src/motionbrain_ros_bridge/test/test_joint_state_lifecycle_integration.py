@@ -48,6 +48,26 @@ class JointStateLifecycleIntegrationTest(unittest.TestCase):
             if messages["estimated"] and messages["selected"]:
                 return
 
+    def wait_for_publisher_count(
+        self,
+        observer,
+        topic: str,
+        expected_count: int,
+        nodes: list,
+        timeout_sec: float = 2.0,
+    ) -> None:
+        deadline = time.monotonic() + timeout_sec
+        while time.monotonic() < deadline:
+            for node in nodes:
+                rclpy.spin_once(node, timeout_sec=0.0)
+            if observer.count_publishers(topic) == expected_count:
+                return
+            time.sleep(0.01)
+        self.fail(
+            f"expected {expected_count} publishers for {topic}, "
+            f"got {observer.count_publishers(topic)}"
+        )
+
     def test_inactive_joint_state_bridge_does_not_publish_until_activated(self) -> None:
         joint_state_node = MotionBrainJointStateNode(autostart=False)
         joint_state_node.set_parameters(
@@ -121,6 +141,99 @@ class JointStateLifecycleIntegrationTest(unittest.TestCase):
         self.assertEqual([], messages["selected"])
 
         collector.destroy_node()
+        joint_state_node.destroy_node()
+
+    def test_joint_state_output_modes_keep_selected_topic_single_owner(self) -> None:
+        cases = [
+            ("estimated", "/test/joint_states_estimated", 1, 1),
+            ("measured", "/test/joint_states_measured", 1, 1),
+            ("none", "/test/joint_states_none", 1, 0),
+        ]
+        for output_mode, selected_topic, estimated_count, selected_count in cases:
+            with self.subTest(output_mode=output_mode):
+                joint_state_node = MotionBrainJointStateNode(autostart=False)
+                joint_state_node.set_parameters(
+                    [
+                        Parameter(
+                            "source_topic",
+                            Parameter.Type.STRING,
+                            f"/test/status_typed_{output_mode}",
+                        ),
+                        Parameter(
+                            "joint_states_topic",
+                            Parameter.Type.STRING,
+                            selected_topic,
+                        ),
+                        Parameter(
+                            "estimated_joint_states_topic",
+                            Parameter.Type.STRING,
+                            f"/test/estimated_joint_states_{output_mode}",
+                        ),
+                        Parameter(
+                            "joint_states_output",
+                            Parameter.Type.STRING,
+                            output_mode,
+                        ),
+                    ]
+                )
+                self.assertEqual(
+                    TransitionCallbackReturn.SUCCESS,
+                    joint_state_node.trigger_configure(),
+                )
+                observer = rclpy.create_node(f"joint_state_owner_observer_{output_mode}")
+                nodes = [joint_state_node, observer]
+                self.wait_for_publisher_count(
+                    observer,
+                    f"/test/estimated_joint_states_{output_mode}",
+                    estimated_count,
+                    nodes,
+                )
+                self.wait_for_publisher_count(
+                    observer,
+                    selected_topic,
+                    selected_count,
+                    nodes,
+                )
+
+                observer.destroy_node()
+                joint_state_node.destroy_node()
+
+    def test_estimated_output_reuses_publisher_when_topics_match(self) -> None:
+        topic = "/test/shared_joint_states"
+        joint_state_node = MotionBrainJointStateNode(autostart=False)
+        joint_state_node.set_parameters(
+            [
+                Parameter("joint_states_topic", Parameter.Type.STRING, topic),
+                Parameter("estimated_joint_states_topic", Parameter.Type.STRING, topic),
+                Parameter("joint_states_output", Parameter.Type.STRING, "estimated"),
+            ]
+        )
+        self.assertEqual(
+            TransitionCallbackReturn.SUCCESS,
+            joint_state_node.trigger_configure(),
+        )
+        observer = rclpy.create_node("joint_state_shared_owner_observer")
+        nodes = [joint_state_node, observer]
+        self.wait_for_publisher_count(observer, topic, 1, nodes)
+
+        observer.destroy_node()
+        joint_state_node.destroy_node()
+
+    def test_measured_output_rejects_shared_estimated_topic(self) -> None:
+        topic = "/test/conflicting_joint_states"
+        joint_state_node = MotionBrainJointStateNode(autostart=False)
+        joint_state_node.set_parameters(
+            [
+                Parameter("joint_states_topic", Parameter.Type.STRING, topic),
+                Parameter("estimated_joint_states_topic", Parameter.Type.STRING, topic),
+                Parameter("joint_states_output", Parameter.Type.STRING, "measured"),
+            ]
+        )
+        self.assertEqual(
+            TransitionCallbackReturn.FAILURE,
+            joint_state_node.trigger_configure(),
+        )
+
         joint_state_node.destroy_node()
 
 

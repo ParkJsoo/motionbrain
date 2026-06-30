@@ -17,6 +17,8 @@ EXPECTED_BASE_YAW_FEEDBACK_HARDWARE_READY="${EXPECTED_BASE_YAW_FEEDBACK_HARDWARE
 EXPECTED_BASE_YAW_FEEDBACK_SIGNAL_ACTIVE="${EXPECTED_BASE_YAW_FEEDBACK_SIGNAL_ACTIVE:-}"
 EXPECTED_BASE_YAW_FEEDBACK_PIN="${EXPECTED_BASE_YAW_FEEDBACK_PIN:-36}"
 EXPECTED_BASE_YAW_FEEDBACK_ACTIVE_LOW="${EXPECTED_BASE_YAW_FEEDBACK_ACTIVE_LOW:-true}"
+EXPECTED_JOINT_STATES_PUBLISHERS="${EXPECTED_JOINT_STATES_PUBLISHERS:-1}"
+EXPECTED_ESTIMATED_JOINT_STATES_PUBLISHERS="${EXPECTED_ESTIMATED_JOINT_STATES_PUBLISHERS:-1}"
 
 required_topics=(
   "/motionbrain/status_typed"
@@ -63,6 +65,36 @@ source "${WORKSPACE}/install/setup.bash"
 
 set -u
 
+check_topic_publisher_count() {
+  local topic="$1"
+  local expected_count="$2"
+  local label="$3"
+  local topic_info=""
+  local observed_count=""
+
+  if [[ -z "${expected_count}" ]]; then
+    return 0
+  fi
+
+  local deadline=$((SECONDS + TOPIC_WAIT_SECONDS))
+  while (( SECONDS <= deadline )); do
+    topic_info="$(timeout 8 ros2 topic info --verbose "${topic}" 2>/dev/null || true)"
+    observed_count="$(
+      awk -F: '/Publisher count:/ { gsub(/^[[:space:]]+/, "", $2); print $2; exit }' \
+        <<< "${topic_info}"
+    )"
+    if [[ "${observed_count}" == "${expected_count}" ]]; then
+      echo "OK ${label} publisher count: ${topic}=${expected_count}"
+      return 0
+    fi
+    sleep "${TOPIC_POLL_SECONDS}"
+  done
+
+  echo "FAIL ${label} publisher count for ${topic}: expected ${expected_count}, got ${observed_count:-unknown}" >&2
+  echo "${topic_info}" >&2
+  exit 1
+}
+
 for topic in "${required_topics[@]}"; do
   topic_deadline=$((SECONDS + TOPIC_WAIT_SECONDS))
   topics=""
@@ -80,6 +112,15 @@ for topic in "${required_topics[@]}"; do
   fi
   echo "OK topic: ${topic}"
 done
+
+check_topic_publisher_count \
+  "/joint_states" \
+  "${EXPECTED_JOINT_STATES_PUBLISHERS}" \
+  "joint_states"
+check_topic_publisher_count \
+  "/motionbrain/estimated_joint_states" \
+  "${EXPECTED_ESTIMATED_JOINT_STATES_PUBLISHERS}" \
+  "estimated_joint_states"
 
 for service in "${required_services[@]}"; do
   service_deadline=$((SECONDS + TOPIC_WAIT_SECONDS))

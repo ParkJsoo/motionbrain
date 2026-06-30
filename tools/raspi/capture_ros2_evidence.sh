@@ -319,6 +319,8 @@ run_step "Bridge health check" env \
   EXPECTED_BASE_YAW_FEEDBACK_SIGNAL_ACTIVE="${EXPECTED_BASE_YAW_FEEDBACK_SIGNAL_ACTIVE}" \
   EXPECTED_BASE_YAW_FEEDBACK_PIN="${EXPECTED_BASE_YAW_FEEDBACK_PIN}" \
   EXPECTED_BASE_YAW_FEEDBACK_ACTIVE_LOW="${EXPECTED_BASE_YAW_FEEDBACK_ACTIVE_LOW}" \
+  EXPECTED_JOINT_STATES_PUBLISHERS="${EXPECTED_JOINT_STATES_PUBLISHERS:-1}" \
+  EXPECTED_ESTIMATED_JOINT_STATES_PUBLISHERS="${EXPECTED_ESTIMATED_JOINT_STATES_PUBLISHERS:-1}" \
   "${REPO_DIR}/tools/raspi/check_ros_bridge_health.sh"
 
 run_step "MotionBrain ROS2 packages" bash -lc "ros2 pkg list | grep '^motionbrain'"
@@ -326,6 +328,9 @@ run_step "MotionBrain ROS2 interfaces" bash -lc "ros2 interface list | grep 'mot
 run_step "MotionBrain ROS2 services" bash -lc "ros2 interface list | grep 'motionbrain_msgs/srv'"
 run_step "MotionBrain ROS2 actions" bash -lc "ros2 interface list | grep 'motionbrain_msgs/action'"
 run_step "ROS2 topic list" ros2 topic list
+run_step "JointState topic publisher ownership" ros2 topic info --verbose /joint_states
+run_step "Estimated JointState topic publisher ownership" \
+  ros2 topic info --verbose /motionbrain/estimated_joint_states
 run_step "ROS2 service list" ros2 service list
 run_step "ROS2 action list" ros2 action list
 

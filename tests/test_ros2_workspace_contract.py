@@ -500,6 +500,14 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         self.assertIn("motionbrain_control_guard_node", script_text)
         self.assertIn("motionbrain_mission_supervisor", script_text)
         self.assertIn("OK lifecycle active samples", script_text)
+        self.assertIn("check_topic_publisher_count", script_text)
+        self.assertIn("ros2 topic info --verbose", script_text)
+        self.assertIn("Publisher count:", script_text)
+        self.assertIn("EXPECTED_JOINT_STATES_PUBLISHERS", script_text)
+        self.assertIn("EXPECTED_ESTIMATED_JOINT_STATES_PUBLISHERS", script_text)
+        self.assertIn('echo "OK ${label} publisher count', script_text)
+        self.assertIn('"/joint_states"', script_text)
+        self.assertIn('"/motionbrain/estimated_joint_states"', script_text)
         self.assertIn("OK diagnostics sample", script_text)
         self.assertIn("motionbrain/controller", script_text)
         self.assertIn("motionbrain/routine_executor", script_text)
@@ -846,6 +854,10 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         for fragment in required_fragments:
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, evidence_text)
+        self.assertIn("JointState topic publisher ownership", evidence_text)
+        self.assertIn("Estimated JointState topic publisher ownership", evidence_text)
+        self.assertIn("EXPECTED_JOINT_STATES_PUBLISHERS", evidence_text)
+        self.assertIn("EXPECTED_ESTIMATED_JOINT_STATES_PUBLISHERS", evidence_text)
 
         read_only_topics = {
             "/motionbrain/status_typed",
