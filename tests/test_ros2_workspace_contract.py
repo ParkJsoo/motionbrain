@@ -58,8 +58,10 @@ EXPECTED_ACTION_FILES = {
 
 EXPECTED_PACKAGE_TEST_FILES = {
     "motionbrain_control/test/test_control_guard_logic.cpp",
+    "motionbrain_control/test/test_control_guard_lifecycle.py",
     "motionbrain_hardware_interface/test/test_load_motionbrain_hardware_interface.cpp",
     "motionbrain_mission/test/test_mission_flow.py",
+    "motionbrain_mission/test/test_mission_supervisor_lifecycle.py",
     "motionbrain_ros_bridge/test/test_fake_endpoint_bridge_integration.py",
     "motionbrain_ros_bridge/test/test_fake_motionbrain_endpoint.py",
     "motionbrain_ros_bridge/test/test_payload_utils.py",
@@ -104,8 +106,11 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
             'executable="motionbrain_control_guard_node"',
             'executable="motionbrain_mission_supervisor"',
             '"enable_kinematics"',
+            '"kinematics_autostart"',
             '"enable_control_guard"',
+            '"control_guard_autostart"',
             '"enable_mission_supervisor"',
+            '"mission_supervisor_autostart"',
             '"enable_joint_state_bridge"',
             '"joint_states_topic"',
             '"estimated_joint_states_topic"',
@@ -116,6 +121,7 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
             '"shoulder_ros_joint_zero_rad"',
             '"perception_url"',
             '"status_autostart"',
+            '"joint_state_autostart"',
             '"autostart"',
         ]
         for fragment in required_fragments:
@@ -145,6 +151,8 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
 
         required_fragments = [
             "enable_joint_state_bridge",
+            "joint_state_autostart",
+            "kinematics_autostart",
             "joint_states_topic",
             "estimated_joint_states_topic",
             "joint_states_output",
@@ -157,7 +165,16 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, bridge_launch)
 
-        for fragment in required_fragments[1:]:
+        display_fragments = [
+            "joint_states_topic",
+            "estimated_joint_states_topic",
+            "joint_states_output",
+            "shoulder_feedback_calibration_enabled",
+            "shoulder_sensor_zero_deg",
+            "shoulder_direction_sign",
+            "shoulder_ros_joint_zero_rad",
+        ]
+        for fragment in display_fragments:
             with self.subTest(display_fragment=fragment):
                 self.assertIn(fragment, display_launch)
         self.assertIn(
@@ -167,6 +184,10 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
 
         required_env = [
             "MOTIONBRAIN_ENABLE_JOINT_STATE_BRIDGE",
+            "MOTIONBRAIN_JOINT_STATE_AUTOSTART",
+            "MOTIONBRAIN_KINEMATICS_AUTOSTART",
+            "MOTIONBRAIN_CONTROL_GUARD_AUTOSTART",
+            "MOTIONBRAIN_MISSION_SUPERVISOR_AUTOSTART",
             "MOTIONBRAIN_JOINT_STATES_TOPIC",
             "MOTIONBRAIN_ESTIMATED_JOINT_STATES_TOPIC",
             "MOTIONBRAIN_JOINT_STATES_OUTPUT",
@@ -243,6 +264,7 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         )
         self.assertIn("motionbrain_msgs", control_deps)
         self.assertIn("rclcpp", control_deps)
+        self.assertIn("rclcpp_lifecycle", control_deps)
         self.assertIn("std_msgs", control_deps)
 
         description_deps = dependency_names(
@@ -656,6 +678,42 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
             with self.subTest(status_lifecycle_fragment=fragment):
                 self.assertIn(fragment, status_text)
 
+        joint_state_lifecycle_fragments = [
+            "from rclpy.lifecycle import LifecycleNode",
+            "from rclpy.lifecycle import TransitionCallbackReturn",
+            "class MotionBrainJointStateNode(LifecycleNode)",
+            "def on_configure(",
+            "def on_activate(",
+            "def on_deactivate(",
+            "def on_cleanup(",
+            "def on_shutdown(",
+            "self.trigger_configure()",
+            "self.trigger_activate()",
+            "if self.estimated_publisher is None:",
+            "return TransitionCallbackReturn.SUCCESS",
+        ]
+        for fragment in joint_state_lifecycle_fragments:
+            with self.subTest(joint_state_lifecycle_fragment=fragment):
+                self.assertIn(fragment, joint_state_text)
+
+        kinematics_lifecycle_fragments = [
+            "from rclpy.lifecycle import LifecycleNode",
+            "from rclpy.lifecycle import TransitionCallbackReturn",
+            "class MotionBrainKinematicsNode(LifecycleNode)",
+            "def on_configure(",
+            "def on_activate(",
+            "def on_deactivate(",
+            "def on_cleanup(",
+            "def on_shutdown(",
+            "self.trigger_configure()",
+            "self.trigger_activate()",
+            "if not self._processing_active:",
+            "return TransitionCallbackReturn.SUCCESS",
+        ]
+        for fragment in kinematics_lifecycle_fragments:
+            with self.subTest(kinematics_lifecycle_fragment=fragment):
+                self.assertIn(fragment, kinematics_text)
+
         for text in [status_text, joint_state_text, kinematics_text]:
             with self.subTest(node="python_bridge_node"):
                 self.assertIn("LifecycleStatusPublisher", text)
@@ -665,11 +723,44 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         self.assertIn('"/motionbrain/lifecycle_typed"', mission_text)
         self.assertIn('"/motionbrain/lifecycle"', mission_text)
         self.assertIn("PRIMARY_STATE_ACTIVE", mission_text)
+        mission_lifecycle_fragments = [
+            "from rclpy.lifecycle import LifecycleNode",
+            "from rclpy.lifecycle import TransitionCallbackReturn",
+            "class MotionBrainMissionSupervisor(LifecycleNode)",
+            "def on_configure(",
+            "def on_activate(",
+            "def on_deactivate(",
+            "def on_cleanup(",
+            "def on_shutdown(",
+            "self.trigger_configure()",
+            "self.trigger_activate()",
+            "if not self._processing_active:",
+            "return TransitionCallbackReturn.SUCCESS",
+        ]
+        for fragment in mission_lifecycle_fragments:
+            with self.subTest(mission_lifecycle_fragment=fragment):
+                self.assertIn(fragment, mission_text)
 
-        self.assertIn("node_lifecycle_status.hpp", guard_text)
-        self.assertIn('"/motionbrain/lifecycle_typed"', guard_text)
-        self.assertIn('"/motionbrain/lifecycle"', guard_text)
-        self.assertIn("PRIMARY_STATE_ACTIVE", guard_text)
+        guard_lifecycle_fragments = [
+            "rclcpp_lifecycle/lifecycle_node.hpp",
+            "class MotionBrainControlGuardNode : public rclcpp_lifecycle::LifecycleNode",
+            "CallbackReturn on_configure(",
+            "CallbackReturn on_activate(",
+            "CallbackReturn on_deactivate(",
+            "CallbackReturn on_cleanup(",
+            "CallbackReturn on_shutdown(",
+            "configure();",
+            "activate();",
+            "if (!processing_active_",
+            "rclcpp_lifecycle::LifecycleNode::on_activate",
+            "rclcpp_lifecycle::LifecycleNode::on_deactivate",
+            '"/motionbrain/lifecycle_typed"',
+            '"/motionbrain/lifecycle"',
+            "PRIMARY_STATE_ACTIVE",
+        ]
+        for fragment in guard_lifecycle_fragments:
+            with self.subTest(guard_lifecycle_fragment=fragment):
+                self.assertIn(fragment, guard_text)
 
     def test_status_bridge_exposes_non_motion_routine_command_boundary(self):
         bridge_text = (

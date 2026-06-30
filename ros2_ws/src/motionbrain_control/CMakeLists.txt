@@ -8,6 +8,7 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(motionbrain_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(rclcpp_lifecycle REQUIRED)
 find_package(std_msgs REQUIRED)
 
 add_executable(motionbrain_control_guard_node src/control_guard_node.cpp)
@@ -22,6 +23,7 @@ ament_target_dependencies(
   motionbrain_control_guard_node
   motionbrain_msgs
   rclcpp
+  rclcpp_lifecycle
   std_msgs
 )
 
@@ -37,11 +39,13 @@ install(
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
+  find_package(ament_cmake_pytest REQUIRED)
   ament_add_gtest(test_control_guard_logic test/test_control_guard_logic.cpp)
   target_include_directories(
     test_control_guard_logic
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include
   )
+  ament_add_pytest_test(test_control_guard_lifecycle test/test_control_guard_lifecycle.py)
 endif()
 
 ament_export_include_directories(include)

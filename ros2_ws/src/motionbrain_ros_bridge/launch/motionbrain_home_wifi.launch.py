@@ -16,6 +16,7 @@ def generate_launch_description() -> LaunchDescription:
     events_limit = LaunchConfiguration("events_limit")
     status_autostart = LaunchConfiguration("status_autostart")
     enable_joint_state_bridge = LaunchConfiguration("enable_joint_state_bridge")
+    joint_state_autostart = LaunchConfiguration("joint_state_autostart")
     joint_states_topic = LaunchConfiguration("joint_states_topic")
     estimated_joint_states_topic = LaunchConfiguration("estimated_joint_states_topic")
     joint_states_output = LaunchConfiguration("joint_states_output")
@@ -26,8 +27,11 @@ def generate_launch_description() -> LaunchDescription:
     shoulder_direction_sign = LaunchConfiguration("shoulder_direction_sign")
     shoulder_ros_joint_zero_rad = LaunchConfiguration("shoulder_ros_joint_zero_rad")
     enable_kinematics = LaunchConfiguration("enable_kinematics")
+    kinematics_autostart = LaunchConfiguration("kinematics_autostart")
     enable_control_guard = LaunchConfiguration("enable_control_guard")
+    control_guard_autostart = LaunchConfiguration("control_guard_autostart")
     enable_mission_supervisor = LaunchConfiguration("enable_mission_supervisor")
+    mission_supervisor_autostart = LaunchConfiguration("mission_supervisor_autostart")
 
     return LaunchDescription(
         [
@@ -77,6 +81,11 @@ def generate_launch_description() -> LaunchDescription:
                 description="Start bridge-derived JointState outputs.",
             ),
             DeclareLaunchArgument(
+                "joint_state_autostart",
+                default_value="true",
+                description="Automatically configure and activate the joint-state lifecycle node.",
+            ),
+            DeclareLaunchArgument(
                 "joint_states_topic",
                 default_value="/joint_states",
                 description="Selected JointState topic consumed by kinematics and robot_state_publisher.",
@@ -117,14 +126,29 @@ def generate_launch_description() -> LaunchDescription:
                 description="Publish FK end-effector pose and kinematics diagnostics.",
             ),
             DeclareLaunchArgument(
+                "kinematics_autostart",
+                default_value="true",
+                description="Automatically configure and activate the kinematics lifecycle node.",
+            ),
+            DeclareLaunchArgument(
                 "enable_control_guard",
                 default_value="true",
                 description="Publish C++ control readiness guard from typed status and camera detection.",
             ),
             DeclareLaunchArgument(
+                "control_guard_autostart",
+                default_value="true",
+                description="Automatically configure and activate the control guard lifecycle node.",
+            ),
+            DeclareLaunchArgument(
                 "enable_mission_supervisor",
                 default_value="true",
                 description="Publish lightweight mission state for detect-align-confirm-act demos.",
+            ),
+            DeclareLaunchArgument(
+                "mission_supervisor_autostart",
+                default_value="true",
+                description="Automatically configure and activate the mission supervisor lifecycle node.",
             ),
             Node(
                 package="motionbrain_ros_bridge",
@@ -155,6 +179,7 @@ def generate_launch_description() -> LaunchDescription:
                         "joint_states_topic": joint_states_topic,
                         "estimated_joint_states_topic": estimated_joint_states_topic,
                         "joint_states_output": joint_states_output,
+                        "autostart": ParameterValue(joint_state_autostart, value_type=bool),
                         "shoulder_feedback_calibration_enabled": ParameterValue(
                             shoulder_feedback_calibration_enabled,
                             value_type=bool,
@@ -180,7 +205,12 @@ def generate_launch_description() -> LaunchDescription:
                 name="motionbrain_kinematics_node",
                 output="screen",
                 condition=IfCondition(enable_kinematics),
-                parameters=[{"joint_states_topic": joint_states_topic}],
+                parameters=[
+                    {
+                        "joint_states_topic": joint_states_topic,
+                        "autostart": ParameterValue(kinematics_autostart, value_type=bool),
+                    }
+                ],
             ),
             Node(
                 package="motionbrain_control",
@@ -188,6 +218,11 @@ def generate_launch_description() -> LaunchDescription:
                 name="motionbrain_control_guard_node",
                 output="screen",
                 condition=IfCondition(enable_control_guard),
+                parameters=[
+                    {
+                        "autostart": ParameterValue(control_guard_autostart, value_type=bool),
+                    }
+                ],
             ),
             Node(
                 package="motionbrain_mission",
@@ -195,6 +230,14 @@ def generate_launch_description() -> LaunchDescription:
                 name="motionbrain_mission_supervisor",
                 output="screen",
                 condition=IfCondition(enable_mission_supervisor),
+                parameters=[
+                    {
+                        "autostart": ParameterValue(
+                            mission_supervisor_autostart,
+                            value_type=bool,
+                        ),
+                    }
+                ],
             ),
         ]
     )

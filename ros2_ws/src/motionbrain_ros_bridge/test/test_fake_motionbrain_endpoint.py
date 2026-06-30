@@ -68,6 +68,16 @@ class FakeMotionBrainEndpointTest(unittest.TestCase):
         self.assertFalse(shoulder["sensorReady"])
         self.assertEqual("SENSOR_STALE", shoulder["lastStopReason"])
 
+    def test_controller_fault_scenario_latches_fault_without_motion(self):
+        with FakeEndpointServer("controller_fault") as server:
+            status = server.get_json("/status")
+
+        self.assertEqual("FAULT", status["state"])
+        self.assertFalse(status["motorEnabled"])
+        self.assertTrue(status["sensor"]["faultLatched"])
+        self.assertEqual("FAKE_CONTROLLER_FAULT", status["sensor"]["faultReason"])
+        self.assertEqual("clear_fault", status["recovery"]["action"])
+
     def test_policy_mismatch_scenario_exposes_unsafe_routine_state(self):
         with FakeEndpointServer("policy_mismatch") as server:
             routine = server.get_json("/routine")
@@ -76,10 +86,28 @@ class FakeMotionBrainEndpointTest(unittest.TestCase):
         self.assertFalse(routine["feedback"]["readyForRoutineExecution"])
         self.assertTrue(routine["executor"]["queueApplyAllowed"])
 
+    def test_stale_detection_scenario_marks_detection_unavailable(self):
+        with FakeEndpointServer("stale_detection") as server:
+            detection = server.get_json("/api/detection")
+
+        self.assertFalse(detection["available"])
+        self.assertFalse(detection["detected"])
+        self.assertEqual("LOST", detection["alignment"])
+        self.assertEqual("fault injection: stale detection", detection["reason"])
+        self.assertGreaterEqual(detection["ageMs"], 60000)
+
     def test_malformed_status_scenario_returns_invalid_json_only_for_status(self):
         with FakeEndpointServer("malformed_status") as server:
             with self.assertRaises(json.JSONDecodeError):
                 server.get_json("/status")
+            routine = server.get_json("/routine")
+
+        self.assertTrue(routine["dryRunOnly"])
+
+    def test_timeout_status_scenario_delays_only_status(self):
+        with FakeEndpointServer("timeout_status", delay_sec=0.2) as server:
+            with self.assertRaises((TimeoutError, urllib.error.URLError)):
+                server.get_json("/status", timeout=0.05)
             routine = server.get_json("/routine")
 
         self.assertTrue(routine["dryRunOnly"])

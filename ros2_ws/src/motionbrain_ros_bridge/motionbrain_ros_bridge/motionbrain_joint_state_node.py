@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 
 import math
+from typing import Any
 
 import rclpy
 from motionbrain_msgs.msg import MotionStatus
-from rclpy.node import Node
+from rclpy.lifecycle import LifecycleNode
+from rclpy.lifecycle import TransitionCallbackReturn
 from sensor_msgs.msg import JointState
 
 from motionbrain_ros_bridge.lifecycle_status import LifecycleStatusPublisher
@@ -53,8 +55,8 @@ def normalize_joint_states_output(value: object) -> str:
     return output
 
 
-class MotionBrainJointStateNode(Node):
-    def __init__(self) -> None:
+class MotionBrainJointStateNode(LifecycleNode):
+    def __init__(self, autostart: bool | None = None) -> None:
         super().__init__("motionbrain_joint_state_node")
 
         self.declare_parameter("source_topic", "/motionbrain/status_typed")
@@ -70,76 +72,181 @@ class MotionBrainJointStateNode(Node):
         self.declare_parameter("shoulder_sensor_zero_deg", 0.0)
         self.declare_parameter("shoulder_direction_sign", 1)
         self.declare_parameter("shoulder_ros_joint_zero_rad", 0.0)
+        self.declare_parameter("autostart", True if autostart is None else bool(autostart))
 
-        source_topic = str(self.get_parameter("source_topic").value)
-        joint_states_topic = str(self.get_parameter("joint_states_topic").value)
-        estimated_joint_states_topic = str(
+        self.estimated_positions = [0.0] * len(JOINT_NAMES)
+        self.measured_shoulder_position = math.nan
+        self.has_status = False
+        self.source_topic = "/motionbrain/status_typed"
+        self.joint_states_topic = "/joint_states"
+        self.estimated_joint_states_topic = "/motionbrain/estimated_joint_states"
+        self.joint_states_output = JOINT_STATES_OUTPUT_ESTIMATED
+        self.publish_rate_hz = 5.0
+        self.publish_default_pose = True
+        self.shoulder_feedback_calibration_enabled = False
+        self.shoulder_calibration: SensorJointCalibration | None = None
+        self._configured = False
+        self._publishing_active = False
+        self.timer = None
+        self.estimated_publisher = None
+        self.joint_states_publisher = None
+        self.subscription = None
+        self.lifecycle = LifecycleStatusPublisher(
+            self,
+            detail="unconfigured joint-state bridge",
+        )
+
+        if bool(self.get_parameter("autostart").value):
+            self.trigger_configure()
+            self.trigger_activate()
+
+    def on_configure(self, state: Any) -> TransitionCallbackReturn:
+        del state
+        try:
+            self._read_configuration()
+            self._create_configured_entities()
+            self.lifecycle.mark_inactive(
+                f"configured {self.estimated_joint_states_topic} and "
+                f"{self.joint_states_output} {self.joint_states_topic}; waiting for activation"
+            )
+            self.get_logger().info(
+                f"MotionBrain joint-state bridge configured from {self.source_topic}; "
+                "waiting for lifecycle activation"
+            )
+            return TransitionCallbackReturn.SUCCESS
+        except Exception as exc:
+            self.lifecycle.mark_error(f"configure failed: {exc}")
+            self.get_logger().error(f"MotionBrain joint-state bridge configure failed: {exc}")
+            return TransitionCallbackReturn.FAILURE
+
+    def on_activate(self, state: Any) -> TransitionCallbackReturn:
+        del state
+        try:
+            if not self._configured:
+                self._read_configuration()
+                self._create_configured_entities()
+            self._create_publish_timer()
+            self._publishing_active = True
+            self.lifecycle.mark_active(
+                f"publishing estimated joint states on {self.estimated_joint_states_topic}; "
+                f"joint_states_output={self.joint_states_output} topic={self.joint_states_topic}"
+            )
+            self._log_active()
+            return TransitionCallbackReturn.SUCCESS
+        except Exception as exc:
+            self.lifecycle.mark_error(f"activate failed: {exc}")
+            self.get_logger().error(f"MotionBrain joint-state bridge activate failed: {exc}")
+            return TransitionCallbackReturn.FAILURE
+
+    def on_deactivate(self, state: Any) -> TransitionCallbackReturn:
+        del state
+        self._publishing_active = False
+        self._destroy_publish_timer()
+        self.lifecycle.mark_inactive(
+            f"joint-state publishing stopped for {self.joint_states_topic}"
+        )
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_cleanup(self, state: Any) -> TransitionCallbackReturn:
+        del state
+        self._publishing_active = False
+        self._destroy_publish_timer()
+        self._destroy_configured_entities()
+        self.lifecycle.mark_inactive("unconfigured joint-state bridge")
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_shutdown(self, state: Any) -> TransitionCallbackReturn:
+        del state
+        self._publishing_active = False
+        self._destroy_publish_timer()
+        self.lifecycle.mark_inactive("joint-state bridge shutdown requested")
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_error(self, state: Any) -> TransitionCallbackReturn:
+        del state
+        self._publishing_active = False
+        self._destroy_publish_timer()
+        self.lifecycle.mark_error("joint-state bridge lifecycle error")
+        return TransitionCallbackReturn.SUCCESS
+
+    def _read_configuration(self) -> None:
+        self.source_topic = str(self.get_parameter("source_topic").value)
+        self.joint_states_topic = str(self.get_parameter("joint_states_topic").value)
+        self.estimated_joint_states_topic = str(
             self.get_parameter("estimated_joint_states_topic").value
         )
         self.joint_states_output = normalize_joint_states_output(
             self.get_parameter("joint_states_output").value
         )
-        publish_rate_hz = max(float(self.get_parameter("publish_rate_hz").value), 0.1)
+        self.publish_rate_hz = max(float(self.get_parameter("publish_rate_hz").value), 0.1)
+        self.publish_default_pose = bool(self.get_parameter("publish_default_pose").value)
         self.shoulder_feedback_calibration_enabled = bool(
             self.get_parameter("shoulder_feedback_calibration_enabled").value
         )
-        self.shoulder_calibration: SensorJointCalibration | None = None
+        self.shoulder_calibration = None
         if self.shoulder_feedback_calibration_enabled:
-            try:
-                self.shoulder_calibration = SensorJointCalibration(
-                    sensor_zero_deg=float(
-                        self.get_parameter("shoulder_sensor_zero_deg").value
-                    ),
-                    direction_sign=self.get_parameter("shoulder_direction_sign").value,
-                    ros_joint_zero_rad=float(
-                        self.get_parameter("shoulder_ros_joint_zero_rad").value
-                    ),
-                )
-            except (TypeError, ValueError) as exc:
-                raise ValueError(f"invalid shoulder feedback calibration: {exc}") from exc
+            self.shoulder_calibration = SensorJointCalibration(
+                sensor_zero_deg=float(
+                    self.get_parameter("shoulder_sensor_zero_deg").value
+                ),
+                direction_sign=self.get_parameter("shoulder_direction_sign").value,
+                ros_joint_zero_rad=float(
+                    self.get_parameter("shoulder_ros_joint_zero_rad").value
+                ),
+            )
 
-        self.estimated_positions = [0.0] * len(JOINT_NAMES)
-        self.measured_shoulder_position = math.nan
-        self.has_status = False
-        self.publish_default_pose = bool(self.get_parameter("publish_default_pose").value)
+    def _create_configured_entities(self) -> None:
+        if self._configured:
+            return
 
         self.estimated_publisher = self.create_publisher(
             JointState,
-            estimated_joint_states_topic,
+            self.estimated_joint_states_topic,
             10,
         )
-        self.joint_states_publisher = None
         if self.joint_states_output != JOINT_STATES_OUTPUT_NONE:
             self.joint_states_publisher = self.create_publisher(
                 JointState,
-                joint_states_topic,
+                self.joint_states_topic,
                 10,
             )
-        self.joint_states_topic = joint_states_topic
-        self.estimated_joint_states_topic = estimated_joint_states_topic
         self.subscription = self.create_subscription(
             MotionStatus,
-            source_topic,
+            self.source_topic,
             self.handle_status,
             10,
         )
-        self.timer = self.create_timer(1.0 / publish_rate_hz, self.publish_joint_states)
-        self.lifecycle = LifecycleStatusPublisher(
-            self,
-            detail=(
-                f"configuring {estimated_joint_states_topic} and "
-                f"{self.joint_states_output} {joint_states_topic} from {source_topic}"
-            ),
-        )
-        self.lifecycle.mark_active(
-            f"publishing estimated joint states on {estimated_joint_states_topic}; "
-            f"joint_states_output={self.joint_states_output} topic={joint_states_topic}"
-        )
+        self._configured = True
 
+    def _create_publish_timer(self) -> None:
+        self._destroy_publish_timer()
+        self.timer = self.create_timer(1.0 / self.publish_rate_hz, self.publish_joint_states)
+
+    def _destroy_publish_timer(self) -> None:
+        if self.timer is not None:
+            self.destroy_timer(self.timer)
+            self.timer = None
+
+    def _destroy_configured_entities(self) -> None:
+        if self.estimated_publisher is not None:
+            self.destroy_publisher(self.estimated_publisher)
+            self.estimated_publisher = None
+        if self.joint_states_publisher is not None:
+            self.destroy_publisher(self.joint_states_publisher)
+            self.joint_states_publisher = None
+        if self.subscription is not None:
+            self.destroy_subscription(self.subscription)
+            self.subscription = None
+        self._configured = False
+        self.has_status = False
+        self.estimated_positions = [0.0] * len(JOINT_NAMES)
+        self.measured_shoulder_position = math.nan
+
+    def _log_active(self) -> None:
         self.get_logger().info(
-            f"Publishing estimated joint states on {estimated_joint_states_topic} "
+            f"Publishing estimated joint states on {self.estimated_joint_states_topic} "
             f"and joint_states_output={self.joint_states_output} on "
-            f"{joint_states_topic} from {source_topic} for joints: "
+            f"{self.joint_states_topic} from {self.source_topic} for joints: "
             + ", ".join(JOINT_NAMES)
         )
 
@@ -173,6 +280,12 @@ class MotionBrainJointStateNode(Node):
         self.has_status = True
 
     def publish_joint_states(self) -> None:
+        if not self._publishing_active:
+            return
+
+        if self.estimated_publisher is None:
+            return
+
         if not self.has_status and not self.publish_default_pose:
             return
 

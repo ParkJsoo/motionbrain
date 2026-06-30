@@ -95,7 +95,7 @@ class FakeEndpointBridgeIntegrationTest(unittest.TestCase):
             rclpy.spin_once(bridge, timeout_sec=0.0)
             rclpy.spin_once(collector, timeout_sec=0.05)
             if messages["routine"] and messages["diagnostics"]:
-                if scenario == "malformed_status":
+                if scenario in {"malformed_status", "timeout_status"} and messages["detection"]:
                     return
                 if messages["status"] and messages["detection"]:
                     return
@@ -176,6 +176,12 @@ class FakeEndpointBridgeIntegrationTest(unittest.TestCase):
                 return status
         self.fail(f"missing diagnostic status {name}")
 
+    def diagnostic_value(self, diagnostic: DiagnosticStatus, key: str) -> str:
+        for value in diagnostic.values:
+            if value.key == key:
+                return value.value
+        self.fail(f"missing diagnostic value {key} in {diagnostic.name}")
+
     def test_ready_fake_endpoint_publishes_typed_bridge_outputs(self) -> None:
         messages = self.run_bridge_poll("ready")
 
@@ -208,6 +214,27 @@ class FakeEndpointBridgeIntegrationTest(unittest.TestCase):
         self.assertEqual(DiagnosticStatus.ERROR, shoulder.level)
         self.assertEqual("M4 shoulder sensor not ready", shoulder.message)
 
+    def test_controller_fault_is_visible_in_status_and_diagnostics(self) -> None:
+        messages = self.run_bridge_poll("controller_fault")
+
+        self.assertEqual("FAULT", messages["status"][-1].state)
+        self.assertTrue(messages["status"][-1].faulted)
+        self.assertFalse(messages["status"][-1].moving)
+        controller = self.diagnostic_by_name(
+            messages["diagnostics"][-1],
+            "motionbrain/controller",
+        )
+        self.assertEqual(DiagnosticStatus.ERROR, controller.level)
+        self.assertEqual("controller fault latched", controller.message)
+        self.assertEqual(
+            "FAKE_CONTROLLER_FAULT",
+            self.diagnostic_value(controller, "fault_reason"),
+        )
+        self.assertEqual(
+            "clear_fault",
+            self.diagnostic_value(controller, "recovery_action"),
+        )
+
     def test_policy_mismatch_fault_is_visible_in_routine_and_diagnostics(self) -> None:
         messages = self.run_bridge_poll("policy_mismatch")
 
@@ -220,11 +247,47 @@ class FakeEndpointBridgeIntegrationTest(unittest.TestCase):
         self.assertEqual(DiagnosticStatus.ERROR, feedback.level)
         self.assertEqual("feedback policy mismatch", feedback.message)
 
+    def test_stale_detection_fault_is_visible_in_detection_and_diagnostics(self) -> None:
+        messages = self.run_bridge_poll("stale_detection")
+
+        self.assertFalse(messages["detection"][-1].available)
+        self.assertFalse(messages["detection"][-1].detected)
+        self.assertEqual("LOST", messages["detection"][-1].alignment)
+        self.assertEqual(
+            "fault injection: stale detection",
+            messages["detection"][-1].reason,
+        )
+        camera = self.diagnostic_by_name(
+            messages["diagnostics"][-1],
+            "motionbrain/camera_perception",
+        )
+        self.assertEqual(DiagnosticStatus.WARN, camera.level)
+        self.assertEqual("camera detection unavailable", camera.message)
+        self.assertEqual(
+            "fault injection: stale detection",
+            self.diagnostic_value(camera, "reason"),
+        )
+
     def test_malformed_status_keeps_routine_and_diagnostics_available(self) -> None:
         messages = self.run_bridge_poll("malformed_status")
 
         self.assertEqual([], messages["status"])
         self.assertTrue(messages["routine"][-1].dry_run_only)
+        controller = self.diagnostic_by_name(
+            messages["diagnostics"][-1],
+            "motionbrain/controller",
+        )
+        self.assertEqual(DiagnosticStatus.ERROR, controller.level)
+        self.assertEqual("status poll unavailable", controller.message)
+
+    def test_timeout_status_keeps_routine_detection_and_reports_controller_unavailable(
+        self,
+    ) -> None:
+        messages = self.run_bridge_poll("timeout_status")
+
+        self.assertEqual([], messages["status"])
+        self.assertTrue(messages["routine"][-1].dry_run_only)
+        self.assertTrue(messages["detection"][-1].available)
         controller = self.diagnostic_by_name(
             messages["diagnostics"][-1],
             "motionbrain/controller",

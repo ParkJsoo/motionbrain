@@ -4,6 +4,7 @@ import importlib.util
 import os
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -35,6 +36,26 @@ class RaspiPiAccessTest(unittest.TestCase):
         self.assertTrue(check_pi_ssh_target.is_ip_literal("192.168.219.110"))
         self.assertFalse(check_pi_ssh_target.is_ip_literal("motionbrain-pi.davolink"))
         self.assertFalse(check_pi_ssh_target.is_ip_literal("motionbrain-pi.local"))
+
+    def test_tcp_connect_treats_netcat_timeout_as_unreachable(self) -> None:
+        with (
+            mock.patch.object(
+                check_pi_ssh_target.shutil,
+                "which",
+                return_value="/usr/bin/nc",
+            ),
+            mock.patch.object(
+                check_pi_ssh_target,
+                "run_command",
+                side_effect=check_pi_ssh_target.subprocess.TimeoutExpired(
+                    ["nc"],
+                    1.0,
+                ),
+            ),
+        ):
+            self.assertFalse(
+                check_pi_ssh_target.tcp_connect("motionbrain-pi.local", 22, 1.0)
+            )
 
     def test_script_defaults_to_pi_hostnames(self) -> None:
         self.assertEqual(

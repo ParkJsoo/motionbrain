@@ -7,7 +7,8 @@ from typing import Any
 import rclpy
 from geometry_msgs.msg import PoseStamped
 from motionbrain_msgs.msg import KinematicsState
-from rclpy.node import Node
+from rclpy.lifecycle import LifecycleNode
+from rclpy.lifecycle import TransitionCallbackReturn
 from sensor_msgs.msg import JointState
 from std_msgs.msg import String
 
@@ -36,8 +37,8 @@ def compact_json(payload: dict[str, Any]) -> str:
     return json.dumps(payload, separators=(",", ":"), sort_keys=True)
 
 
-class MotionBrainKinematicsNode(Node):
-    def __init__(self) -> None:
+class MotionBrainKinematicsNode(LifecycleNode):
+    def __init__(self, autostart: bool | None = None) -> None:
         super().__init__("motionbrain_kinematics_node")
 
         self.declare_parameter("joint_states_topic", "/joint_states")
@@ -50,40 +51,151 @@ class MotionBrainKinematicsNode(Node):
         self.declare_parameter("target_y_m", 0.0)
         self.declare_parameter("target_z_m", 0.18)
         self.declare_parameter("target_tool_pitch_deg", 0.0)
+        self.declare_parameter("autostart", True if autostart is None else bool(autostart))
 
-        joint_states_topic = str(self.get_parameter("joint_states_topic").value)
-        pose_topic = str(self.get_parameter("pose_topic").value)
-        kinematics_topic = str(self.get_parameter("kinematics_topic").value)
-        kinematics_typed_topic = str(self.get_parameter("kinematics_typed_topic").value)
+        self.joint_states_topic = "/joint_states"
+        self.pose_topic = "/motionbrain/end_effector_pose"
+        self.kinematics_topic = "/motionbrain/kinematics"
+        self.kinematics_typed_topic = "/motionbrain/kinematics_typed"
+        self._configured = False
+        self._processing_active = False
 
-        self.pose_pub = self.create_publisher(PoseStamped, pose_topic, 10)
-        self.kinematics_pub = self.create_publisher(String, kinematics_topic, 10)
+        self.pose_pub = None
+        self.kinematics_pub = None
+        self.kinematics_typed_pub = None
+        self.subscription = None
+        self.lifecycle = LifecycleStatusPublisher(
+            self,
+            detail="unconfigured kinematics bridge",
+        )
+
+        if bool(self.get_parameter("autostart").value):
+            self.trigger_configure()
+            self.trigger_activate()
+
+    def on_configure(self, state: Any) -> TransitionCallbackReturn:
+        del state
+        try:
+            self._read_configuration()
+            self._create_configured_entities()
+            self.lifecycle.mark_inactive(
+                f"configured FK from {self.joint_states_topic}; waiting for activation"
+            )
+            self.get_logger().info(
+                f"MotionBrain kinematics bridge configured from {self.joint_states_topic}; "
+                "waiting for lifecycle activation"
+            )
+            return TransitionCallbackReturn.SUCCESS
+        except Exception as exc:
+            self.lifecycle.mark_error(f"configure failed: {exc}")
+            self.get_logger().error(f"MotionBrain kinematics bridge configure failed: {exc}")
+            return TransitionCallbackReturn.FAILURE
+
+    def on_activate(self, state: Any) -> TransitionCallbackReturn:
+        del state
+        try:
+            if not self._configured:
+                self._read_configuration()
+                self._create_configured_entities()
+            self._processing_active = True
+            self.lifecycle.mark_active(
+                f"publishing FK pose on {self.pose_topic} and kinematics on "
+                f"{self.kinematics_typed_topic}"
+            )
+            self._log_active()
+            return TransitionCallbackReturn.SUCCESS
+        except Exception as exc:
+            self.lifecycle.mark_error(f"activate failed: {exc}")
+            self.get_logger().error(f"MotionBrain kinematics bridge activate failed: {exc}")
+            return TransitionCallbackReturn.FAILURE
+
+    def on_deactivate(self, state: Any) -> TransitionCallbackReturn:
+        del state
+        self._processing_active = False
+        self.lifecycle.mark_inactive(
+            f"kinematics publishing stopped for {self.kinematics_typed_topic}"
+        )
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_cleanup(self, state: Any) -> TransitionCallbackReturn:
+        del state
+        self._processing_active = False
+        self._destroy_configured_entities()
+        self.lifecycle.mark_inactive("unconfigured kinematics bridge")
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_shutdown(self, state: Any) -> TransitionCallbackReturn:
+        del state
+        self._processing_active = False
+        self.lifecycle.mark_inactive("kinematics bridge shutdown requested")
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_error(self, state: Any) -> TransitionCallbackReturn:
+        del state
+        self._processing_active = False
+        self.lifecycle.mark_error("kinematics bridge lifecycle error")
+        return TransitionCallbackReturn.SUCCESS
+
+    def _read_configuration(self) -> None:
+        self.joint_states_topic = str(self.get_parameter("joint_states_topic").value)
+        self.pose_topic = str(self.get_parameter("pose_topic").value)
+        self.kinematics_topic = str(self.get_parameter("kinematics_topic").value)
+        self.kinematics_typed_topic = str(
+            self.get_parameter("kinematics_typed_topic").value
+        )
+
+    def _create_configured_entities(self) -> None:
+        if self._configured:
+            return
+
+        self.pose_pub = self.create_publisher(PoseStamped, self.pose_topic, 10)
+        self.kinematics_pub = self.create_publisher(String, self.kinematics_topic, 10)
         self.kinematics_typed_pub = self.create_publisher(
             KinematicsState,
-            kinematics_typed_topic,
+            self.kinematics_typed_topic,
             10,
         )
         self.subscription = self.create_subscription(
             JointState,
-            joint_states_topic,
+            self.joint_states_topic,
             self.handle_joint_state,
             10,
         )
-        self.lifecycle = LifecycleStatusPublisher(
-            self,
-            detail=f"configuring FK from {joint_states_topic}",
-        )
-        self.lifecycle.mark_active(
-            f"publishing FK pose on {pose_topic} and kinematics on {kinematics_typed_topic}"
-        )
+        self._configured = True
 
+    def _destroy_configured_entities(self) -> None:
+        if self.pose_pub is not None:
+            self.destroy_publisher(self.pose_pub)
+            self.pose_pub = None
+        if self.kinematics_pub is not None:
+            self.destroy_publisher(self.kinematics_pub)
+            self.kinematics_pub = None
+        if self.kinematics_typed_pub is not None:
+            self.destroy_publisher(self.kinematics_typed_pub)
+            self.kinematics_typed_pub = None
+        if self.subscription is not None:
+            self.destroy_subscription(self.subscription)
+            self.subscription = None
+        self._configured = False
+
+    def _log_active(self) -> None:
         self.get_logger().info(
-            f"Publishing FK pose on {pose_topic}, typed kinematics on "
-            f"{kinematics_typed_topic}, and compatibility JSON on {kinematics_topic} "
-            f"from {joint_states_topic}"
+            f"Publishing FK pose on {self.pose_topic}, typed kinematics on "
+            f"{self.kinematics_typed_topic}, and compatibility JSON on "
+            f"{self.kinematics_topic} from {self.joint_states_topic}"
         )
 
     def handle_joint_state(self, message: JointState) -> None:
+        if not self._processing_active:
+            return
+
+        if (
+            self.pose_pub is None
+            or self.kinematics_pub is None
+            or self.kinematics_typed_pub is None
+        ):
+            return
+
         positions = joint_positions_from_message(message.name, message.position)
         angles = JointAngles.from_positions(positions)
         pose = forward_kinematics(angles)

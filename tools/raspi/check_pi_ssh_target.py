@@ -64,10 +64,13 @@ def resolve_host(host: str, port: int) -> list[str]:
 
 def tcp_connect(host: str, port: int, timeout: float) -> bool:
     if shutil.which("nc"):
-        result = run_command(
-            ["nc", "-z", "-w", str(max(1, int(timeout))), host, str(port)],
-            timeout + 2,
-        )
+        try:
+            result = run_command(
+                ["nc", "-z", "-w", str(max(1, int(timeout))), host, str(port)],
+                timeout + 2,
+            )
+        except subprocess.TimeoutExpired:
+            return False
         return result.returncode == 0
 
     try:
