@@ -59,6 +59,7 @@ EXPECTED_ACTION_FILES = {
 EXPECTED_PACKAGE_TEST_FILES = {
     "motionbrain_control/test/test_control_guard_logic.cpp",
     "motionbrain_control/test/test_control_guard_lifecycle.py",
+    "motionbrain_hardware_interface/test/test_m4_measured_state_launch.py",
     "motionbrain_hardware_interface/test/test_load_motionbrain_hardware_interface.cpp",
     "motionbrain_mission/test/test_mission_flow.py",
     "motionbrain_mission/test/test_mission_supervisor_lifecycle.py",
@@ -282,6 +283,15 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         self.assertIn("joint_state_broadcaster", mock_control_deps)
         self.assertIn("joint_trajectory_controller", mock_control_deps)
         self.assertIn("ros2_control", mock_control_deps)
+
+        hardware_test_deps = dependency_names(
+            package_xml("motionbrain_hardware_interface"),
+            {"test_depend"},
+        )
+        self.assertIn("ament_cmake_pytest", hardware_test_deps)
+        self.assertIn("controller_manager_msgs", hardware_test_deps)
+        self.assertIn("rclpy", hardware_test_deps)
+        self.assertIn("sensor_msgs", hardware_test_deps)
         self.assertIn("ros2_control_test_assets", mock_control_deps)
         self.assertIn("ros2_controllers", mock_control_deps)
         self.assertIn("ros2controlcli", mock_control_deps)
@@ -911,6 +921,12 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
 
         control_cmake = (ROS2_SRC / "motionbrain_control" / "CMakeLists.txt").read_text()
         self.assertIn("ament_add_gtest(test_control_guard_logic", control_cmake)
+
+        hardware_cmake = (
+            ROS2_SRC / "motionbrain_hardware_interface" / "CMakeLists.txt"
+        ).read_text()
+        self.assertIn("ament_add_pytest_test(", hardware_cmake)
+        self.assertIn("test_m4_measured_state_launch", hardware_cmake)
 
         workflow_text = (REPO_ROOT / ".github" / "workflows" / "ros2.yml").read_text()
         self.assertNotIn("No package-level colcon test suites were produced yet", workflow_text)

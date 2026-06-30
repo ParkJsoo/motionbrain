@@ -58,6 +58,7 @@ install(
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
+  find_package(ament_cmake_pytest REQUIRED)
   ament_add_gtest(
     test_load_motionbrain_hardware_interface
     test/test_load_motionbrain_hardware_interface.cpp
@@ -74,6 +75,11 @@ if(BUILD_TESTING)
   target_link_libraries(
     test_load_motionbrain_hardware_interface
     motionbrain_hardware_interface
+  )
+  ament_add_pytest_test(
+    test_m4_measured_state_launch
+    test/test_m4_measured_state_launch.py
+    TIMEOUT 100
   )
 endif()
 
