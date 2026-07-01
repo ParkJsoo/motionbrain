@@ -180,22 +180,46 @@ check_joint_state_required_sample() {
   names_sample="$(timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo "${topic}" --field name --once)"
   positions_sample="$(timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo "${topic}" --field position --once)"
 
-  observed_count="$(grep -Ec '^[[:space:]]*-' <<< "${names_sample}" || true)"
-  if (( observed_count < ${#expected_names[@]} )); then
-    echo "FAIL ${label} JointState has too few names on ${topic}: expected at least ${#expected_names[@]}, got ${observed_count}" >&2
+  if ! printf "%s\n" "${names_sample}" | EXPECTED_NAMES="${expected_names_string}" python3 -c '
+import ast
+import os
+import sys
+
+expected = os.environ["EXPECTED_NAMES"].split()
+observed = []
+for line in sys.stdin:
+    stripped = line.strip()
+    if not stripped or stripped == "---":
+        continue
+    if stripped.startswith("["):
+        try:
+            value = ast.literal_eval(stripped)
+        except (SyntaxError, ValueError):
+            print(f"cannot parse JointState name list: {stripped}", file=sys.stderr)
+            sys.exit(1)
+        if not isinstance(value, list):
+            print(f"JointState name field is not a list: {stripped}", file=sys.stderr)
+            sys.exit(1)
+        observed.extend(str(item) for item in value)
+    elif stripped.startswith("-"):
+        observed.append(stripped[1:].strip().strip(chr(34)).strip(chr(39)))
+
+if len(observed) < len(expected):
+    print(f"too few JointState names: expected at least {len(expected)}, got {len(observed)}", file=sys.stderr)
+    sys.exit(1)
+
+missing = [name for name in expected if name not in observed]
+if missing:
+    print("missing JointState names: " + ", ".join(missing), file=sys.stderr)
+    sys.exit(1)
+'; then
+    echo "FAIL ${label} JointState names do not contain required joints on ${topic}" >&2
     echo "${names_sample}" >&2
     exit 1
   fi
 
-  for expected_name in "${expected_names[@]}"; do
-    if ! grep -Eq "^[[:space:]]*-[[:space:]]*${expected_name}[[:space:]]*$" <<< "${names_sample}"; then
-      echo "FAIL ${label} JointState missing required joint ${expected_name} on ${topic}" >&2
-      echo "${names_sample}" >&2
-      exit 1
-    fi
-  done
-
   if ! printf "%s\n" "${positions_sample}" | EXPECTED_COUNT="${#expected_names[@]}" python3 -c '
+import ast
 import math
 import os
 import sys
@@ -203,18 +227,32 @@ import sys
 values = []
 for line in sys.stdin:
     stripped = line.strip()
-    if not stripped.startswith("-"):
+    if not stripped or stripped == "---":
         continue
-    raw = stripped[1:].strip()
-    try:
-        value = float(raw)
-    except ValueError:
-        print(f"non-numeric JointState position: {raw}", file=sys.stderr)
-        sys.exit(1)
-    if not math.isfinite(value):
-        print(f"non-finite JointState position: {raw}", file=sys.stderr)
-        sys.exit(1)
-    values.append(value)
+    if stripped.startswith("["):
+        try:
+            parsed = ast.literal_eval(stripped)
+        except (SyntaxError, ValueError):
+            print(f"cannot parse JointState position list: {stripped}", file=sys.stderr)
+            sys.exit(1)
+        if not isinstance(parsed, list):
+            print(f"JointState position field is not a list: {stripped}", file=sys.stderr)
+            sys.exit(1)
+        raw_values = parsed
+    elif stripped.startswith("-"):
+        raw_values = [stripped[1:].strip()]
+    else:
+        continue
+    for raw in raw_values:
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            print(f"non-numeric JointState position: {raw}", file=sys.stderr)
+            sys.exit(1)
+        if not math.isfinite(value):
+            print(f"non-finite JointState position: {raw}", file=sys.stderr)
+            sys.exit(1)
+        values.append(value)
 
 expected_count = int(os.environ["EXPECTED_COUNT"])
 if len(values) < expected_count:
