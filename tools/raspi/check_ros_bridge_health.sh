@@ -229,7 +229,22 @@ for line in sys.stdin:
     stripped = line.strip()
     if not stripped or stripped == "---":
         continue
-    if stripped.startswith("["):
+    if stripped.startswith("array("):
+        start = stripped.find("[")
+        end = stripped.rfind("]")
+        if start < 0 or end < start:
+            print(f"cannot parse JointState position array: {stripped}", file=sys.stderr)
+            sys.exit(1)
+        try:
+            parsed = ast.literal_eval(stripped[start : end + 1])
+        except (SyntaxError, ValueError):
+            print(f"cannot parse JointState position array: {stripped}", file=sys.stderr)
+            sys.exit(1)
+        if not isinstance(parsed, list):
+            print(f"JointState position array is not backed by a list: {stripped}", file=sys.stderr)
+            sys.exit(1)
+        raw_values = parsed
+    elif stripped.startswith("["):
         try:
             parsed = ast.literal_eval(stripped)
         except (SyntaxError, ValueError):
