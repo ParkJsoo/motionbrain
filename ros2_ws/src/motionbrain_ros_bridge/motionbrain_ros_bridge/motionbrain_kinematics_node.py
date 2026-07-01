@@ -14,9 +14,10 @@ from std_msgs.msg import String
 
 from motionbrain_ros_bridge.lifecycle_status import LifecycleStatusPublisher
 from motionbrain_ros_bridge.motionbrain_kinematics import JointAngles
+from motionbrain_ros_bridge.motionbrain_kinematics import JOINT_ORDER
 from motionbrain_ros_bridge.motionbrain_kinematics import forward_kinematics
 from motionbrain_ros_bridge.motionbrain_kinematics import inverse_kinematics
-from motionbrain_ros_bridge.motionbrain_kinematics import joint_positions_from_message
+from motionbrain_ros_bridge.motionbrain_kinematics import validate_complete_finite_joint_positions
 
 
 def quaternion_from_yaw_pitch(yaw: float, pitch: float) -> tuple[float, float, float, float]:
@@ -59,6 +60,7 @@ class MotionBrainKinematicsNode(LifecycleNode):
         self.kinematics_typed_topic = "/motionbrain/kinematics_typed"
         self._configured = False
         self._processing_active = False
+        self._last_invalid_joint_state_reason = ""
 
         self.pose_pub = None
         self.kinematics_pub = None
@@ -196,7 +198,21 @@ class MotionBrainKinematicsNode(LifecycleNode):
         ):
             return
 
-        positions = joint_positions_from_message(message.name, message.position)
+        positions, validation_errors = validate_complete_finite_joint_positions(
+            message.name,
+            message.position,
+            JOINT_ORDER,
+        )
+        if validation_errors:
+            reason = ",".join(validation_errors)
+            if reason != self._last_invalid_joint_state_reason:
+                self.get_logger().warning(
+                    f"Ignoring invalid FK input from {self.joint_states_topic}: {reason}"
+                )
+                self._last_invalid_joint_state_reason = reason
+            return
+
+        self._last_invalid_joint_state_reason = ""
         angles = JointAngles.from_positions(positions)
         pose = forward_kinematics(angles)
 

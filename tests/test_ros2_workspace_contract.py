@@ -110,6 +110,8 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
             '"kinematics_autostart"',
             '"enable_control_guard"',
             '"control_guard_autostart"',
+            '"control_guard_require_armed"',
+            '"control_guard_require_detection"',
             '"enable_mission_supervisor"',
             '"mission_supervisor_autostart"',
             '"enable_joint_state_bridge"',
@@ -190,6 +192,9 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
             "MOTIONBRAIN_JOINT_STATE_AUTOSTART",
             "MOTIONBRAIN_KINEMATICS_AUTOSTART",
             "MOTIONBRAIN_CONTROL_GUARD_AUTOSTART",
+            "MOTIONBRAIN_PHYSICAL_MODE",
+            "MOTIONBRAIN_CONTROL_GUARD_REQUIRE_ARMED",
+            "MOTIONBRAIN_CONTROL_GUARD_REQUIRE_DETECTION",
             "MOTIONBRAIN_MISSION_SUPERVISOR_AUTOSTART",
             "MOTIONBRAIN_JOINT_STATES_TOPIC",
             "MOTIONBRAIN_ESTIMATED_JOINT_STATES_TOPIC",
@@ -526,6 +531,10 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         self.assertIn('echo "OK ${label} publisher count', script_text)
         self.assertIn('"/joint_states"', script_text)
         self.assertIn('"/motionbrain/estimated_joint_states"', script_text)
+        self.assertIn("check_joint_state_required_sample", script_text)
+        self.assertIn("OK ${label} JointState required joints and finite positions", script_text)
+        self.assertIn("check_kinematics_typed_finite_sample", script_text)
+        self.assertIn("OK kinematics typed finite sample", script_text)
         self.assertIn("OK diagnostics sample", script_text)
         self.assertIn("check_diagnostic_max_level", script_text)
         self.assertIn("diagnostic_level_number", script_text)
@@ -538,6 +547,8 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         self.assertIn("EXPECTED_FEEDBACK_DIAGNOSTIC_MAX_LEVEL", script_text)
         self.assertIn("EXPECTED_TELEOP_SENSOR_DIAGNOSTIC_MAX_LEVEL", script_text)
         self.assertIn("EXPECTED_CAMERA_PERCEPTION_DIAGNOSTIC_MAX_LEVEL", script_text)
+        self.assertIn("EXPECTED_KINEMATICS_JOINT_STATES_TOPIC", script_text)
+        self.assertIn("EXPECTED_KINEMATICS_JOINT_NAMES", script_text)
         self.assertIn("motionbrain/controller", script_text)
         self.assertIn("motionbrain/shoulder_feedback", script_text)
         self.assertIn("motionbrain/routine_executor", script_text)

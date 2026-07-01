@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import time
 import unittest
 
@@ -46,16 +47,21 @@ class KinematicsLifecycleIntegrationTest(unittest.TestCase):
                 return
         self.fail(f"missing subscriber for {topic}")
 
-    def publish_joint_state(self, publisher) -> None:
+    def publish_joint_state(
+        self,
+        publisher,
+        names: list[str] | None = None,
+        positions: list[float] | None = None,
+    ) -> None:
         message = JointState()
-        message.name = [
+        message.name = names or [
             "base_yaw_joint",
             "shoulder_pitch_joint",
             "elbow_pitch_joint",
             "wrist_pitch_joint",
             "gripper_joint",
         ]
-        message.position = [0.0, 0.1, -0.1, 0.0, 0.0]
+        message.position = positions or [0.0, 0.1, -0.1, 0.0, 0.0]
         publisher.publish(message)
 
     def publish_until_outputs(
@@ -164,6 +170,105 @@ class KinematicsLifecycleIntegrationTest(unittest.TestCase):
         self.assertEqual([], messages["pose"])
         self.assertEqual([], messages["typed"])
         self.assertEqual([], messages["json"])
+
+        io_node.destroy_node()
+        kinematics_node.destroy_node()
+
+    def test_invalid_joint_state_input_does_not_publish_fk(self) -> None:
+        kinematics_node = MotionBrainKinematicsNode(autostart=False)
+        kinematics_node.set_parameters(
+            [
+                Parameter(
+                    "joint_states_topic",
+                    Parameter.Type.STRING,
+                    "/test/invalid_kinematics_joint_states",
+                ),
+                Parameter(
+                    "pose_topic",
+                    Parameter.Type.STRING,
+                    "/test/invalid_end_effector_pose",
+                ),
+                Parameter(
+                    "kinematics_topic",
+                    Parameter.Type.STRING,
+                    "/test/invalid_kinematics",
+                ),
+                Parameter(
+                    "kinematics_typed_topic",
+                    Parameter.Type.STRING,
+                    "/test/invalid_kinematics_typed",
+                ),
+            ]
+        )
+        self.assertEqual(
+            TransitionCallbackReturn.SUCCESS,
+            kinematics_node.trigger_configure(),
+        )
+        self.assertEqual(
+            TransitionCallbackReturn.SUCCESS,
+            kinematics_node.trigger_activate(),
+        )
+
+        io_node = rclpy.create_node("invalid_kinematics_lifecycle_io")
+        publisher = io_node.create_publisher(
+            JointState,
+            "/test/invalid_kinematics_joint_states",
+            10,
+        )
+        messages: dict[str, list] = {
+            "pose": [],
+            "typed": [],
+            "json": [],
+        }
+        io_node.create_subscription(
+            PoseStamped,
+            "/test/invalid_end_effector_pose",
+            messages["pose"].append,
+            10,
+        )
+        io_node.create_subscription(
+            KinematicsState,
+            "/test/invalid_kinematics_typed",
+            messages["typed"].append,
+            10,
+        )
+        io_node.create_subscription(
+            String,
+            "/test/invalid_kinematics",
+            messages["json"].append,
+            10,
+        )
+
+        nodes = [kinematics_node, io_node]
+        self.wait_for_subscription(
+            io_node,
+            "/test/invalid_kinematics_joint_states",
+            nodes,
+        )
+
+        self.publish_joint_state(
+            publisher,
+            names=["base_yaw_joint", "shoulder_pitch_joint"],
+            positions=[0.0, 0.1],
+        )
+        self.spin_nodes(nodes, 0.4)
+        self.assertEqual([], messages["pose"])
+        self.assertEqual([], messages["typed"])
+        self.assertEqual([], messages["json"])
+
+        self.publish_joint_state(
+            publisher,
+            positions=[0.0, math.nan, -0.1, 0.0, 0.0],
+        )
+        self.spin_nodes(nodes, 0.4)
+        self.assertEqual([], messages["pose"])
+        self.assertEqual([], messages["typed"])
+        self.assertEqual([], messages["json"])
+
+        self.publish_until_outputs(publisher, nodes, messages)
+        self.assertTrue(messages["pose"])
+        self.assertTrue(messages["typed"])
+        self.assertTrue(messages["json"])
 
         io_node.destroy_node()
         kinematics_node.destroy_node()

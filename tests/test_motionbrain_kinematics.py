@@ -13,6 +13,9 @@ from motionbrain_ros_bridge.motionbrain_kinematics import forward_kinematics  # 
 from motionbrain_ros_bridge.motionbrain_kinematics import inverse_kinematics  # noqa: E402
 from motionbrain_ros_bridge.motionbrain_kinematics import joint_limit_violations  # noqa: E402
 from motionbrain_ros_bridge.motionbrain_kinematics import joint_positions_from_message  # noqa: E402
+from motionbrain_ros_bridge.motionbrain_kinematics import (  # noqa: E402
+    validate_complete_finite_joint_positions,
+)
 
 
 class MotionBrainKinematicsTest(unittest.TestCase):
@@ -70,6 +73,32 @@ class MotionBrainKinematicsTest(unittest.TestCase):
         self.assertEqual(angles.base_yaw, 0.1)
         self.assertEqual(angles.elbow_pitch, 0.2)
         self.assertEqual(angles.shoulder_pitch, 0.0)
+
+    def test_complete_finite_joint_state_validation(self) -> None:
+        positions, errors = validate_complete_finite_joint_positions(
+            [
+                "base_yaw_joint",
+                "shoulder_pitch_joint",
+                "elbow_pitch_joint",
+                "wrist_pitch_joint",
+                "gripper_joint",
+            ],
+            [0.0, 0.1, -0.1, 0.0, 0.0],
+        )
+
+        self.assertEqual((), errors)
+        self.assertEqual(0.1, positions["shoulder_pitch_joint"])
+
+    def test_joint_state_validation_rejects_missing_and_nonfinite_inputs(self) -> None:
+        _positions, errors = validate_complete_finite_joint_positions(
+            ["base_yaw_joint", "shoulder_pitch_joint"],
+            [0.0, math.nan],
+        )
+
+        self.assertIn("nonfinite:shoulder_pitch_joint", errors)
+        self.assertIn("missing:elbow_pitch_joint", errors)
+        self.assertIn("missing:wrist_pitch_joint", errors)
+        self.assertIn("missing:gripper_joint", errors)
 
 
 if __name__ == "__main__":

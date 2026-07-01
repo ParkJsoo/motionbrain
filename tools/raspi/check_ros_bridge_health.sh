@@ -25,6 +25,8 @@ EXPECTED_ROUTINE_EXECUTOR_DIAGNOSTIC_MAX_LEVEL="${EXPECTED_ROUTINE_EXECUTOR_DIAG
 EXPECTED_FEEDBACK_DIAGNOSTIC_MAX_LEVEL="${EXPECTED_FEEDBACK_DIAGNOSTIC_MAX_LEVEL:-1}"
 EXPECTED_TELEOP_SENSOR_DIAGNOSTIC_MAX_LEVEL="${EXPECTED_TELEOP_SENSOR_DIAGNOSTIC_MAX_LEVEL:-0}"
 EXPECTED_CAMERA_PERCEPTION_DIAGNOSTIC_MAX_LEVEL="${EXPECTED_CAMERA_PERCEPTION_DIAGNOSTIC_MAX_LEVEL:-0}"
+EXPECTED_KINEMATICS_JOINT_STATES_TOPIC="${EXPECTED_KINEMATICS_JOINT_STATES_TOPIC:-/joint_states}"
+EXPECTED_KINEMATICS_JOINT_NAMES="${EXPECTED_KINEMATICS_JOINT_NAMES:-base_yaw_joint shoulder_pitch_joint elbow_pitch_joint wrist_pitch_joint gripper_joint}"
 CHECK_ROUTINE_RUN_REJECTION="${CHECK_ROUTINE_RUN_REJECTION:-1}"
 
 required_topics=(
@@ -159,6 +161,117 @@ check_diagnostic_max_level() {
   fi
 
   echo "OK diagnostic level: ${diagnostic_name}=${level} <= ${max_level} (${label})"
+}
+
+check_joint_state_required_sample() {
+  local topic="$1"
+  local label="$2"
+  local expected_names_string="$3"
+  local names_sample=""
+  local positions_sample=""
+  local observed_count="0"
+  local expected_names=()
+
+  read -r -a expected_names <<< "${expected_names_string}"
+  if (( ${#expected_names[@]} == 0 )); then
+    return 0
+  fi
+
+  names_sample="$(timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo "${topic}" --field name --once)"
+  positions_sample="$(timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo "${topic}" --field position --once)"
+
+  observed_count="$(grep -Ec '^[[:space:]]*-' <<< "${names_sample}" || true)"
+  if (( observed_count < ${#expected_names[@]} )); then
+    echo "FAIL ${label} JointState has too few names on ${topic}: expected at least ${#expected_names[@]}, got ${observed_count}" >&2
+    echo "${names_sample}" >&2
+    exit 1
+  fi
+
+  for expected_name in "${expected_names[@]}"; do
+    if ! grep -Eq "^[[:space:]]*-[[:space:]]*${expected_name}[[:space:]]*$" <<< "${names_sample}"; then
+      echo "FAIL ${label} JointState missing required joint ${expected_name} on ${topic}" >&2
+      echo "${names_sample}" >&2
+      exit 1
+    fi
+  done
+
+  if ! printf "%s\n" "${positions_sample}" | EXPECTED_COUNT="${#expected_names[@]}" python3 -c '
+import math
+import os
+import sys
+
+values = []
+for line in sys.stdin:
+    stripped = line.strip()
+    if not stripped.startswith("-"):
+        continue
+    raw = stripped[1:].strip()
+    try:
+        value = float(raw)
+    except ValueError:
+        print(f"non-numeric JointState position: {raw}", file=sys.stderr)
+        sys.exit(1)
+    if not math.isfinite(value):
+        print(f"non-finite JointState position: {raw}", file=sys.stderr)
+        sys.exit(1)
+    values.append(value)
+
+expected_count = int(os.environ["EXPECTED_COUNT"])
+if len(values) < expected_count:
+    print(f"too few JointState positions: expected at least {expected_count}, got {len(values)}", file=sys.stderr)
+    sys.exit(1)
+'; then
+    echo "FAIL ${label} JointState positions are not finite on ${topic}" >&2
+    echo "${positions_sample}" >&2
+    exit 1
+  fi
+
+  echo "OK ${label} JointState required joints and finite positions: ${topic}"
+}
+
+check_kinematics_typed_finite_sample() {
+  local sample=""
+  sample="$(timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo /motionbrain/kinematics_typed --once)"
+
+  if ! printf "%s\n" "${sample}" | python3 -c '
+import math
+import re
+import sys
+
+text = sys.stdin.read()
+required_fields = [
+    "x_m",
+    "y_m",
+    "z_m",
+    "yaw_rad",
+    "pitch_rad",
+    "radial_reach_m",
+    "base_yaw_rad",
+    "shoulder_pitch_rad",
+    "elbow_pitch_rad",
+    "wrist_pitch_rad",
+    "gripper_rad",
+]
+for field in required_fields:
+    match = re.search(rf"^{field}:\s*([^\s]+)\s*$", text, re.MULTILINE)
+    if not match:
+        print(f"missing kinematics field: {field}", file=sys.stderr)
+        sys.exit(1)
+    try:
+        value = float(match.group(1))
+    except ValueError:
+        print(f"non-numeric kinematics field {field}: {match.group(1)}", file=sys.stderr)
+        sys.exit(1)
+    if not math.isfinite(value):
+        print(f"non-finite kinematics field {field}: {match.group(1)}", file=sys.stderr)
+        sys.exit(1)
+'; then
+    echo "FAIL kinematics typed sample has missing or non-finite fields" >&2
+    echo "${sample}" >&2
+    exit 1
+  fi
+
+  echo "OK kinematics typed finite sample"
 }
 
 run_diagnostics_checks() {
@@ -427,11 +540,15 @@ echo "OK joint state sample"
 timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo /motionbrain/estimated_joint_states --once >/dev/null
 echo "OK estimated joint state sample"
 
+check_joint_state_required_sample \
+  "${EXPECTED_KINEMATICS_JOINT_STATES_TOPIC}" \
+  "kinematics input" \
+  "${EXPECTED_KINEMATICS_JOINT_NAMES}"
+
 timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo /motionbrain/end_effector_pose --once >/dev/null
 echo "OK end-effector pose sample"
 
-timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo /motionbrain/kinematics_typed --once >/dev/null
-echo "OK kinematics typed sample"
+check_kinematics_typed_finite_sample
 
 timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo /motionbrain/control_guard_typed --once >/dev/null
 echo "OK control guard typed sample"

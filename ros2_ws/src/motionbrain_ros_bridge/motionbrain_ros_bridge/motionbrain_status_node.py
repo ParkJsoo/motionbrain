@@ -326,6 +326,38 @@ class MotionBrainStatusNode(LifecycleNode):
     def _timeout(self) -> float:
         return float(self.get_parameter("http_timeout").value)
 
+    def commands_active(self) -> bool:
+        return self._polling_active
+
+    def inactive_light_result(self, action: str | None, raw_payload: str) -> dict[str, Any]:
+        return {
+            "success": False,
+            "requestedAction": action or "",
+            "state": "inactive",
+            "result": "bridge_inactive",
+            "message": "MotionBrain ROS2 bridge is inactive; command not forwarded",
+            "error": "bridge_inactive",
+            "forwarded": False,
+            "payload": raw_payload,
+        }
+
+    def inactive_routine_result(
+        self,
+        action: str,
+        routine_name: str,
+        raw_payload: str,
+    ) -> dict[str, Any]:
+        return {
+            "success": False,
+            "action": action.strip().lower(),
+            "routineName": routine_name.strip(),
+            "result": "bridge_inactive",
+            "message": "MotionBrain ROS2 bridge is inactive; command not forwarded",
+            "error": "bridge_inactive",
+            "forwarded": False,
+            "payload": raw_payload,
+        }
+
     def publish_json(self, publisher: Any, payload: dict[str, Any]) -> None:
         message = String()
         message.data = compact_json(payload)
@@ -1093,6 +1125,10 @@ class MotionBrainStatusNode(LifecycleNode):
         self.handle_light_action(action, raw_payload)
 
     def handle_light_action(self, action: str | None, raw_payload: str) -> None:
+        if not self.commands_active():
+            self.publish_light_result(self.inactive_light_result(action, raw_payload))
+            return
+
         if action is None:
             self.publish_light_result(
                 {
@@ -1120,6 +1156,10 @@ class MotionBrainStatusNode(LifecycleNode):
             )
 
     def handle_routine_cmd(self, message: String) -> None:
+        if not self.commands_active():
+            self.publish_routine_result(self.inactive_routine_result("", "", message.data))
+            return
+
         command = parse_routine_command(message.data)
         if command is None:
             self.publish_routine_result(
@@ -1224,6 +1264,25 @@ class MotionBrainStatusNode(LifecycleNode):
                 "confirmCode": request.confirm_code,
             },
         )
+        if not self.commands_active():
+            result_payload = self.inactive_routine_result(
+                request.action,
+                request.routine_name,
+                raw_payload,
+            )
+            self.publish_routine_result(result_payload)
+            goal_handle.publish_feedback(
+                self.routine_feedback(
+                    "rejected",
+                    0,
+                    1,
+                    as_str(result_payload.get("message")),
+                    result_payload,
+                ),
+            )
+            goal_handle.abort()
+            return self.populate_routine_action_result(result_payload)
+
         goal_handle.publish_feedback(
             self.routine_feedback(
                 "accepted",
@@ -1325,6 +1384,9 @@ class MotionBrainStatusNode(LifecycleNode):
     ) -> dict[str, Any]:
         action = action.strip().lower()
         routine_name = routine_name.strip()
+        if not self.commands_active():
+            return self.inactive_routine_result(action, routine_name, raw_payload)
+
         if action in {"run", "execute"}:
             return {
                 "success": False,

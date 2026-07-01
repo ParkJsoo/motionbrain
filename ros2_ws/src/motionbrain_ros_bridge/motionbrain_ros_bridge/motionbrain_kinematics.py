@@ -98,6 +98,38 @@ JOINT_LIMITS = {
 }
 
 
+def validate_complete_finite_joint_positions(
+    names: Iterable[str],
+    positions: Iterable[float],
+    required_names: Iterable[str] = JOINT_ORDER,
+) -> tuple[dict[str, float], tuple[str, ...]]:
+    name_list = list(names)
+    position_list = list(positions)
+    errors: list[str] = []
+    if len(name_list) != len(position_list):
+        errors.append("name_position_length_mismatch")
+
+    positions_by_name: dict[str, float] = {}
+    duplicate_names: set[str] = set()
+    for name, position in zip(name_list, position_list):
+        if name in positions_by_name:
+            duplicate_names.add(name)
+        try:
+            positions_by_name[name] = float(position)
+        except (TypeError, ValueError):
+            positions_by_name[name] = math.nan
+
+    for name in sorted(duplicate_names):
+        errors.append(f"duplicate:{name}")
+    for name in required_names:
+        if name not in positions_by_name:
+            errors.append(f"missing:{name}")
+        elif not math.isfinite(positions_by_name[name]):
+            errors.append(f"nonfinite:{name}")
+
+    return positions_by_name, tuple(errors)
+
+
 def normalize_angle(angle: float) -> float:
     return math.atan2(math.sin(angle), math.cos(angle))
 

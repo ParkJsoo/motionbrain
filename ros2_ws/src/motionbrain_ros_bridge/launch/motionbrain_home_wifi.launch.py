@@ -31,6 +31,8 @@ def generate_launch_description() -> LaunchDescription:
     kinematics_autostart = LaunchConfiguration("kinematics_autostart")
     enable_control_guard = LaunchConfiguration("enable_control_guard")
     control_guard_autostart = LaunchConfiguration("control_guard_autostart")
+    control_guard_require_armed = LaunchConfiguration("control_guard_require_armed")
+    control_guard_require_detection = LaunchConfiguration("control_guard_require_detection")
     enable_mission_supervisor = LaunchConfiguration("enable_mission_supervisor")
     mission_supervisor_autostart = LaunchConfiguration("mission_supervisor_autostart")
 
@@ -151,6 +153,16 @@ def generate_launch_description() -> LaunchDescription:
                 description="Automatically configure and activate the control guard lifecycle node.",
             ),
             DeclareLaunchArgument(
+                "control_guard_require_armed",
+                default_value="false",
+                description="Require controller armed state before the control guard reports ready.",
+            ),
+            DeclareLaunchArgument(
+                "control_guard_require_detection",
+                default_value="false",
+                description="Require fresh positive camera detection before the control guard reports ready.",
+            ),
+            DeclareLaunchArgument(
                 "enable_mission_supervisor",
                 default_value="true",
                 description="Publish lightweight mission state for detect-align-confirm-act demos.",
@@ -231,6 +243,14 @@ def generate_launch_description() -> LaunchDescription:
                 parameters=[
                     {
                         "autostart": ParameterValue(control_guard_autostart, value_type=bool),
+                        "require_armed": ParameterValue(
+                            control_guard_require_armed,
+                            value_type=bool,
+                        ),
+                        "require_detection": ParameterValue(
+                            control_guard_require_detection,
+                            value_type=bool,
+                        ),
                     }
                 ],
             ),
