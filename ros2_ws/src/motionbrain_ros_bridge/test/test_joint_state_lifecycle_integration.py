@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import math
 import time
 import unittest
 
 try:
     import rclpy
+    from motionbrain_msgs.msg import MotionStatus
     from motionbrain_ros_bridge.motionbrain_joint_state_node import MotionBrainJointStateNode
     from rclpy.lifecycle import TransitionCallbackReturn
     from rclpy.parameter import Parameter
@@ -234,6 +236,27 @@ class JointStateLifecycleIntegrationTest(unittest.TestCase):
             joint_state_node.trigger_configure(),
         )
 
+        joint_state_node.destroy_node()
+
+    def test_estimated_output_keeps_finite_fallback_when_m4_is_uncalibrated(self) -> None:
+        joint_state_node = MotionBrainJointStateNode(autostart=False)
+        status = MotionStatus()
+        status.base_angle_deg = 10.0
+        status.tilt_angle_deg = 30.0
+        status.pan_angle_deg = -5.0
+        status.wrist_angle_deg = 2.0
+        status.gripper_angle_deg = 1.0
+        status.shoulder_feedback_available = True
+        status.shoulder_sensor_connected = True
+        status.shoulder_sensor_fresh = True
+        status.shoulder_sensor_ready = True
+        status.shoulder_angle_deg = 244.0
+
+        joint_state_node.handle_status(status)
+
+        self.assertTrue(all(math.isfinite(value) for value in joint_state_node.estimated_positions))
+        self.assertAlmostEqual(math.radians(30.0), joint_state_node.estimated_positions[1])
+        self.assertTrue(math.isnan(joint_state_node.measured_shoulder_position))
         joint_state_node.destroy_node()
 
 

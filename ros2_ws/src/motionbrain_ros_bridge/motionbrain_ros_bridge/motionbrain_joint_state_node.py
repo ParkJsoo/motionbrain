@@ -261,6 +261,20 @@ class MotionBrainJointStateNode(LifecycleNode):
             + ", ".join(JOINT_NAMES)
         )
 
+    def finite_degrees_to_radians(self, angle_deg: float, fallback_rad: float = 0.0) -> float:
+        try:
+            angle = float(angle_deg)
+        except (TypeError, ValueError):
+            return fallback_rad
+        if not math.isfinite(angle):
+            return fallback_rad
+        return math.radians(angle)
+
+    def estimated_shoulder_position(self, mapped_position: float, legacy_tilt_deg: float) -> float:
+        if math.isfinite(mapped_position):
+            return mapped_position
+        return self.finite_degrees_to_radians(legacy_tilt_deg)
+
     def handle_status(self, message: MotionStatus) -> None:
         estimated_shoulder_pitch = shoulder_feedback_to_ros_joint_position(
             calibration_enabled=self.shoulder_feedback_calibration_enabled,
@@ -282,11 +296,11 @@ class MotionBrainJointStateNode(LifecycleNode):
             calibration=self.shoulder_calibration,
         )
         self.estimated_positions = [
-            math.radians(float(message.base_angle_deg)),
-            estimated_shoulder_pitch,
-            math.radians(float(message.pan_angle_deg)),
-            math.radians(float(message.wrist_angle_deg)),
-            math.radians(float(message.gripper_angle_deg)),
+            self.finite_degrees_to_radians(message.base_angle_deg),
+            self.estimated_shoulder_position(estimated_shoulder_pitch, message.tilt_angle_deg),
+            self.finite_degrees_to_radians(message.pan_angle_deg),
+            self.finite_degrees_to_radians(message.wrist_angle_deg),
+            self.finite_degrees_to_radians(message.gripper_angle_deg),
         ]
         self.has_status = True
 
