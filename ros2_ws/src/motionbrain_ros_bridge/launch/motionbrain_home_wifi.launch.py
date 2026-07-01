@@ -19,6 +19,7 @@ def generate_launch_description() -> LaunchDescription:
     joint_state_autostart = LaunchConfiguration("joint_state_autostart")
     joint_states_topic = LaunchConfiguration("joint_states_topic")
     estimated_joint_states_topic = LaunchConfiguration("estimated_joint_states_topic")
+    kinematics_joint_states_topic = LaunchConfiguration("kinematics_joint_states_topic")
     joint_states_output = LaunchConfiguration("joint_states_output")
     shoulder_feedback_calibration_enabled = LaunchConfiguration(
         "shoulder_feedback_calibration_enabled"
@@ -88,12 +89,21 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument(
                 "joint_states_topic",
                 default_value="/joint_states",
-                description="Selected JointState topic consumed by kinematics and robot_state_publisher.",
+                description="Selected /joint_states output topic. Use joint_states_output to choose its owner.",
             ),
             DeclareLaunchArgument(
                 "estimated_joint_states_topic",
                 default_value="/motionbrain/estimated_joint_states",
                 description="Explicit status-derived estimated JointState topic.",
+            ),
+            DeclareLaunchArgument(
+                "kinematics_joint_states_topic",
+                default_value="/joint_states",
+                description=(
+                    "JointState input consumed by the FK/kinematics node. Set to "
+                    "/motionbrain/estimated_joint_states when /joint_states is reserved "
+                    "for measured M4-only state."
+                ),
             ),
             DeclareLaunchArgument(
                 "joint_states_output",
@@ -207,7 +217,7 @@ def generate_launch_description() -> LaunchDescription:
                 condition=IfCondition(enable_kinematics),
                 parameters=[
                     {
-                        "joint_states_topic": joint_states_topic,
+                        "joint_states_topic": kinematics_joint_states_topic,
                         "autostart": ParameterValue(kinematics_autostart, value_type=bool),
                     }
                 ],

@@ -142,7 +142,7 @@ hardware_interface::CallbackReturn MotionBrainHardwareInterface::on_init(
   shoulder_sensor_zero_deg_ = 0.0;
   shoulder_direction_sign_ = 1;
   shoulder_ros_joint_zero_rad_ = 0.0;
-  state_stale_timeout_sec_ = 0.25;
+  state_stale_timeout_sec_ = 2.0;
 
   const auto controller_url = info_.hardware_parameters.find("controller_url");
   if (controller_url != info_.hardware_parameters.end() && !controller_url->second.empty()) {

@@ -115,6 +115,7 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
             '"enable_joint_state_bridge"',
             '"joint_states_topic"',
             '"estimated_joint_states_topic"',
+            '"kinematics_joint_states_topic"',
             '"joint_states_output"',
             '"shoulder_feedback_calibration_enabled"',
             '"shoulder_sensor_zero_deg"',
@@ -156,6 +157,7 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
             "kinematics_autostart",
             "joint_states_topic",
             "estimated_joint_states_topic",
+            "kinematics_joint_states_topic",
             "joint_states_output",
             "shoulder_feedback_calibration_enabled",
             "shoulder_sensor_zero_deg",
@@ -191,6 +193,7 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
             "MOTIONBRAIN_MISSION_SUPERVISOR_AUTOSTART",
             "MOTIONBRAIN_JOINT_STATES_TOPIC",
             "MOTIONBRAIN_ESTIMATED_JOINT_STATES_TOPIC",
+            "MOTIONBRAIN_KINEMATICS_JOINT_STATES_TOPIC",
             "MOTIONBRAIN_JOINT_STATES_OUTPUT",
             "MOTIONBRAIN_SHOULDER_FEEDBACK_CALIBRATION_ENABLED",
             "MOTIONBRAIN_SHOULDER_SENSOR_ZERO_DEG",
@@ -226,6 +229,7 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         self.assertIn("<param name=\"status_topic\">/motionbrain/status_typed</param>", measured_urdf)
         self.assertIn("<param name=\"feedback_source\">m4_as5600</param>", measured_urdf)
         self.assertIn("shoulder_feedback_calibration_enabled", measured_urdf)
+        self.assertIn("<param name=\"state_stale_timeout_sec\">2.0</param>", measured_urdf)
         self.assertIn("<joint name=\"shoulder_pitch_joint\">", measured_urdf)
         self.assertNotIn("<command_interface", measured_urdf)
         self.assertIn("<state_interface name=\"position\"", measured_urdf)
@@ -233,6 +237,8 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
 
         self.assertIn("m4_measured_controllers.yaml", measured_launch)
         self.assertIn("shoulder_sensor_zero_deg", measured_launch)
+        self.assertIn('default_value="2.0"', measured_launch)
+        self.assertIn("expected status bridge poll interval", measured_launch)
         self.assertIn("joint_state_broadcaster", measured_launch)
         self.assertNotIn("joint_trajectory_controller", measured_launch)
         self.assertNotIn("motionbrain_arm_controller", measured_launch)
@@ -510,6 +516,8 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         self.assertIn("motionbrain_control_guard_node", script_text)
         self.assertIn("motionbrain_mission_supervisor", script_text)
         self.assertIn("OK lifecycle active samples", script_text)
+        self.assertIn("ros2 lifecycle get", script_text)
+        self.assertIn("OK lifecycle get active", script_text)
         self.assertIn("check_topic_publisher_count", script_text)
         self.assertIn("ros2 topic info --verbose", script_text)
         self.assertIn("Publisher count:", script_text)
@@ -519,17 +527,35 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         self.assertIn('"/joint_states"', script_text)
         self.assertIn('"/motionbrain/estimated_joint_states"', script_text)
         self.assertIn("OK diagnostics sample", script_text)
+        self.assertIn("check_diagnostic_max_level", script_text)
+        self.assertIn("diagnostic_level_number", script_text)
+        self.assertIn("run_diagnostics_checks", script_text)
+        self.assertIn("FAIL diagnostics did not reach expected levels before timeout", script_text)
+        self.assertIn("OK diagnostic level", script_text)
+        self.assertIn("EXPECTED_CONTROLLER_DIAGNOSTIC_MAX_LEVEL", script_text)
+        self.assertIn("EXPECTED_SHOULDER_DIAGNOSTIC_MAX_LEVEL", script_text)
+        self.assertIn("EXPECTED_ROUTINE_EXECUTOR_DIAGNOSTIC_MAX_LEVEL", script_text)
+        self.assertIn("EXPECTED_FEEDBACK_DIAGNOSTIC_MAX_LEVEL", script_text)
+        self.assertIn("EXPECTED_TELEOP_SENSOR_DIAGNOSTIC_MAX_LEVEL", script_text)
+        self.assertIn("EXPECTED_CAMERA_PERCEPTION_DIAGNOSTIC_MAX_LEVEL", script_text)
         self.assertIn("motionbrain/controller", script_text)
+        self.assertIn("motionbrain/shoulder_feedback", script_text)
         self.assertIn("motionbrain/routine_executor", script_text)
         self.assertIn("motionbrain/feedback", script_text)
+        self.assertIn("motionbrain/teleop_sensor", script_text)
+        self.assertIn("motionbrain/camera_perception", script_text)
         self.assertIn("base_yaw_fault", script_text)
         self.assertIn("/motionbrain/routine_command", script_text)
         self.assertIn("motionbrain_msgs/srv/GuardedRoutineCommand", script_text)
         self.assertIn("success[:=][[:space:]]*(true|True)", script_text)
         self.assertIn("OK routine command service status sample", script_text)
+        self.assertIn("CHECK_ROUTINE_RUN_REJECTION", script_text)
+        self.assertIn("routine_execute_disabled_by_bridge_policy", script_text)
+        self.assertIn("OK routine command service run rejection sample", script_text)
         self.assertIn("/motionbrain/guarded_routine", script_text)
         self.assertIn("motionbrain_msgs/action/GuardedRoutine", script_text)
         self.assertIn("OK guarded routine action status sample", script_text)
+        self.assertIn("OK guarded routine action run rejection sample", script_text)
 
     def test_status_bridge_publishes_read_only_routine_diagnostics(self):
         bridge_text = (

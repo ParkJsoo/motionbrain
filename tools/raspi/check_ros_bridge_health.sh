@@ -19,6 +19,13 @@ EXPECTED_BASE_YAW_FEEDBACK_PIN="${EXPECTED_BASE_YAW_FEEDBACK_PIN:-36}"
 EXPECTED_BASE_YAW_FEEDBACK_ACTIVE_LOW="${EXPECTED_BASE_YAW_FEEDBACK_ACTIVE_LOW:-true}"
 EXPECTED_JOINT_STATES_PUBLISHERS="${EXPECTED_JOINT_STATES_PUBLISHERS:-1}"
 EXPECTED_ESTIMATED_JOINT_STATES_PUBLISHERS="${EXPECTED_ESTIMATED_JOINT_STATES_PUBLISHERS:-1}"
+EXPECTED_CONTROLLER_DIAGNOSTIC_MAX_LEVEL="${EXPECTED_CONTROLLER_DIAGNOSTIC_MAX_LEVEL:-0}"
+EXPECTED_SHOULDER_DIAGNOSTIC_MAX_LEVEL="${EXPECTED_SHOULDER_DIAGNOSTIC_MAX_LEVEL:-1}"
+EXPECTED_ROUTINE_EXECUTOR_DIAGNOSTIC_MAX_LEVEL="${EXPECTED_ROUTINE_EXECUTOR_DIAGNOSTIC_MAX_LEVEL:-0}"
+EXPECTED_FEEDBACK_DIAGNOSTIC_MAX_LEVEL="${EXPECTED_FEEDBACK_DIAGNOSTIC_MAX_LEVEL:-1}"
+EXPECTED_TELEOP_SENSOR_DIAGNOSTIC_MAX_LEVEL="${EXPECTED_TELEOP_SENSOR_DIAGNOSTIC_MAX_LEVEL:-0}"
+EXPECTED_CAMERA_PERCEPTION_DIAGNOSTIC_MAX_LEVEL="${EXPECTED_CAMERA_PERCEPTION_DIAGNOSTIC_MAX_LEVEL:-0}"
+CHECK_ROUTINE_RUN_REJECTION="${CHECK_ROUTINE_RUN_REJECTION:-1}"
 
 required_topics=(
   "/motionbrain/status_typed"
@@ -93,6 +100,97 @@ check_topic_publisher_count() {
   echo "FAIL ${label} publisher count for ${topic}: expected ${expected_count}, got ${observed_count:-unknown}" >&2
   echo "${topic_info}" >&2
   exit 1
+}
+
+diagnostic_block() {
+  local diagnostic_name="$1"
+
+  awk -v name="${diagnostic_name}" '
+    BEGIN { RS="\n- "; found=0 }
+    $0 ~ "name: " name "([[:space:]]|$)" {
+      print $0
+      found=1
+      exit
+    }
+    END { exit found ? 0 : 1 }
+  ' <<< "${diagnostics_sample}"
+}
+
+diagnostic_level_number() {
+  local diagnostic_text="$1"
+  local level_value=""
+
+  level_value="$(
+    awk -F': ' '/^[[:space:]]*level:/ { print $2; exit }' <<< "${diagnostic_text}" \
+      | tr -d '[:space:]"'
+  )"
+  case "${level_value}" in
+    0|\\0) echo 0 ;;
+    1|\\x01) echo 1 ;;
+    2|\\x02) echo 2 ;;
+    3|\\x03) echo 3 ;;
+    *) echo 99 ;;
+  esac
+}
+
+check_diagnostic_max_level() {
+  local diagnostic_name="$1"
+  local max_level="$2"
+  local label="$3"
+  local block=""
+  local level=""
+
+  if ! block="$(diagnostic_block "${diagnostic_name}")"; then
+    echo "FAIL diagnostics sample missing ${diagnostic_name}" >&2
+    echo "${diagnostics_sample}" >&2
+    return 1
+  fi
+
+  if [[ -z "${max_level}" ]]; then
+    echo "OK diagnostic sample: ${diagnostic_name} (${label})"
+    return 0
+  fi
+
+  level="$(diagnostic_level_number "${block}")"
+  if (( level > max_level )); then
+    echo "FAIL diagnostic level too high for ${diagnostic_name}: expected <= ${max_level}, got ${level} (${label})" >&2
+    echo "${block}" >&2
+    return 1
+  fi
+
+  echo "OK diagnostic level: ${diagnostic_name}=${level} <= ${max_level} (${label})"
+}
+
+run_diagnostics_checks() {
+  check_diagnostic_max_level \
+    "motionbrain/controller" \
+    "${EXPECTED_CONTROLLER_DIAGNOSTIC_MAX_LEVEL}" \
+    "controller"
+  check_diagnostic_max_level \
+    "motionbrain/shoulder_feedback" \
+    "${EXPECTED_SHOULDER_DIAGNOSTIC_MAX_LEVEL}" \
+    "M4 shoulder feedback"
+  check_diagnostic_max_level \
+    "motionbrain/routine_executor" \
+    "${EXPECTED_ROUTINE_EXECUTOR_DIAGNOSTIC_MAX_LEVEL}" \
+    "routine executor"
+  check_diagnostic_max_level \
+    "motionbrain/feedback" \
+    "${EXPECTED_FEEDBACK_DIAGNOSTIC_MAX_LEVEL}" \
+    "routine feedback readiness"
+  check_diagnostic_max_level \
+    "motionbrain/teleop_sensor" \
+    "${EXPECTED_TELEOP_SENSOR_DIAGNOSTIC_MAX_LEVEL}" \
+    "teleop and STM32 sensor"
+  check_diagnostic_max_level \
+    "motionbrain/camera_perception" \
+    "${EXPECTED_CAMERA_PERCEPTION_DIAGNOSTIC_MAX_LEVEL}" \
+    "camera perception"
+  if ! grep -Fq 'base_yaw_fault' <<< "${diagnostics_sample}"; then
+    echo "FAIL diagnostics sample missing base_yaw_fault key" >&2
+    echo "${diagnostics_sample}" >&2
+    return 1
+  fi
 }
 
 for topic in "${required_topics[@]}"; do
@@ -220,24 +318,36 @@ for lifecycle_node in "${expected_lifecycle_nodes[@]}"; do
 done
 echo "OK lifecycle active samples"
 
-diagnostics_sample="$(timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo /motionbrain/diagnostics --once)"
-if ! grep -Fq 'name: motionbrain/controller' <<< "${diagnostics_sample}"; then
-  echo "FAIL diagnostics sample missing motionbrain/controller" >&2
-  echo "${diagnostics_sample}" >&2
-  exit 1
-fi
-if ! grep -Fq 'name: motionbrain/routine_executor' <<< "${diagnostics_sample}"; then
-  echo "FAIL diagnostics sample missing motionbrain/routine_executor" >&2
-  echo "${diagnostics_sample}" >&2
-  exit 1
-fi
-if ! grep -Fq 'name: motionbrain/feedback' <<< "${diagnostics_sample}"; then
-  echo "FAIL diagnostics sample missing motionbrain/feedback" >&2
-  echo "${diagnostics_sample}" >&2
-  exit 1
-fi
-if ! grep -Fq 'base_yaw_fault' <<< "${diagnostics_sample}"; then
-  echo "FAIL diagnostics sample missing base_yaw_fault key" >&2
+for lifecycle_node in "${expected_lifecycle_nodes[@]}"; do
+  lifecycle_state="$(timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 lifecycle get "/${lifecycle_node}")"
+  if ! grep -Fq "active" <<< "${lifecycle_state}"; then
+    echo "FAIL lifecycle get not active: /${lifecycle_node}" >&2
+    echo "${lifecycle_state}" >&2
+    exit 1
+  fi
+  echo "OK lifecycle get active: /${lifecycle_node}"
+done
+
+diagnostics_deadline=$((SECONDS + SAMPLE_TIMEOUT_SECONDS))
+diagnostics_check_output=""
+diagnostics_last_error=""
+diagnostics_sample=""
+while (( SECONDS <= diagnostics_deadline )); do
+  diagnostics_sample="$(timeout 8 ros2 topic echo /motionbrain/diagnostics --once 2>/dev/null || true)"
+  if [[ -z "${diagnostics_sample}" ]]; then
+    diagnostics_last_error="diagnostics sample unavailable"
+  elif diagnostics_check_output="$(run_diagnostics_checks 2>&1)"; then
+    printf "%s\n" "${diagnostics_check_output}"
+    diagnostics_last_error=""
+    break
+  else
+    diagnostics_last_error="${diagnostics_check_output}"
+  fi
+  sleep "${TOPIC_POLL_SECONDS}"
+done
+if [[ -n "${diagnostics_last_error}" ]]; then
+  echo "FAIL diagnostics did not reach expected levels before timeout" >&2
+  echo "${diagnostics_last_error}" >&2
   echo "${diagnostics_sample}" >&2
   exit 1
 fi
@@ -252,6 +362,27 @@ if ! grep -Eq 'success[:=][[:space:]]*(true|True)' <<< "${routine_service_sample
 fi
 echo "OK routine command service status sample"
 
+if [[ "${CHECK_ROUTINE_RUN_REJECTION}" == "1" ]]; then
+  routine_run_service_sample="$(timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 service call /motionbrain/routine_command \
+    motionbrain_msgs/srv/GuardedRoutineCommand "{action: run, routine_name: inspect}")"
+  if ! grep -Eq 'success[:=][[:space:]]*(false|False)' <<< "${routine_run_service_sample}"; then
+    echo "FAIL routine command service run rejection is not success=false" >&2
+    echo "${routine_run_service_sample}" >&2
+    exit 1
+  fi
+  if ! grep -Eq 'forwarded[:=][[:space:]]*(false|False)' <<< "${routine_run_service_sample}"; then
+    echo "FAIL routine command service run rejection is not forwarded=false" >&2
+    echo "${routine_run_service_sample}" >&2
+    exit 1
+  fi
+  if ! grep -Fq 'routine_execute_disabled_by_bridge_policy' <<< "${routine_run_service_sample}"; then
+    echo "FAIL routine command service run rejection missing bridge policy result" >&2
+    echo "${routine_run_service_sample}" >&2
+    exit 1
+  fi
+  echo "OK routine command service run rejection sample"
+fi
+
 routine_action_sample="$(timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 action send_goal /motionbrain/guarded_routine \
   motionbrain_msgs/action/GuardedRoutine "{action: status}")"
 if ! grep -Eq 'success[:=][[:space:]]*(true|True)' <<< "${routine_action_sample}"; then
@@ -260,6 +391,27 @@ if ! grep -Eq 'success[:=][[:space:]]*(true|True)' <<< "${routine_action_sample}
   exit 1
 fi
 echo "OK guarded routine action status sample"
+
+if [[ "${CHECK_ROUTINE_RUN_REJECTION}" == "1" ]]; then
+  routine_run_action_sample="$(timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 action send_goal /motionbrain/guarded_routine \
+    motionbrain_msgs/action/GuardedRoutine "{action: run, routine_name: inspect}")"
+  if ! grep -Eq 'success[:=][[:space:]]*(false|False)' <<< "${routine_run_action_sample}"; then
+    echo "FAIL guarded routine action run rejection is not success=false" >&2
+    echo "${routine_run_action_sample}" >&2
+    exit 1
+  fi
+  if ! grep -Eq 'forwarded[:=][[:space:]]*(false|False)' <<< "${routine_run_action_sample}"; then
+    echo "FAIL guarded routine action run rejection is not forwarded=false" >&2
+    echo "${routine_run_action_sample}" >&2
+    exit 1
+  fi
+  if ! grep -Fq 'routine_execute_disabled_by_bridge_policy' <<< "${routine_run_action_sample}"; then
+    echo "FAIL guarded routine action run rejection missing bridge policy result" >&2
+    echo "${routine_run_action_sample}" >&2
+    exit 1
+  fi
+  echo "OK guarded routine action run rejection sample"
+fi
 
 camera_detection_sample="$(timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo /camera/detection_typed --once)"
 if [[ "${STRICT_CAMERA_AVAILABLE}" == "1" ]] && ! grep -Eq '^available: true$' <<< "${camera_detection_sample}"; then

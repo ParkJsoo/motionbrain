@@ -39,6 +39,8 @@ AS5600 state bring-up:
   - `shoulder_sensor_zero_deg`
   - `shoulder_direction_sign`
   - `shoulder_ros_joint_zero_rad`
+  - `state_stale_timeout_sec` defaults to `2.0`, which must remain above the
+    expected status bridge poll interval.
 
 This mode is intended for publishing calibrated measured state through
 `joint_state_broadcaster`. It does not load `joint_trajectory_controller` and

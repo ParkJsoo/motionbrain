@@ -117,14 +117,28 @@ CHECK_SERVICE=1 tools/raspi/check_ros_bridge_health.sh
 ```
 
 The ROS2 bridge check validates discovery first and then samples multiple
-topics, one service, and one action sequentially. On the Pi this can take a few
-minutes. If topic discovery passes but samples do not arrive after the configured
-deadline, inspect recent bridge logs and restart the service:
+topics, diagnostics, managed lifecycle state, one service, and one action
+sequentially. It also verifies that a physical `run` request is rejected by the
+ROS2 bridge policy unless `CHECK_ROUTINE_RUN_REJECTION=0` is set. On the Pi this
+can take a few minutes. If topic discovery passes but samples do not arrive
+after the configured deadline, inspect recent bridge logs and restart the
+service:
 
 ```bash
 journalctl -u motionbrain-ros-bridge.service -n 120 --no-pager
 sudo systemctl restart motionbrain-ros-bridge.service
 CHECK_SERVICE=1 SAMPLE_TIMEOUT_SECONDS=25 tools/raspi/check_ros_bridge_health.sh
+```
+
+The default diagnostic thresholds allow the current read-only bring-up state:
+M4 shoulder feedback may be `WARN` when the measured angle is outside calibrated
+limits, and routine feedback may be `WARN` while `base_yaw_reference` is not
+installed. For a motion-ready preflight, require clean diagnostics explicitly:
+
+```bash
+EXPECTED_SHOULDER_DIAGNOSTIC_MAX_LEVEL=0 \
+EXPECTED_FEEDBACK_DIAGNOSTIC_MAX_LEVEL=0 \
+CHECK_SERVICE=1 tools/raspi/check_ros_bridge_health.sh
 ```
 
 ROS2 evidence capture:

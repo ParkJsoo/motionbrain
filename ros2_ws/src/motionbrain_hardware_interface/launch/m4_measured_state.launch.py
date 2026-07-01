@@ -51,7 +51,7 @@ def generate_launch_description() -> LaunchDescription:
                     "<param name=\"shoulder_ros_joint_zero_rad\">"
                     f"{shoulder_ros_joint_zero_rad.perform(context)}</param>"
                 ),
-            "<param name=\"state_stale_timeout_sec\">0.25</param>":
+            "<param name=\"state_stale_timeout_sec\">2.0</param>":
                 (
                     "<param name=\"state_stale_timeout_sec\">"
                     f"{state_stale_timeout_sec.perform(context)}</param>"
@@ -131,8 +131,11 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument(
                 "state_stale_timeout_sec",
-                default_value="0.25",
-                description="Maximum age for cached M4 feedback before state becomes unavailable.",
+                default_value="2.0",
+                description=(
+                    "Maximum age for cached M4 feedback before state becomes unavailable; "
+                    "keep above the expected status bridge poll interval."
+                ),
             ),
             OpaqueFunction(function=launch_setup),
         ],

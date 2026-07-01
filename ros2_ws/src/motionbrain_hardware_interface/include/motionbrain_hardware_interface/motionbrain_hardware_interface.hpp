@@ -91,7 +91,7 @@ private:
   double shoulder_sensor_zero_deg_{0.0};
   int shoulder_direction_sign_{1};
   double shoulder_ros_joint_zero_rad_{0.0};
-  double state_stale_timeout_sec_{0.25};
+  double state_stale_timeout_sec_{2.0};
   rclcpp::Subscription<motionbrain_msgs::msg::MotionStatus>::SharedPtr status_subscription_;
   std::mutex state_cache_mutex_;
   bool state_cache_has_sample_{false};

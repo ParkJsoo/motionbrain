@@ -126,7 +126,7 @@ hardware_interface::HardwareInfo make_m4_measured_hardware_info(
       <param name="shoulder_sensor_zero_deg">234.5</param>
       <param name="shoulder_direction_sign">)URDF" + direction_sign + R"URDF(</param>
       <param name="shoulder_ros_joint_zero_rad">0.0</param>
-      <param name="state_stale_timeout_sec">0.25</param>
+      <param name="state_stale_timeout_sec">2.0</param>
     </hardware>
     <joint name="shoulder_pitch_joint">
 )URDF" + extra_joint_xml + R"URDF(
