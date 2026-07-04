@@ -262,7 +262,10 @@ class FakeEndpointBridgeIntegrationTest(unittest.TestCase):
             "motionbrain/camera_perception",
         )
         self.assertEqual(DiagnosticStatus.WARN, camera.level)
-        self.assertEqual("camera detection unavailable", camera.message)
+        self.assertEqual("bridge active; camera downstream unavailable", camera.message)
+        self.assertEqual("True", self.diagnostic_value(camera, "service_active"))
+        self.assertEqual("False", self.diagnostic_value(camera, "downstream_available"))
+        self.assertEqual("True", self.diagnostic_value(camera, "degraded"))
         self.assertEqual(
             "fault injection: stale detection",
             self.diagnostic_value(camera, "reason"),
@@ -278,7 +281,10 @@ class FakeEndpointBridgeIntegrationTest(unittest.TestCase):
             "motionbrain/controller",
         )
         self.assertEqual(DiagnosticStatus.ERROR, controller.level)
-        self.assertEqual("status poll unavailable", controller.message)
+        self.assertEqual("controller status payload invalid", controller.message)
+        self.assertEqual("False", self.diagnostic_value(controller, "downstream_available"))
+        self.assertEqual("False", self.diagnostic_value(controller, "degraded"))
+        self.assertEqual("invalid_json", self.diagnostic_value(controller, "degraded_reason"))
 
     def test_timeout_status_keeps_routine_detection_and_reports_controller_unavailable(
         self,
@@ -292,8 +298,15 @@ class FakeEndpointBridgeIntegrationTest(unittest.TestCase):
             messages["diagnostics"][-1],
             "motionbrain/controller",
         )
-        self.assertEqual(DiagnosticStatus.ERROR, controller.level)
-        self.assertEqual("status poll unavailable", controller.message)
+        self.assertEqual(DiagnosticStatus.WARN, controller.level)
+        self.assertEqual("bridge active; controller downstream unavailable", controller.message)
+        self.assertEqual("True", self.diagnostic_value(controller, "service_active"))
+        self.assertEqual("False", self.diagnostic_value(controller, "downstream_available"))
+        self.assertEqual("True", self.diagnostic_value(controller, "degraded"))
+        self.assertIn(
+            self.diagnostic_value(controller, "degraded_reason"),
+            {"timeout", "url_error", "os_error"},
+        )
 
     def test_inactive_lifecycle_bridge_does_not_publish_poll_outputs(self) -> None:
         with FakeEndpointServer("ready") as server:

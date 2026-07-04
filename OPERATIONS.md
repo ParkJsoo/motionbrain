@@ -110,6 +110,16 @@ Dashboard/perception:
 CHECK_SERVICE=1 tools/raspi/check_dashboard_health.sh
 ```
 
+If the ESP32 controller or ESP32-CAM is intentionally powered off, keep the
+dashboard service check separate from motion readiness:
+
+```bash
+ALLOW_DASHBOARD_DEGRADED=1 CHECK_SERVICE=1 tools/raspi/check_dashboard_health.sh
+```
+
+This accepts a structured dashboard `degraded` response for read-only
+observability, but it is not a motion-ready preflight.
+
 ROS2 bridge:
 
 ```bash

@@ -77,10 +77,25 @@ class RaspiPiAccessTest(unittest.TestCase):
             "ssh.socket",
             "SSH alias reaches old IP",
             "router-DNS fallback",
+            "ALLOW_DASHBOARD_DEGRADED=1",
+            "not a motion-ready preflight",
         ]
         for fragment in required_fragments:
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, operations_text)
+
+    def test_dashboard_health_script_separates_degraded_observability(self) -> None:
+        script_text = (REPO_ROOT / "tools" / "raspi" / "check_dashboard_health.sh").read_text()
+
+        required_fragments = [
+            "ALLOW_DASHBOARD_DEGRADED",
+            "DEGRADED dashboard status",
+            "motionReady",
+            "set ALLOW_DASHBOARD_DEGRADED=1 for read-only observability checks",
+        ]
+        for fragment in required_fragments:
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, script_text)
 
 
 if __name__ == "__main__":

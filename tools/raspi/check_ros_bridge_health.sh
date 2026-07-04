@@ -6,6 +6,9 @@ ROS_DISTRO="${ROS_DISTRO:-jazzy}"
 WORKSPACE="${MOTIONBRAIN_ROS_WS:-/home/motionbrain/develop/arduino/motionbrain/ros2_ws}"
 CHECK_SERVICE="${CHECK_SERVICE:-1}"
 STRICT_CAMERA_AVAILABLE="${STRICT_CAMERA_AVAILABLE:-0}"
+ALLOW_DOWNSTREAM_DEGRADED="${ALLOW_DOWNSTREAM_DEGRADED:-0}"
+ALLOW_CONTROLLER_DOWNSTREAM_DEGRADED="${ALLOW_CONTROLLER_DOWNSTREAM_DEGRADED:-${ALLOW_DOWNSTREAM_DEGRADED}}"
+ALLOW_CAMERA_DOWNSTREAM_DEGRADED="${ALLOW_CAMERA_DOWNSTREAM_DEGRADED:-${ALLOW_DOWNSTREAM_DEGRADED}}"
 TOPIC_WAIT_SECONDS="${TOPIC_WAIT_SECONDS:-20}"
 TOPIC_POLL_SECONDS="${TOPIC_POLL_SECONDS:-1}"
 SAMPLE_TIMEOUT_SECONDS="${SAMPLE_TIMEOUT_SECONDS:-20}"
@@ -135,6 +138,50 @@ diagnostic_level_number() {
   esac
 }
 
+diagnostic_value_for_key() {
+  local diagnostic_text="$1"
+  local key="$2"
+
+  printf "%s\n" "${diagnostic_text}" | DIAGNOSTIC_KEY="${key}" python3 -c '
+import os
+import sys
+
+key = os.environ["DIAGNOSTIC_KEY"]
+wanted = False
+for raw_line in sys.stdin:
+    line = raw_line.strip()
+    if line.startswith("key:"):
+        value = line.split(":", 1)[1].strip().strip("\"'\''")
+        wanted = value == key
+        continue
+    if wanted and line.startswith("value:"):
+        print(line.split(":", 1)[1].strip().strip("\"'\''"))
+        sys.exit(0)
+sys.exit(1)
+'
+}
+
+diagnostic_is_degraded_downstream_unavailable() {
+  local diagnostic_name="$1"
+  local block=""
+  local degraded=""
+  local downstream_available=""
+
+  if ! block="$(diagnostic_block "${diagnostic_name}")"; then
+    return 1
+  fi
+  degraded="$(diagnostic_value_for_key "${block}" "degraded" 2>/dev/null || true)"
+  downstream_available="$(
+    diagnostic_value_for_key "${block}" "downstream_available" 2>/dev/null || true
+  )"
+  degraded="$(printf "%s" "${degraded}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+  downstream_available="$(
+    printf "%s" "${downstream_available}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]'
+  )"
+
+  [[ "${degraded}" == "true" && "${downstream_available}" == "false" ]]
+}
+
 check_diagnostic_max_level() {
   local diagnostic_name="$1"
   local max_level="$2"
@@ -161,6 +208,21 @@ check_diagnostic_max_level() {
   fi
 
   echo "OK diagnostic level: ${diagnostic_name}=${level} <= ${max_level} (${label})"
+}
+
+check_diagnostic_max_level_or_degraded() {
+  local diagnostic_name="$1"
+  local max_level="$2"
+  local label="$3"
+  local allow_degraded="$4"
+
+  if [[ "${allow_degraded}" == "1" ]] \
+    && diagnostic_is_degraded_downstream_unavailable "${diagnostic_name}"; then
+    echo "DEGRADED diagnostic downstream unavailable while bridge/service active: ${diagnostic_name} (${label})"
+    return 0
+  fi
+
+  check_diagnostic_max_level "${diagnostic_name}" "${max_level}" "${label}"
 }
 
 check_joint_state_required_sample() {
@@ -328,31 +390,42 @@ for field in required_fields:
 }
 
 run_diagnostics_checks() {
-  check_diagnostic_max_level \
+  check_diagnostic_max_level_or_degraded \
     "motionbrain/controller" \
     "${EXPECTED_CONTROLLER_DIAGNOSTIC_MAX_LEVEL}" \
-    "controller"
-  check_diagnostic_max_level \
+    "controller" \
+    "${ALLOW_CONTROLLER_DOWNSTREAM_DEGRADED}"
+  check_diagnostic_max_level_or_degraded \
     "motionbrain/shoulder_feedback" \
     "${EXPECTED_SHOULDER_DIAGNOSTIC_MAX_LEVEL}" \
-    "M4 shoulder feedback"
-  check_diagnostic_max_level \
+    "M4 shoulder feedback" \
+    "${ALLOW_CONTROLLER_DOWNSTREAM_DEGRADED}"
+  check_diagnostic_max_level_or_degraded \
     "motionbrain/routine_executor" \
     "${EXPECTED_ROUTINE_EXECUTOR_DIAGNOSTIC_MAX_LEVEL}" \
-    "routine executor"
-  check_diagnostic_max_level \
+    "routine executor" \
+    "${ALLOW_CONTROLLER_DOWNSTREAM_DEGRADED}"
+  check_diagnostic_max_level_or_degraded \
     "motionbrain/feedback" \
     "${EXPECTED_FEEDBACK_DIAGNOSTIC_MAX_LEVEL}" \
-    "routine feedback readiness"
-  check_diagnostic_max_level \
+    "routine feedback readiness" \
+    "${ALLOW_CONTROLLER_DOWNSTREAM_DEGRADED}"
+  check_diagnostic_max_level_or_degraded \
     "motionbrain/teleop_sensor" \
     "${EXPECTED_TELEOP_SENSOR_DIAGNOSTIC_MAX_LEVEL}" \
-    "teleop and STM32 sensor"
-  check_diagnostic_max_level \
+    "teleop and STM32 sensor" \
+    "${ALLOW_CONTROLLER_DOWNSTREAM_DEGRADED}"
+  check_diagnostic_max_level_or_degraded \
     "motionbrain/camera_perception" \
     "${EXPECTED_CAMERA_PERCEPTION_DIAGNOSTIC_MAX_LEVEL}" \
-    "camera perception"
+    "camera perception" \
+    "${ALLOW_CAMERA_DOWNSTREAM_DEGRADED}"
   if ! grep -Fq 'base_yaw_fault' <<< "${diagnostics_sample}"; then
+    if [[ "${ALLOW_CONTROLLER_DOWNSTREAM_DEGRADED}" == "1" ]] \
+      && diagnostic_is_degraded_downstream_unavailable "motionbrain/feedback"; then
+      echo "DEGRADED diagnostics missing base_yaw_fault because controller downstream is unavailable"
+      return 0
+    fi
     echo "FAIL diagnostics sample missing base_yaw_fault key" >&2
     echo "${diagnostics_sample}" >&2
     return 1
@@ -422,13 +495,25 @@ for action in "${required_actions[@]}"; do
   echo "OK action: ${action}"
 done
 
-timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo /motionbrain/status_typed --once >/dev/null
-echo "OK status typed sample"
+if timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo /motionbrain/status_typed --once >/dev/null; then
+  echo "OK status typed sample"
+elif [[ "${ALLOW_CONTROLLER_DOWNSTREAM_DEGRADED}" == "1" ]]; then
+  echo "DEGRADED status typed sample unavailable while bridge/service active; controller downstream unavailable"
+else
+  echo "FAIL status typed sample unavailable" >&2
+  exit 1
+fi
 
-timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo /motionbrain/routine --once >/dev/null
-echo "OK routine diagnostics sample"
+if timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo /motionbrain/routine --once >/dev/null; then
+  echo "OK routine diagnostics sample"
+elif [[ "${ALLOW_CONTROLLER_DOWNSTREAM_DEGRADED}" == "1" ]]; then
+  echo "DEGRADED routine diagnostics sample unavailable while bridge/service active; controller downstream unavailable"
+else
+  echo "FAIL routine diagnostics sample unavailable" >&2
+  exit 1
+fi
 
-routine_typed_sample="$(timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo /motionbrain/routine_typed --once)"
+routine_typed_sample=""
 expect_routine_typed_pattern() {
   local pattern="$1"
   local label="$2"
@@ -438,35 +523,45 @@ expect_routine_typed_pattern() {
     exit 1
   fi
 }
-expect_routine_typed_pattern \
-  "feedback_selected_target: ${EXPECTED_FEEDBACK_SELECTED_TARGET}" \
-  "feedback selected target"
-expect_routine_typed_pattern \
-  "feedback_ready: ${EXPECTED_FEEDBACK_READY}" \
-  "feedback ready state"
-expect_routine_typed_pattern \
-  "physical_routine_execution_allowed: ${EXPECTED_PHYSICAL_ROUTINE_ALLOWED}" \
-  "physical routine execution gate"
-expect_routine_typed_pattern \
-  "base_yaw_feedback_fault: ${EXPECTED_BASE_YAW_FEEDBACK_FAULT}" \
-  "base yaw feedback fault"
-expect_routine_typed_pattern \
-  "base_yaw_feedback_pin: ${EXPECTED_BASE_YAW_FEEDBACK_PIN}" \
-  "base yaw feedback pin"
-expect_routine_typed_pattern \
-  "base_yaw_feedback_active_low: ${EXPECTED_BASE_YAW_FEEDBACK_ACTIVE_LOW}" \
-  "base yaw feedback polarity"
-if [[ -n "${EXPECTED_BASE_YAW_FEEDBACK_HARDWARE_READY}" ]]; then
+
+if routine_typed_sample="$(
+  timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo /motionbrain/routine_typed --once 2>/dev/null
+)"; then
   expect_routine_typed_pattern \
-    "base_yaw_feedback_hardware_ready: ${EXPECTED_BASE_YAW_FEEDBACK_HARDWARE_READY}" \
-    "base yaw hardware readiness"
-fi
-if [[ -n "${EXPECTED_BASE_YAW_FEEDBACK_SIGNAL_ACTIVE}" ]]; then
+    "feedback_selected_target: ${EXPECTED_FEEDBACK_SELECTED_TARGET}" \
+    "feedback selected target"
   expect_routine_typed_pattern \
-    "base_yaw_feedback_signal_active: ${EXPECTED_BASE_YAW_FEEDBACK_SIGNAL_ACTIVE}" \
-    "base yaw signal state"
+    "feedback_ready: ${EXPECTED_FEEDBACK_READY}" \
+    "feedback ready state"
+  expect_routine_typed_pattern \
+    "physical_routine_execution_allowed: ${EXPECTED_PHYSICAL_ROUTINE_ALLOWED}" \
+    "physical routine execution gate"
+  expect_routine_typed_pattern \
+    "base_yaw_feedback_fault: ${EXPECTED_BASE_YAW_FEEDBACK_FAULT}" \
+    "base yaw feedback fault"
+  expect_routine_typed_pattern \
+    "base_yaw_feedback_pin: ${EXPECTED_BASE_YAW_FEEDBACK_PIN}" \
+    "base yaw feedback pin"
+  expect_routine_typed_pattern \
+    "base_yaw_feedback_active_low: ${EXPECTED_BASE_YAW_FEEDBACK_ACTIVE_LOW}" \
+    "base yaw feedback polarity"
+  if [[ -n "${EXPECTED_BASE_YAW_FEEDBACK_HARDWARE_READY}" ]]; then
+    expect_routine_typed_pattern \
+      "base_yaw_feedback_hardware_ready: ${EXPECTED_BASE_YAW_FEEDBACK_HARDWARE_READY}" \
+      "base yaw hardware readiness"
+  fi
+  if [[ -n "${EXPECTED_BASE_YAW_FEEDBACK_SIGNAL_ACTIVE}" ]]; then
+    expect_routine_typed_pattern \
+      "base_yaw_feedback_signal_active: ${EXPECTED_BASE_YAW_FEEDBACK_SIGNAL_ACTIVE}" \
+      "base yaw signal state"
+  fi
+  echo "OK routine typed feedback readiness sample"
+elif [[ "${ALLOW_CONTROLLER_DOWNSTREAM_DEGRADED}" == "1" ]]; then
+  echo "DEGRADED routine typed feedback sample unavailable while bridge/service active; controller downstream unavailable"
+else
+  echo "FAIL routine typed feedback readiness sample unavailable" >&2
+  exit 1
 fi
-echo "OK routine typed feedback readiness sample"
 
 lifecycle_sample="$(timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo /motionbrain/lifecycle_typed || true)"
 for lifecycle_node in "${expected_lifecycle_nodes[@]}"; do
@@ -519,14 +614,26 @@ if [[ -n "${diagnostics_last_error}" ]]; then
 fi
 echo "OK diagnostics sample"
 
-routine_service_sample="$(timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 service call /motionbrain/routine_command \
-  motionbrain_msgs/srv/GuardedRoutineCommand "{action: status}")"
-if ! grep -Eq 'success[:=][[:space:]]*(true|True)' <<< "${routine_service_sample}"; then
+routine_service_sample=""
+if ! routine_service_sample="$(timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 service call /motionbrain/routine_command \
+  motionbrain_msgs/srv/GuardedRoutineCommand "{action: status}")"; then
+  if [[ "${ALLOW_CONTROLLER_DOWNSTREAM_DEGRADED}" == "1" ]]; then
+    echo "DEGRADED routine command service status call unavailable while bridge/service active; controller downstream unavailable"
+  else
+    echo "FAIL routine command service status call unavailable" >&2
+    echo "${routine_service_sample}" >&2
+    exit 1
+  fi
+elif grep -Eq 'success[:=][[:space:]]*(true|True)' <<< "${routine_service_sample}"; then
+  echo "OK routine command service status sample"
+elif [[ "${ALLOW_CONTROLLER_DOWNSTREAM_DEGRADED}" == "1" ]] \
+  && grep -Fq 'routine HTTP request failed' <<< "${routine_service_sample}"; then
+  echo "DEGRADED routine command service active; controller downstream unavailable"
+else
   echo "FAIL routine command service status sample is not success=true" >&2
   echo "${routine_service_sample}" >&2
   exit 1
 fi
-echo "OK routine command service status sample"
 
 if [[ "${CHECK_ROUTINE_RUN_REJECTION}" == "1" ]]; then
   routine_run_service_sample="$(timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 service call /motionbrain/routine_command \
@@ -549,14 +656,26 @@ if [[ "${CHECK_ROUTINE_RUN_REJECTION}" == "1" ]]; then
   echo "OK routine command service run rejection sample"
 fi
 
-routine_action_sample="$(timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 action send_goal /motionbrain/guarded_routine \
-  motionbrain_msgs/action/GuardedRoutine "{action: status}")"
-if ! grep -Eq 'success[:=][[:space:]]*(true|True)' <<< "${routine_action_sample}"; then
+routine_action_sample=""
+if ! routine_action_sample="$(timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 action send_goal /motionbrain/guarded_routine \
+  motionbrain_msgs/action/GuardedRoutine "{action: status}")"; then
+  if [[ "${ALLOW_CONTROLLER_DOWNSTREAM_DEGRADED}" == "1" ]]; then
+    echo "DEGRADED guarded routine action status call unavailable while bridge/service active; controller downstream unavailable"
+  else
+    echo "FAIL guarded routine action status call unavailable" >&2
+    echo "${routine_action_sample}" >&2
+    exit 1
+  fi
+elif grep -Eq 'success[:=][[:space:]]*(true|True)' <<< "${routine_action_sample}"; then
+  echo "OK guarded routine action status sample"
+elif [[ "${ALLOW_CONTROLLER_DOWNSTREAM_DEGRADED}" == "1" ]] \
+  && grep -Fq 'routine HTTP request failed' <<< "${routine_action_sample}"; then
+  echo "DEGRADED guarded routine action active; controller downstream unavailable"
+else
   echo "FAIL guarded routine action status sample is not success=true" >&2
   echo "${routine_action_sample}" >&2
   exit 1
 fi
-echo "OK guarded routine action status sample"
 
 if [[ "${CHECK_ROUTINE_RUN_REJECTION}" == "1" ]]; then
   routine_run_action_sample="$(timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 action send_goal /motionbrain/guarded_routine \
@@ -579,13 +698,31 @@ if [[ "${CHECK_ROUTINE_RUN_REJECTION}" == "1" ]]; then
   echo "OK guarded routine action run rejection sample"
 fi
 
-camera_detection_sample="$(timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo /camera/detection_typed --once)"
-if [[ "${STRICT_CAMERA_AVAILABLE}" == "1" ]] && ! grep -Eq '^available: true$' <<< "${camera_detection_sample}"; then
-  echo "FAIL camera detection typed sample is not available=true" >&2
-  echo "${camera_detection_sample}" >&2
+camera_detection_sample=""
+if camera_detection_sample="$(
+  timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo /camera/detection_typed --once 2>/dev/null
+)"; then
+  if [[ "${STRICT_CAMERA_AVAILABLE}" == "1" ]] \
+    && ! grep -Eq '^available: true$' <<< "${camera_detection_sample}"; then
+    echo "FAIL camera detection typed sample is not available=true" >&2
+    echo "${camera_detection_sample}" >&2
+    exit 1
+  fi
+  if [[ "${ALLOW_CAMERA_DOWNSTREAM_DEGRADED}" == "1" ]] \
+    && ! grep -Eq '^available: true$' <<< "${camera_detection_sample}"; then
+    echo "DEGRADED camera detection typed sample available=false while bridge/service active"
+  else
+    echo "OK camera detection typed sample"
+  fi
+elif [[ "${STRICT_CAMERA_AVAILABLE}" == "1" ]]; then
+  echo "FAIL camera detection typed sample unavailable" >&2
+  exit 1
+elif [[ "${ALLOW_CAMERA_DOWNSTREAM_DEGRADED}" == "1" ]]; then
+  echo "DEGRADED camera detection typed sample unavailable while bridge/service active; camera downstream unavailable"
+else
+  echo "FAIL camera detection typed sample unavailable" >&2
   exit 1
 fi
-echo "OK camera detection typed sample"
 
 timeout "${SAMPLE_TIMEOUT_SECONDS}" ros2 topic echo /joint_states --once >/dev/null
 echo "OK joint state sample"

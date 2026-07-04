@@ -26,6 +26,8 @@ MotionBrain은 ESP32 모션 제어기, STM32 센서/텔레오퍼레이션 계층
 
 ## 빠른 증거 링크
 
+- [Claim-to-evidence matrix 초안](docs/evidence/claim-to-evidence-matrix.md):
+  주장, 증거, 한계, 주장하지 않는 항목을 한눈에 보는 검토용 guardrail
 - [물리 텔레오퍼레이션 GIF](https://raw.githubusercontent.com/ParkJsoo/motionbrain/demo-ready-20260608/docs/assets/demo/motionbrain-demo.gif)
   / [MP4](https://raw.githubusercontent.com/ParkJsoo/motionbrain/demo-ready-20260608/docs/assets/demo/motionbrain-demo.mp4)
 - [`ros2_control` dry-run 검증](docs/evidence/2026-06-16-ros2-control-open-loop.md):
@@ -208,6 +210,7 @@ Pi에서 OpenCV DNN/ONNX 기반 constrained known-object detection 경로는 구
 - [README.md](README.md): 프로젝트 진입점
 - [README.en.md](README.en.md): 영어 프로젝트 진입점
 - [ROBOTICS_SYSTEM_READINESS.md](ROBOTICS_SYSTEM_READINESS.md): 로보틱스 시스템/ROS2 하드웨어 경계 요약
+- [docs/evidence/claim-to-evidence-matrix.md](docs/evidence/claim-to-evidence-matrix.md): 주장과 증거, 한계, 미주장 항목 matrix
 - [PIN_MAP.md](PIN_MAP.md): ESP32 핀 점유와 M4 AS5600 배치 정책
 - [docs/evidence/2026-06-28-m4-shoulder-closed-loop.md](docs/evidence/2026-06-28-m4-shoulder-closed-loop.md): M4 어깨 단일축 폐루프 실물 검증
 - [docs/evidence/2026-06-16-ros2-control-open-loop.md](docs/evidence/2026-06-16-ros2-control-open-loop.md): `ros2_control` dry-run 검증 요약

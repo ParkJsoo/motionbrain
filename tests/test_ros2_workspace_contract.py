@@ -537,10 +537,21 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         self.assertIn("OK kinematics typed finite sample", script_text)
         self.assertIn("OK diagnostics sample", script_text)
         self.assertIn("check_diagnostic_max_level", script_text)
+        self.assertIn("check_diagnostic_max_level_or_degraded", script_text)
         self.assertIn("diagnostic_level_number", script_text)
+        self.assertIn("diagnostic_is_degraded_downstream_unavailable", script_text)
         self.assertIn("run_diagnostics_checks", script_text)
         self.assertIn("FAIL diagnostics did not reach expected levels before timeout", script_text)
         self.assertIn("OK diagnostic level", script_text)
+        self.assertIn("DEGRADED diagnostic downstream unavailable", script_text)
+        self.assertIn("ALLOW_DOWNSTREAM_DEGRADED", script_text)
+        self.assertIn("ALLOW_CONTROLLER_DOWNSTREAM_DEGRADED", script_text)
+        self.assertIn("ALLOW_CAMERA_DOWNSTREAM_DEGRADED", script_text)
+        self.assertIn("DEGRADED status typed sample unavailable", script_text)
+        self.assertIn("DEGRADED routine diagnostics sample unavailable", script_text)
+        self.assertIn("DEGRADED routine command service active", script_text)
+        self.assertIn("DEGRADED guarded routine action active", script_text)
+        self.assertIn("DEGRADED camera detection typed sample", script_text)
         self.assertIn("EXPECTED_CONTROLLER_DIAGNOSTIC_MAX_LEVEL", script_text)
         self.assertIn("EXPECTED_SHOULDER_DIAGNOSTIC_MAX_LEVEL", script_text)
         self.assertIn("EXPECTED_ROUTINE_EXECUTOR_DIAGNOSTIC_MAX_LEVEL", script_text)
@@ -623,7 +634,21 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
             "from diagnostic_msgs.msg import DiagnosticArray",
             "from diagnostic_msgs.msg import DiagnosticStatus",
             '"/motionbrain/diagnostics"',
-            "publish_diagnostics(status_payload, routine_payload, detection_payload)",
+            "publish_diagnostics(",
+            "status_error=status_error",
+            "routine_error=routine_error",
+            "detection_configured=camera_configured",
+            "poll_error_reason",
+            "poll_error_is_downstream_unavailable",
+            "update_lifecycle_downstream_detail",
+            "service active; downstream degraded",
+            "service_active",
+            "bridge active; controller downstream unavailable",
+            "bridge active; routine downstream unavailable",
+            "bridge active; camera downstream unavailable",
+            "downstream_available",
+            "degraded",
+            "degraded_reason",
             "motionbrain/controller",
             "motionbrain/shoulder_feedback",
             "motionbrain/routine_executor",

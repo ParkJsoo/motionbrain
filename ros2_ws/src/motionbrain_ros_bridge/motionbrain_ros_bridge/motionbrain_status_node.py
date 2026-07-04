@@ -44,6 +44,28 @@ POLL_EXCEPTIONS = NETWORK_EXCEPTIONS + (json.JSONDecodeError,)
 PERCEPTION_EXCEPTIONS = POLL_EXCEPTIONS + (ValueError,)
 
 
+def poll_error_reason(exc: BaseException | None) -> str:
+    if exc is None:
+        return "none"
+    if isinstance(exc, json.JSONDecodeError):
+        return "invalid_json"
+    if isinstance(exc, urllib.error.HTTPError):
+        return f"http_{exc.code}"
+    if isinstance(exc, TimeoutError):
+        return "timeout"
+    if isinstance(exc, urllib.error.URLError):
+        return "url_error"
+    if isinstance(exc, OSError):
+        return "os_error"
+    if isinstance(exc, ValueError):
+        return "invalid_payload"
+    return exc.__class__.__name__
+
+
+def poll_error_is_downstream_unavailable(exc: BaseException | None) -> bool:
+    return isinstance(exc, NETWORK_EXCEPTIONS)
+
+
 def fetch_json(url: str, timeout: float) -> dict[str, Any]:
     request = urllib.request.Request(url)
     with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -385,31 +407,71 @@ class MotionBrainStatusNode(LifecycleNode):
         status.values = [self.diagnostic_value(key, value) for key, value in values.items()]
         return status
 
+    def bridge_downstream_values(
+        self,
+        *,
+        downstream_available: bool,
+        degraded: bool,
+        degraded_reason: str = "none",
+        poll_error: BaseException | None = None,
+        **extra_values: Any,
+    ) -> dict[str, Any]:
+        values = {
+            "service_active": self._polling_active,
+            "downstream_available": downstream_available,
+            "degraded": degraded,
+            "degraded_reason": degraded_reason,
+            "motion_base_url": self.motion_base_url,
+        }
+        if poll_error is not None:
+            values["poll_error_type"] = poll_error.__class__.__name__
+            values["poll_error"] = str(poll_error)
+        values.update(extra_values)
+        return values
+
     def publish_diagnostics(
         self,
         status_payload: dict[str, Any] | None,
         routine_payload: dict[str, Any] | None,
         detection_payload: dict[str, Any] | None,
+        *,
+        status_error: BaseException | None = None,
+        routine_error: BaseException | None = None,
+        detection_configured: bool = False,
     ) -> None:
         message = DiagnosticArray()
         message.header.stamp = self.get_clock().now().to_msg()
         message.status = [
-            self.controller_diagnostic(status_payload),
-            self.shoulder_feedback_diagnostic(status_payload),
-            self.routine_diagnostic(routine_payload),
-            self.feedback_diagnostic(routine_payload),
-            self.teleop_sensor_diagnostic(routine_payload),
-            self.camera_diagnostic(detection_payload),
+            self.controller_diagnostic(status_payload, status_error),
+            self.shoulder_feedback_diagnostic(status_payload, status_error),
+            self.routine_diagnostic(routine_payload, routine_error),
+            self.feedback_diagnostic(routine_payload, routine_error),
+            self.teleop_sensor_diagnostic(routine_payload, routine_error),
+            self.camera_diagnostic(detection_payload, configured=detection_configured),
         ]
         self.diagnostics_pub.publish(message)
 
-    def controller_diagnostic(self, payload: dict[str, Any] | None) -> DiagnosticStatus:
+    def controller_diagnostic(
+        self,
+        payload: dict[str, Any] | None,
+        poll_error: BaseException | None = None,
+    ) -> DiagnosticStatus:
         if payload is None:
+            degraded = poll_error_is_downstream_unavailable(poll_error)
             return self.diagnostic_status(
                 "motionbrain/controller",
-                DiagnosticStatus.ERROR,
-                "status poll unavailable",
-                {},
+                DiagnosticStatus.WARN if degraded else DiagnosticStatus.ERROR,
+                (
+                    "bridge active; controller downstream unavailable"
+                    if degraded
+                    else "controller status payload invalid"
+                ),
+                self.bridge_downstream_values(
+                    downstream_available=False,
+                    degraded=degraded,
+                    degraded_reason=poll_error_reason(poll_error),
+                    poll_error=poll_error,
+                ),
                 "esp32_motion_controller",
             )
 
@@ -437,7 +499,10 @@ class MotionBrainStatusNode(LifecycleNode):
             "motionbrain/controller",
             level,
             text,
-            {
+            self.bridge_downstream_values(
+                downstream_available=True,
+                degraded=False,
+                **{
                 "state": state,
                 "motor_enabled": as_bool(payload.get("motorEnabled")),
                 "block_reason": as_str(sensor.get("blockReason"), "NONE"),
@@ -446,14 +511,35 @@ class MotionBrainStatusNode(LifecycleNode):
                 "last_command_seen": as_bool(last_command.get("seen")),
                 "last_command_success": as_bool(last_command.get("success")),
                 "last_command_type": as_str(last_command.get("type")),
-            },
+                },
+            ),
             "esp32_motion_controller",
         )
 
     def shoulder_feedback_diagnostic(
         self,
         payload: dict[str, Any] | None,
+        poll_error: BaseException | None = None,
     ) -> DiagnosticStatus:
+        if payload is None:
+            degraded = poll_error_is_downstream_unavailable(poll_error)
+            return self.diagnostic_status(
+                "motionbrain/shoulder_feedback",
+                DiagnosticStatus.WARN if degraded else DiagnosticStatus.ERROR,
+                (
+                    "bridge active; controller downstream unavailable"
+                    if degraded
+                    else "controller status payload invalid"
+                ),
+                self.bridge_downstream_values(
+                    downstream_available=False,
+                    degraded=degraded,
+                    degraded_reason=poll_error_reason(poll_error),
+                    poll_error=poll_error,
+                ),
+                "esp32_m4_as5600",
+            )
+
         shoulder = payload.get("shoulderAngle") if isinstance(payload, dict) else None
         shoulder = shoulder if isinstance(shoulder, dict) else {}
 
@@ -487,7 +573,10 @@ class MotionBrainStatusNode(LifecycleNode):
             "motionbrain/shoulder_feedback",
             level,
             text,
-            {
+            self.bridge_downstream_values(
+                downstream_available=True,
+                degraded=False,
+                **{
                 "available": available,
                 "connected": connected,
                 "fresh": fresh,
@@ -519,17 +608,32 @@ class MotionBrainStatusNode(LifecycleNode):
                 ),
                 "manual_guard_blocked": as_bool(shoulder.get("manualGuardBlocked")),
                 "stop_reason": stop_reason,
-            },
+                },
+            ),
             "esp32_m4_as5600",
         )
 
-    def routine_diagnostic(self, payload: dict[str, Any] | None) -> DiagnosticStatus:
+    def routine_diagnostic(
+        self,
+        payload: dict[str, Any] | None,
+        poll_error: BaseException | None = None,
+    ) -> DiagnosticStatus:
         if payload is None:
+            degraded = poll_error_is_downstream_unavailable(poll_error)
             return self.diagnostic_status(
                 "motionbrain/routine_executor",
-                DiagnosticStatus.ERROR,
-                "routine poll unavailable",
-                {},
+                DiagnosticStatus.WARN if degraded else DiagnosticStatus.ERROR,
+                (
+                    "bridge active; routine downstream unavailable"
+                    if degraded
+                    else "routine payload invalid"
+                ),
+                self.bridge_downstream_values(
+                    downstream_available=False,
+                    degraded=degraded,
+                    degraded_reason=poll_error_reason(poll_error),
+                    poll_error=poll_error,
+                ),
                 "esp32_motion_controller",
             )
 
@@ -557,24 +661,42 @@ class MotionBrainStatusNode(LifecycleNode):
             "motionbrain/routine_executor",
             level,
             text,
-            {
+            self.bridge_downstream_values(
+                downstream_available=True,
+                degraded=False,
+                **{
                 "executor_enabled": executor_enabled,
                 "execute_implemented": execute_implemented,
                 "queue_apply_allowed": queue_apply_allowed,
                 "executor_state": as_str(status.get("state")),
                 "executor_last_result": as_str(status.get("lastResult")),
                 "routine_count": routine_count,
-            },
+                },
+            ),
             "esp32_motion_controller",
         )
 
-    def feedback_diagnostic(self, payload: dict[str, Any] | None) -> DiagnosticStatus:
+    def feedback_diagnostic(
+        self,
+        payload: dict[str, Any] | None,
+        poll_error: BaseException | None = None,
+    ) -> DiagnosticStatus:
         if payload is None:
+            degraded = poll_error_is_downstream_unavailable(poll_error)
             return self.diagnostic_status(
                 "motionbrain/feedback",
-                DiagnosticStatus.ERROR,
-                "feedback poll unavailable",
-                {},
+                DiagnosticStatus.WARN if degraded else DiagnosticStatus.ERROR,
+                (
+                    "bridge active; routine downstream unavailable"
+                    if degraded
+                    else "routine payload invalid"
+                ),
+                self.bridge_downstream_values(
+                    downstream_available=False,
+                    degraded=degraded,
+                    degraded_reason=poll_error_reason(poll_error),
+                    poll_error=poll_error,
+                ),
                 "esp32_motion_controller",
             )
 
@@ -600,7 +722,10 @@ class MotionBrainStatusNode(LifecycleNode):
             "motionbrain/feedback",
             level,
             text,
-            {
+            self.bridge_downstream_values(
+                downstream_available=True,
+                degraded=False,
+                **{
                 "selected_target": as_str(
                     feedback.get("selectedClosureTarget"),
                     "base_yaw_reference",
@@ -621,11 +746,35 @@ class MotionBrainStatusNode(LifecycleNode):
                 "base_yaw_fault": fault,
                 "base_yaw_age_ms": as_uint(base_yaw.get("ageMs")),
                 "base_yaw_last_update_ms": as_uint(base_yaw.get("lastUpdateMs")),
-            },
+                },
+            ),
             "esp32_motion_controller",
         )
 
-    def teleop_sensor_diagnostic(self, payload: dict[str, Any] | None) -> DiagnosticStatus:
+    def teleop_sensor_diagnostic(
+        self,
+        payload: dict[str, Any] | None,
+        poll_error: BaseException | None = None,
+    ) -> DiagnosticStatus:
+        if payload is None:
+            degraded = poll_error_is_downstream_unavailable(poll_error)
+            return self.diagnostic_status(
+                "motionbrain/teleop_sensor",
+                DiagnosticStatus.WARN if degraded else DiagnosticStatus.ERROR,
+                (
+                    "bridge active; routine downstream unavailable"
+                    if degraded
+                    else "routine payload invalid"
+                ),
+                self.bridge_downstream_values(
+                    downstream_available=False,
+                    degraded=degraded,
+                    degraded_reason=poll_error_reason(poll_error),
+                    poll_error=poll_error,
+                ),
+                "stm32_teleop_sensor",
+            )
+
         diagnostics = payload.get("diagnostics") if isinstance(payload, dict) else None
         diagnostics = diagnostics if isinstance(diagnostics, dict) else {}
         sensor = diagnostics.get("sensor")
@@ -653,7 +802,10 @@ class MotionBrainStatusNode(LifecycleNode):
             "motionbrain/teleop_sensor",
             level,
             text,
-            {
+            self.bridge_downstream_values(
+                downstream_available=True,
+                degraded=False,
+                **{
                 "sensor_connected": sensor_connected,
                 "sensor_fresh": sensor_fresh,
                 "sensor_age_ms": as_uint(sensor.get("ageMs")),
@@ -663,17 +815,35 @@ class MotionBrainStatusNode(LifecycleNode):
                 "teleop_age_ms": as_uint(teleop.get("ageMs")),
                 "safety_block_reason": as_str(safety.get("blockReason"), "NONE"),
                 "safety_fault_reason": as_str(safety.get("faultReason"), "NONE"),
-            },
+                },
+            ),
             "stm32_teleop_sensor",
         )
 
-    def camera_diagnostic(self, payload: dict[str, Any] | None) -> DiagnosticStatus:
+    def camera_diagnostic(
+        self,
+        payload: dict[str, Any] | None,
+        *,
+        configured: bool = False,
+    ) -> DiagnosticStatus:
         if payload is None:
             return self.diagnostic_status(
                 "motionbrain/camera_perception",
-                DiagnosticStatus.ERROR,
-                "camera detection poll unavailable",
-                {},
+                DiagnosticStatus.WARN,
+                (
+                    "bridge active; camera downstream unavailable"
+                    if configured
+                    else "camera detection source not configured"
+                ),
+                self.bridge_downstream_values(
+                    downstream_available=False,
+                    degraded=True,
+                    degraded_reason=(
+                        "camera_detection_poll_unavailable"
+                        if configured
+                        else "camera_downstream_not_configured"
+                    ),
+                ),
                 "esp32_cam_or_pi_perception",
             )
 
@@ -681,7 +851,7 @@ class MotionBrainStatusNode(LifecycleNode):
         detected = as_bool(payload.get("detected"))
         if not available:
             level = DiagnosticStatus.WARN
-            text = "camera detection unavailable"
+            text = "bridge active; camera downstream unavailable"
         elif detected:
             level = DiagnosticStatus.OK
             text = "target detected"
@@ -693,7 +863,15 @@ class MotionBrainStatusNode(LifecycleNode):
             "motionbrain/camera_perception",
             level,
             text,
-            {
+            self.bridge_downstream_values(
+                downstream_available=available,
+                degraded=not available,
+                degraded_reason=(
+                    as_str(payload.get("reason"), "camera_detection_unavailable")
+                    if not available
+                    else "none"
+                ),
+                **{
                 "available": available,
                 "detected": detected,
                 "target_type": as_str(payload.get("targetType")),
@@ -703,7 +881,8 @@ class MotionBrainStatusNode(LifecycleNode):
                 "reason": as_str(payload.get("reason")),
                 "camera_url": as_str(payload.get("cameraUrl")),
                 "perception_url": as_str(payload.get("perceptionUrl")),
-            },
+                },
+            ),
             "esp32_cam_or_pi_perception",
         )
 
@@ -1029,6 +1208,47 @@ class MotionBrainStatusNode(LifecycleNode):
         feedback.raw_json = compact_json(payload or {})
         return feedback
 
+    def update_lifecycle_downstream_detail(
+        self,
+        status_payload: dict[str, Any] | None,
+        routine_payload: dict[str, Any] | None,
+        detection_payload: dict[str, Any] | None,
+        *,
+        status_error: BaseException | None,
+        routine_error: BaseException | None,
+        camera_configured: bool,
+    ) -> None:
+        if not self._polling_active:
+            return
+
+        reasons = []
+        controller_downstream_unavailable = (
+            poll_error_is_downstream_unavailable(status_error)
+            or poll_error_is_downstream_unavailable(routine_error)
+        )
+        controller_payload_invalid = (
+            (status_payload is None and status_error is not None)
+            or (routine_payload is None and routine_error is not None)
+        ) and not controller_downstream_unavailable
+
+        if controller_downstream_unavailable:
+            reasons.append("controller unavailable")
+        elif controller_payload_invalid:
+            reasons.append("controller payload invalid")
+
+        if camera_configured and (
+            detection_payload is None or not as_bool(detection_payload.get("available"))
+        ):
+            reasons.append("camera unavailable")
+
+        if reasons:
+            detail = "service active; downstream degraded: " + ", ".join(dict.fromkeys(reasons))
+        else:
+            detail = "service active; downstream available"
+
+        if self.lifecycle.detail != detail:
+            self.lifecycle.mark_active(detail)
+
     def poll_once(self) -> None:
         if not self._polling_active:
             return
@@ -1038,6 +1258,8 @@ class MotionBrainStatusNode(LifecycleNode):
         status_payload = None
         routine_payload = None
         detection_payload = None
+        status_error = None
+        routine_error = None
 
         try:
             status = fetch_json(f"{self.motion_base_url}/status", timeout)
@@ -1045,6 +1267,7 @@ class MotionBrainStatusNode(LifecycleNode):
             self.publish_status_typed(status)
             status_payload = status
         except POLL_EXCEPTIONS as exc:
+            status_error = exc
             self.get_logger().warning(f"status poll failed: {exc}")
 
         try:
@@ -1053,6 +1276,7 @@ class MotionBrainStatusNode(LifecycleNode):
             self.publish_routine_typed(routine)
             routine_payload = routine
         except POLL_EXCEPTIONS as exc:
+            routine_error = exc
             self.get_logger().warning(f"routine poll failed: {exc}")
 
         try:
@@ -1066,12 +1290,28 @@ class MotionBrainStatusNode(LifecycleNode):
 
         perception_url = str(self.get_parameter("perception_url").value).strip().rstrip("/")
         camera_url = str(self.get_parameter("camera_url").value).strip().rstrip("/")
+        camera_configured = bool(perception_url or camera_url)
         if perception_url:
             detection_payload = self.poll_perception(perception_url, timeout)
         elif camera_url:
             detection_payload = self.poll_camera(camera_url, timeout)
 
-        self.publish_diagnostics(status_payload, routine_payload, detection_payload)
+        self.update_lifecycle_downstream_detail(
+            status_payload,
+            routine_payload,
+            detection_payload,
+            status_error=status_error,
+            routine_error=routine_error,
+            camera_configured=camera_configured,
+        )
+        self.publish_diagnostics(
+            status_payload,
+            routine_payload,
+            detection_payload,
+            status_error=status_error,
+            routine_error=routine_error,
+            detection_configured=camera_configured,
+        )
 
     def poll_perception(self, perception_url: str, timeout: float) -> dict[str, Any]:
         try:

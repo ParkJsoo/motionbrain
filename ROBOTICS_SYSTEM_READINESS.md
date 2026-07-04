@@ -26,6 +26,8 @@ MotionBrain의 강점은 실제 하드웨어를 붙여 운영한 로보틱스 �
 
 - 물리 컨트롤러와 dashboard 개요: [README.md](README.md)
 - 포트폴리오 문제 정의와 한계: [PORTFOLIO.md](PORTFOLIO.md)
+- 주장/증거/한계 matrix:
+  [docs/evidence/claim-to-evidence-matrix.md](docs/evidence/claim-to-evidence-matrix.md)
 - 공개 `ros2_control` dry-run 증거:
   [docs/evidence/2026-06-16-ros2-control-open-loop.md](docs/evidence/2026-06-16-ros2-control-open-loop.md)
 - 공개 Pi/systemd/ROS2 health 증거:

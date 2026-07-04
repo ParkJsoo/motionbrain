@@ -1,9 +1,11 @@
 import unittest
+import urllib.error
 from unittest.mock import patch
 
 from tools import motionbrain_dashboard as dashboard
 from tools.motionbrain_dashboard import DashboardServer
 from tools.motionbrain_dashboard import build_grasp_dry_run_plan
+from tools.motionbrain_dashboard import dependency_error_payload
 
 
 class DashboardAlignmentTest(unittest.TestCase):
@@ -26,6 +28,24 @@ class DashboardAlignmentTest(unittest.TestCase):
 
         busy = {"state": "ARMED", "sensor": {"blocked": False}, "baseAngle": {"active": True}}
         self.assertEqual(server.status_allows_align_nudge(busy), (False, "base_busy"))
+
+    def test_dependency_error_payload_marks_controller_unavailable_as_degraded(self) -> None:
+        payload = dependency_error_payload(
+            "controller",
+            "http://motionbrain.local/status",
+            urllib.error.URLError("Temporary failure in name resolution"),
+            last_success_at=123.5,
+        )
+
+        self.assertFalse(payload["ok"])
+        self.assertTrue(payload["degraded"])
+        self.assertTrue(payload["serviceReady"])
+        self.assertFalse(payload["motionReady"])
+        self.assertEqual(payload["dependency"], "controller")
+        self.assertEqual(payload["dependencyUrl"], "http://motionbrain.local/status")
+        self.assertEqual(payload["error"], "controller_unavailable")
+        self.assertEqual(payload["errorClass"], "name_resolution_failed")
+        self.assertEqual(payload["lastSuccessfulAt"], 123.5)
 
     def test_execute_base_nudge_stops_after_successful_start(self) -> None:
         calls: list[str] = []

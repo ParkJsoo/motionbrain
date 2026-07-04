@@ -573,9 +573,12 @@ INDEX_HTML = """<!doctype html>
       document.getElementById("actionLog").textContent = logLines.join("\\n");
     }
 
-    async function getJson(url) {
+    async function getJson(url, options = {}) {
       const response = await fetch(url, { cache: "no-store" });
       const data = await response.json();
+      if (options.allowDegraded && data.degraded) {
+        return data;
+      }
       if (!response.ok || data.ok === false) {
         throw new Error(data.error || response.statusText);
       }
@@ -597,6 +600,37 @@ INDEX_HTML = """<!doctype html>
 
     function updateStatus(status) {
       lastStatus = status;
+      if (status.degraded) {
+        const dependency = status.dependency || "controller";
+        const reason = status.errorClass || status.error || "unavailable";
+        setText("stateValue", "UNAVAILABLE", "bad");
+        document.getElementById("uptimeValue").textContent = `dependency ${dependency}`;
+        setText("safetyValue", "DEGRADED", "warn");
+        document.getElementById("safetyReason").textContent = `${dependency}: ${reason}`;
+        setText("sensorValue", "DOWN", "bad");
+        document.getElementById("sensorDetail").textContent = status.dependencyUrl || "";
+        setText("lightValue", "UNKNOWN", "warn");
+        document.getElementById("motorValue").textContent = "motion-ready false";
+        setText("baseActive", "UNAVAILABLE", "warn");
+        document.getElementById("baseDir").textContent = "controller status unavailable";
+        setText("baseProgress", "- / - deg");
+        document.getElementById("baseStop").textContent = "UNKNOWN";
+        setText("m4Angle", "- deg", "warn");
+        document.getElementById("m4Raw").textContent = "controller status unavailable";
+        setText("m4Sensor", "UNAVAILABLE", "bad");
+        document.getElementById("m4Magnet").textContent = "no live controller sample";
+        setText("m4Control", "UNAVAILABLE", "warn");
+        document.getElementById("m4Target").textContent = "motion-ready false";
+        setText("m4Guard", "BLOCKED", "bad");
+        document.getElementById("m4Stop").textContent = status.message || reason;
+        setText("teleopConn", "UNAVAILABLE", "warn");
+        document.getElementById("teleopDeadman").textContent = "deadman unavailable active false";
+        setText("teleopAxes", "R - L - T -");
+        document.getElementById("teleopGrip").textContent = "grip unavailable";
+        updateAlignActionState();
+        updateCupPlanState();
+        return;
+      }
       const sensor = status.sensor || {};
       const base = status.baseAngle || {};
       const shoulder = status.shoulderAngle || {};
@@ -862,7 +896,7 @@ INDEX_HTML = """<!doctype html>
       }
 
       try {
-        updateStatus(await getJson("/api/status"));
+        updateStatus(await getJson("/api/status", { allowDegraded: true }));
       } catch (err) {
         pushLog(`status error: ${err.message}`);
       }
@@ -982,6 +1016,62 @@ def post_motionbrain(base_url: str, path: str, timeout: float, token: str = "") 
         return json.loads(response.read().decode("utf-8"))
 
 
+def classify_dependency_error(exc: BaseException) -> str:
+    text = str(exc)
+    if isinstance(exc, json.JSONDecodeError):
+        return "invalid_json"
+    if isinstance(exc, TimeoutError) or "timed out" in text.lower():
+        return "timeout"
+    if isinstance(exc, urllib.error.HTTPError):
+        return f"http_{exc.code}"
+    if isinstance(exc, urllib.error.URLError):
+        reason = str(getattr(exc, "reason", exc))
+        lower_reason = reason.lower()
+        if "name resolution" in lower_reason or "nodename nor servname" in lower_reason:
+            return "name_resolution_failed"
+        if "connection refused" in lower_reason:
+            return "connection_refused"
+        if "no route" in lower_reason:
+            return "network_unreachable"
+        return "url_error"
+    if isinstance(exc, OSError):
+        lower_text = text.lower()
+        if "name resolution" in lower_text or "nodename nor servname" in lower_text:
+            return "name_resolution_failed"
+        if "connection refused" in lower_text:
+            return "connection_refused"
+        if "no route" in lower_text:
+            return "network_unreachable"
+        return "os_error"
+    return "unknown_error"
+
+
+def dependency_error_payload(
+    dependency: str,
+    dependency_url: str,
+    exc: BaseException,
+    *,
+    last_success_at: float | None = None,
+) -> dict[str, Any]:
+    error_class = classify_dependency_error(exc)
+    payload: dict[str, Any] = {
+        "ok": False,
+        "degraded": True,
+        "serviceReady": True,
+        "motionReady": False,
+        "dependency": dependency,
+        "dependencyUrl": dependency_url,
+        "error": f"{dependency}_unavailable",
+        "errorClass": error_class,
+        "detail": str(exc),
+        "message": f"{dependency} unavailable: {error_class}",
+        "ts": time.time(),
+    }
+    if last_success_at is not None:
+        payload["lastSuccessfulAt"] = last_success_at
+    return payload
+
+
 def normalized_target_label(value: Any) -> str:
     return str(value or "").strip().lower()
 
@@ -1096,11 +1186,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     payload["dashboardToken"] = self.server.dashboard_token
                 self.send_json(payload, allow_cross_origin=True)
             elif parsed.path == "/api/status":
-                self.send_json(fetch_json(f"{self.server.motion_base_url}/status", self.server.timeout))
+                self.handle_status()
             elif parsed.path == "/api/events":
                 query = urllib.parse.parse_qs(parsed.query)
                 limit = query.get("limit", [str(self.server.events_limit)])[0]
-                self.send_json(fetch_json(f"{self.server.motion_base_url}/events?limit={urllib.parse.quote(limit)}", self.server.timeout))
+                events_url = f"{self.server.motion_base_url}/events?limit={urllib.parse.quote(limit)}"
+                try:
+                    self.send_json(fetch_json(events_url, self.server.timeout))
+                except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as exc:
+                    self.send_dependency_error("controller", events_url, exc)
             elif parsed.path == "/api/capture":
                 self.handle_capture()
             elif parsed.path == "/api/vision_frame":
@@ -1140,6 +1234,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if not isinstance(payload, dict):
             raise ValueError("json_object_required")
         return payload
+
+    def handle_status(self) -> None:
+        status_url = f"{self.server.motion_base_url}/status"
+        try:
+            payload = fetch_json(status_url, self.server.timeout)
+            self.server.last_controller_status_success_at = time.time()
+            self.send_json(payload)
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as exc:
+            self.send_dependency_error(
+                "controller",
+                status_url,
+                exc,
+                last_success_at=self.server.last_controller_status_success_at,
+            )
 
     def handle_light(self) -> None:
         try:
@@ -1244,7 +1352,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.send_error_json(HTTPStatus.BAD_REQUEST, "camera_url_not_configured")
             return
 
-        frame, content_type = self.server.get_camera_frame()
+        try:
+            frame, content_type = self.server.get_camera_frame()
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError, OSError) as exc:
+            dependency, url = self.server.camera_dependency("frame")
+            self.send_dependency_error(dependency, url, exc)
+            return
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", content_type)
         self.send_header("Cache-Control", "no-store")
@@ -1259,7 +1372,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.send_error_json(HTTPStatus.BAD_REQUEST, "camera_url_not_configured")
             return
 
-        payload = self.server.get_detection()
+        try:
+            payload = self.server.get_detection()
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError, OSError) as exc:
+            dependency, url = self.server.camera_dependency("detection")
+            self.send_dependency_error(dependency, url, exc)
+            return
         self.send_json(payload, allow_cross_origin=True)
 
     def send_html(self, html: str) -> None:
@@ -1299,6 +1417,22 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def send_error_json(self, status: HTTPStatus, error: str) -> None:
         self.send_json({"ok": False, "error": error}, status)
 
+    def send_dependency_error(
+        self,
+        dependency: str,
+        dependency_url: str,
+        exc: BaseException,
+        *,
+        last_success_at: float | None = None,
+    ) -> None:
+        payload = dependency_error_payload(
+            dependency,
+            dependency_url,
+            exc,
+            last_success_at=last_success_at,
+        )
+        self.send_json(payload, HTTPStatus.BAD_GATEWAY, allow_cross_origin=True)
+
 
 class DashboardServer(ThreadingHTTPServer):
     def __init__(
@@ -1334,6 +1468,7 @@ class DashboardServer(ThreadingHTTPServer):
         self.camera_cache_lock = threading.Lock()
         self.camera_cache: tuple[float, bytes, str] | None = None
         self.camera_cache_seconds = 0.25
+        self.last_controller_status_success_at: float | None = None
 
     def status_allows_align_nudge(self, status: dict[str, Any]) -> tuple[bool, str]:
         sensor = status.get("sensor", {})
@@ -1380,6 +1515,12 @@ class DashboardServer(ThreadingHTTPServer):
         payload["cameraUrl"] = self.camera_url
         payload["ts"] = time.time()
         return payload
+
+    def camera_dependency(self, purpose: str) -> tuple[str, str]:
+        if self.perception_url:
+            path = "api/detection" if purpose == "detection" else "api/vision_frame"
+            return "perception", f"{self.perception_url}/{path}"
+        return "camera", f"{self.camera_url}/capture"
 
 
 def run(args: argparse.Namespace) -> int:
