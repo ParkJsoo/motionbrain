@@ -187,6 +187,20 @@ class PerceptionServiceTest(unittest.TestCase):
         self.assertEqual(health["consecutiveErrors"], 3)
         self.assertEqual(health["currentBackoffSeconds"], 3.0)
 
+    def test_health_remains_ok_for_fresh_frame_with_recent_camera_error(self) -> None:
+        state = self.make_state()
+        frame = make_jpeg_with_red_target()
+
+        with patch.object(service, "fetch_bytes", return_value=(frame, "image/jpeg")):
+            state.run_once()
+        state.mark_error(TimeoutError("intermittent timeout"))
+
+        health = state.health_payload()
+        self.assertTrue(health["fresh"])
+        self.assertTrue(health["ok"])
+        self.assertEqual(health["consecutiveErrors"], 1)
+        self.assertIn("intermittent timeout", health["lastError"])
+
     def test_health_payload_reports_runtime_tuning_values(self) -> None:
         state = PerceptionState(
             "http://camera.local",

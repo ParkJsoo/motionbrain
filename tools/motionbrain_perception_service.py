@@ -242,7 +242,7 @@ class PerceptionState:
         last_success_age_ms = None if last_success_at is None else max((now - last_success_at) * 1000.0, 0.0)
         detector = detection.get("detector", {}) if isinstance(detection, dict) else {}
         return {
-            "ok": fresh and not last_error,
+            "ok": fresh,
             "cameraUrl": self.camera_url,
             "mode": self.config.mode,
             "detectColor": self.config.color,
