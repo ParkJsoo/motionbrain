@@ -29,6 +29,11 @@ class RaspiCameraProfileTest(unittest.TestCase):
                 self.assertIn("MOTIONBRAIN_ALLOW_UNSTABLE_CAMERA_QUALITY", script_text)
                 self.assertIn("--quality \"${CAMERA_QUALITY}\"", script_text)
 
+        perception_script = (repo_root / "tools/raspi/start_perception_service.sh").read_text()
+        self.assertIn("MOTIONBRAIN_PERCEPTION_MAX_CAMERA_TIMEOUT", perception_script)
+        self.assertIn("MOTIONBRAIN_ALLOW_LONG_CAMERA_TIMEOUT", perception_script)
+        self.assertIn("--timeout \"${PERCEPTION_TIMEOUT}\"", perception_script)
+
         self.assertIn(
             'parser.add_argument("--quality", type=int, default=10',
             SCRIPT_PATH.read_text(),

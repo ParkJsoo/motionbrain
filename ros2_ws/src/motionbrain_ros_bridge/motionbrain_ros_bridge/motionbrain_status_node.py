@@ -848,10 +848,14 @@ class MotionBrainStatusNode(LifecycleNode):
             )
 
         available = as_bool(payload.get("available"))
+        fresh = as_bool(payload.get("fresh"), True)
         detected = as_bool(payload.get("detected"))
         if not available:
             level = DiagnosticStatus.WARN
             text = "bridge active; camera downstream unavailable"
+        elif not fresh:
+            level = DiagnosticStatus.WARN
+            text = "bridge active; camera detection stale"
         elif detected:
             level = DiagnosticStatus.OK
             text = "target detected"
@@ -865,14 +869,17 @@ class MotionBrainStatusNode(LifecycleNode):
             text,
             self.bridge_downstream_values(
                 downstream_available=available,
-                degraded=not available,
+                degraded=(not available or not fresh),
                 degraded_reason=(
                     as_str(payload.get("reason"), "camera_detection_unavailable")
                     if not available
+                    else "camera_detection_stale"
+                    if not fresh
                     else "none"
                 ),
                 **{
                 "available": available,
+                "fresh": fresh,
                 "detected": detected,
                 "target_type": as_str(payload.get("targetType")),
                 "label": as_str(payload.get("label") or payload.get("color")),

@@ -46,6 +46,8 @@ class PerceptionState:
         interval: float = 0.35,
         stale_seconds: float = 2.0,
         display_hold_seconds: float = 0.0,
+        failure_backoff_initial: float = 0.5,
+        failure_backoff_max: float = 5.0,
         opencv_threads: int | None = None,
     ) -> None:
         self.camera_url = camera_url.rstrip("/")
@@ -55,6 +57,8 @@ class PerceptionState:
         self.interval = interval
         self.stale_seconds = stale_seconds
         self.display_hold_seconds = display_hold_seconds
+        self.failure_backoff_initial = failure_backoff_initial
+        self.failure_backoff_max = failure_backoff_max
         self.opencv_threads = opencv_threads
         self.lock = threading.Lock()
         self.latest_frame: tuple[float, bytes, str] | None = None
@@ -67,6 +71,11 @@ class PerceptionState:
         self.detect_total = 0
         self.error_total = 0
         self.last_cycle_ms: float | None = None
+        self.consecutive_errors = 0
+        self.current_backoff_seconds = 0.0
+        self.next_capture_at_monotonic: float | None = None
+        self.last_error_at: float | None = None
+        self.last_success_at: float | None = None
 
     def target_key(self, detection: dict[str, Any]) -> tuple[str, str, int | None]:
         return (
@@ -127,26 +136,50 @@ class PerceptionState:
             self.last_error = ""
             self.frames_total += 1
             self.detect_total += 1
+            self.consecutive_errors = 0
+            self.current_backoff_seconds = 0.0
+            self.last_success_at = now
 
     def mark_error(self, exc: BaseException) -> None:
+        now = time.time()
         with self.lock:
             self.last_error = str(exc)
             self.error_total += 1
+            self.consecutive_errors += 1
+            exponent = min(self.consecutive_errors - 1, 16)
+            self.current_backoff_seconds = min(
+                self.failure_backoff_max,
+                self.failure_backoff_initial * (2**exponent),
+            )
+            self.last_error_at = now
 
     def mark_cycle_duration(self, elapsed_seconds: float) -> None:
         with self.lock:
             self.last_cycle_ms = max(elapsed_seconds * 1000.0, 0.0)
 
+    def next_cycle_delay(self, had_error: bool, now_monotonic: float | None = None) -> float:
+        if now_monotonic is None:
+            now_monotonic = time.monotonic()
+        with self.lock:
+            delay = self.interval
+            if had_error:
+                delay = max(delay, self.current_backoff_seconds)
+            self.next_capture_at_monotonic = now_monotonic + delay
+            return delay
+
     def run_loop(self, stop_event: threading.Event) -> None:
         while not stop_event.is_set():
             started = time.monotonic()
+            had_error = False
             try:
                 self.run_once()
             except Exception as exc:
+                had_error = True
                 self.mark_error(exc)
             elapsed = time.monotonic() - started
             self.mark_cycle_duration(elapsed)
-            stop_event.wait(self.interval)
+            delay = self.next_cycle_delay(had_error)
+            stop_event.wait(delay)
 
     def detection_payload(self) -> dict[str, Any]:
         with self.lock:
@@ -190,10 +223,23 @@ class PerceptionState:
             detect_total = self.detect_total
             error_total = self.error_total
             last_cycle_ms = self.last_cycle_ms
+            consecutive_errors = self.consecutive_errors
+            current_backoff_seconds = self.current_backoff_seconds
+            next_capture_at_monotonic = self.next_capture_at_monotonic
+            last_error_at = self.last_error_at
+            last_success_at = self.last_success_at
 
         now = time.time()
+        monotonic_now = time.monotonic()
         frame_age_ms = None if frame is None else max((now - frame[0]) * 1000.0, 0.0)
         fresh = frame_age_ms is not None and frame_age_ms <= self.stale_seconds * 1000.0
+        next_capture_delay_ms = (
+            None
+            if next_capture_at_monotonic is None
+            else max((next_capture_at_monotonic - monotonic_now) * 1000.0, 0.0)
+        )
+        last_error_age_ms = None if last_error_at is None else max((now - last_error_at) * 1000.0, 0.0)
+        last_success_age_ms = None if last_success_at is None else max((now - last_success_at) * 1000.0, 0.0)
         detector = detection.get("detector", {}) if isinstance(detection, dict) else {}
         return {
             "ok": fresh and not last_error,
@@ -209,12 +255,22 @@ class PerceptionState:
             "displayHoldSeconds": self.display_hold_seconds,
             "fresh": fresh,
             "frameAgeMs": frame_age_ms,
+            "timeoutSeconds": self.timeout,
             "intervalSeconds": self.interval,
             "lastCycleMs": last_cycle_ms,
             "framesTotal": frames_total,
             "detectTotal": detect_total,
             "errorTotal": error_total,
+            "consecutiveErrors": consecutive_errors,
+            "failureBackoffInitialSeconds": self.failure_backoff_initial,
+            "failureBackoffMaxSeconds": self.failure_backoff_max,
+            "currentBackoffSeconds": current_backoff_seconds,
+            "nextCaptureDelayMs": next_capture_delay_ms,
             "lastError": last_error,
+            "lastErrorAt": last_error_at,
+            "lastErrorAgeMs": last_error_age_ms,
+            "lastSuccessAt": last_success_at,
+            "lastSuccessAgeMs": last_success_age_ms,
             "detector": detector,
             "detectorConfigured": self.detector is not None,
             "opencvThreads": self.opencv_threads,
@@ -407,6 +463,8 @@ def run(args: argparse.Namespace) -> int:
         interval=args.interval,
         stale_seconds=args.stale_seconds,
         display_hold_seconds=args.display_hold_seconds,
+        failure_backoff_initial=args.failure_backoff_initial,
+        failure_backoff_max=args.failure_backoff_max,
         opencv_threads=opencv_threads,
     )
     stop_event = threading.Event()
@@ -449,6 +507,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--timeout", type=float, default=2.0, help="HTTP timeout in seconds")
     parser.add_argument("--interval", type=float, default=0.35, help="Camera/detection loop interval in seconds")
     parser.add_argument("--stale-seconds", type=float, default=2.0, help="Freshness window for health and action gates")
+    parser.add_argument(
+        "--failure-backoff-initial",
+        type=float,
+        default=float(os.environ.get("MOTIONBRAIN_PERCEPTION_FAILURE_BACKOFF_INITIAL", "0.5")),
+        help="Seconds to wait after the first camera fetch failure before retrying",
+    )
+    parser.add_argument(
+        "--failure-backoff-max",
+        type=float,
+        default=float(os.environ.get("MOTIONBRAIN_PERCEPTION_FAILURE_BACKOFF_MAX", "5.0")),
+        help="Maximum retry backoff after repeated camera fetch failures",
+    )
     parser.add_argument(
         "--display-hold-seconds",
         type=float,
@@ -499,6 +569,10 @@ def parse_args() -> argparse.Namespace:
         parser.error("--timeout must be > 0")
     if args.stale_seconds <= 0:
         parser.error("--stale-seconds must be > 0")
+    if args.failure_backoff_initial < 0:
+        parser.error("--failure-backoff-initial must be >= 0")
+    if args.failure_backoff_max < args.failure_backoff_initial:
+        parser.error("--failure-backoff-max must be >= --failure-backoff-initial")
     if args.display_hold_seconds < 0:
         parser.error("--display-hold-seconds must be >= 0")
     if args.align_deadband < 0.0 or args.align_deadband >= 1.0:

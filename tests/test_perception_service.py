@@ -124,12 +124,68 @@ class PerceptionServiceTest(unittest.TestCase):
 
         stop_event = FakeStopEvent()
 
-        with patch.object(service.time, "monotonic", side_effect=[10.0, 10.25]):
+        with patch.object(service.time, "monotonic", side_effect=[10.0, 10.25, 10.25]):
             with patch.object(state, "run_once"):
                 state.run_loop(stop_event)  # type: ignore[arg-type]
 
         self.assertEqual(stop_event.wait_calls, [state.interval])
         self.assertEqual(state.health_payload()["lastCycleMs"], 250.0)
+
+    def test_run_loop_backs_off_after_camera_error(self) -> None:
+        state = PerceptionState(
+            "http://camera.local",
+            DetectionConfig(mode="color", color="red"),
+            timeout=0.2,
+            interval=0.1,
+            stale_seconds=10.0,
+            failure_backoff_initial=0.5,
+            failure_backoff_max=2.0,
+        )
+
+        class FakeStopEvent:
+            def __init__(self) -> None:
+                self.wait_calls: list[float] = []
+
+            def is_set(self) -> bool:
+                return bool(self.wait_calls)
+
+            def wait(self, timeout: float) -> bool:
+                self.wait_calls.append(timeout)
+                return False
+
+        stop_event = FakeStopEvent()
+
+        with patch.object(service.time, "monotonic", side_effect=[10.0, 10.2, 10.2]):
+            with patch.object(state, "run_once", side_effect=TimeoutError("timed out")):
+                state.run_loop(stop_event)  # type: ignore[arg-type]
+
+        health = state.health_payload()
+        self.assertEqual(stop_event.wait_calls, [0.5])
+        self.assertEqual(health["errorTotal"], 1)
+        self.assertEqual(health["consecutiveErrors"], 1)
+        self.assertEqual(health["currentBackoffSeconds"], 0.5)
+        self.assertAlmostEqual(health["lastCycleMs"], 200.0)
+        self.assertIn("timed out", health["lastError"])
+
+    def test_repeated_camera_errors_cap_backoff(self) -> None:
+        state = PerceptionState(
+            "http://camera.local",
+            DetectionConfig(mode="color", color="red"),
+            timeout=0.2,
+            interval=0.1,
+            stale_seconds=10.0,
+            failure_backoff_initial=1.0,
+            failure_backoff_max=3.0,
+        )
+
+        state.mark_error(TimeoutError("first"))
+        state.mark_error(TimeoutError("second"))
+        state.mark_error(TimeoutError("third"))
+
+        health = state.health_payload()
+        self.assertEqual(health["errorTotal"], 3)
+        self.assertEqual(health["consecutiveErrors"], 3)
+        self.assertEqual(health["currentBackoffSeconds"], 3.0)
 
     def test_health_payload_reports_runtime_tuning_values(self) -> None:
         state = PerceptionState(
@@ -138,12 +194,18 @@ class PerceptionServiceTest(unittest.TestCase):
             timeout=0.2,
             interval=1.25,
             stale_seconds=10.0,
+            failure_backoff_initial=0.75,
+            failure_backoff_max=6.0,
             opencv_threads=1,
         )
 
         health = state.health_payload()
 
+        self.assertEqual(health["timeoutSeconds"], 0.2)
         self.assertEqual(health["intervalSeconds"], 1.25)
+        self.assertEqual(health["failureBackoffInitialSeconds"], 0.75)
+        self.assertEqual(health["failureBackoffMaxSeconds"], 6.0)
+        self.assertEqual(health["consecutiveErrors"], 0)
         self.assertEqual(health["opencvThreads"], 1)
 
     def test_parse_args_accepts_object_target_aliases(self) -> None:
@@ -182,6 +244,24 @@ class PerceptionServiceTest(unittest.TestCase):
             args = service.parse_args()
 
         self.assertEqual(args.opencv_threads, 2)
+
+    def test_parse_args_accepts_perception_backoff_tuning(self) -> None:
+        with patch(
+            "sys.argv",
+            [
+                "motionbrain_perception_service.py",
+                "--camera-url",
+                "http://camera.local",
+                "--failure-backoff-initial",
+                "0.75",
+                "--failure-backoff-max",
+                "6.0",
+            ],
+        ):
+            args = service.parse_args()
+
+        self.assertEqual(args.failure_backoff_initial, 0.75)
+        self.assertEqual(args.failure_backoff_max, 6.0)
 
     def test_handler_routes_detection_health_and_frame_paths(self) -> None:
         state = self.make_state()
