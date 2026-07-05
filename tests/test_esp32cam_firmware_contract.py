@@ -91,28 +91,28 @@ class Esp32CamFirmwareContractTest(unittest.TestCase):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, source)
 
-    def test_capture_and_stream_use_bounded_chunked_writes(self):
+    def test_capture_uses_bounded_chunked_writes_and_stream_is_disabled(self):
         source = ESP32CAM_MAIN.read_text()
 
         expected_fragments = [
             "const uint32_t CLIENT_IO_TIMEOUT_MS = 750;",
             "const uint32_t CAPTURE_WRITE_DEADLINE_MS = 2000;",
-            "const uint32_t STREAM_WRITE_DEADLINE_MS = 1000;",
             "const size_t CLIENT_WRITE_CHUNK_BYTES = 1024;",
             "bool writeClientBuffer(",
             "client.setTimeout(CLIENT_IO_TIMEOUT_MS);",
             "writeClientBuffer(client, fb->buf, fb->len, CAPTURE_WRITE_DEADLINE_MS, written)",
-            "writeClientBuffer(client, fb->buf, fb->len, STREAM_WRITE_DEADLINE_MS, written)",
+            "stream disabled; use /capture",
             "cameraStats.clientWriteFailures++;",
         ]
         for fragment in expected_fragments:
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, source)
 
-    def test_stream_duration_is_capped_for_single_threaded_webserver(self):
+    def test_stream_endpoint_is_disabled_for_single_threaded_webserver(self):
         source = ESP32CAM_MAIN.read_text()
 
-        self.assertIn("const uint32_t STREAM_MAX_DURATION_MS = 5000;", source)
+        self.assertIn("const uint32_t STREAM_MAX_DURATION_MS = 0;", source)
+        self.assertIn('server.send(410, "text/plain", "stream disabled; use /capture");', source)
 
 
 if __name__ == "__main__":

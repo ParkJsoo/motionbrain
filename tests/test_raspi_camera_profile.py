@@ -46,6 +46,23 @@ class RaspiCameraProfileTest(unittest.TestCase):
             SCRIPT_PATH.read_text(),
         )
 
+    def test_reconcile_leaves_active_perception_backoff_running_by_default(self) -> None:
+        repo_root = Path(__file__).resolve().parents[1]
+        script_text = (repo_root / "tools/raspi/reconcile_dashboard_services.sh").read_text()
+
+        expected_fragments = [
+            "perception_service_state=\"$(systemctl is-active motionbrain-perception.service",
+            "MOTIONBRAIN_RESTART_ON_PERCEPTION_UNAVAILABLE:-0",
+            "MOTIONBRAIN_RESTART_ON_PERCEPTION_NOT_OK:-0",
+            "leaving perception backoff running",
+            "leaving active service to recover via capture backoff",
+            "add_restart_service motionbrain-dashboard.service",
+            "reasons+=(\"dashboard_config_unavailable\")",
+        ]
+        for fragment in expected_fragments:
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, script_text)
+
     def test_normalize_base_url_strips_path_and_adds_scheme(self) -> None:
         self.assertEqual(
             apply_camera_profile.normalize_base_url("motionbrain-cam.local/status"),

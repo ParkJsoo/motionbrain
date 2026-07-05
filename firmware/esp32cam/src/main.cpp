@@ -34,15 +34,13 @@ namespace {
 #define MOTIONBRAIN_ENABLE_HTTP_STALL_RESTART 0
 #endif
 
-const uint32_t STREAM_FRAME_DELAY_MS = 100;
-const uint32_t STREAM_MAX_DURATION_MS = 5000;
+const uint32_t STREAM_MAX_DURATION_MS = 0;
 const uint32_t WIFI_CONNECT_TIMEOUT_MS = 30000;
 const uint32_t CAMERA_RECOVERY_SETTLE_MS = 150;
 const uint32_t CAMERA_RECOVERY_COOLDOWN_MS = 10000;
 const uint32_t CAPTURE_SLOW_RECOVERY_MS = 2500;
 const uint32_t CLIENT_IO_TIMEOUT_MS = 750;
 const uint32_t CAPTURE_WRITE_DEADLINE_MS = 2000;
-const uint32_t STREAM_WRITE_DEADLINE_MS = 1000;
 const uint32_t HTTP_REQUEST_STALL_RESTART_MS = 6000;
 const uint32_t LOOP_HEARTBEAT_STALL_RESTART_MS = 9000;
 const uint32_t HTTP_SUPERVISOR_INTERVAL_MS = 250;
@@ -803,56 +801,10 @@ void handleCapture() {
 void handleStream() {
   ScopedHttpRequest request("stream");
   cameraStats.streamRequests++;
-  WiFiClient client = server.client();
-  client.setTimeout(CLIENT_IO_TIMEOUT_MS);
-  client.setNoDelay(true);
-  const uint32_t startedAt = millis();
-  uint32_t streamFrames = 0;
-  String response =
-      "HTTP/1.1 200 OK\r\n"
-      "Content-Type: multipart/x-mixed-replace; boundary=frame\r\n"
-      "Cache-Control: no-cache\r\n"
-      "Connection: close\r\n\r\n";
-  client.print(response);
-
-  while (client.connected() && (millis() - startedAt) < STREAM_MAX_DURATION_MS) {
-    camera_fb_t* fb = esp_camera_fb_get();
-    if (fb == nullptr) {
-      cameraStats.captureFailures++;
-      cameraStats.consecutiveCaptureFailures++;
-      lastCameraError = "stream_capture_failed";
-      recoverCamera("stream_capture_failed");
-      break;
-    }
-
-    bool ok = client.printf("--frame\r\nContent-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n", fb->len) > 0;
-    size_t written = 0;
-    const uint32_t writeStartedAt = millis();
-    if (ok) {
-      ok = writeClientBuffer(client, fb->buf, fb->len, STREAM_WRITE_DEADLINE_MS, written);
-    }
-    const uint32_t writeMs = millis() - writeStartedAt;
-    cameraStats.lastWriteMs = writeMs;
-    if (writeMs > cameraStats.maxWriteMs) {
-      cameraStats.maxWriteMs = writeMs;
-    }
-    if (writeMs > STREAM_WRITE_DEADLINE_MS) {
-      cameraStats.slowClientWrites++;
-    }
-    if (ok) {
-      ok = client.print("\r\n") > 0;
-    }
-    esp_camera_fb_return(fb);
-    if (!ok) {
-      cameraStats.clientWriteFailures++;
-      break;
-    }
-    streamFrames++;
-
-    delay(STREAM_FRAME_DELAY_MS);
-  }
-  cameraStats.lastStreamFrames = streamFrames;
-  client.stop();
+  cameraStats.lastStreamFrames = 0;
+  server.sendHeader("Connection", "close");
+  server.send(410, "text/plain", "stream disabled; use /capture");
+  server.client().stop();
 }
 
 void connectWifi() {

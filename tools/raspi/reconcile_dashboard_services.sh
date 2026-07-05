@@ -163,9 +163,11 @@ fi
 
 dashboard_config="$(curl -fsS --max-time "${MOTIONBRAIN_RECONCILE_TIMEOUT:-4}" "${DASHBOARD_URL}/api/config" 2>/dev/null || true)"
 perception_health="$(curl -fsS --max-time "${MOTIONBRAIN_RECONCILE_TIMEOUT:-4}" "${PERCEPTION_URL}/health" 2>/dev/null || true)"
+perception_service_state="$(systemctl is-active motionbrain-perception.service 2>/dev/null || true)"
 
 if [[ -z "${dashboard_config}" ]]; then
   restart_needed=1
+  add_restart_service motionbrain-dashboard.service
   reasons+=("dashboard_config_unavailable")
 else
   dashboard_motion_url="$(printf "%s" "${dashboard_config}" | json_field motionBaseUrl || true)"
@@ -183,10 +185,15 @@ else
 fi
 
 if [[ -z "${perception_health}" ]]; then
-  restart_needed=1
-  add_restart_service motionbrain-perception.service
-  add_restart_service motionbrain-dashboard.service
-  reasons+=("perception_health_unavailable")
+  if [[ "${perception_service_state}" != "active" ||
+        "${MOTIONBRAIN_RESTART_ON_PERCEPTION_UNAVAILABLE:-0}" == "1" ]]; then
+    restart_needed=1
+    add_restart_service motionbrain-perception.service
+    add_restart_service motionbrain-dashboard.service
+    reasons+=("perception_health_unavailable")
+  else
+    echo "Warning: perception health unavailable but service is active; leaving perception backoff running" >&2
+  fi
 else
   perception_ok="$(printf "%s" "${perception_health}" | json_field ok || true)"
   perception_camera_url="$(printf "%s" "${perception_health}" | json_field cameraUrl || true)"
@@ -197,10 +204,14 @@ else
     reasons+=("perception_camera_url_changed")
   fi
   if [[ "${perception_ok}" != "true" && -n "${camera_url}" ]]; then
-    restart_needed=1
-    add_restart_service motionbrain-perception.service
-    add_restart_service motionbrain-dashboard.service
-    reasons+=("perception_not_ok")
+    if [[ "${MOTIONBRAIN_RESTART_ON_PERCEPTION_NOT_OK:-0}" != "1" ]]; then
+      echo "Warning: perception health not OK; leaving active service to recover via capture backoff" >&2
+    else
+      restart_needed=1
+      add_restart_service motionbrain-perception.service
+      add_restart_service motionbrain-dashboard.service
+      reasons+=("perception_not_ok")
+    fi
   fi
 fi
 
