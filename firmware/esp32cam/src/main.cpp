@@ -277,7 +277,9 @@ void sendCameraProfileJson(int statusCode, const char* status, const String& mes
     json += "\"";
   }
   json += "}";
+  server.sendHeader("Connection", "close");
   server.send(statusCode, "application/json", json);
+  server.client().stop();
 }
 
 struct WifiConfig {
@@ -431,6 +433,7 @@ bool initCamera() {
 }
 
 void handleRoot() {
+  server.sendHeader("Connection", "close");
   server.send(
       200,
       "text/html",
@@ -439,6 +442,7 @@ void handleRoot() {
       "<p><a href=\"/capture\">capture</a> | <a href=\"/stream\">stream</a> | <a href=\"/status\">status</a> | <a href=\"/camera\">camera profile</a></p>"
       "<img src=\"/capture\" style=\"max-width:100%;height:auto\">"
       "</body></html>");
+  server.client().stop();
 }
 
 void handleStatus() {
@@ -466,7 +470,9 @@ void handleStatus() {
   json += "\"lastFrameBytes\":" + String(cameraStats.lastFrameBytes) + ",";
   json += "\"lastError\":\"" + lastCameraError + "\"";
   json += "}";
+  server.sendHeader("Connection", "close");
   server.send(200, "application/json", json);
+  server.client().stop();
 }
 
 void handleCameraProfile() {
@@ -515,7 +521,9 @@ void handleCapture() {
     cameraStats.consecutiveCaptureFailures++;
     lastCameraError = "camera_capture_failed";
     recoverCamera("capture_failed");
+    server.sendHeader("Connection", "close");
     server.send(503, "text/plain", "camera capture failed");
+    server.client().stop();
     return;
   }
   cameraStats.captures++;
@@ -523,17 +531,22 @@ void handleCapture() {
   lastCameraError = "";
   cameraStats.lastFrameBytes = fb->len;
 
-  server.sendHeader("Cache-Control", "no-store");
-  server.setContentLength(fb->len);
-  server.send(200, "image/jpeg", "");
   WiFiClient client = server.client();
   client.setTimeout(2000);
   client.setNoDelay(true);
-  const size_t written = client.connected() ? client.write(fb->buf, fb->len) : 0;
-  if (written != fb->len) {
+  const bool headerOk = client.connected() &&
+                        client.printf("HTTP/1.1 200 OK\r\n"
+                                      "Content-Type: image/jpeg\r\n"
+                                      "Content-Length: %u\r\n"
+                                      "Cache-Control: no-store\r\n"
+                                      "Connection: close\r\n\r\n",
+                                      static_cast<unsigned>(fb->len)) > 0;
+  const size_t written = headerOk && client.connected() ? client.write(fb->buf, fb->len) : 0;
+  if (!headerOk || written != fb->len) {
     cameraStats.clientWriteFailures++;
   }
   esp_camera_fb_return(fb);
+  client.stop();
 }
 
 void handleStream() {
@@ -578,6 +591,7 @@ void connectWifi() {
   }
 
   WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);
   WiFi.setHostname(MOTIONBRAIN_CAMERA_HOSTNAME);
   WiFi.begin(config.ssid, config.password[0] != '\0' ? config.password : nullptr);
   Serial.print("Connecting to configured Wi-Fi");
