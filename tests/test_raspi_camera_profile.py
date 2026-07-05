@@ -35,6 +35,8 @@ class RaspiCameraProfileTest(unittest.TestCase):
         self.assertIn("MOTIONBRAIN_PERCEPTION_MAX_CAMERA_TIMEOUT", perception_script)
         self.assertIn("MOTIONBRAIN_ALLOW_LONG_CAMERA_TIMEOUT", perception_script)
         self.assertIn("--timeout \"${PERCEPTION_TIMEOUT}\"", perception_script)
+        self.assertIn('PERCEPTION_MAX_CAMERA_TIMEOUT="${MOTIONBRAIN_PERCEPTION_MAX_CAMERA_TIMEOUT:-5.0}"', perception_script)
+        self.assertIn('--stale-seconds "${MOTIONBRAIN_PERCEPTION_STALE_SECONDS:-12.0}"', perception_script)
 
         self.assertIn(
             'parser.add_argument("--quality", type=int, default=15',
