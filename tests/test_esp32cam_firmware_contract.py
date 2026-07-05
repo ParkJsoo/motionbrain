@@ -4,6 +4,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ESP32CAM_MAIN = REPO_ROOT / "firmware" / "esp32cam" / "src" / "main.cpp"
+MOTION_WEB_SERVER = REPO_ROOT / "src" / "network" / "web_server.cpp"
 
 
 class Esp32CamFirmwareContractTest(unittest.TestCase):
@@ -113,6 +114,31 @@ class Esp32CamFirmwareContractTest(unittest.TestCase):
 
         self.assertIn("const uint32_t STREAM_MAX_DURATION_MS = 0;", source)
         self.assertIn('server.send(410, "text/plain", "stream disabled; use /capture");', source)
+        self.assertNotIn('<a href=\\"/stream\\">stream</a>', source)
+
+    def test_controller_camera_ui_avoids_disabled_stream_endpoint(self):
+        source = MOTION_WEB_SERVER.read_text()
+
+        expected_fragments = [
+            "cameraMode = 'tracked'",
+            "LIVE CAPTURE",
+            "cameraMode = 'capture'",
+            "img.src = cameraPath('/capture?t=' + Date.now())",
+            "startTrackedCamera(false)",
+        ]
+        for fragment in expected_fragments:
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, source)
+
+        forbidden_fragments = [
+            "RAW STREAM",
+            "cameraMode = 'stream'",
+            "cameraPath('/stream",
+            ">STREAM</button>",
+        ]
+        for fragment in forbidden_fragments:
+            with self.subTest(fragment=fragment):
+                self.assertNotIn(fragment, source)
 
 
 if __name__ == "__main__":

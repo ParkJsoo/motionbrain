@@ -54,6 +54,7 @@ class RaspiCameraProfileTest(unittest.TestCase):
             "perception_service_state=\"$(systemctl is-active motionbrain-perception.service",
             "MOTIONBRAIN_RESTART_ON_PERCEPTION_UNAVAILABLE:-0",
             "MOTIONBRAIN_RESTART_ON_PERCEPTION_NOT_OK:-0",
+            "\"${perception_service_state}\" != \"active\"",
             "leaving perception backoff running",
             "leaving active service to recover via capture backoff",
             "add_restart_service motionbrain-dashboard.service",

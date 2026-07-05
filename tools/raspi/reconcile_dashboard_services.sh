@@ -204,13 +204,14 @@ else
     reasons+=("perception_camera_url_changed")
   fi
   if [[ "${perception_ok}" != "true" && -n "${camera_url}" ]]; then
-    if [[ "${MOTIONBRAIN_RESTART_ON_PERCEPTION_NOT_OK:-0}" != "1" ]]; then
-      echo "Warning: perception health not OK; leaving active service to recover via capture backoff" >&2
-    else
+    if [[ "${perception_service_state}" != "active" ||
+          "${MOTIONBRAIN_RESTART_ON_PERCEPTION_NOT_OK:-0}" == "1" ]]; then
       restart_needed=1
       add_restart_service motionbrain-perception.service
       add_restart_service motionbrain-dashboard.service
       reasons+=("perception_not_ok")
+    else
+      echo "Warning: perception health not OK; leaving active service to recover via capture backoff" >&2
     fi
   fi
 fi

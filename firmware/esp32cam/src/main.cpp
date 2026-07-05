@@ -632,7 +632,7 @@ void handleRoot() {
       "text/html",
       "<!doctype html><html><head><title>MotionBrain ESP32-CAM</title></head>"
       "<body><h1>MotionBrain ESP32-CAM</h1>"
-      "<p><a href=\"/capture\">capture</a> | <a href=\"/stream\">stream</a> | <a href=\"/status\">status</a> | <a href=\"/camera\">camera profile</a></p>"
+      "<p><a href=\"/capture\">capture</a> | <a href=\"/status\">status</a> | <a href=\"/camera\">camera profile</a></p>"
       "<img src=\"/capture\" style=\"max-width:100%;height:auto\">"
       "</body></html>");
   server.client().stop();
