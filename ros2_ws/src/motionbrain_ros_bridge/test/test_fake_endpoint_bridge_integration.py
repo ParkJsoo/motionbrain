@@ -88,21 +88,51 @@ class FakeEndpointBridgeIntegrationTest(unittest.TestCase):
         bridge,
         collector,
         messages: dict[str, list],
-        timeout_sec: float = 3.0,
+        timeout_sec: float = 5.0,
     ) -> None:
         deadline = time.monotonic() + timeout_sec
         while time.monotonic() < deadline:
             rclpy.spin_once(bridge, timeout_sec=0.0)
             rclpy.spin_once(collector, timeout_sec=0.05)
-            if messages["routine"] and messages["diagnostics"]:
-                if scenario in {"malformed_status", "timeout_status"} and messages["detection"]:
-                    if not self.controller_diagnostic_downstream_unavailable(
-                        messages["diagnostics"][-1]
-                    ):
-                        continue
-                    return
-                if messages["status"] and messages["detection"]:
-                    return
+            if self.bridge_messages_ready(scenario, messages):
+                return
+
+    def bridge_messages_ready(self, scenario: str, messages: dict[str, list]) -> bool:
+        if not messages["routine"] or not messages["diagnostics"]:
+            return False
+        diagnostics = messages["diagnostics"][-1]
+
+        if scenario in {"malformed_status", "timeout_status"}:
+            return bool(messages["detection"]) and self.controller_diagnostic_downstream_unavailable(
+                diagnostics
+            )
+        if not messages["status"] or not messages["detection"]:
+            return False
+        if scenario == "stale_shoulder":
+            return self.diagnostic_has_level(
+                diagnostics,
+                "motionbrain/shoulder_feedback",
+                DiagnosticStatus.ERROR,
+            )
+        if scenario == "controller_fault":
+            return self.diagnostic_has_level(
+                diagnostics,
+                "motionbrain/controller",
+                DiagnosticStatus.ERROR,
+            )
+        if scenario == "policy_mismatch":
+            return self.diagnostic_has_level(
+                diagnostics,
+                "motionbrain/feedback",
+                DiagnosticStatus.ERROR,
+            )
+        if scenario == "stale_detection":
+            return self.diagnostic_has_level(
+                diagnostics,
+                "motionbrain/camera_perception",
+                DiagnosticStatus.WARN,
+            )
+        return True
 
     def set_fake_endpoint_parameters(
         self,
@@ -185,6 +215,17 @@ class FakeEndpointBridgeIntegrationTest(unittest.TestCase):
                 value.key == "downstream_available" and value.value == "False"
                 for value in status.values
             )
+        return False
+
+    def diagnostic_has_level(
+        self,
+        diagnostics: DiagnosticArray,
+        name: str,
+        level: bytes,
+    ) -> bool:
+        for status in diagnostics.status:
+            if status.name == name:
+                return status.level == level
         return False
 
     def diagnostic_by_name(self, diagnostics: DiagnosticArray, name: str) -> DiagnosticStatus:
