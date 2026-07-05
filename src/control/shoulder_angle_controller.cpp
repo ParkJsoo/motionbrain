@@ -298,6 +298,11 @@ bool ShoulderAngleController::manualDirectionAllowed(bool directionUp,
     return false;
   }
 
+#if defined(MOTIONBRAIN_M4_CALIBRATION_UNLOCK) && MOTIONBRAIN_M4_CALIBRATION_UNLOCK
+  (void)directionUp;
+  return true;
+#endif
+
   const float currentDegrees = sensor_->getI2cDegrees();
   const float boundaryDegrees = directionUp
     ? SOFT_MAX_DEGREES - UP_STOP_LEAD_DEGREES
@@ -397,6 +402,12 @@ void ShoulderAngleController::appendShoulderStatusJson(String& json) const {
   json += String(SOFT_MAX_DEGREES - UP_STOP_LEAD_DEGREES, 2);
   json += ",\"manualGuardBlocked\":";
   json += manualGuardBlocked_ ? "true" : "false";
+  json += ",\"manualCalibrationUnlock\":";
+#if defined(MOTIONBRAIN_M4_CALIBRATION_UNLOCK) && MOTIONBRAIN_M4_CALIBRATION_UNLOCK
+  json += "true";
+#else
+  json += "false";
+#endif
   json += ",\"lastStopReason\":\"";
   json += getLastStopReasonString();
   json += "\"}";

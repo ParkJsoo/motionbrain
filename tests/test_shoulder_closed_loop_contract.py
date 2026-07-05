@@ -35,8 +35,8 @@ class ShoulderClosedLoopContractTest(unittest.TestCase):
         source = (ROOT / "src" / "control" / "shoulder_angle_controller.cpp").read_text()
 
         expected = {
-            "SOFT_MIN_DEGREES = 230.0f",
-            "SOFT_MAX_DEGREES = 245.0f",
+            "SOFT_MIN_DEGREES = 122.08f",
+            "SOFT_MAX_DEGREES = 301.02f",
             "TARGET_TOLERANCE_DEGREES = 0.50f",
             "SETTLED_SUCCESS_TOLERANCE_DEGREES = 0.40f",
             "STOP_THRESHOLD_WINDOW_DEGREES = 0.35f",

@@ -28,14 +28,15 @@ enum class ShoulderAngleStopReason : uint8_t {
 /**
  * Conservative absolute-angle controller for the M4 shoulder joint.
  *
- * The initial soft limits intentionally cover only the range proven on the
- * physical arm. They must be expanded only after a supervised full-range
- * calibration.
+ * The provisional soft limits use the front/rear endpoints observed with the
+ * current whole-arm posture and 222.80 deg shoulder zero. They are a
+ * conditional M4 envelope, not a global mechanical hard-stop specification for
+ * every elbow/wrist/gripper pose.
  */
 class ShoulderAngleController {
 public:
-  static constexpr float SOFT_MIN_DEGREES = 230.0f;
-  static constexpr float SOFT_MAX_DEGREES = 245.0f;
+  static constexpr float SOFT_MIN_DEGREES = 122.08f;
+  static constexpr float SOFT_MAX_DEGREES = 301.02f;
   // External acceptance remains +/-0.50 deg. TARGET_REACHED uses a tighter
   // window so one AS5600 step of post-stop variation stays inside acceptance.
   static constexpr float TARGET_TOLERANCE_DEGREES = 0.50f;
