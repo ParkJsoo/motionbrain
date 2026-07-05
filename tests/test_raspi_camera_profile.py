@@ -16,7 +16,8 @@ SPEC.loader.exec_module(apply_camera_profile)
 class RaspiCameraProfileTest(unittest.TestCase):
     def test_service_scripts_default_to_stable_live_quality(self) -> None:
         repo_root = Path(__file__).resolve().parents[1]
-        expected_fragment = 'MOTIONBRAIN_CAMERA_QUALITY:-10'
+        expected_fragment = 'MOTIONBRAIN_CAMERA_QUALITY:-15'
+        expected_min_fragment = 'MOTIONBRAIN_CAMERA_MIN_STABLE_QUALITY:-15'
         for relative_path in (
             "tools/raspi/start_perception_service.sh",
             "tools/raspi/start_dashboard_service.sh",
@@ -25,6 +26,7 @@ class RaspiCameraProfileTest(unittest.TestCase):
             with self.subTest(path=relative_path):
                 script_text = (repo_root / relative_path).read_text()
                 self.assertIn(expected_fragment, script_text)
+                self.assertIn(expected_min_fragment, script_text)
                 self.assertIn("MOTIONBRAIN_CAMERA_MIN_STABLE_QUALITY", script_text)
                 self.assertIn("MOTIONBRAIN_ALLOW_UNSTABLE_CAMERA_QUALITY", script_text)
                 self.assertIn("--quality \"${CAMERA_QUALITY}\"", script_text)
@@ -35,7 +37,7 @@ class RaspiCameraProfileTest(unittest.TestCase):
         self.assertIn("--timeout \"${PERCEPTION_TIMEOUT}\"", perception_script)
 
         self.assertIn(
-            'parser.add_argument("--quality", type=int, default=10',
+            'parser.add_argument("--quality", type=int, default=15',
             SCRIPT_PATH.read_text(),
         )
 

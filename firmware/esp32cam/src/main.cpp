@@ -4,6 +4,7 @@
 #include <ESPmDNS.h>
 #include <Preferences.h>
 #include "esp_camera.h"
+#include "esp_system.h"
 
 // AI Thinker ESP32-CAM pin map.
 #define PWDN_GPIO_NUM     32
@@ -29,10 +30,23 @@ namespace {
 #define MOTIONBRAIN_CAMERA_HOSTNAME "motionbrain-cam"
 #endif
 
+#ifndef MOTIONBRAIN_ENABLE_HTTP_STALL_RESTART
+#define MOTIONBRAIN_ENABLE_HTTP_STALL_RESTART 0
+#endif
+
 const uint32_t STREAM_FRAME_DELAY_MS = 100;
-const uint32_t STREAM_MAX_DURATION_MS = 20000;
+const uint32_t STREAM_MAX_DURATION_MS = 5000;
 const uint32_t WIFI_CONNECT_TIMEOUT_MS = 30000;
 const uint32_t CAMERA_RECOVERY_SETTLE_MS = 150;
+const uint32_t CAMERA_RECOVERY_COOLDOWN_MS = 10000;
+const uint32_t CAPTURE_SLOW_RECOVERY_MS = 2500;
+const uint32_t CLIENT_IO_TIMEOUT_MS = 750;
+const uint32_t CAPTURE_WRITE_DEADLINE_MS = 2000;
+const uint32_t STREAM_WRITE_DEADLINE_MS = 1000;
+const uint32_t HTTP_REQUEST_STALL_RESTART_MS = 6000;
+const uint32_t LOOP_HEARTBEAT_STALL_RESTART_MS = 9000;
+const uint32_t HTTP_SUPERVISOR_INTERVAL_MS = 250;
+const size_t CLIENT_WRITE_CHUNK_BYTES = 1024;
 const framesize_t DEFAULT_CAMERA_FRAME_SIZE = FRAMESIZE_QVGA;
 const int DEFAULT_CAMERA_JPEG_QUALITY = 15;
 const int MIN_CAMERA_JPEG_QUALITY = 4;
@@ -57,21 +71,191 @@ const CameraProfileOption* currentFrameProfile = &CAMERA_PROFILE_OPTIONS[0];
 int currentJpegQuality = DEFAULT_CAMERA_JPEG_QUALITY;
 
 struct CameraStats {
+  uint32_t rootRequests = 0;
+  uint32_t statusRequests = 0;
+  uint32_t cameraProfileRequests = 0;
+  uint32_t captureRequests = 0;
+  uint32_t streamRequests = 0;
   uint32_t captures = 0;
   uint32_t captureFailures = 0;
   uint32_t consecutiveCaptureFailures = 0;
+  uint32_t slowCaptures = 0;
   uint32_t clientWriteFailures = 0;
+  uint32_t slowClientWrites = 0;
   uint32_t cameraRecoveries = 0;
+  uint32_t cameraRecoverySkips = 0;
   uint32_t lastRecoveryMs = 0;
   uint32_t lastRecoveryDurationMs = 0;
   uint32_t lastCaptureMs = 0;
   uint32_t maxCaptureMs = 0;
+  uint32_t lastWriteMs = 0;
+  uint32_t maxWriteMs = 0;
   uint32_t lastFrameBytes = 0;
+  uint32_t lastStreamFrames = 0;
   bool lastRecoveryOk = false;
 };
 
 CameraStats cameraStats;
 String lastCameraError;
+esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
+TaskHandle_t httpSupervisorTaskHandle = nullptr;
+portMUX_TYPE httpRequestMux = portMUX_INITIALIZER_UNLOCKED;
+volatile bool httpRequestActive = false;
+volatile uint32_t httpRequestStartedMs = 0;
+volatile uint32_t loopHeartbeatMs = 0;
+const char* volatile httpRequestName = "";
+RTC_DATA_ATTR uint32_t httpStallRestartCount = 0;
+RTC_DATA_ATTR uint32_t lastHttpStallRestartAgeMs = 0;
+RTC_DATA_ATTR uint32_t loopStallRestartCount = 0;
+RTC_DATA_ATTR uint32_t lastLoopStallRestartAgeMs = 0;
+
+const char* resetReasonName(esp_reset_reason_t reason) {
+  switch (reason) {
+    case ESP_RST_POWERON:
+      return "poweron";
+    case ESP_RST_EXT:
+      return "external";
+    case ESP_RST_SW:
+      return "software";
+    case ESP_RST_PANIC:
+      return "panic";
+    case ESP_RST_INT_WDT:
+      return "interrupt_watchdog";
+    case ESP_RST_TASK_WDT:
+      return "task_watchdog";
+    case ESP_RST_WDT:
+      return "watchdog";
+    case ESP_RST_DEEPSLEEP:
+      return "deepsleep";
+    case ESP_RST_BROWNOUT:
+      return "brownout";
+    case ESP_RST_SDIO:
+      return "sdio";
+    case ESP_RST_UNKNOWN:
+      return "unknown";
+    default:
+      return "other";
+  }
+}
+
+void beginHttpRequest(const char* name) {
+  const uint32_t startedAt = millis();
+  portENTER_CRITICAL(&httpRequestMux);
+  httpRequestActive = true;
+  httpRequestStartedMs = startedAt;
+  httpRequestName = name;
+  portEXIT_CRITICAL(&httpRequestMux);
+}
+
+void endHttpRequest() {
+  portENTER_CRITICAL(&httpRequestMux);
+  httpRequestActive = false;
+  httpRequestStartedMs = 0;
+  httpRequestName = "";
+  portEXIT_CRITICAL(&httpRequestMux);
+}
+
+void snapshotHttpRequest(bool& active, uint32_t& startedMs, const char*& name) {
+  portENTER_CRITICAL(&httpRequestMux);
+  active = httpRequestActive;
+  startedMs = httpRequestStartedMs;
+  name = httpRequestName;
+  portEXIT_CRITICAL(&httpRequestMux);
+}
+
+struct ScopedHttpRequest {
+  explicit ScopedHttpRequest(const char* name) {
+    beginHttpRequest(name);
+  }
+
+  ~ScopedHttpRequest() {
+    endHttpRequest();
+  }
+};
+
+void httpSupervisorTask(void*) {
+  while (true) {
+    const uint32_t now = millis();
+    bool active = false;
+    uint32_t startedMs = 0;
+    const char* name = "";
+    snapshotHttpRequest(active, startedMs, name);
+    if (active) {
+      const uint32_t ageMs = now - startedMs;
+      if (ageMs > HTTP_REQUEST_STALL_RESTART_MS) {
+        httpStallRestartCount++;
+        lastHttpStallRestartAgeMs = ageMs;
+        Serial.printf("HTTP request stalled: path=%s age=%lu ms threshold=%lu ms; restarting\n",
+                      name,
+                      static_cast<unsigned long>(ageMs),
+                      static_cast<unsigned long>(HTTP_REQUEST_STALL_RESTART_MS));
+        Serial.flush();
+        delay(50);
+        ESP.restart();
+      }
+    }
+    const uint32_t heartbeatMs = loopHeartbeatMs;
+    const uint32_t heartbeatAgeMs = heartbeatMs == 0 ? 0 : now - heartbeatMs;
+    if (heartbeatMs != 0 && heartbeatAgeMs > LOOP_HEARTBEAT_STALL_RESTART_MS) {
+      loopStallRestartCount++;
+      lastLoopStallRestartAgeMs = heartbeatAgeMs;
+      Serial.printf("HTTP loop heartbeat stalled: age=%lu ms threshold=%lu ms; restarting\n",
+                    static_cast<unsigned long>(heartbeatAgeMs),
+                    static_cast<unsigned long>(LOOP_HEARTBEAT_STALL_RESTART_MS));
+      Serial.flush();
+      delay(50);
+      ESP.restart();
+    }
+    vTaskDelay(pdMS_TO_TICKS(HTTP_SUPERVISOR_INTERVAL_MS));
+  }
+}
+
+void startHttpSupervisorTask() {
+#if MOTIONBRAIN_ENABLE_HTTP_STALL_RESTART
+  if (httpSupervisorTaskHandle != nullptr) {
+    return;
+  }
+  const BaseType_t result = xTaskCreatePinnedToCore(
+      httpSupervisorTask,
+      "http_supervisor",
+      4096,
+      nullptr,
+      1,
+      &httpSupervisorTaskHandle,
+      0);
+  if (result != pdPASS) {
+    Serial.println("HTTP supervisor task start failed");
+    httpSupervisorTaskHandle = nullptr;
+  }
+#else
+  Serial.println("HTTP supervisor restart disabled");
+#endif
+}
+
+bool writeClientBuffer(
+    WiFiClient& client,
+    const uint8_t* data,
+    size_t length,
+    uint32_t deadlineMs,
+    size_t& written) {
+  written = 0;
+  const uint32_t startedAt = millis();
+  while (written < length && client.connected()) {
+    if (millis() - startedAt > deadlineMs) {
+      return false;
+    }
+    const size_t remaining = length - written;
+    const size_t chunk = remaining > CLIENT_WRITE_CHUNK_BYTES ? CLIENT_WRITE_CHUNK_BYTES : remaining;
+    const size_t justWritten = client.write(data + written, chunk);
+    if (justWritten == 0) {
+      delay(1);
+      continue;
+    }
+    written += justWritten;
+    delay(0);
+  }
+  return written == length;
+}
 
 const CameraProfileOption* findCameraProfile(framesize_t frameSize) {
   for (const CameraProfileOption& option : CAMERA_PROFILE_OPTIONS) {
@@ -225,6 +409,15 @@ bool configureCamera(const CameraProfileOption* profile, int quality, String& er
 
 bool recoverCamera(const char* reason) {
   const uint32_t startedAt = millis();
+  if (cameraStats.lastRecoveryMs != 0 &&
+      startedAt - cameraStats.lastRecoveryMs < CAMERA_RECOVERY_COOLDOWN_MS) {
+    cameraStats.cameraRecoverySkips++;
+    Serial.printf("Camera recovery skipped: %s cooldown remaining %lu ms\n",
+                  reason,
+                  static_cast<unsigned long>(
+                      CAMERA_RECOVERY_COOLDOWN_MS - (startedAt - cameraStats.lastRecoveryMs)));
+    return false;
+  }
   cameraStats.cameraRecoveries++;
   cameraStats.lastRecoveryMs = startedAt;
   Serial.printf("Camera recovery requested: %s\n", reason);
@@ -433,6 +626,8 @@ bool initCamera() {
 }
 
 void handleRoot() {
+  ScopedHttpRequest request("root");
+  cameraStats.rootRequests++;
   server.sendHeader("Connection", "close");
   server.send(
       200,
@@ -446,6 +641,14 @@ void handleRoot() {
 }
 
 void handleStatus() {
+  ScopedHttpRequest request("status");
+  cameraStats.statusRequests++;
+  bool requestActive = false;
+  uint32_t requestStartedMs = 0;
+  const char* requestName = "";
+  snapshotHttpRequest(requestActive, requestStartedMs, requestName);
+  const uint32_t requestAgeMs = requestActive ? millis() - requestStartedMs : 0;
+
   String json = "{";
   json += "\"node\":\"esp32cam\",";
   json += "\"hostname\":\"" + String(MOTIONBRAIN_CAMERA_HOSTNAME) + "\",";
@@ -455,19 +658,45 @@ void handleStatus() {
   json += "\"rssi\":" + String(WiFi.RSSI()) + ",";
   json += "\"heapFree\":" + String(ESP.getFreeHeap()) + ",";
   json += "\"psram\":" + String(psramFound() ? "true" : "false") + ",";
+  json += "\"uptimeMs\":" + String(millis()) + ",";
+  json += "\"resetReason\":\"" + String(resetReasonName(bootResetReason)) + "\",";
   appendCameraProfileJson(json);
   json += ",";
+  json += "\"rootRequests\":" + String(cameraStats.rootRequests) + ",";
+  json += "\"statusRequests\":" + String(cameraStats.statusRequests) + ",";
+  json += "\"cameraProfileRequests\":" + String(cameraStats.cameraProfileRequests) + ",";
+  json += "\"captureRequests\":" + String(cameraStats.captureRequests) + ",";
+  json += "\"streamRequests\":" + String(cameraStats.streamRequests) + ",";
   json += "\"captures\":" + String(cameraStats.captures) + ",";
   json += "\"captureFailures\":" + String(cameraStats.captureFailures) + ",";
   json += "\"consecutiveCaptureFailures\":" + String(cameraStats.consecutiveCaptureFailures) + ",";
+  json += "\"slowCaptures\":" + String(cameraStats.slowCaptures) + ",";
   json += "\"clientWriteFailures\":" + String(cameraStats.clientWriteFailures) + ",";
+  json += "\"slowClientWrites\":" + String(cameraStats.slowClientWrites) + ",";
   json += "\"cameraRecoveries\":" + String(cameraStats.cameraRecoveries) + ",";
+  json += "\"cameraRecoverySkips\":" + String(cameraStats.cameraRecoverySkips) + ",";
   json += "\"lastRecoveryMs\":" + String(cameraStats.lastRecoveryMs) + ",";
   json += "\"lastRecoveryDurationMs\":" + String(cameraStats.lastRecoveryDurationMs) + ",";
   json += "\"lastRecoveryOk\":" + String(cameraStats.lastRecoveryOk ? "true" : "false") + ",";
   json += "\"lastCaptureMs\":" + String(cameraStats.lastCaptureMs) + ",";
   json += "\"maxCaptureMs\":" + String(cameraStats.maxCaptureMs) + ",";
+  json += "\"lastWriteMs\":" + String(cameraStats.lastWriteMs) + ",";
+  json += "\"maxWriteMs\":" + String(cameraStats.maxWriteMs) + ",";
   json += "\"lastFrameBytes\":" + String(cameraStats.lastFrameBytes) + ",";
+  json += "\"lastStreamFrames\":" + String(cameraStats.lastStreamFrames) + ",";
+  json += "\"requestInFlight\":" + String(requestActive ? "true" : "false") + ",";
+  json += "\"requestPath\":\"" + String(requestActive ? requestName : "") + "\",";
+  json += "\"requestAgeMs\":" + String(requestAgeMs) + ",";
+  json += "\"httpStallRestartEnabled\":" + String(MOTIONBRAIN_ENABLE_HTTP_STALL_RESTART ? "true" : "false") + ",";
+  json += "\"httpStallRestarts\":" + String(httpStallRestartCount) + ",";
+  json += "\"lastHttpStallRestartAgeMs\":" + String(lastHttpStallRestartAgeMs) + ",";
+  json += "\"loopStallRestarts\":" + String(loopStallRestartCount) + ",";
+  json += "\"lastLoopStallRestartAgeMs\":" + String(lastLoopStallRestartAgeMs) + ",";
+  json += "\"loopHeartbeatAgeMs\":" + String(loopHeartbeatMs == 0 ? 0 : millis() - loopHeartbeatMs) + ",";
+  json += "\"httpStallRestartMs\":" + String(HTTP_REQUEST_STALL_RESTART_MS) + ",";
+  json += "\"loopHeartbeatStallRestartMs\":" + String(LOOP_HEARTBEAT_STALL_RESTART_MS) + ",";
+  json += "\"captureSlowRecoveryMs\":" + String(CAPTURE_SLOW_RECOVERY_MS) + ",";
+  json += "\"streamMaxDurationMs\":" + String(STREAM_MAX_DURATION_MS) + ",";
   json += "\"lastError\":\"" + lastCameraError + "\"";
   json += "}";
   server.sendHeader("Connection", "close");
@@ -476,6 +705,8 @@ void handleStatus() {
 }
 
 void handleCameraProfile() {
+  ScopedHttpRequest request("camera");
+  cameraStats.cameraProfileRequests++;
   const bool wantsChange = server.hasArg("framesize") || server.hasArg("quality");
   if (!wantsChange) {
     sendCameraProfileJson(200, "ok");
@@ -509,6 +740,8 @@ void handleCameraProfile() {
 }
 
 void handleCapture() {
+  ScopedHttpRequest request("capture");
+  cameraStats.captureRequests++;
   const uint32_t startedAt = millis();
   camera_fb_t* fb = esp_camera_fb_get();
   const uint32_t captureMs = millis() - startedAt;
@@ -526,13 +759,17 @@ void handleCapture() {
     server.client().stop();
     return;
   }
+  const bool slowCapture = captureMs > CAPTURE_SLOW_RECOVERY_MS;
+  if (slowCapture) {
+    cameraStats.slowCaptures++;
+  }
   cameraStats.captures++;
   cameraStats.consecutiveCaptureFailures = 0;
-  lastCameraError = "";
+  lastCameraError = slowCapture ? "slow_capture" : "";
   cameraStats.lastFrameBytes = fb->len;
 
   WiFiClient client = server.client();
-  client.setTimeout(2000);
+  client.setTimeout(CLIENT_IO_TIMEOUT_MS);
   client.setNoDelay(true);
   const bool headerOk = client.connected() &&
                         client.printf("HTTP/1.1 200 OK\r\n"
@@ -541,17 +778,36 @@ void handleCapture() {
                                       "Cache-Control: no-store\r\n"
                                       "Connection: close\r\n\r\n",
                                       static_cast<unsigned>(fb->len)) > 0;
-  const size_t written = headerOk && client.connected() ? client.write(fb->buf, fb->len) : 0;
-  if (!headerOk || written != fb->len) {
+  size_t written = 0;
+  const uint32_t writeStartedAt = millis();
+  const bool bodyOk = headerOk && client.connected() &&
+                      writeClientBuffer(client, fb->buf, fb->len, CAPTURE_WRITE_DEADLINE_MS, written);
+  const uint32_t writeMs = millis() - writeStartedAt;
+  cameraStats.lastWriteMs = writeMs;
+  if (writeMs > cameraStats.maxWriteMs) {
+    cameraStats.maxWriteMs = writeMs;
+  }
+  if (writeMs > CAPTURE_WRITE_DEADLINE_MS) {
+    cameraStats.slowClientWrites++;
+  }
+  if (!headerOk || !bodyOk || written != fb->len) {
     cameraStats.clientWriteFailures++;
   }
   esp_camera_fb_return(fb);
   client.stop();
+  if (slowCapture) {
+    recoverCamera("slow_capture");
+  }
 }
 
 void handleStream() {
+  ScopedHttpRequest request("stream");
+  cameraStats.streamRequests++;
   WiFiClient client = server.client();
+  client.setTimeout(CLIENT_IO_TIMEOUT_MS);
+  client.setNoDelay(true);
   const uint32_t startedAt = millis();
+  uint32_t streamFrames = 0;
   String response =
       "HTTP/1.1 200 OK\r\n"
       "Content-Type: multipart/x-mixed-replace; boundary=frame\r\n"
@@ -562,23 +818,40 @@ void handleStream() {
   while (client.connected() && (millis() - startedAt) < STREAM_MAX_DURATION_MS) {
     camera_fb_t* fb = esp_camera_fb_get();
     if (fb == nullptr) {
+      cameraStats.captureFailures++;
+      cameraStats.consecutiveCaptureFailures++;
+      lastCameraError = "stream_capture_failed";
+      recoverCamera("stream_capture_failed");
       break;
     }
 
     bool ok = client.printf("--frame\r\nContent-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n", fb->len) > 0;
+    size_t written = 0;
+    const uint32_t writeStartedAt = millis();
     if (ok) {
-      ok = client.write(fb->buf, fb->len) == fb->len;
+      ok = writeClientBuffer(client, fb->buf, fb->len, STREAM_WRITE_DEADLINE_MS, written);
+    }
+    const uint32_t writeMs = millis() - writeStartedAt;
+    cameraStats.lastWriteMs = writeMs;
+    if (writeMs > cameraStats.maxWriteMs) {
+      cameraStats.maxWriteMs = writeMs;
+    }
+    if (writeMs > STREAM_WRITE_DEADLINE_MS) {
+      cameraStats.slowClientWrites++;
     }
     if (ok) {
       ok = client.print("\r\n") > 0;
     }
     esp_camera_fb_return(fb);
     if (!ok) {
+      cameraStats.clientWriteFailures++;
       break;
     }
+    streamFrames++;
 
     delay(STREAM_FRAME_DELAY_MS);
   }
+  cameraStats.lastStreamFrames = streamFrames;
   client.stop();
 }
 
@@ -619,10 +892,12 @@ void connectWifi() {
 } // namespace
 
 void setup() {
+  bootResetReason = esp_reset_reason();
   Serial.begin(115200);
   Serial.setDebugOutput(false);
   Serial.println();
   Serial.println("MotionBrain ESP32-CAM boot");
+  Serial.printf("Reset reason: %s\n", resetReasonName(bootResetReason));
   Serial.printf("Camera profile: %s JPEG quality=%d psram=%s\n",
                 currentFrameProfile->name,
                 currentJpegQuality,
@@ -643,9 +918,14 @@ void setup() {
   server.on("/capture", HTTP_GET, handleCapture);
   server.on("/stream", HTTP_GET, handleStream);
   server.begin();
+  loopHeartbeatMs = millis();
+  startHttpSupervisorTask();
   Serial.println("Camera HTTP server ready");
 }
 
 void loop() {
+  loopHeartbeatMs = millis();
   server.handleClient();
+  loopHeartbeatMs = millis();
+  delay(1);
 }
