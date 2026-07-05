@@ -28,6 +28,7 @@ class RaspiCameraProfileTest(unittest.TestCase):
                 self.assertIn(expected_fragment, script_text)
                 self.assertIn(expected_min_fragment, script_text)
                 self.assertIn("MOTIONBRAIN_CAMERA_MIN_STABLE_QUALITY", script_text)
+                self.assertIn("MOTIONBRAIN_CAMERA_STABLE_QUALITY_FLOOR", script_text)
                 self.assertIn("MOTIONBRAIN_ALLOW_UNSTABLE_CAMERA_QUALITY", script_text)
                 self.assertIn("--quality \"${CAMERA_QUALITY}\"", script_text)
 
@@ -35,8 +36,8 @@ class RaspiCameraProfileTest(unittest.TestCase):
         self.assertIn("MOTIONBRAIN_PERCEPTION_MAX_CAMERA_TIMEOUT", perception_script)
         self.assertIn("MOTIONBRAIN_ALLOW_LONG_CAMERA_TIMEOUT", perception_script)
         self.assertIn("--timeout \"${PERCEPTION_TIMEOUT}\"", perception_script)
-        self.assertIn('PERCEPTION_MAX_CAMERA_TIMEOUT="${MOTIONBRAIN_PERCEPTION_MAX_CAMERA_TIMEOUT:-5.0}"', perception_script)
-        self.assertIn('--stale-seconds "${MOTIONBRAIN_PERCEPTION_STALE_SECONDS:-12.0}"', perception_script)
+        self.assertIn('PERCEPTION_MAX_CAMERA_TIMEOUT="${MOTIONBRAIN_PERCEPTION_MAX_CAMERA_TIMEOUT:-3.0}"', perception_script)
+        self.assertIn('--stale-seconds "${MOTIONBRAIN_PERCEPTION_STALE_SECONDS:-8.0}"', perception_script)
 
         self.assertIn(
             'parser.add_argument("--quality", type=int, default=15',
