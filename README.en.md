@@ -16,14 +16,15 @@ input -> decision -> state -> motion -> feedback
 | --- | --- |
 | Real robot integration | ESP32 5-axis motion controller, STM32 wired teleop layer, ESP32-CAM, and Raspberry Pi host integrated into one arm stack |
 | Embedded safety boundary | `BOOT -> IDLE -> ARMED -> FAULT`, `Dispatcher` + `SafetyGate`, token-gated commands, deadman release stop, and frame timeouts |
-| Single-axis position feedback | M4 shoulder AS5600 sensing, magnet/sensor health, bounded 230-245 deg closed-loop targets, explicit `TARGET_MISSED`, 22/22 no-added-load plus 11/11 at 23.1 g on the fixed mount, and HTTP/dashboard/ROS2 telemetry |
-| ROS2 system software | ROS2 Jazzy typed topics, C++ control guard, mission supervisor, URDF/RViz, and a `ros2_control` dry-run mock/open-loop `SystemInterface` |
+| Single-axis position feedback | M4 shoulder AS5600 sensing, magnet/sensor health, bounded 230-245 deg proven closed-loop targets, explicit `TARGET_MISSED`, 22/22 no-added-load plus 11/11 at 23.1 g on the fixed mount, current-posture 122.08-301.02 deg soft range, and HTTP/dashboard/ROS2 telemetry |
+| ROS2 system software | ROS2 Jazzy typed topics, C++ control guard, mission supervisor, URDF/RViz, a `ros2_control` dry-run mock/open-loop `SystemInterface`, and M4 read-only measured state mode |
 | Operations and validation | Pi systemd services, health-check scripts, runtime evidence, `ros2_control` evidence, PlatformIO/Python/ROS2 GitHub Actions, and a physical teleoperation demo |
 
 Good first evidence links for reviewers:
 
 - [PORTFOLIO.en.md](PORTFOLIO.en.md)
 - [ROBOTICS_SYSTEM_READINESS.en.md](ROBOTICS_SYSTEM_READINESS.en.md)
+- [docs/evidence/claim-to-evidence-matrix.md](docs/evidence/claim-to-evidence-matrix.md)
 - [OPERATIONS.md](OPERATIONS.md)
 - [PIN_MAP.en.md](PIN_MAP.en.md)
 - [docs/evidence/2026-06-28-m4-shoulder-closed-loop.en.md](docs/evidence/2026-06-28-m4-shoulder-closed-loop.en.md)
@@ -37,11 +38,12 @@ The strongest system-level evidence in this repository is the combination of
 real hardware integration and ROS2 boundary design: ROS2 Jazzy typed
 interfaces, C++ guard logic, mission supervision, RViz/TF visualization,
 `ros2_control` dry-run mock bring-up, and a safe open-loop `SystemInterface`
-scaffold.
+scaffold, plus M4 read-only measured state mode.
 
-Physical motion remains behind the ESP32 firmware `SafetyGate`, and the
-`ros2_control` hardware-interface path is currently `dry_run` only. See
-[the 2026-06-16 ros2_control evidence note](docs/evidence/2026-06-16-ros2-control-open-loop.en.md).
+Physical motion remains behind the ESP32 firmware `SafetyGate`; physical
+`ros2_control` writes are not exposed. The public boundary is dry-run/open-loop
+scaffolding plus an M4 read-only measured state mode. See the initial
+[2026-06-16 ros2_control evidence note](docs/evidence/2026-06-16-ros2-control-open-loop.en.md).
 
 ## Demo Video
 
@@ -59,7 +61,7 @@ These are documentation captures of the real controller and Pi dashboard UI surf
 
 ![MotionBrain Control web console](docs/assets/motionbrain-control-stream.png)
 
-The ESP32-hosted `MotionBrain Control` page brings manual operation, token-gated command boundaries, `STREAM` camera feedback, and motor/joint controls into one local operator surface.
+The ESP32-hosted `MotionBrain Control` page brings manual operation, token-gated command boundaries, direct capture / Pi tracked-frame camera feedback, and motor/joint controls into one local operator surface.
 
 ![MotionBrain Pi dashboard](docs/assets/motionbrain-dashboard.png)
 
@@ -69,35 +71,24 @@ The Pi-hosted dashboard observes controller state, teleop, events, camera frames
 
 The Docker/noVNC RViz view mirrors Pi dashboard status and detection through read-only HTTP polling into ROS2 topics, then visualizes the `RobotModel` and TF path.
 
-## Current Status
+## Scope And Limits
 
-Validated:
+This README is the project entry point for structure, demo media, and build/run
+commands. Detailed validation results and portfolio claim boundaries live in
+[PORTFOLIO.en.md](PORTFOLIO.en.md) and the
+[claim-to-evidence matrix](docs/evidence/claim-to-evidence-matrix.md).
 
-- ESP32 5-axis DC motor control and `BOOT -> IDLE -> ARMED -> FAULT` safety state machine
-- Shared serial/HTTP command path through `Dispatcher` and `SafetyGate`
-- STM32 `MPU-6050 + UART` sensor/teleop stream and bench-validated HC-SR04 path
-- Wired handheld teleop with deadman, frame timeout, and embedded safety telemetry
-- Documented DMM-level power/GND/button/output sanity checks and claim boundaries
-- ESP32-CAM `/status`, `/capture`, `/stream`, and `/camera` profile control
-- Local LAN operation across the ESP32 controller, ESP32-CAM, and Raspberry Pi
-- ESP32-hosted `MotionBrain Control` UI with token-gated state-changing commands
-- Pi-hosted dashboard for status, events, camera feed, target overlay, and a safety-gated bounded nudge control surface
-- Raspberry Pi 4 + Ubuntu 24.04 + ROS2 Jazzy bridge
-- ROS2 typed topics for status, events, camera detection, status-derived/open-loop joint states, kinematics diagnostics, control guard, and mission state
-- `ros2_control` dry-run mock demo and safe open-loop `SystemInterface` scaffold
-- Pi perception service feeding `/camera/detection(_typed)`
-- ESP32-hosted camera mode split: `STREAM` for manual operation, `TRACKED` for recognition checks
-- Docker/noVNC RViz validation for RobotModel/TF and live ROS2 topics mirrored from the Pi dashboard
-- GitHub Actions checks for PlatformIO builds, Python tests, and ROS2 `colcon build/test`
-
-Important current limits:
-
-- Red target tracking is a separate reliable vision/alignment validation path.
-- The object-detection pipeline is implemented on the Pi, and the current bench validates constrained known-object `cup` detection with ESP32-CAM `qvga` / JPEG quality `10` plus YOLOv5s. The current perception demo uses only `cup` as the active target.
-- Dark low-texture objects and reflective phone-like targets are out of scope for the current demo. Describe this as constrained workcell known-object detection/alignment, not arbitrary object recognition.
-- Autonomous grasping is not enabled. The current cup dry-run path revalidates safety state and CENTER alignment, then returns a gripper open/close plan for operator review only.
-- Manual arm operation uses `STREAM` by default. `TRACKED` is a slower Pi-recognition view for checking fixed or slow-moving targets.
-- HC-SR04 is not installed for the final physical demo, and range telemetry is handled as a disabled/nonblocking demo state.
+- Physical motion authority remains inside the ESP32 firmware `SafetyGate`;
+  physical ROS2 writes are not exposed.
+- Position feedback is limited to the M4 shoulder AS5600. The other four axes do
+  not have encoder-grade feedback.
+- Direct ESP32-CAM `/stream` returns HTTP 410 by design; current camera viewing
+  uses `/capture` or Pi tracked frames.
+- Pi perception is scoped to constrained known-object `cup` handling and red
+  target alignment evidence. Arbitrary object recognition and autonomous
+  grasping are not claimed.
+- Physical guarded routine `run/execute` remains disabled because
+  `base_yaw_reference` is not installed.
 
 ## System Layout
 
@@ -115,7 +106,8 @@ Important current limits:
 5-axis DC motor robotic arm
 
 [ESP32-CAM]
-  /capture, /stream, /camera
+  /capture, /status, /camera profile
+  /stream returns HTTP 410 by design
         ->
 [Raspberry Pi]
   perception service
@@ -214,16 +206,18 @@ python3 tools/motionbrain_dashboard.py \
   --timeout 6
 ```
 
-The current cup known-object demo uses ESP32-CAM `qvga` / JPEG quality `10`, Pi
-YOLOv5s object mode, a configured confidence gate, and dashboard proxy mode. The
-systemd wrappers re-apply this camera profile after an ESP32-CAM reboot and
-raise lower JPEG quality settings to the stable minimum.
+The current cup known-object path uses Pi YOLOv5s object mode, a configured
+confidence gate, and dashboard proxy mode. The stable CAM service profile is
+ESP32-CAM `qvga` / JPEG quality `15`. The systemd wrappers re-apply this camera
+profile after an ESP32-CAM reboot and raise lower JPEG quality settings to the
+stable minimum.
 
 ## Documentation
 
 - [PORTFOLIO.en.md](PORTFOLIO.en.md): English portfolio summary
 - [PORTFOLIO.md](PORTFOLIO.md): Korean portfolio summary
 - [ROBOTICS_SYSTEM_READINESS.en.md](ROBOTICS_SYSTEM_READINESS.en.md): robotics system and ROS2 hardware-boundary summary
+- [docs/evidence/claim-to-evidence-matrix.md](docs/evidence/claim-to-evidence-matrix.md): claim/evidence/limitation/non-claim matrix
 - [PIN_MAP.en.md](PIN_MAP.en.md): ESP32 allocation and M4 AS5600 I2C boot conditions
 - [docs/evidence/2026-06-28-m4-shoulder-closed-loop.en.md](docs/evidence/2026-06-28-m4-shoulder-closed-loop.en.md): M4 shoulder AS5600 absolute feedback and bounded physical closed-loop evidence
 - [docs/evidence/2026-06-16-ros2-control-open-loop.en.md](docs/evidence/2026-06-16-ros2-control-open-loop.en.md): public ros2_control dry-run evidence note

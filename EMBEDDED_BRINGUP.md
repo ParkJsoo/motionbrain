@@ -12,7 +12,7 @@ needs measurement evidence.
 | --- | --- | --- |
 | Motion controller | ESP32 Dev Module | 5-axis motor output, safety state, command dispatch, web UI, Wi-Fi |
 | Sensor/teleop controller | STM32F446 | MPU-6050, UART sensor/teleop frames, timer-driven firmware path |
-| Camera node | ESP32-CAM | capture, stream, camera profile endpoints |
+| Camera node | ESP32-CAM | `/status`, `/capture`, camera profile endpoint; `/stream` disabled with HTTP 410 |
 | Host | Raspberry Pi 4 | dashboard, perception service, ROS2 Jazzy bridge |
 
 ## Implemented Interfaces
@@ -39,7 +39,7 @@ STM32 sensor/teleop firmware:
 
 Camera and host:
 
-- ESP32-CAM `/status`, `/capture`, `/stream`, `/camera`.
+- ESP32-CAM `/status`, `/capture`, `/camera`; direct `/stream` is intentionally disabled with HTTP 410.
 - Pi perception service with color tracking and constrained known-object `cup`
   detection path.
 - ROS2 bridge from controller/dashboard/perception state into typed topics.

@@ -16,14 +16,15 @@ MotionBrain은 ESP32 기반 5축 로봇팔 제어기에서 시작해 STM32 센�
 | --- | --- |
 | 실물 로봇 통합 | ESP32 5축 모션 제어기, STM32 유선 텔레오퍼레이션, ESP32-CAM, Raspberry Pi 호스트를 하나의 arm stack으로 통합 |
 | 임베디드 안전 경계 | `BOOT -> IDLE -> ARMED -> FAULT`, `Dispatcher` + `SafetyGate`, 토큰 기반 명령, deadman release stop, 프레임 타임아웃 |
-| 단일축 위치 피드백 | M4 어깨 AS5600 절대각 측정, 센서/자석 상태 감시, 230-245° 제한 폐루프 목표각 제어, `TARGET_MISSED` 실패 판정, 동일 고정 장착 무부하 22/22와 23.1g 하중 11/11 회귀, HTTP/대시보드/ROS2 텔레메트리 |
-| ROS2 시스템 소프트웨어 | ROS2 Jazzy typed topics, C++ control guard, mission supervisor, URDF/RViz, `ros2_control` dry-run mock/open-loop `SystemInterface` |
+| 단일축 위치 피드백 | M4 어깨 AS5600 절대각 측정, 센서/자석 상태 감시, 230-245° 검증 범위의 폐루프 목표각 제어, `TARGET_MISSED` 실패 판정, 동일 고정 장착 무부하 22/22와 23.1g 하중 11/11 회귀, 현재 자세 조건부 122.08-301.02° 소프트 범위, HTTP/대시보드/ROS2 텔레메트리 |
+| ROS2 시스템 소프트웨어 | ROS2 Jazzy typed topics, C++ control guard, mission supervisor, URDF/RViz, `ros2_control` dry-run mock/open-loop `SystemInterface`, M4 read-only measured state mode |
 | 운영/검증 | Pi systemd 서비스, health-check 스크립트, runtime evidence, `ros2_control` evidence, PlatformIO/Python/ROS2 GitHub Actions, 물리 텔레오퍼레이션 데모 |
 
 검토자가 먼저 볼 만한 상세 근거:
 
 - [PORTFOLIO.md](PORTFOLIO.md)
 - [ROBOTICS_SYSTEM_READINESS.md](ROBOTICS_SYSTEM_READINESS.md)
+- [docs/evidence/claim-to-evidence-matrix.md](docs/evidence/claim-to-evidence-matrix.md)
 - [OPERATIONS.md](OPERATIONS.md)
 - [PIN_MAP.md](PIN_MAP.md)
 - [docs/evidence/2026-06-28-m4-shoulder-closed-loop.md](docs/evidence/2026-06-28-m4-shoulder-closed-loop.md)
@@ -36,10 +37,11 @@ MotionBrain은 ESP32 기반 5축 로봇팔 제어기에서 시작해 STM32 센�
 이 저장소의 핵심 증거는 실제 하드웨어 통합과 ROS2 기반 시스템 경계 설계다.
 ROS2 Jazzy typed interface, C++ control guard, mission supervisor, RViz/TF
 시각화, `ros2_control` dry-run mock bring-up, 안전한 open-loop `SystemInterface`
-scaffold를 포함한다.
+scaffold, M4 read-only measured state mode를 포함한다.
 
 실제 물리 모션은 ESP32 firmware `SafetyGate` 뒤에 남겨 두었고,
-`ros2_control` hardware-interface 경로는 현재 `dry_run` 전용이다. 검증
+`ros2_control` physical write 경로는 열지 않았다. 현재 공개 경계는
+dry-run/open-loop scaffold와 M4 read-only measured state mode다. 초기 검증
 요약은 [2026-06-16 ros2_control evidence note](docs/evidence/2026-06-16-ros2-control-open-loop.md)를 본다.
 
 ## 데모 영상
@@ -58,7 +60,7 @@ scaffold를 포함한다.
 
 ![MotionBrain Control 웹 콘솔](docs/assets/motionbrain-control-stream.png)
 
-ESP32 내장 `MotionBrain Control`은 수동 조작, 토큰 기반 명령 경계, `STREAM` 카메라 피드백, 모터/조인트 조작 표면을 한 화면에 모은다.
+ESP32 내장 `MotionBrain Control`은 수동 조작, 토큰 기반 명령 경계, direct capture / Pi tracked frame 카메라 피드백, 모터/조인트 조작 표면을 한 화면에 모은다.
 
 ![MotionBrain Pi 대시보드](docs/assets/motionbrain-dashboard.png)
 
@@ -68,35 +70,22 @@ Pi 호스트 대시보드는 제어기 상태, 텔레오퍼레이션, 이벤트,
 
 Docker/noVNC RViz 화면은 Pi 대시보드 상태와 감지 결과를 읽기 전용 HTTP mirror로 받아 ROS2 topic, `RobotModel`, TF 시각화까지 이어지는 경로를 보여준다.
 
-## 현재 상태
+## 범위와 한계
 
-검증 완료:
+이 README는 프로젝트 구조, 데모, 빌드/실행 진입점을 설명한다. 상세 검증 결과와
+포트폴리오용 claim boundary는 [PORTFOLIO.md](PORTFOLIO.md)와
+[claim-to-evidence matrix](docs/evidence/claim-to-evidence-matrix.md)를 본다.
 
-- ESP32 5축 DC 모터 제어와 `BOOT -> IDLE -> ARMED -> FAULT` 안전 상태 머신
-- `Dispatcher` + `SafetyGate` 기반 시리얼/HTTP 공통 명령 경로
-- STM32 `MPU-6050 + UART` 센서/텔레오퍼레이션 스트림과 HC-SR04 bench 검증 경로
-- 유선 핸드헬드 텔레오퍼레이션: 데드맨, 프레임 타임아웃, 안전 텔레메트리
-- 멀티미터 기반 전원/GND/버튼/출력 sanity check 기록과 claim boundary 문서화
-- ESP32-CAM `/status`, `/capture`, `/stream`, `/camera` 프로필 제어
-- 로컬 LAN 기반 ESP32 제어기, ESP32-CAM, Raspberry Pi 연결
-- ESP32 내장 `MotionBrain Control` 웹 UI와 토큰 기반 상태 변경 명령
-- Pi 호스트 대시보드: 상태, 이벤트, 카메라, 타겟 오버레이, 안전 게이트 기반 bounded base nudge 제어 표면
-- Raspberry Pi 4 + Ubuntu 24.04 + ROS2 Jazzy 브리지
-- ROS2 타입 지정 토픽: 상태, 이벤트, 카메라 감지, 상태 기반/open-loop 조인트 상태, 기구학 진단, 제어 guard, mission 상태
-- `ros2_control` dry-run mock 데모와 안전한 open-loop `SystemInterface` 스캐폴드
-- Pi 인식 서비스를 통한 `/camera/detection(_typed)` 연동
-- ESP32 내장 제어 페이지의 카메라 모드 분리: 수동 조작은 `STREAM`, 인식 확인은 `TRACKED`
-- Docker/noVNC RViz 검증 환경에서 RobotModel/TF와 Pi dashboard mirror 기반 live ROS2 topic 시각화
-- GitHub Actions 기반 PlatformIO 빌드, Python 테스트, ROS2 `colcon build/test`
-
-현재 주의점:
-
-- 빨간 타겟 추적은 별도 비전/정렬 검증에서 안정적으로 동작한 경로다.
-- 객체 인식 흐름은 Pi에서 구현됐고, 현재 bench에서는 ESP32-CAM `qvga` / JPEG quality `10` + YOLOv5s 조합으로 제한된 known-object `cup` 인식이 검증됐다. 현재 인식 데모는 `cup` 하나만 활성 타겟으로 사용한다.
-- 어두운 저텍스처 물체와 반사가 강한 phone-like 타겟은 현재 데모 범위에서 제외한다. 이 결과는 임의 객체 인식이 아니라 제한된 작업공간의 known-object 인식/정렬 데모로 설명해야 한다.
-- 자동 grasp는 아직 하지 않는다. 현재 cup dry-run 경로는 안전 상태와 CENTER 정렬을 재확인한 뒤 작업자 확인용 그리퍼 open/close 계획만 반환한다.
-- 로봇팔을 조종하면서 카메라를 보는 작업은 `STREAM`이 기본이다. `TRACKED`는 Pi 인식 결과를 확인하는 느린 뷰로만 쓴다.
-- HC-SR04는 최종 물리 데모에서 장착하지 않았고, range telemetry는 disabled/nonblocking demo state로 처리한다.
+- 물리 모션 권한은 ESP32 firmware `SafetyGate`에 남아 있고, ROS2 physical
+  write는 열지 않았다.
+- 위치 피드백은 M4 어깨 한 축의 AS5600에 한정된다. 나머지 네 축은
+  encoder-grade feedback이 없다.
+- ESP32-CAM direct `/stream`은 HTTP 410으로 비활성화되어 있으며, 현재 카메라
+  확인은 `/capture` 또는 Pi tracked frame 경로를 사용한다.
+- Pi perception은 제한된 known-object `cup` 경로와 빨간 타겟 정렬 검증이
+  중심이다. 임의 객체 인식이나 자동 grasp는 주장하지 않는다.
+- `base_yaw_reference`가 설치되지 않았기 때문에 physical guarded routine
+  `run/execute`는 비활성화 상태다.
 
 ## 시스템 구성
 
@@ -114,7 +103,8 @@ Docker/noVNC RViz 화면은 Pi 대시보드 상태와 감지 결과를 읽기 �
 5축 DC 모터 로봇팔
 
 [ESP32-CAM]
-  /capture, /stream, /camera
+  /capture, /status, /camera profile
+  /stream은 HTTP 410으로 비활성화
         ->
 [Raspberry Pi]
   인식 서비스
@@ -211,8 +201,9 @@ python3 tools/motionbrain_dashboard.py \
   --timeout 6
 ```
 
-현재 cup known-object demo는 ESP32-CAM `qvga` / JPEG quality `10`, Pi
-YOLOv5s object mode, 설정된 confidence gate, dashboard proxy 조합을 사용한다.
+현재 cup known-object 경로는 Pi YOLOv5s object mode, 설정된 confidence gate,
+dashboard proxy 조합을 사용한다. 안정 CAM 서비스 프로필은 ESP32-CAM `qvga` /
+JPEG quality `15`다.
 systemd wrapper는 ESP32-CAM 재부팅 후에도 이 카메라 프로필을 다시 적용하고,
 낮은 JPEG quality 설정은 안정 최소값으로 올린다.
 
@@ -221,6 +212,7 @@ systemd wrapper는 ESP32-CAM 재부팅 후에도 이 카메라 프로필을 다�
 - [PORTFOLIO.md](PORTFOLIO.md): 한국어 포트폴리오 요약
 - [PORTFOLIO.en.md](PORTFOLIO.en.md): 영어 포트폴리오 요약
 - [ROBOTICS_SYSTEM_READINESS.md](ROBOTICS_SYSTEM_READINESS.md): 로보틱스 시스템/ROS2 하드웨어 경계 요약
+- [docs/evidence/claim-to-evidence-matrix.md](docs/evidence/claim-to-evidence-matrix.md): 주장과 증거, 한계, 미주장 항목 matrix
 - [PIN_MAP.md](PIN_MAP.md): ESP32 핀 점유와 M4 AS5600 I2C 부트 조건
 - [docs/evidence/2026-06-28-m4-shoulder-closed-loop.md](docs/evidence/2026-06-28-m4-shoulder-closed-loop.md): M4 어깨 AS5600 절대각 피드백과 제한 폐루프 실물 검증
 - [docs/evidence/2026-06-16-ros2-control-open-loop.md](docs/evidence/2026-06-16-ros2-control-open-loop.md): `ros2_control` dry-run 검증 요약

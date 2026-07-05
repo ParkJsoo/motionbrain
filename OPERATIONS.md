@@ -220,7 +220,7 @@ ESP32-CAM:
 
 - `GET /status`
 - `GET /capture`
-- `GET /stream`
+- `GET /stream` returns HTTP 410 by design; use `/capture` or Pi tracked frames
 - `POST /camera`
 
 Pi services:
@@ -247,12 +247,12 @@ present.
 | SSH works but services fail | `systemctl status ...`, repo path, env files | fix `/home/motionbrain/...` path or service env |
 | ROS2 topics missing | `check_ros_bridge_health.sh`, `ros2 topic list` | restart ROS bridge, confirm ROS workspace overlay |
 | ROS2 topics listed but samples hang | bridge journal, controller `/routine`, sample timeout | restart ROS bridge, then rerun with `SAMPLE_TIMEOUT_SECONDS=25` |
-| camera stale | ESP32-CAM `/status`, Wi-Fi, perception logs | apply camera profile and restart perception |
+| camera stale | ESP32-CAM `/status`, `/capture`, Wi-Fi, perception logs | keep `/stream` disabled, verify power/network first, and let perception recover through capture backoff before restarting |
 | Pi load high | `uptime`, `vcgencmd get_throttled`, perception `/health` latency | lower OpenCV threads or increase perception interval, then restart perception |
 | controller command rejected | `/status`, fault latch, token, ARMED state | clear fault only after physical inspection |
 | routine blocked | `/routine`, feedback readiness, active sequence | keep dry-run, inspect feedback block reason |
 | token missing | service env file, dashboard status, ESP32 command rejection | restore `/etc/motionbrain/*.env`, restart service |
-| perception stale | perception `/health`, `/api/detection`, camera URL | restart perception, verify camera profile |
+| perception stale | perception `/health`, `/api/detection`, camera URL, `nextCaptureDelayMs` | verify `/capture` and camera URL; restart only if the active service is not recovering through backoff |
 | feedback not installed | `/motionbrain/routine_typed`, diagnostics `base_yaw_fault` | keep physical routine execution disabled |
 
 ## QA Matrix

@@ -11,13 +11,15 @@ MotionBrain의 강점은 실제 하드웨어를 붙여 운영한 로보틱스 �
 
 - ESP32 펌웨어가 TB6612FNG 드라이버를 통해 5축 DC 모터 출력을 담당한다.
 - M4 어깨 한 축은 AS5600 절대각 I2C 피드백과 제한 폐루프 목표각 제어를
-  실물에서 검증했다. 나머지 축과 `ros2_control` 물리 경로는 개루프다.
+  실물에서 검증했다. 나머지 축에는 위치 피드백이 없고 `ros2_control` 물리
+  write 경로는 비활성화되어 있다.
 - STM32F446 펌웨어가 구조화된 센서/텔레오퍼레이션 프레임을 보낸다.
 - Raspberry Pi가 dashboard, perception, ROS2 Jazzy bridge 프로세스를 운영한다.
 - ROS2 패키지는 typed status, event, detection, kinematics, guard, mission,
   URDF, RViz, `ros2_control` 표면을 제공한다.
-- `ros2_control`은 안전 경계 안에서만 검증했다. mock과 dry-run 표면은
-  검증되어 있지만, 실제 물리 구동은 embedded safety gate 뒤에 남겨뒀다.
+- `ros2_control`은 안전 경계 안에서만 검증했다. mock, dry-run/open-loop,
+  M4 read-only measured state 표면은 검증되어 있지만, 실제 물리 구동은
+  embedded safety gate 뒤에 남겨뒀다.
 
 따라서 이 프로젝트는 embedded safety boundary, 하드웨어 통합, ROS2 시스템
 소프트웨어, 실제 로봇 문제 분석에 대한 증거로 쓰는 것이 맞다.
@@ -51,24 +53,27 @@ MotionBrain의 강점은 실제 하드웨어를 붙여 운영한 로보틱스 �
 
 ## ros2_control 경계
 
-`ros2_control` 표면은 두 가지로 분리되어 있다.
+`ros2_control` 표면은 세 가지로 분리되어 있다.
 
 | 표면 | 패키지 | 목적 | 물리 구동 |
 | --- | --- | --- | --- |
 | Mock controller | `motionbrain_ros2_control_mock` | `mock_components/GenericSystem`으로 controller-manager, joint-state, trajectory-controller bring-up 검증 | 없음 |
 | Hardware interface scaffold | `motionbrain_hardware_interface` | 표준 `hardware_interface::SystemInterface` 형태, joint command/state interface, timeout, finite-command guard, launch/config/URDF 표면 | 아직 직접 구동 없음 |
+| M4 measured state mode | `motionbrain_hardware_interface` | `/motionbrain/status_typed` cache에서 M4 `shoulder_pitch_joint` state만 노출하는 read-only `m4_state` mode | command interface 없음 |
 
-Hardware interface scaffold는 의도적으로 안전하게 막아둔 상태다. `write()`는
-ESP32 controller로 POST하지 않는다. 물리 motion authority는 firmware
-`SafetyGate`, token-gated operator UI, deadman/teleop timeout, routine execution
-policy 뒤에 남아 있다.
+Hardware interface scaffold와 M4 measured state mode는 의도적으로 안전하게
+막아둔 상태다. Physical mode `write()`는 ESP32 controller로 POST하지 않고,
+`m4_state` mode는 command interface를 노출하지 않는다. 물리 motion authority는
+firmware `SafetyGate`, token-gated operator UI, deadman/teleop timeout, routine
+execution policy 뒤에 남아 있다.
 
 사용 가능한 표현:
 
 ```text
-안전한 open-loop ros2_control SystemInterface scaffold와 mock controller setup을
-구현했다. 물리 ESP32 actuation은 firmware safety boundary 뒤에 남아 있으며,
-unchecked ros2_control write path로 노출하지 않았다.
+안전한 open-loop ros2_control SystemInterface scaffold, mock controller setup,
+M4 read-only measured state mode를 구현했다. 물리 ESP32 actuation은 firmware
+safety boundary 뒤에 남아 있으며 unchecked ros2_control write path로 노출하지
+않았다.
 ```
 
 피해야 할 표현:
@@ -115,6 +120,13 @@ source install/setup.bash
 ros2 launch motionbrain_hardware_interface hardware_interface.launch.py
 ```
 
+M4 read-only measured state launch:
+
+```bash
+source install/setup.bash
+ros2 launch motionbrain_hardware_interface m4_measured_state.launch.py
+```
+
 Mock controller evidence launch:
 
 ```bash
@@ -130,7 +142,7 @@ tools/raspi/capture_ros2_control_hardware_evidence.sh
 
 ## 최신 ros2_control 증거
 
-2026-06-16에 Raspberry Pi 4 / ROS2 Jazzy에서 캡처했다. 캡처는
+초기 open-loop 증거는 2026-06-16에 Raspberry Pi 4 / ROS2 Jazzy에서 캡처했다. 캡처는
 `ROS_DOMAIN_ID=43`과 hardware-interface URDF parameter
 `transport_mode=dry_run`을 사용했다. 따라서 ESP32 controller나 물리 모터를
 명령하지 않았다.
@@ -143,6 +155,11 @@ tools/raspi/capture_ros2_control_hardware_evidence.sh
 | State interfaces | 5개 joint position/velocity state interface exported |
 | Open-loop trajectory | `FollowJointTrajectory` goal accepted/completed with `SUCCEEDED` |
 | `/joint_states` | all `0.0`에서 commanded scaffold position으로 변경 |
+
+이후 M4 read-only measured state mode가 추가됐다. 이 모드는 command interface와
+trajectory controller 없이 `joint_state_broadcaster`만 사용하며, cached
+`/motionbrain/status_typed`에서 유효하고 fresh한 M4 measured state만
+`shoulder_pitch_joint` state로 노출한다.
 
 ## 최신 runtime 측정 증거
 
@@ -181,8 +198,8 @@ I2C signal integrity, transient motor voltage, closed-loop joint-control
 
 1. DMM 수준을 넘는 embedded 계측 증거를 캡처한다: PWM duty/frequency, UART
    timing, deadman release latency, I2C activity, bounded motor voltage drop.
-2. 물리 motion write path를 열기 전에 ESP32 status field 하나를 read-only
-   `ros2_control` diagnostic으로 연결한다.
+2. M4 read-only measured state evidence를 다음 안정적인 reconnect 이후 compact
+   public note로 갱신할지 결정한다.
 3. 새 actuator hardware가 생기면 작은 bench note만 추가한다: ping,
    present-position read, bounded goal-position write. 종이 위 주장만 추가하지
    않는다.

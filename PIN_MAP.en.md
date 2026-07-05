@@ -45,9 +45,11 @@ wiring and feature set.
   and regression validation must then be repeated.
 
 The electrical allocation is now the supported prototype allocation, and the
-sensor and magnet are mechanically secured. The `-24.35 deg` offset,
-`230-245 deg` calibrated range, and directional stop leads remain specific to
-this mount. Recalibrate after moving either the sensor or the magnet.
+sensor and magnet are mechanically secured. The current ROS shoulder zero is
+`222.80 deg` with sign `+1`. The `230-245 deg` range remains the strongest
+matrix-evidence range, while `122.08-301.02 deg` is a provisional current-posture
+soft range for the observed elbow/wrist/gripper configuration. Revalidate zero
+and safety range after sensor, magnet, arm-posture, load, or clearance changes.
 
 ## References
 

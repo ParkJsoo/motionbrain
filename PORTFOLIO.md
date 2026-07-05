@@ -18,7 +18,8 @@ MotionBrain은 ESP32 모션 제어기, STM32 센서/텔레오퍼레이션 계층
   `SafetyGate`, deadman, freshness timeout을 통과해야 한다.
 - ROS2 시스템 역량: typed messages, ROS2 bridge, C++ control guard,
   mission supervisor, URDF/RViz, `ros2_control` dry-run mock/open-loop
-  `SystemInterface`를 갖췄고, `ros2_control`을 통한 물리 출력은 열지 않았다.
+  `SystemInterface`, M4 read-only measured state mode를 갖췄고,
+  `ros2_control`을 통한 물리 출력은 열지 않았다.
 - 운영 가능성: Pi systemd 서비스, SSH/DNS 복구 절차, health check,
   runtime evidence, `ros2_control` evidence, CI 검증까지 문서화했다.
 - 주장 경계: M4 어깨 한 축의 제한 폐루프 검증과 로봇팔 전체의 위치 제어를
@@ -39,7 +40,7 @@ MotionBrain은 ESP32 모션 제어기, STM32 센서/텔레오퍼레이션 계층
   HTTP endpoints `200`, 15초 bounded ROS2 topic acquisition,
   `/joint_states` 약 4.9-5.0 Hz 확인, read-only/no actuation capture
 - [M4 어깨 폐루프 검증](docs/evidence/2026-06-28-m4-shoulder-closed-loop.md):
-  AS5600 절대각 I2C 피드백, 센서 고장 차단, 230-245° 제한 목표각 수렴
+  AS5600 절대각 I2C 피드백, 센서 고장 차단, 230-245° 검증 범위의 제한 목표각 수렴
 
 ## 문제 정의
 
@@ -65,7 +66,7 @@ MotionBrain은 ESP32 모션 제어기, STM32 센서/텔레오퍼레이션 계층
 - STM32 `MPU-6050 + UART` 센서/텔레오퍼레이션 펌웨어와 HC-SR04 bench 검증 경로
 - 데드맨, 프레임 최신성 타임아웃, 센서 고장 래치
 - M4 어깨 AS5600 I2C 절대각 피드백, 제한 폐루프 목표각 제어와 HTTP/대시보드/ROS2 상태 노출
-- ESP32-CAM 캡처/스트림 펌웨어
+- ESP32-CAM `/capture` 중심 펌웨어와 `/stream` 비활성화 안정화
 - Raspberry Pi 대시보드와 인식 서비스
 - OpenCV 기반 빨간 타겟 검출과 타겟 오버레이
 - 안전 게이트 기반 bounded base nudge 제어 표면
@@ -80,7 +81,7 @@ MotionBrain은 ESP32 모션 제어기, STM32 센서/텔레오퍼레이션 계층
 
 ![MotionBrain Control 웹 콘솔](docs/assets/motionbrain-control-stream.png)
 
-ESP32 내장 제어 콘솔은 `STREAM` 기반 카메라 확인, 토큰 기반 상태 변경 명령, 수동 모터/조인트 제어, 현재 시스템 상태를 한 화면에서 제공한다.
+ESP32 내장 제어 콘솔은 direct capture / Pi tracked frame 기반 카메라 확인, 토큰 기반 상태 변경 명령, 수동 모터/조인트 제어, 현재 시스템 상태를 한 화면에서 제공한다.
 
 ![MotionBrain Pi 대시보드](docs/assets/motionbrain-dashboard.png)
 
@@ -102,7 +103,8 @@ STM32 센서 / 텔레오퍼레이션
   -> 5축 DC 모터 로봇팔
 
 ESP32-CAM
-  -> HTTP 캡처 / 스트림
+  -> HTTP 캡처
+  -> direct 스트림은 HTTP 410으로 비활성화
   -> Raspberry Pi 인식 서비스
   -> 대시보드 타겟 오버레이
   -> ROS2 /camera/detection(_typed)
@@ -131,11 +133,11 @@ ESP32-CAM은 카메라 노드로만 두고, Raspberry Pi에서 감지와 오버�
 
 ### ROS2 호스트 경계
 
-ROS2는 ESP32 내부 제어를 대체하지 않는다. 대신 `/status`, `/events`, `/camera/detection`을 타입 지정 토픽으로 승격하고, C++ 제어 guard와 mission supervisor가 현재 상태와 타겟 정렬을 판단한다. `ros2_control`은 dry-run mock controller와 open-loop `SystemInterface` 스캐폴드까지만 제공하며, 물리 출력은 여전히 ESP32 firmware safety 경계 뒤에 둔다.
+ROS2는 ESP32 내부 제어를 대체하지 않는다. 대신 `/status`, `/events`, `/camera/detection`을 타입 지정 토픽으로 승격하고, C++ 제어 guard와 mission supervisor가 현재 상태와 타겟 정렬을 판단한다. `ros2_control`은 dry-run mock controller, open-loop `SystemInterface` 스캐폴드, M4 read-only measured state mode까지 제공하며, 물리 출력은 여전히 ESP32 firmware safety 경계 뒤에 둔다.
 
 ### 검증 가능한 데모 경계
 
-현재 공개 데모는 실물 텔레오퍼레이션이다. 보조 검증 증거로는 `STREAM` 기반 수동 카메라 확인, Pi 호스트 대시보드, 빨간 타겟/known-object 타겟 오버레이, ROS2 타입 지정 토픽, 안전 게이트 기반 bounded nudge 제어 표면, 토큰 기반 search-light on/off 명령 경로가 있다. 자동 집기는 아직 활성화하지 않는다.
+현재 공개 데모는 실물 텔레오퍼레이션이다. 보조 검증 증거로는 direct capture / Pi tracked frame 기반 카메라 확인, Pi 호스트 대시보드, 빨간 타겟/known-object 타겟 오버레이, ROS2 타입 지정 토픽, 안전 게이트 기반 bounded nudge 제어 표면, 토큰 기반 search-light on/off 명령 경로가 있다. 자동 집기는 아직 활성화하지 않는다.
 
 ## 검증 결과
 
@@ -159,28 +161,28 @@ ROS2는 ESP32 내부 제어를 대체하지 않는다. 대신 `/status`, `/event
 - STM32 `MPU-6050 + UART` 텔레오퍼레이션과 HC-SR04 bench 경로 검증
 - 유선 텔레오퍼레이션 데드맨 입력으로 실제 모터 출력 및 release 정지 확인
 - 최종 물리 텔레오퍼레이션 데모 영상 캡처와 README GIF/MP4 반영
-- ESP32-CAM `/status`, `/capture`, `/stream` 확인
+- ESP32-CAM `/status`, `/capture` 확인과 `/stream` HTTP 410 비활성화 검증
 - 로컬 LAN에서 ESP32 제어기, ESP32-CAM, Raspberry Pi 동시 연결 확인
 - `MotionBrain Control` 웹 UI에서 토큰 입력 후 상태 변경 명령 확인
 - Pi 대시보드에서 카메라 feed, 빨간 타겟 박스, 안전 게이트 기반 bounded nudge 제어 표면 확인
-- Pi 인식 서비스에서 ESP32-CAM `qvga` / JPEG quality `10`과 YOLOv5s로 `cup` 타겟 확인
+- Pi 인식 서비스에서 YOLOv5s/OpenCV DNN 기반 제한 `cup` 타겟 경로 확인. 최신 안정 CAM 서비스 프로필은 ESP32-CAM `qvga` / JPEG quality `15`다.
 - Raspberry Pi 4 + Ubuntu 24.04 + ROS2 Jazzy에서 `colcon build/test` 통과
-- `/motionbrain/status_typed`, `/camera/detection_typed`, 상태 기반/open-loop `/joint_states`, `/motionbrain/kinematics_typed`, `/motionbrain/control_guard_typed`, `/motionbrain/mission_state_typed` 상태 점검 통과
+- `/motionbrain/status_typed`, `/camera/detection_typed`, estimated/measured `/joint_states`, `/motionbrain/kinematics_typed`, `/motionbrain/control_guard_typed`, `/motionbrain/mission_state_typed` 상태 점검 통과
 - Pi 인식 서비스 결과가 ROS2 `/camera/detection_typed`까지 전달되는 것 확인
 - Docker/noVNC RViz 검증 환경에서 RobotModel/TF와 Pi dashboard mirror 기반 live ROS2 topic 시각화 확인
-- `motionbrain_ros2_control_mock`과 `motionbrain_hardware_interface`로 `ros2_control` controller/hardware interface dry-run 경계 검증
+- `motionbrain_ros2_control_mock`과 `motionbrain_hardware_interface`로 `ros2_control` controller/hardware interface dry-run 경계와 M4 read-only measured state mode 검증
 - GitHub Actions에서 PlatformIO, Python 테스트, ROS2 workspace 검증
 
 ## 객체 인식 현황
 
 Pi에서 OpenCV DNN/ONNX 기반 constrained known-object detection 경로는 구현했다. `config/coco80.labels`와 명시적 모델 경로를 사용하고, 모델 weight는 repository에 넣지 않는다.
 
-현재 물리 bench에서 가장 신뢰할 수 있는 known-object 경로는 ESP32-CAM `qvga` / JPEG quality `10`, YOLOv5s, `--object-target cup`, 설정된 confidence gate 기준의 제한된 `cup` 확인이다. 이 경로는 Pi 대시보드/인식 API에서 `cup`을 반환했고, 수동 조작용 카메라 확인은 `STREAM`, 인식 확인은 `TRACKED`로 분리했다.
+현재 물리 bench에서 가장 신뢰할 수 있는 known-object 경로는 YOLOv5s/OpenCV DNN, `--object-target cup`, 설정된 confidence gate 기준의 제한된 `cup` 확인이다. 이 경로는 Pi 대시보드/인식 API에서 `cup`을 반환한 증거가 있고, 최신 안정 CAM 서비스 프로필은 ESP32-CAM `qvga` / JPEG quality `15`다. 수동 카메라 확인은 direct `/capture`, 인식 확인은 Pi tracked frame으로 분리했다.
 
 따라서 현재 문서와 데모에서는 다음처럼 표현한다.
 
 - 가능: Pi 호스트 객체 인식 흐름, 선택 타겟 계약, ROS2/대시보드 연동, 제한된 `cup` 인식 확인
-- 안정 검증 완료: 빨간 타겟 추적/오버레이, `STREAM` 기반 수동 카메라 확인, cup 인식 확인
+- 안정 검증 완료: 빨간 타겟 추적/오버레이, direct `/capture` 기반 수동 카메라 확인, cup 인식 확인
 - 아직 미완료: 임의 물체 인식, 마커/물체 기반 자동 집기, 피드백 없는 연속 visual servoing
 
 ## 현재 한계
@@ -188,10 +190,13 @@ Pi에서 OpenCV DNN/ONNX 기반 constrained known-object detection 경로는 구
 - M4 어깨 한 축만 기구적으로 고정된 AS5600 피드백을 사용한다. 나머지 네 축에는
   위치 피드백이 없고 전체 관절 절대 위치나 `ros2_control` 물리 폐루프는 없다.
 - M4 GPIO0/GPIO15는 현재 핀 점유에서 유지하는 지원 배치지만 부트 스트랩
-  조건을 준수해야 한다. 센서·자석 고정은 완료했지만 230-245° 보정 범위와
-  방향별 정지 선행값은 시험 조건이며 장기·진동·하중/전압별 검증이 더 필요하다.
-- 현재 `-24.35°` 각도 오프셋은 현재 고정 장착에 종속되므로 재장착 시 다시
-  보정해야 한다.
+  조건을 준수해야 한다. 센서·자석 고정은 완료했고 ROS zero는 `222.80°`,
+  sign `+1`로 적용했다. `230-245°`는 가장 강한 검증 범위이고,
+  `122.08-301.02°`는 현재 자세 조건부 provisional soft range이므로 다른 자세,
+  장착, 하중에서는 다시 검증해야 한다.
+- `base_yaw_reference`가 설치되지 않아 physical guarded routine `run/execute`는
+  비활성화되어 있다. ROS2 routine service/action은 status, dry-run, expected
+  rejection 경계까지만 주장한다.
 - HC-SR04는 최종 물리 데모에서 제거됐고, range telemetry는 disabled/nonblocking 상태로 처리한다.
 - ESP32-CAM QVGA 입력은 일반 객체 인식에는 품질 한계가 있다.
 - 일반 텍스트 명령으로 임의 물체를 찾아 집는 수준은 아직 아니다.
