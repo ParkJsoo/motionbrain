@@ -96,6 +96,10 @@ class FakeEndpointBridgeIntegrationTest(unittest.TestCase):
             rclpy.spin_once(collector, timeout_sec=0.05)
             if messages["routine"] and messages["diagnostics"]:
                 if scenario in {"malformed_status", "timeout_status"} and messages["detection"]:
+                    if not self.controller_diagnostic_downstream_unavailable(
+                        messages["diagnostics"][-1]
+                    ):
+                        continue
                     return
                 if messages["status"] and messages["detection"]:
                     return
@@ -169,6 +173,19 @@ class FakeEndpointBridgeIntegrationTest(unittest.TestCase):
             collector.destroy_node()
             bridge.destroy_node()
             return messages
+
+    def controller_diagnostic_downstream_unavailable(
+        self,
+        diagnostics: DiagnosticArray,
+    ) -> bool:
+        for status in diagnostics.status:
+            if status.name != "motionbrain/controller":
+                continue
+            return any(
+                value.key == "downstream_available" and value.value == "False"
+                for value in status.values
+            )
+        return False
 
     def diagnostic_by_name(self, diagnostics: DiagnosticArray, name: str) -> DiagnosticStatus:
         for status in diagnostics.status:
