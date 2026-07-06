@@ -16,7 +16,7 @@ input -> decision -> state -> motion -> feedback
 | --- | --- |
 | Real robot integration | ESP32 5-axis motion controller, STM32 wired teleop layer, ESP32-CAM, and Raspberry Pi host integrated into one arm stack |
 | Embedded safety boundary | `BOOT -> IDLE -> ARMED -> FAULT`, `Dispatcher` + `SafetyGate`, token-gated commands, deadman release stop, and frame timeouts |
-| Single-axis position feedback | M4 shoulder AS5600 sensing, magnet/sensor health, bounded 230-245 deg proven closed-loop targets, explicit `TARGET_MISSED`, 22/22 no-added-load plus 11/11 at 23.1 g on the fixed mount, current-posture 122.08-301.02 deg soft range, and HTTP/dashboard/ROS2 telemetry |
+| Single-axis position feedback | M4 shoulder AS5600 sensing, magnet/sensor health, bounded 230-245 deg proven closed-loop targets, explicit `TARGET_MISSED`, 22/22 no-added-load plus 11/11 at 23.1 g on the fixed mount, and HTTP/dashboard/ROS2 telemetry |
 | ROS2 system software | ROS2 Jazzy typed topics, C++ control guard, mission supervisor, URDF/RViz, a `ros2_control` dry-run mock/open-loop `SystemInterface`, and M4 read-only measured state mode |
 | Operations and validation | Pi systemd services, health-check scripts, runtime evidence, `ros2_control` evidence, PlatformIO/Python/ROS2 GitHub Actions, and a physical teleoperation demo |
 
@@ -82,6 +82,8 @@ commands. Detailed validation results and portfolio claim boundaries live in
   physical ROS2 writes are not exposed.
 - Position feedback is limited to the M4 shoulder AS5600. The other four axes do
   not have encoder-grade feedback.
+- The matrix-proven M4 target range is 230-245 deg. 122.08-301.02 deg is only a
+  provisional current-posture soft range, not an equivalently validated range.
 - Direct ESP32-CAM `/stream` returns HTTP 410 by design; current camera viewing
   uses `/capture` or Pi tracked frames.
 - Pi perception is scoped to constrained known-object `cup` handling and red
@@ -174,12 +176,15 @@ using the unit files in `deploy/systemd/`.
 Manual fallback dashboard command:
 
 The real `MOTIONBRAIN_HTTP_TOKEN` is a local device command token. Do not expose
-the real value in the repository, logs, or screen captures.
+the real value in the repository, logs, or screen captures. Dashboard POST
+controls also require a separate `MOTIONBRAIN_DASHBOARD_TOKEN`. To expose the
+dashboard on a LAN, use `--host 0.0.0.0` only with a dashboard token.
 
 ```bash
 export MOTIONBRAIN_HTTP_TOKEN="<local-controller-token>"
+export MOTIONBRAIN_DASHBOARD_TOKEN="<local-dashboard-token>"
 python3 tools/motionbrain_dashboard.py \
-  --host 0.0.0.0 \
+  --host 127.0.0.1 \
   --motion-host <controller-ip> \
   --camera-url http://<camera-ip> \
   --detect-color red \
@@ -199,8 +204,9 @@ python3 tools/motionbrain_perception_service.py \
   --timeout 6
 
 export MOTIONBRAIN_HTTP_TOKEN="<local-controller-token>"
+export MOTIONBRAIN_DASHBOARD_TOKEN="<local-dashboard-token>"
 python3 tools/motionbrain_dashboard.py \
-  --host 0.0.0.0 \
+  --host 127.0.0.1 \
   --motion-host <controller-ip> \
   --perception-url http://127.0.0.1:8766 \
   --timeout 6
@@ -224,6 +230,7 @@ stable minimum.
 - [docs/evidence/2026-06-16-pi-system-health.en.md](docs/evidence/2026-06-16-pi-system-health.en.md): public Pi/systemd/ROS2 health evidence note
 - [docs/evidence/2026-06-17-runtime-measurements.en.md](docs/evidence/2026-06-17-runtime-measurements.en.md): Pi runtime endpoint latency, ROS2 topic/status probe, and instrument inventory record
 - [docs/evidence/2026-06-16-embedded-bench-checks.en.md](docs/evidence/2026-06-16-embedded-bench-checks.en.md): recovered DMM-level embedded bench sanity-check evidence
+- [docs/evidence/physical-safety-validation-plan.en.md](docs/evidence/physical-safety-validation-plan.en.md): physical safety planned-evidence procedure for hard cutoff, deadman latency, PWM/UART/I2C, and motor sag
 - [EMBEDDED_BRINGUP.md](EMBEDDED_BRINGUP.md): STM32/ESP32 bring-up and measurement checklist
 - [OPERATIONS.md](OPERATIONS.md): Pi/systemd/health-check operations notes
 

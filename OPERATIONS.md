@@ -88,6 +88,23 @@ Dashboard-side controls and ESP32 command tokens are separate boundaries: the
 dashboard can observe read-only state without exposing the controller token, and
 state-changing requests must still pass the controller firmware gate.
 
+The default dashboard env binds to `127.0.0.1`. Change
+`MOTIONBRAIN_DASHBOARD_HOST=0.0.0.0` only for a supervised LAN demo where the Pi
+dashboard should be reachable from another machine.
+
+The installer keeps runtime env files private:
+
+```bash
+sudo stat -c '%U:%G %a %n' /etc/motionbrain /etc/motionbrain/*.env
+```
+
+Expected ownership is `root:<service-group>` with mode `750` on
+`/etc/motionbrain` and `640` on env files. Existing env files are not
+overwritten, but the installer refreshes owner/mode. The reconcile timer runs
+root-owned copies under `/usr/local/libexec/motionbrain/` for
+`reconcile_dashboard_services.sh`, `discover_device_url.py`, and
+`apply_camera_profile.py` instead of executing mutable checkout helpers directly.
+
 For object-mode perception on the Raspberry Pi, keep CPU load bounded with
 `MOTIONBRAIN_OPENCV_THREADS`, `MOTIONBRAIN_PERCEPTION_INTERVAL`, and
 `MOTIONBRAIN_PERCEPTION_STALE_SECONDS` in `/etc/motionbrain/perception.env`.
@@ -100,6 +117,22 @@ helpers on the Pi instead of hard-coding stale device addresses:
 ```bash
 python3 tools/raspi/discover_device_url.py --help
 tools/raspi/reconcile_dashboard_services.sh
+```
+
+After changing systemd units or env files, validate the installed units on the
+Pi before a demo:
+
+```bash
+for script in tools/raspi/install_systemd_units.sh tools/raspi/reconcile_dashboard_services.sh; do
+  bash -n "${script}"
+done
+tools/raspi/install_systemd_units.sh
+sudo systemd-analyze verify /etc/systemd/system/motionbrain-*.service /etc/systemd/system/motionbrain-*.timer
+sudo systemctl daemon-reload
+systemctl cat motionbrain-dashboard.service motionbrain-perception.service motionbrain-ros-bridge.service motionbrain-dashboard-reconcile.service
+sudo systemctl start motionbrain-dashboard-reconcile.service
+systemctl status motionbrain-dashboard-reconcile.service --no-pager
+systemd-analyze security motionbrain-dashboard.service motionbrain-perception.service motionbrain-ros-bridge.service
 ```
 
 ## Health Checks

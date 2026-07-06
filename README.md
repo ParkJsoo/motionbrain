@@ -16,7 +16,7 @@ MotionBrain은 ESP32 기반 5축 로봇팔 제어기에서 시작해 STM32 센�
 | --- | --- |
 | 실물 로봇 통합 | ESP32 5축 모션 제어기, STM32 유선 텔레오퍼레이션, ESP32-CAM, Raspberry Pi 호스트를 하나의 arm stack으로 통합 |
 | 임베디드 안전 경계 | `BOOT -> IDLE -> ARMED -> FAULT`, `Dispatcher` + `SafetyGate`, 토큰 기반 명령, deadman release stop, 프레임 타임아웃 |
-| 단일축 위치 피드백 | M4 어깨 AS5600 절대각 측정, 센서/자석 상태 감시, 230-245° 검증 범위의 폐루프 목표각 제어, `TARGET_MISSED` 실패 판정, 동일 고정 장착 무부하 22/22와 23.1g 하중 11/11 회귀, 현재 자세 조건부 122.08-301.02° 소프트 범위, HTTP/대시보드/ROS2 텔레메트리 |
+| 단일축 위치 피드백 | M4 어깨 AS5600 절대각 측정, 센서/자석 상태 감시, 230-245° 검증 범위의 폐루프 목표각 제어, `TARGET_MISSED` 실패 판정, 동일 고정 장착 무부하 22/22와 23.1g 하중 11/11 회귀, HTTP/대시보드/ROS2 텔레메트리 |
 | ROS2 시스템 소프트웨어 | ROS2 Jazzy typed topics, C++ control guard, mission supervisor, URDF/RViz, `ros2_control` dry-run mock/open-loop `SystemInterface`, M4 read-only measured state mode |
 | 운영/검증 | Pi systemd 서비스, health-check 스크립트, runtime evidence, `ros2_control` evidence, PlatformIO/Python/ROS2 GitHub Actions, 물리 텔레오퍼레이션 데모 |
 
@@ -80,6 +80,8 @@ Docker/noVNC RViz 화면은 Pi 대시보드 상태와 감지 결과를 읽기 �
   write는 열지 않았다.
 - 위치 피드백은 M4 어깨 한 축의 AS5600에 한정된다. 나머지 네 축은
   encoder-grade feedback이 없다.
+- M4의 matrix 검증 목표 범위는 230-245°다. 122.08-301.02°는 현재 자세
+  조건부 임시 소프트 범위이며 동등하게 검증된 범위가 아니다.
 - ESP32-CAM direct `/stream`은 HTTP 410으로 비활성화되어 있으며, 현재 카메라
   확인은 `/capture` 또는 Pi tracked frame 경로를 사용한다.
 - Pi perception은 제한된 known-object `cup` 경로와 빨간 타겟 정렬 검증이
@@ -170,12 +172,15 @@ Pi 대시보드/인식 서비스는 `deploy/systemd/`의 unit 파일로 부팅 �
 수동 fallback 대시보드 예시:
 
 실제 `MOTIONBRAIN_HTTP_TOKEN`은 로컬 장비용 명령 토큰이다. 실제 값을 repo,
-로그, 화면 캡처에 노출하지 않는다.
+로그, 화면 캡처에 노출하지 않는다. 대시보드의 POST controls를 쓰려면 별도
+`MOTIONBRAIN_DASHBOARD_TOKEN`도 설정한다. 대시보드를 LAN에 공개하려면
+`--host 0.0.0.0`와 함께 dashboard token을 반드시 설정한다.
 
 ```bash
 export MOTIONBRAIN_HTTP_TOKEN="<local-controller-token>"
+export MOTIONBRAIN_DASHBOARD_TOKEN="<local-dashboard-token>"
 python3 tools/motionbrain_dashboard.py \
-  --host 0.0.0.0 \
+  --host 127.0.0.1 \
   --motion-host <controller-ip> \
   --camera-url http://<camera-ip> \
   --detect-color red \
@@ -194,8 +199,9 @@ python3 tools/motionbrain_perception_service.py \
   --timeout 6
 
 export MOTIONBRAIN_HTTP_TOKEN="<local-controller-token>"
+export MOTIONBRAIN_DASHBOARD_TOKEN="<local-dashboard-token>"
 python3 tools/motionbrain_dashboard.py \
-  --host 0.0.0.0 \
+  --host 127.0.0.1 \
   --motion-host <controller-ip> \
   --perception-url http://127.0.0.1:8766 \
   --timeout 6
@@ -219,6 +225,7 @@ systemd wrapper는 ESP32-CAM 재부팅 후에도 이 카메라 프로필을 다�
 - [docs/evidence/2026-06-16-pi-system-health.md](docs/evidence/2026-06-16-pi-system-health.md): Pi/systemd/ROS2 health 검증 요약
 - [docs/evidence/2026-06-17-runtime-measurements.md](docs/evidence/2026-06-17-runtime-measurements.md): Pi 런타임 endpoint latency, ROS2 topic/status probe, 계측 장비 inventory 측정 기록
 - [docs/evidence/2026-06-16-embedded-bench-checks.md](docs/evidence/2026-06-16-embedded-bench-checks.md): 멀티미터 기반 embedded bench sanity check 복구 기록
+- [docs/evidence/physical-safety-validation-plan.md](docs/evidence/physical-safety-validation-plan.md): hard cutoff, deadman latency, PWM/UART/I2C, motor sag 물리 safety planned evidence 절차
 - [EMBEDDED_BRINGUP.md](EMBEDDED_BRINGUP.md): STM32/ESP32 bring-up 및 측정 체크리스트
 - [OPERATIONS.md](OPERATIONS.md): Pi/systemd/health-check 운영 절차
 

@@ -85,7 +85,7 @@ fi
 
 args=(
   "${REPO}/tools/motionbrain_dashboard.py"
-  --host "${MOTIONBRAIN_DASHBOARD_HOST:-0.0.0.0}"
+  --host "${MOTIONBRAIN_DASHBOARD_HOST:-127.0.0.1}"
   --port "${MOTIONBRAIN_DASHBOARD_PORT:-8765}"
   --motion-host "${MOTION_HOST}"
   --motion-port "${MOTION_PORT}"
@@ -99,5 +99,9 @@ args=(
   --grasp-target-label "${MOTIONBRAIN_GRASP_TARGET_LABEL:-cup}"
   --grasp-min-confidence "${MOTIONBRAIN_GRASP_MIN_CONFIDENCE:-0.5}"
 )
+
+if [[ -n "${MOTIONBRAIN_DASHBOARD_CORS_ORIGINS:-}" ]]; then
+  args+=(--cors-origins "${MOTIONBRAIN_DASHBOARD_CORS_ORIGINS}")
+fi
 
 exec "${PYTHON}" "${args[@]}"

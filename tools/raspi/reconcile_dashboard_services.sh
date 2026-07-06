@@ -1,11 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="${MOTIONBRAIN_REPO:-/home/motionbrain/develop/arduino/motionbrain}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HELPER_DIR="${MOTIONBRAIN_HELPER_DIR:-${SCRIPT_DIR}}"
+DISCOVERY_SCRIPT="${MOTIONBRAIN_DISCOVERY_SCRIPT:-${HELPER_DIR}/discover_device_url.py}"
+CAMERA_PROFILE_SCRIPT="${MOTIONBRAIN_CAMERA_PROFILE_SCRIPT:-${HELPER_DIR}/apply_camera_profile.py}"
 DASHBOARD_ENV="${MOTIONBRAIN_DASHBOARD_ENV:-/etc/motionbrain/dashboard.env}"
 PERCEPTION_ENV="${MOTIONBRAIN_PERCEPTION_ENV:-/etc/motionbrain/perception.env}"
 ROS_BRIDGE_SERVICE="${MOTIONBRAIN_ROS_BRIDGE_SERVICE:-motionbrain-ros-bridge.service}"
 RECONCILE_ROS_BRIDGE="${MOTIONBRAIN_RECONCILE_ROS_BRIDGE:-1}"
+
+for helper in "${DISCOVERY_SCRIPT}" "${CAMERA_PROFILE_SCRIPT}"; do
+  if [[ ! -r "${helper}" ]]; then
+    echo "Missing MotionBrain reconcile helper: ${helper}" >&2
+    exit 1
+  fi
+done
 
 if [[ -f "${DASHBOARD_ENV}" ]]; then
   set -a
@@ -63,7 +73,7 @@ discover_device_url() {
     discovery_args+=(--cidr "${MOTIONBRAIN_DISCOVERY_CIDR}")
   fi
 
-  "${DISCOVERY_PYTHON}" "${REPO}/tools/raspi/discover_device_url.py" "${discovery_args[@]}" 2>/dev/null || true
+  "${DISCOVERY_PYTHON}" "${DISCOVERY_SCRIPT}" "${discovery_args[@]}" 2>/dev/null || true
 }
 
 json_field() {
@@ -149,7 +159,7 @@ if [[ -n "${camera_url}" && "${MOTIONBRAIN_CAMERA_PROFILE:-1}" != "0" ]]; then
     --quality "${CAMERA_QUALITY}"
     --timeout "${MOTIONBRAIN_CAMERA_PROFILE_TIMEOUT:-3.0}"
   )
-  if camera_profile_result="$("${CAMERA_PROFILE_PYTHON}" "${REPO}/tools/raspi/apply_camera_profile.py" "${profile_args[@]}" 2>/dev/null)"; then
+  if camera_profile_result="$("${CAMERA_PROFILE_PYTHON}" "${CAMERA_PROFILE_SCRIPT}" "${profile_args[@]}" 2>/dev/null)"; then
     if [[ "${camera_profile_result}" == "updated" ]]; then
       restart_needed=1
       add_restart_service motionbrain-perception.service

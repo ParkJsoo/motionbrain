@@ -6,6 +6,9 @@
 
 This bench run validates one absolute-position feedback loop on the M4 shoulder.
 It does not claim position feedback on the other four joints or full-arm closed-loop control.
+The matrix-proven target range in this note is 230-245 deg. The later
+122.08-301.02 deg setting is only a provisional current-posture soft range for
+the current elbow/wrist/gripper posture, not an equivalently validated range.
 
 ## Hardware path
 
@@ -273,7 +276,9 @@ out intermittent wiring, pull-up, or sensor-module faults.
   requires boot-strap discipline. GPIO0 must not be held LOW at reset, and boot
   and upload regression must be repeated after wiring changes.
 - The `-24.35 deg` mount offset is valid only for the current fixed mount and must be recalibrated after remounting.
-- Only a narrow, supervised shoulder range has been calibrated.
+- Only the 230-245 deg matrix target range has been validated. 122.08-301.02 deg
+  is only a provisional current-posture soft range for the current
+  elbow/wrist/gripper posture, not an equivalently validated range.
 - Directional stop-lead values need repeated trials across load and battery-voltage conditions.
 - The two complete repeatability runs used the same current mount and no-added-load
   condition. The final controller was rerun 11/11 both without load and at

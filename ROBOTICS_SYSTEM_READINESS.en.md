@@ -11,8 +11,9 @@ MotionBrain is strongest as a real-hardware robotics integration project:
 
 - ESP32 firmware drives five DC motor axes through TB6612FNG drivers.
 - The M4 shoulder alone has physically validated AS5600 absolute I2C feedback
-  and bounded closed-loop targets. Other axes have no position feedback, and
-  physical `ros2_control` writes remain disabled.
+  and bounded closed-loop targets in the matrix-proven 230-245 deg range. Other
+  axes have no position feedback, and physical `ros2_control` writes remain
+  disabled.
 - STM32F446 firmware publishes structured sensor and teleoperation frames.
 - Raspberry Pi hosts dashboard, perception, and ROS2 Jazzy bridge processes.
 - ROS2 packages expose typed status, event, detection, kinematics, guard,

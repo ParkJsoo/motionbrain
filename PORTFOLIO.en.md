@@ -202,10 +202,10 @@ Current honest positioning:
   or physical closed-loop `ros2_control` path.
 - M4 GPIO0/GPIO15 is the supported allocation under the current pin budget but
   requires boot-strap discipline. The sensor and magnet are mechanically
-  secured; ROS zero is `222.80 deg` with sign `+1`. The 230-245 deg range remains
-  the strongest validated range, while `122.08-301.02 deg` is a provisional
-  current-posture soft range that must be revalidated for other postures,
-  mounting changes, and loads.
+  secured; ROS zero is `222.80 deg` with sign `+1`. The 230-245 deg range is the
+  matrix-proven target range, while `122.08-301.02 deg` is only a provisional
+  current-posture soft range. It is not equivalently validated and must be
+  revalidated for other postures, mounting changes, and loads.
 - Physical guarded routine `run/execute` remains disabled because
   `base_yaw_reference` is not installed. The ROS2 routine service/action surface
   is limited to status, dry-run, and expected rejection behavior.

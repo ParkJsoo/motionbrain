@@ -2,6 +2,8 @@
 Description=MotionBrain Pi dashboard
 Wants=network-online.target motionbrain-perception.service
 After=network-online.target motionbrain-perception.service
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -13,6 +15,25 @@ Restart=on-failure
 RestartSec=5
 TimeoutStopSec=15
 KillSignal=SIGINT
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0077
+TasksMax=128
+MemoryMax=512M
+LimitNOFILE=16384
 
 [Install]
 WantedBy=multi-user.target

@@ -191,9 +191,9 @@ Pi에서 OpenCV DNN/ONNX 기반 constrained known-object detection 경로는 구
   위치 피드백이 없고 전체 관절 절대 위치나 `ros2_control` 물리 폐루프는 없다.
 - M4 GPIO0/GPIO15는 현재 핀 점유에서 유지하는 지원 배치지만 부트 스트랩
   조건을 준수해야 한다. 센서·자석 고정은 완료했고 ROS zero는 `222.80°`,
-  sign `+1`로 적용했다. `230-245°`는 가장 강한 검증 범위이고,
-  `122.08-301.02°`는 현재 자세 조건부 provisional soft range이므로 다른 자세,
-  장착, 하중에서는 다시 검증해야 한다.
+  sign `+1`로 적용했다. `230-245°`는 matrix로 검증한 목표 범위이고,
+  `122.08-301.02°`는 현재 자세 조건부 임시 소프트 범위다. 이 넓은 범위는
+  동등하게 검증된 범위가 아니며 다른 자세, 장착, 하중에서는 다시 검증해야 한다.
 - `base_yaw_reference`가 설치되지 않아 physical guarded routine `run/execute`는
   비활성화되어 있다. ROS2 routine service/action은 status, dry-run, expected
   rejection 경계까지만 주장한다.

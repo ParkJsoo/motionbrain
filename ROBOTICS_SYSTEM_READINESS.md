@@ -10,9 +10,9 @@
 MotionBrain의 강점은 실제 하드웨어를 붙여 운영한 로보틱스 통합 프로젝트라는 점이다.
 
 - ESP32 펌웨어가 TB6612FNG 드라이버를 통해 5축 DC 모터 출력을 담당한다.
-- M4 어깨 한 축은 AS5600 절대각 I2C 피드백과 제한 폐루프 목표각 제어를
-  실물에서 검증했다. 나머지 축에는 위치 피드백이 없고 `ros2_control` 물리
-  write 경로는 비활성화되어 있다.
+- M4 어깨 한 축은 AS5600 절대각 I2C 피드백과 230-245° matrix 검증 목표
+  범위의 제한 폐루프 제어를 실물에서 검증했다. 나머지 축에는 위치 피드백이
+  없고 `ros2_control` 물리 write 경로는 비활성화되어 있다.
 - STM32F446 펌웨어가 구조화된 센서/텔레오퍼레이션 프레임을 보낸다.
 - Raspberry Pi가 dashboard, perception, ROS2 Jazzy bridge 프로세스를 운영한다.
 - ROS2 패키지는 typed status, event, detection, kinematics, guard, mission,

@@ -312,6 +312,19 @@ INDEX_HTML = """<!doctype html>
       opacity: 0.48;
       cursor: not-allowed;
     }
+    input {
+      min-height: 38px;
+      min-width: 220px;
+      padding: 9px 10px;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      background: #0b111a;
+      color: var(--text);
+      font: inherit;
+    }
+    input::placeholder {
+      color: var(--faint);
+    }
     table {
       width: 100%;
       border-collapse: collapse;
@@ -515,6 +528,12 @@ INDEX_HTML = """<!doctype html>
             </div>
           </div>
           <div class="controls">
+            <input id="dashboardTokenInput" type="password" autocomplete="off" placeholder="Dashboard token">
+            <button onclick="saveDashboardToken()">Set Token</button>
+            <button onclick="clearDashboardToken()">Clear</button>
+          </div>
+          <div class="subvalue" id="dashboardAuthState">dashboard token not set</div>
+          <div class="controls">
             <button class="primary" onclick="sendLight('toggle')">Toggle Light</button>
             <button onclick="sendLight('on')">Light On</button>
             <button onclick="sendLight('off')">Light Off</button>
@@ -541,15 +560,70 @@ INDEX_HTML = """<!doctype html>
     let lastStatus = null;
     let lastDetection = null;
     let dashboardConfig = null;
+    let dashboardAuthToken = sessionStorage.getItem("motionbrainDashboardToken") || "";
+
+    function hydrateDashboardTokenFromHash() {
+      if (!window.location.hash) return;
+      const params = new URLSearchParams(window.location.hash.slice(1));
+      const token = params.get("token") || params.get("dashboardToken");
+      if (!token) return;
+      dashboardAuthToken = token;
+      sessionStorage.setItem("motionbrainDashboardToken", token);
+      history.replaceState(null, "", window.location.pathname + window.location.search);
+    }
 
     function dashboardHeaders() {
-      if (!dashboardConfig || !dashboardConfig.dashboardToken) {
-        throw new Error("dashboard token unavailable");
+      if (!dashboardAuthToken) {
+        throw new Error("dashboard token required");
       }
       return {
         "Content-Type": "application/json",
-        "X-Dashboard-Token": dashboardConfig.dashboardToken,
+        "X-Dashboard-Token": dashboardAuthToken,
       };
+    }
+
+    function updateDashboardAuthState() {
+      const input = document.getElementById("dashboardTokenInput");
+      const state = document.getElementById("dashboardAuthState");
+      if (input && dashboardAuthToken) input.placeholder = "Dashboard token stored";
+      if (input && !dashboardAuthToken) input.placeholder = "Dashboard token";
+      if (!state) return;
+      const cfg = dashboardConfig || {};
+      if (cfg.dashboardAuthConfigured === false) {
+        state.textContent = "server dashboard token not configured; POST endpoints disabled";
+      } else if (dashboardAuthToken) {
+        state.textContent = "dashboard token stored for this browser session";
+      } else {
+        state.textContent = "dashboard token required for POST endpoints";
+      }
+    }
+
+    function saveDashboardToken() {
+      const input = document.getElementById("dashboardTokenInput");
+      const token = input ? input.value.trim() : "";
+      if (!token) {
+        pushLog("dashboard token unchanged: empty input");
+        updateDashboardAuthState();
+        return;
+      }
+      dashboardAuthToken = token;
+      sessionStorage.setItem("motionbrainDashboardToken", token);
+      if (input) input.value = "";
+      updateDashboardAuthState();
+      updateAlignActionState();
+      updateCupPlanState();
+      pushLog("dashboard token stored for this session");
+    }
+
+    function clearDashboardToken() {
+      dashboardAuthToken = "";
+      sessionStorage.removeItem("motionbrainDashboardToken");
+      const input = document.getElementById("dashboardTokenInput");
+      if (input) input.value = "";
+      updateDashboardAuthState();
+      updateAlignActionState();
+      updateCupPlanState();
+      pushLog("dashboard token cleared");
     }
 
     function setText(id, value, className) {
@@ -799,8 +873,11 @@ INDEX_HTML = """<!doctype html>
       const base = status.baseAngle || {};
       const detection = lastDetection || {};
       const alignment = detection.alignment || "LOST";
+      if (!dashboardAuthToken) {
+        return { ok: false, reason: "dashboard token missing" };
+      }
       if (!dashboardConfig || !dashboardConfig.hasHttpToken) {
-        return { ok: false, reason: "token missing" };
+        return { ok: false, reason: "controller token missing" };
       }
       if (status.state !== "ARMED") {
         return { ok: false, reason: `state ${status.state || "-"}` };
@@ -841,8 +918,11 @@ INDEX_HTML = """<!doctype html>
       const requiredTarget = String(cfg.graspTargetLabel || "cup").trim().toLowerCase();
       const confidence = typeof detection.confidence === "number" ? detection.confidence : null;
       const minConfidence = typeof cfg.graspMinConfidence === "number" ? cfg.graspMinConfidence : 0.5;
+      if (!dashboardAuthToken) {
+        return { ok: false, reason: "dashboard token missing" };
+      }
       if (!cfg.hasHttpToken) {
-        return { ok: false, reason: "token missing" };
+        return { ok: false, reason: "controller token missing" };
       }
       if (status.state !== "ARMED") {
         return { ok: false, reason: `state ${status.state || "-"}` };
@@ -889,6 +969,7 @@ INDEX_HTML = """<!doctype html>
         dashboardConfig = config;
         document.getElementById("motionTarget").textContent = `motion: ${config.motionBaseUrl}`;
         document.getElementById("cameraTarget").textContent = `camera: ${config.cameraUrl || "disabled"}`;
+        updateDashboardAuthState();
         updateAlignActionState();
         updateCupPlanState();
       } catch (err) {
@@ -978,6 +1059,8 @@ INDEX_HTML = """<!doctype html>
     window.addEventListener("resize", () => {
       if (lastDetection) setTargetOverlay(lastDetection);
     });
+    hydrateDashboardTokenFromHash();
+    updateDashboardAuthState();
     refresh();
     refreshVision();
     setInterval(() => {
@@ -1158,10 +1241,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
     server: "DashboardServer"
 
     def log_message(self, fmt: str, *args: object) -> None:
-        message = fmt % args
-        if message.startswith('"GET /') and '" 200 ' in message:
+        status = str(args[1]) if len(args) >= 2 else ""
+        parsed = urllib.parse.urlparse(getattr(self, "path", ""))
+        path = parsed.path or "-"
+        if parsed.query:
+            path = f"{path}?<redacted>"
+        if getattr(self, "command", "") == "GET" and status == "200":
             return
-        sys.stderr.write(f"[dashboard] {self.address_string()} {message}\n")
+        method = getattr(self, "command", "-")
+        sys.stderr.write(f"[dashboard] {self.address_string()} {method} {path} {status}\n")
 
     def do_GET(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
@@ -1181,9 +1269,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     "alignPercent": self.server.align_percent,
                     "graspTargetLabel": self.server.grasp_target_label,
                     "graspMinConfidence": self.server.grasp_min_confidence,
+                    "dashboardAuthConfigured": bool(self.server.dashboard_token),
+                    "dashboardAuthRequired": True,
                 }
-                if not self.headers.get("Origin"):
-                    payload["dashboardToken"] = self.server.dashboard_token
                 self.send_json(payload, allow_cross_origin=True)
             elif parsed.path == "/api/status":
                 self.handle_status()
@@ -1222,8 +1310,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
 
     def require_dashboard_auth(self) -> bool:
-        if self.headers.get("X-Dashboard-Token", "") != self.server.dashboard_token:
-            self.send_error_json(HTTPStatus.FORBIDDEN, "dashboard_token_required")
+        expected = self.server.dashboard_token
+        provided = self.headers.get("X-Dashboard-Token", "")
+        if not expected or not provided or not secrets.compare_digest(provided, expected):
+            self.send_error_json(HTTPStatus.FORBIDDEN, "dashboard_auth_required")
             return False
         return True
 
@@ -1251,6 +1341,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def handle_light(self) -> None:
         try:
+            if not self.server.http_token:
+                self.send_error_json(HTTPStatus.FORBIDDEN, "http_token_required")
+                return
+
             body = self.read_json_body()
             action = str(body.get("action", "")).strip().lower()
             if action not in {"on", "off", "toggle"}:
@@ -1407,10 +1501,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def send_cross_origin_headers(self) -> None:
         origin = self.headers.get("Origin", "")
-        allowed_origins = {self.server.motion_base_url, "http://motionbrain.local"}
-        if self.server.motion_base_url.endswith(":80"):
-            allowed_origins.add(self.server.motion_base_url[:-3])
-        if origin in allowed_origins:
+        if origin and origin in self.server.cors_origins:
             self.send_header("Access-Control-Allow-Origin", origin)
             self.send_header("Vary", "Origin")
 
@@ -1447,6 +1538,7 @@ class DashboardServer(ThreadingHTTPServer):
         events_limit: int,
         http_token: str,
         dashboard_token: str,
+        cors_origins: set[str],
         align_nudge_ms: int,
         align_percent: int,
         grasp_target_label: str,
@@ -1461,6 +1553,7 @@ class DashboardServer(ThreadingHTTPServer):
         self.events_limit = events_limit
         self.http_token = http_token
         self.dashboard_token = dashboard_token
+        self.cors_origins = set(cors_origins)
         self.align_nudge_ms = align_nudge_ms
         self.align_percent = align_percent
         self.grasp_target_label = normalized_target_label(grasp_target_label) or "cup"
@@ -1523,6 +1616,31 @@ class DashboardServer(ThreadingHTTPServer):
         return "camera", f"{self.camera_url}/capture"
 
 
+def parse_cors_origins(value: str) -> set[str]:
+    return {origin.strip().rstrip("/") for origin in value.split(",") if origin.strip()}
+
+
+def dashboard_cors_origins(motion_base_url: str, configured_origins: set[str]) -> set[str]:
+    origins = {origin.rstrip("/") for origin in configured_origins if origin}
+    motion_origin = motion_base_url.rstrip("/")
+    if motion_origin:
+        origins.add(motion_origin)
+    if motion_origin.endswith(":80"):
+        origins.add(motion_origin[:-3])
+    origins.add("http://motionbrain.local")
+    return origins
+
+
+def is_loopback_host(host: str) -> bool:
+    normalized = host.strip().lower()
+    return normalized == "localhost" or normalized == "::1" or normalized.startswith("127.")
+
+
+def is_placeholder_token(token: str) -> bool:
+    stripped = token.strip()
+    return not stripped or stripped.startswith("CHANGE_ME")
+
+
 def run(args: argparse.Namespace) -> int:
     motion_base_url = f"http://{args.motion_host}:{args.motion_port}"
     server = DashboardServer(
@@ -1536,6 +1654,7 @@ def run(args: argparse.Namespace) -> int:
         args.events_limit,
         args.http_token,
         args.dashboard_token,
+        dashboard_cors_origins(motion_base_url, args.cors_origins),
         args.align_nudge_ms,
         args.align_percent,
         args.grasp_target_label,
@@ -1545,7 +1664,10 @@ def run(args: argparse.Namespace) -> int:
     print(f"motion={motion_base_url}")
     print(f"camera={args.camera_url or 'disabled'}")
     print(f"perception={args.perception_url or 'local'}")
-    print(f"dashboard_token={args.dashboard_token}")
+    auth_state = "enabled" if args.dashboard_token else "disabled (POST endpoints reject requests)"
+    print(f"dashboard_auth={auth_state}")
+    if args.cors_origins:
+        print(f"cors_origins={','.join(sorted(args.cors_origins))}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -1572,7 +1694,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--dashboard-token",
         default=os.environ.get("MOTIONBRAIN_DASHBOARD_TOKEN", ""),
-        help="Local dashboard POST token; generated on startup when omitted",
+        help="Local dashboard POST token; required when binding outside loopback",
+    )
+    parser.add_argument(
+        "--cors-origins",
+        default=os.environ.get("MOTIONBRAIN_DASHBOARD_CORS_ORIGINS", ""),
+        help="Comma-separated Origin allowlist for read-only dashboard proxy responses",
     )
     parser.add_argument("--align-nudge-ms", type=int, default=250, help="Dashboard vision nudge duration in milliseconds")
     parser.add_argument("--align-percent", type=int, default=25, help="Dashboard vision nudge base speed percent")
@@ -1588,8 +1715,10 @@ def parse_args() -> argparse.Namespace:
         help="Minimum selected-target confidence for the dry-run grasp plan",
     )
     args = parser.parse_args()
-    if not args.dashboard_token:
-        args.dashboard_token = secrets.token_urlsafe(24)
+    args.dashboard_token = args.dashboard_token.strip()
+    args.cors_origins = parse_cors_origins(args.cors_origins)
+    if not is_loopback_host(args.host) and is_placeholder_token(args.dashboard_token):
+        parser.error("--dashboard-token must be set to a non-placeholder value when --host is not loopback")
     if args.align_nudge_ms < 50 or args.align_nudge_ms > 2000:
         parser.error("--align-nudge-ms must be between 50 and 2000")
     if args.align_percent < 1 or args.align_percent > 100:
