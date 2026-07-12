@@ -1,0 +1,9 @@
+string schema_version
+string command_id
+string joint
+float64 target_position_rad
+uint32 timeout_ms
+string mode
+bool forwarded
+bool operator_confirmation_required
+builtin_interfaces/Time created_at

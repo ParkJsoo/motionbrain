@@ -103,7 +103,8 @@ hardware_interface::HardwareInfo make_dry_run_hardware_info(const std::string & 
 hardware_interface::HardwareInfo make_m4_measured_hardware_info(
   const std::string & calibration_enabled = "true",
   const std::string & direction_sign = "1",
-  const std::string & extra_joint_xml = "")
+  const std::string & extra_joint_xml = "",
+  const std::string & transport_mode = "m4_state")
 {
   const std::string urdf = std::string(R"URDF(
 <robot name="motionbrain_m4_measured_test">
@@ -118,7 +119,7 @@ hardware_interface::HardwareInfo make_m4_measured_hardware_info(
   <ros2_control name="MotionBrainM4MeasuredStateSystem" type="system">
     <hardware>
       <plugin>motionbrain_hardware_interface/MotionBrainHardwareInterface</plugin>
-      <param name="transport_mode">m4_state</param>
+      <param name="transport_mode">)URDF" + transport_mode + R"URDF(</param>
       <param name="status_topic">/motionbrain/status_typed</param>
       <param name="feedback_source">m4_as5600</param>
       <param name="shoulder_feedback_calibration_enabled">)URDF") + calibration_enabled +
@@ -192,6 +193,20 @@ TEST(MotionBrainHardwareInterfaceConfig, AcceptsUncalibratedM4StateAsUnavailable
     hardware_interface::CallbackReturn::SUCCESS,
     hardware.on_init(params));
   EXPECT_TRUE(hardware.export_command_interfaces().empty());
+}
+
+TEST(MotionBrainHardwareInterfaceConfig, AcceptsM4ProposalWithoutPhysicalForwarding)
+{
+  motionbrain_hardware_interface::MotionBrainHardwareInterface hardware;
+  hardware_interface::HardwareComponentInterfaceParams params;
+  params.hardware_info = make_m4_measured_hardware_info(
+    "true", "1", "      <command_interface name=\"position\"/>\n", "m4_proposal");
+
+  ASSERT_EQ(
+    hardware_interface::CallbackReturn::SUCCESS,
+    hardware.on_init(params));
+  EXPECT_EQ(2u, hardware.export_state_interfaces().size());
+  EXPECT_EQ(1u, hardware.export_command_interfaces().size());
 }
 
 TEST(MotionBrainHardwareInterfaceConfig, RejectsInvalidM4DirectionSign)

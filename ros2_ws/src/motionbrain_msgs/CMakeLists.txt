@@ -17,6 +17,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/KinematicsState.msg"
   "msg/LightCommand.msg"
   "msg/LightResult.msg"
+  "msg/M4WriteProposal.msg"
   "msg/MissionCommand.msg"
   "msg/MissionState.msg"
   "msg/NodeLifecycleStatus.msg"

@@ -38,6 +38,7 @@ EXPECTED_MESSAGE_FILES = {
     "KinematicsState.msg",
     "LightCommand.msg",
     "LightResult.msg",
+    "M4WriteProposal.msg",
     "MissionCommand.msg",
     "MissionState.msg",
     "NodeLifecycleStatus.msg",
@@ -1129,12 +1130,17 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
             "shoulder_feedback_calibration_enabled_",
             "state_stale_timeout_sec_",
             "handle_motion_status",
-            "Physical actuation remains behind the firmware SafetyGate",
+            "This interface never POSTs to the ESP32",
             "PLUGINLIB_EXPORT_CLASS",
         ]
         for fragment in expected_fragments:
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, header_text + source_text)
+
+        self.assertIn("m4_write_proposal", header_text)
+        self.assertIn('kProposalTransportMode = "m4_proposal"', source_text)
+        self.assertIn("proposal.forwarded = false", source_text)
+        self.assertIn("proposal.operator_confirmation_required = true", source_text)
 
         self.assertIn("pluginlib_export_plugin_description_file", cmake_text)
         self.assertIn("motionbrain_hardware_interface/MotionBrainHardwareInterface", plugin_text)

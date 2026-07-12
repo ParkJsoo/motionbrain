@@ -11,6 +11,7 @@
 #include "hardware_interface/types/hardware_component_interface_params.hpp"
 #include "hardware_interface/types/hardware_interface_return_values.hpp"
 #include "motionbrain_msgs/msg/motion_status.hpp"
+#include "motionbrain_msgs/msg/m4_write_proposal.hpp"
 #include "rclcpp/duration.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp/time.hpp"
@@ -64,8 +65,12 @@ private:
   bool validate_joint_contract() const;
   bool validate_dry_run_joint_contract() const;
   bool validate_state_only_joint_contract() const;
+  bool validate_m4_proposal_joint_contract() const;
   bool state_only_mode() const;
+  bool measured_m4_mode() const;
+  bool proposal_mode() const;
   void configure_state_only_subscription();
+  void configure_proposal_publisher();
   void reset_state_only_subscription();
   void handle_motion_status(const motionbrain_msgs::msg::MotionStatus & message);
   void set_state_only_interfaces_unavailable();
@@ -86,6 +91,7 @@ private:
   std::string controller_url_;
   std::string transport_mode_{"dry_run"};
   std::string status_topic_{"/motionbrain/status_typed"};
+  std::string proposal_topic_{"/motionbrain/m4_write_proposal"};
   std::string feedback_source_{"m4_as5600"};
   bool shoulder_feedback_calibration_enabled_{false};
   double shoulder_sensor_zero_deg_{0.0};
@@ -93,8 +99,10 @@ private:
   double shoulder_ros_joint_zero_rad_{0.0};
   double state_stale_timeout_sec_{2.0};
   rclcpp::Subscription<motionbrain_msgs::msg::MotionStatus>::SharedPtr status_subscription_;
+  rclcpp::Publisher<motionbrain_msgs::msg::M4WriteProposal>::SharedPtr proposal_publisher_;
   std::mutex state_cache_mutex_;
   bool state_cache_has_sample_{false};
+  uint64_t proposal_sequence_{0};
   double cached_shoulder_position_{0.0};
   double cached_shoulder_velocity_{0.0};
   std::chrono::steady_clock::time_point cached_shoulder_time_;

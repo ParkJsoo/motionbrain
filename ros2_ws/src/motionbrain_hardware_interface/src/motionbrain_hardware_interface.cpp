@@ -18,6 +18,7 @@ constexpr std::size_t kDryRunJointCount = 5;
 constexpr std::size_t kStateOnlyJointCount = 1;
 constexpr const char * kDryRunTransportMode = "dry_run";
 constexpr const char * kStateTransportMode = "m4_state";
+constexpr const char * kProposalTransportMode = "m4_proposal";
 constexpr const char * kLegacyStateTransportMode = "state";
 constexpr const char * kM4StateJointName = "shoulder_pitch_joint";
 constexpr const char * kM4FeedbackSourceParam = "feedback_source";
@@ -156,14 +157,16 @@ hardware_interface::CallbackReturn MotionBrainHardwareInterface::on_init(
   if (transport_mode_ == kLegacyStateTransportMode) {
     transport_mode_ = kStateTransportMode;
   }
-  if (transport_mode_ != kDryRunTransportMode && transport_mode_ != kStateTransportMode) {
+  if (transport_mode_ != kDryRunTransportMode && transport_mode_ != kStateTransportMode &&
+    transport_mode_ != kProposalTransportMode)
+  {
     return hardware_interface::CallbackReturn::ERROR;
   }
 
   command_timeout_sec_ = parse_double_parameter(info_, "command_timeout_sec", 1.0);
   max_state_step_rad_ = parse_double_parameter(info_, "max_state_step_rad", 0.1);
 
-  if (state_only_mode()) {
+  if (measured_m4_mode()) {
     const auto status_topic = info_.hardware_parameters.find("status_topic");
     if (status_topic != info_.hardware_parameters.end() && !status_topic->second.empty()) {
       status_topic_ = status_topic->second;
@@ -213,6 +216,10 @@ hardware_interface::CallbackReturn MotionBrainHardwareInterface::on_init(
         state_stale_timeout_sec_))
     {
       return hardware_interface::CallbackReturn::ERROR;
+    }
+    const auto proposal_topic = info_.hardware_parameters.find("proposal_topic");
+    if (proposal_topic != info_.hardware_parameters.end() && !proposal_topic->second.empty()) {
+      proposal_topic_ = proposal_topic->second;
     }
   }
 
@@ -284,10 +291,13 @@ MotionBrainHardwareInterface::export_command_interfaces()
 hardware_interface::CallbackReturn MotionBrainHardwareInterface::on_configure(
   const rclcpp_lifecycle::State &)
 {
-  if (state_only_mode()) {
+  if (measured_m4_mode()) {
     set_state_only_interfaces_unavailable();
     try {
       configure_state_only_subscription();
+      if (proposal_mode()) {
+        configure_proposal_publisher();
+      }
     } catch (const std::runtime_error &) {
       return hardware_interface::CallbackReturn::ERROR;
     }
@@ -307,7 +317,7 @@ hardware_interface::CallbackReturn MotionBrainHardwareInterface::on_activate(
   if (!configured_) {
     return hardware_interface::CallbackReturn::ERROR;
   }
-  if (state_only_mode()) {
+  if (measured_m4_mode()) {
     set_state_only_interfaces_unavailable();
   } else {
     hold_current_position();
@@ -321,7 +331,7 @@ hardware_interface::CallbackReturn MotionBrainHardwareInterface::on_deactivate(
   const rclcpp_lifecycle::State &)
 {
   active_ = false;
-  if (state_only_mode()) {
+  if (measured_m4_mode()) {
     set_state_only_interfaces_unavailable();
   } else {
     hold_current_position();
@@ -360,7 +370,7 @@ hardware_interface::return_type MotionBrainHardwareInterface::read(
   const rclcpp::Time &,
   const rclcpp::Duration & period)
 {
-  if (state_only_mode()) {
+  if (measured_m4_mode()) {
     if (!active_) {
       set_state_only_interfaces_unavailable();
       return hardware_interface::return_type::OK;
@@ -399,11 +409,31 @@ hardware_interface::return_type MotionBrainHardwareInterface::write(
     return hardware_interface::return_type::ERROR;
   }
 
-  // This scaffold intentionally does not POST to the ESP32 motion controller.
-  // Physical actuation remains behind the firmware SafetyGate and operator UI.
+  // This interface never POSTs to the ESP32. Proposal mode only emits a typed,
+  // non-forwarded request for a separate one-shot confirmation executor.
   (void)controller_url_;
-  (void)transport_mode_;
   if (commands_ != accepted_commands_) {
+    if (proposal_mode()) {
+      std::lock_guard<std::mutex> lock(state_cache_mutex_);
+      const auto now = std::chrono::steady_clock::now();
+      const std::chrono::duration<double> age = now - cached_shoulder_time_;
+      if (!state_cache_has_sample_ || age.count() > state_stale_timeout_sec_ ||
+        !std::isfinite(cached_shoulder_position_) || !proposal_publisher_)
+      {
+        return hardware_interface::return_type::ERROR;
+      }
+      motionbrain_msgs::msg::M4WriteProposal proposal;
+      proposal.schema_version = "motionbrain.m4_write_proposal.v1";
+      proposal.command_id = "ros2-control-" + std::to_string(++proposal_sequence_);
+      proposal.joint = kM4StateJointName;
+      proposal.target_position_rad = commands_.front();
+      proposal.timeout_ms = 10000;
+      proposal.mode = "proposal";
+      proposal.forwarded = false;
+      proposal.operator_confirmation_required = true;
+      proposal.created_at = get_node()->now();
+      proposal_publisher_->publish(proposal);
+    }
     accepted_commands_ = commands_;
     last_command_change_time_ = std::chrono::steady_clock::now();
   }
@@ -437,6 +467,9 @@ bool MotionBrainHardwareInterface::validate_joint_contract() const
   }
   if (transport_mode_ == kStateTransportMode) {
     return validate_state_only_joint_contract();
+  }
+  if (transport_mode_ == kProposalTransportMode) {
+    return validate_m4_proposal_joint_contract();
   }
   return false;
 }
@@ -513,9 +546,46 @@ bool MotionBrainHardwareInterface::validate_state_only_joint_contract() const
   return has_position_state && has_velocity_state;
 }
 
+bool MotionBrainHardwareInterface::validate_m4_proposal_joint_contract() const
+{
+  if (info_.joints.size() != kStateOnlyJointCount || proposal_topic_.empty()) {
+    return false;
+  }
+  const auto feedback_source = info_.hardware_parameters.find(kM4FeedbackSourceParam);
+  if (feedback_source == info_.hardware_parameters.end() ||
+    feedback_source->second != kM4FeedbackSource || feedback_source_ != kM4FeedbackSource ||
+    status_topic_.empty())
+  {
+    return false;
+  }
+  const auto & joint = info_.joints.front();
+  if (joint.name != kM4StateJointName || joint.command_interfaces.size() != 1 ||
+    joint.command_interfaces[0].name != hardware_interface::HW_IF_POSITION)
+  {
+    return false;
+  }
+  const auto has_state = [&joint](const std::string & name) {
+      return std::any_of(
+        joint.state_interfaces.begin(), joint.state_interfaces.end(),
+        [&name](const auto & state_interface) {return state_interface.name == name;});
+    };
+  return has_state(hardware_interface::HW_IF_POSITION) &&
+         has_state(hardware_interface::HW_IF_VELOCITY);
+}
+
 bool MotionBrainHardwareInterface::state_only_mode() const
 {
   return transport_mode_ == kStateTransportMode;
+}
+
+bool MotionBrainHardwareInterface::measured_m4_mode() const
+{
+  return state_only_mode() || proposal_mode();
+}
+
+bool MotionBrainHardwareInterface::proposal_mode() const
+{
+  return transport_mode_ == kProposalTransportMode;
 }
 
 void MotionBrainHardwareInterface::configure_state_only_subscription()
@@ -532,9 +602,20 @@ void MotionBrainHardwareInterface::configure_state_only_subscription()
     });
 }
 
+void MotionBrainHardwareInterface::configure_proposal_publisher()
+{
+  auto node = get_node();
+  if (!node || proposal_topic_.empty()) {
+    throw std::runtime_error("M4 proposal publisher configuration is unavailable");
+  }
+  proposal_publisher_ = node->create_publisher<motionbrain_msgs::msg::M4WriteProposal>(
+    proposal_topic_, rclcpp::QoS(10));
+}
+
 void MotionBrainHardwareInterface::reset_state_only_subscription()
 {
   status_subscription_.reset();
+  proposal_publisher_.reset();
   std::lock_guard<std::mutex> lock(state_cache_mutex_);
   state_cache_has_sample_ = false;
   cached_shoulder_position_ = unavailable_state();
