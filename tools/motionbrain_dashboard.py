@@ -1542,7 +1542,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             plan = build_grasp_dry_run_plan(
                 detection,
                 target_label=self.server.grasp_target_label,
-                min_confidence=POLICY_MIN_CONFIDENCE,
+                min_confidence=self.server.grasp_min_confidence,
             )
             if not plan.get("ok"):
                 self.send_json(plan, HTTPStatus.CONFLICT)
@@ -1607,7 +1607,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 detection,
                 instruction=instruction,
                 target_label=self.server.grasp_target_label,
-                min_confidence=self.server.grasp_min_confidence,
+                min_confidence=POLICY_MIN_CONFIDENCE,
             )
             self.send_json(payload)
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError, OSError) as exc:

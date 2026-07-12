@@ -143,6 +143,35 @@ class DashboardSecurityTest(unittest.TestCase):
         self.assertFalse(payload["executionAvailable"])
         post_motionbrain.assert_not_called()
 
+    def test_policy_endpoint_does_not_reuse_lower_grasp_threshold(self) -> None:
+        status_payload = {
+            "state": "ARMED",
+            "sensor": {"blocked": False, "faultLatched": False},
+            "baseAngle": {"active": False},
+            "motors": {},
+        }
+        detection_payload = {
+            "available": True,
+            "detected": True,
+            "fresh": True,
+            "held": False,
+            "label": "cup",
+            "confidence": 0.4,
+            "alignment": "RIGHT",
+        }
+        with self.running_server() as server:
+            server.grasp_min_confidence = 0.25
+            server.get_detection = lambda: detection_payload  # type: ignore[method-assign]
+            with patch.object(dashboard, "fetch_json", return_value=status_payload):
+                status, _headers, payload = self.request_json(
+                    server,
+                    "/api/policy_proposal?instruction=center%20cup",
+                )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["action"], "ask_operator")
+        self.assertEqual(payload["reason"], "confidence_below_threshold")
+
     def test_policy_proposal_rejects_oversized_instruction_without_fetching(self) -> None:
         with self.running_server() as server:
             with patch.object(dashboard, "fetch_json") as fetch:
