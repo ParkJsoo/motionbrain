@@ -113,6 +113,7 @@ bool MotionBrainWebServer::init(SystemStateManager* systemState, MotorControl* m
   server_.on("/motor", HTTP_POST, [this]() { this->handleMotor(); });
   server_.on("/joint", HTTP_POST, [this]() { this->handleJoint(); });
   server_.on("/base", HTTP_POST, [this]() { this->handleBase(); });
+  server_.on("/shoulder", HTTP_POST, [this]() { this->handleShoulder(); });
   server_.on("/sequence", HTTP_POST, [this]() { this->handleSequence(); });
   server_.on("/sequence", HTTP_GET,  [this]() { this->handleSequenceStatus(); });
   server_.on("/routine", HTTP_POST,  [this]() { this->handleRoutine(); });
@@ -140,6 +141,7 @@ bool MotionBrainWebServer::init(SystemStateManager* systemState, MotorControl* m
   DebugLog::debug("  POST /motor    -> Motor control");
   DebugLog::debug("  POST /joint     -> Joint control");
   DebugLog::debug("  POST /base      -> Base angle control");
+  DebugLog::debug("  POST /shoulder  -> M4 absolute angle control");
   DebugLog::debug("  POST /sequence  -> Sequence control");
   DebugLog::debug("  GET  /sequence  -> Sequence status");
   DebugLog::debug("  POST /routine   -> Guarded routine dry-run");
@@ -1487,6 +1489,59 @@ void MotionBrainWebServer::handleBase() {
     result,
     String("\"baseAngleActive\":") + (angleController.isActive() ? "true" : "false") +
       ",\"baseAngleReason\":\"" + angleController.getLastStopReasonString() + "\"");
+}
+
+void MotionBrainWebServer::handleShoulder() {
+  DebugLog::debug("Web Server: POST /shoulder requested");
+  if (!requireCommandAuth()) {
+    return;
+  }
+
+  const String action = server_.arg("action");
+  Command command;
+  command.source = CommandSource::WEB_INPUT;
+  command.joint = MotionJoint::SHOULDER;
+
+  if (action == "stop") {
+    command.type = CommandType::JOINT_STOP;
+  } else if (action == "angle") {
+    const String degreesStr = server_.arg("degrees");
+    const String percentStr = server_.arg("percent");
+    if (degreesStr.length() == 0) {
+      sendErrorJson(400, "Missing degrees");
+      return;
+    }
+    const float degrees = degreesStr.toFloat();
+    if (!isfinite(degrees) || degrees < ShoulderAngleController::SOFT_MIN_DEGREES ||
+      degrees > ShoulderAngleController::SOFT_MAX_DEGREES)
+    {
+      sendErrorJson(400, "Shoulder target outside soft limits", degreesStr);
+      return;
+    }
+    int percent = ShoulderAngleController::MIN_DRIVE_PERCENT;
+    if (percentStr.length() > 0) {
+      percent = percentStr.toInt();
+    }
+    if (percent < ShoulderAngleController::MIN_DRIVE_PERCENT || percent > 100) {
+      sendErrorJson(400, "Shoulder percent outside allowed range", percentStr);
+      return;
+    }
+    command.type = CommandType::SHOULDER_ANGLE_RUN;
+    command.targetDegrees = degrees;
+    command.percent = static_cast<uint8_t>(percent);
+  } else {
+    sendErrorJson(400, "Unknown action (angle/stop)", action);
+    return;
+  }
+
+  CommandResult result;
+  submitCommand(command, result);
+  sendCommandResult(
+    result,
+    String("\"shoulderAngleActive\":") +
+      (shoulderAngleController.isActive() ? "true" : "false") +
+      ",\"shoulderAngleReason\":\"" +
+      shoulderAngleController.getLastStopReasonString() + "\"");
 }
 
 /**

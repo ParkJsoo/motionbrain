@@ -157,6 +157,7 @@ private:
    * base 상대각 제어 및 정지
    */
   void handleBase();
+  void handleShoulder();
 
   /**
    * POST /sequence 처리

@@ -98,6 +98,9 @@ class ShoulderClosedLoopContractTest(unittest.TestCase):
         dashboard = (ROOT / "tools" / "motionbrain_dashboard.py").read_text()
 
         self.assertIn("extern ShoulderAngleController shoulderAngleController", web)
+        self.assertIn('server_.on("/shoulder", HTTP_POST', web)
+        self.assertIn("requireCommandAuth()", web[web.index("void MotionBrainWebServer::handleShoulder"):])
+        self.assertIn("CommandType::SHOULDER_ANGLE_RUN", web)
         self.assertGreaterEqual(web.count("appendShoulderStatusJson"), 2)
         for fragment in {
             "M4 Shoulder Feedback",
