@@ -9,6 +9,11 @@ from http.server import BaseHTTPRequestHandler
 from http.server import ThreadingHTTPServer
 from typing import Any
 
+from motionbrain_ros_bridge.m4_write_contract import M4ContractError
+from motionbrain_ros_bridge.m4_write_contract import rejection_payload
+from motionbrain_ros_bridge.m4_write_contract import ros_rad_from_sensor_deg
+from motionbrain_ros_bridge.m4_write_contract import validate_m4_request
+
 
 SCENARIOS = {
     "ready",
@@ -18,6 +23,9 @@ SCENARIOS = {
     "stale_detection",
     "stale_shoulder",
     "timeout_status",
+    "m4_ready",
+    "m4_target_missed",
+    "m4_timeout",
 }
 
 
@@ -234,6 +242,8 @@ def base_routine_payload() -> dict[str, Any]:
 
 def status_payload_for_scenario(scenario: str) -> dict[str, Any]:
     payload = base_status_payload()
+    if scenario.startswith("m4_"):
+        payload["state"] = "ARMED"
     if scenario == "controller_fault":
         payload["state"] = "FAULT"
         payload["sensor"]["faultLatched"] = True
@@ -406,7 +416,65 @@ class FakeMotionBrainRequestHandler(BaseHTTPRequestHandler):
                 }
             )
             return
+        if path == "/m4/target":
+            self.handle_m4_target()
+            return
         self.send_json({"ok": False, "error": "not_found", "path": path}, status=404)
+
+    def handle_m4_target(self) -> None:
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            request = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+            if not isinstance(request, dict):
+                raise M4ContractError("json_object_required")
+            command_id = str(request.get("commandId", ""))
+            if command_id in self.server.m4_command_ids:  # type: ignore[attr-defined]
+                raise M4ContractError("duplicate_command_id")
+            validated = validate_m4_request(request, status_payload_for_scenario(self.scenario))
+            self.server.m4_command_ids.add(command_id)  # type: ignore[attr-defined]
+            if self.scenario == "m4_timeout":
+                self.send_json(
+                    {
+                        **validated,
+                        "accepted": True,
+                        "executed": False,
+                        "forwarded": False,
+                        "simulated": True,
+                        "reason": "TIMEOUT",
+                        "stopReason": "TIMEOUT",
+                    },
+                    status=504,
+                )
+                return
+            final_deg = validated["requestedSensorDeg"]
+            stop_reason = "TARGET_REACHED"
+            executed = True
+            if self.scenario == "m4_target_missed":
+                final_deg += 1.0
+                stop_reason = "TARGET_MISSED"
+                executed = False
+            self.send_json(
+                {
+                    **validated,
+                    "accepted": True,
+                    "executed": executed,
+                    "forwarded": False,
+                    "simulated": True,
+                    "finalSensorDeg": final_deg,
+                    "finalPositionRad": ros_rad_from_sensor_deg(final_deg, config=None),
+                    "errorDeg": final_deg - validated["requestedSensorDeg"],
+                    "stopReason": stop_reason,
+                    "correctionAttempts": 0,
+                },
+                status=200 if executed else 409,
+            )
+        except M4ContractError as exc:
+            self.send_json(
+                rejection_payload(exc, str(locals().get("command_id", ""))),
+                status=409,
+            )
+        except (json.JSONDecodeError, ValueError):
+            self.send_json(rejection_payload(M4ContractError("invalid_json")), status=400)
 
 
 def make_server(
@@ -423,6 +491,7 @@ def make_server(
     server.scenario = scenario  # type: ignore[attr-defined]
     server.delay_sec = max(float(delay_sec), 0.0)  # type: ignore[attr-defined]
     server.quiet = bool(quiet)  # type: ignore[attr-defined]
+    server.m4_command_ids = set()  # type: ignore[attr-defined]
     return server
 
 

@@ -37,10 +37,21 @@ class FakeEndpointServer:
         with urllib.request.urlopen(f"{self.base_url}{path}", timeout=timeout) as response:
             return json.loads(response.read().decode("utf-8"))
 
-    def post_json(self, path: str, *, timeout: float = 1.0) -> dict:
-        request = urllib.request.Request(f"{self.base_url}{path}", method="POST")
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            return json.loads(response.read().decode("utf-8"))
+    def post_json(self, path: str, payload: dict | None = None, *, timeout: float = 1.0) -> dict:
+        data = json.dumps(payload).encode("utf-8") if payload is not None else None
+        request = urllib.request.Request(
+            f"{self.base_url}{path}",
+            method="POST",
+            data=data,
+            headers={"Content-Type": "application/json"} if data else {},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            payload = json.loads(exc.read().decode("utf-8"))
+            payload["httpStatus"] = exc.code
+            return payload
 
 
 class FakeMotionBrainEndpointTest(unittest.TestCase):
@@ -119,6 +130,43 @@ class FakeMotionBrainEndpointTest(unittest.TestCase):
         self.assertFalse(result["success"])
         self.assertFalse(result["forwarded"])
         self.assertEqual("fake_endpoint_read_only", result["error"])
+
+    def test_m4_ready_scenario_simulates_target_without_forwarding(self):
+        with FakeEndpointServer("m4_ready") as server:
+            result = server.post_json(
+                "/m4/target",
+                {
+                    "commandId": "cmd-1",
+                    "joint": "shoulder_pitch_joint",
+                    "targetPositionRad": 0.25,
+                    "timeoutMs": 5000,
+                    "confirmId": "confirm-1",
+                    "mode": "shadow",
+                },
+            )
+
+        self.assertTrue(result["accepted"])
+        self.assertTrue(result["executed"])
+        self.assertFalse(result["forwarded"])
+        self.assertTrue(result["simulated"])
+        self.assertEqual("TARGET_REACHED", result["stopReason"])
+
+    def test_m4_fake_rejects_duplicate_command_id(self):
+        request = {
+            "commandId": "duplicate",
+            "joint": "shoulder_pitch_joint",
+            "targetPositionRad": 0.25,
+            "timeoutMs": 5000,
+            "confirmId": "confirm-1",
+            "mode": "shadow",
+        }
+        with FakeEndpointServer("m4_ready") as server:
+            first = server.post_json("/m4/target", request)
+            second = server.post_json("/m4/target", request)
+
+        self.assertTrue(first["accepted"])
+        self.assertFalse(second["accepted"])
+        self.assertEqual("duplicate_command_id", second["reason"])
 
     def test_unknown_path_returns_404_json(self):
         with FakeEndpointServer("ready") as server:
