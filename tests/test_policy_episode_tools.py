@@ -119,6 +119,29 @@ class PolicyEpisodeToolsTest(unittest.TestCase):
                 entry["controlGuard"]["provenance"],
             )
 
+    def test_capture_merges_typed_snapshot_sources_before_guard_derivation(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dataset_dir = capture_policy_episodes(
+                output_root=Path(tmpdir),
+                session_name="typed_snapshot",
+                count=1,
+                interval=0,
+                required_sources=("controlGuard", "missionState", "jointState", "rosDetection"),
+                snapshot_func=lambda: {
+                    "controlGuard": {"ready": True, "derived": False},
+                    "missionState": {"state": "WAIT_CONFIRM"},
+                    "jointState": {"name": ["shoulder_pitch_joint"], "position": [0.1]},
+                    "rosDetection": {"label": "cup", "alignment": "CENTER"},
+                    "rosSnapshotMeta": {"maxAgeSec": 0.2},
+                },
+            )
+
+            entry = json.loads((dataset_dir / "episodes.jsonl").read_text(encoding="utf-8"))
+            self.assertTrue(entry["ok"])
+            self.assertFalse(entry["controlGuard"]["derived"])
+            self.assertEqual("WAIT_CONFIRM", entry["missionState"]["state"])
+            self.assertEqual([0.1], entry["jointState"]["position"])
+
     def test_policy_replay_reports_agreement_and_zero_unsafe_rate(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             dataset_dir = Path(tmpdir) / "policy_session"

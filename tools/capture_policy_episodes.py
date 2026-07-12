@@ -15,6 +15,7 @@ from typing import Callable
 
 FetchBytes = Callable[[str, float], tuple[bytes, str]]
 FetchJson = Callable[[str, float], dict[str, Any]]
+SnapshotFunc = Callable[[], dict[str, Any]]
 
 SCHEMA_VERSION = "motionbrain.policy_episode.v2"
 
@@ -83,6 +84,7 @@ def capture_policy_episodes(
     derive_control_guard: bool = True,
     fetch_bytes_func: FetchBytes = fetch_bytes,
     fetch_json_func: FetchJson = fetch_json,
+    snapshot_func: SnapshotFunc | None = None,
 ) -> Path:
     if count <= 0:
         raise ValueError("count must be positive")
@@ -166,6 +168,17 @@ def capture_policy_episodes(
             except Exception as exc:
                 sample_errors.append({"source": key, "error": str(exc)})
 
+        if snapshot_func is not None:
+            try:
+                snapshot = snapshot_func()
+                if not isinstance(snapshot, dict):
+                    raise ValueError("snapshot_not_object")
+                for key, value in snapshot.items():
+                    if key not in entry:
+                        entry[key] = value
+            except Exception as exc:
+                sample_errors.append({"source": "rosSnapshot", "error": str(exc)})
+
         if derive_control_guard and "controlGuard" not in entry:
             status = entry.get("status") if isinstance(entry.get("status"), dict) else {}
             detection = entry.get("detection") if isinstance(entry.get("detection"), dict) else {}
@@ -180,10 +193,9 @@ def capture_policy_episodes(
                 "provenance": "episode_recorder_http_snapshot",
             }
 
-        present_sources = {
-            "frame" if entry.get("frame") else "",
-            *(key for key in ("status", "detection", "controlGuard", "missionState", "policyProposal", "jointState", "events") if key in entry),
-        }
+        present_sources = set(entry)
+        if entry.get("frame"):
+            present_sources.add("frame")
         for source in required_sources:
             if source and source not in present_sources and not any(
                 error.get("source") == source for error in sample_errors
