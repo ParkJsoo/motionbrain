@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import urllib.request
 
 import rclpy
@@ -28,7 +29,7 @@ class M4WriteExecutorNode(Node):
     def __init__(self) -> None:
         super().__init__("motionbrain_m4_write_executor")
         self.declare_parameter("controller_url", "http://motionbrain.local")
-        self.declare_parameter("http_token", "")
+        self.declare_parameter("http_token", os.environ.get("MOTIONBRAIN_HTTP_TOKEN", ""))
         self.declare_parameter("http_timeout_sec", 3.0)
         self.declare_parameter("proposal_ttl_sec", 20.0)
         self.core = M4WriteExecutorCore(float(self.get_parameter("proposal_ttl_sec").value))

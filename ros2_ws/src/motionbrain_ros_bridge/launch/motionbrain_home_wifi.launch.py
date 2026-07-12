@@ -35,6 +35,7 @@ def generate_launch_description() -> LaunchDescription:
     control_guard_require_detection = LaunchConfiguration("control_guard_require_detection")
     enable_mission_supervisor = LaunchConfiguration("enable_mission_supervisor")
     mission_supervisor_autostart = LaunchConfiguration("mission_supervisor_autostart")
+    enable_m4_write_executor = LaunchConfiguration("enable_m4_write_executor")
 
     return LaunchDescription(
         [
@@ -172,6 +173,11 @@ def generate_launch_description() -> LaunchDescription:
                 default_value="true",
                 description="Automatically configure and activate the mission supervisor lifecycle node.",
             ),
+            DeclareLaunchArgument(
+                "enable_m4_write_executor",
+                default_value="true",
+                description="Start the operator-confirmed M4 proposal executor.",
+            ),
             Node(
                 package="motionbrain_ros_bridge",
                 executable="motionbrain_status_node",
@@ -266,6 +272,19 @@ def generate_launch_description() -> LaunchDescription:
                             mission_supervisor_autostart,
                             value_type=bool,
                         ),
+                    }
+                ],
+            ),
+            Node(
+                package="motionbrain_ros_bridge",
+                executable="motionbrain_m4_write_executor",
+                name="motionbrain_m4_write_executor",
+                output="screen",
+                condition=IfCondition(enable_m4_write_executor),
+                parameters=[
+                    {
+                        "controller_url": ["http://", motion_host, ":80"],
+                        "http_timeout_sec": ParameterValue(http_timeout, value_type=float),
                     }
                 ],
             ),

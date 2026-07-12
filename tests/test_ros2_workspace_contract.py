@@ -1154,6 +1154,11 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         self.assertIn("interpolate_from_desired_state: true", config_text)
         self.assertIn('package="controller_manager"', launch_text)
         self.assertIn('get_package_share_directory("motionbrain_hardware_interface")', launch_text)
+        bridge_launch = (
+            ROS2_SRC / "motionbrain_ros_bridge" / "launch" / "motionbrain_home_wifi.launch.py"
+        ).read_text()
+        self.assertIn('executable="motionbrain_m4_write_executor"', bridge_launch)
+        self.assertNotIn('"http_token"', bridge_launch)
         self.assertIn("pluginlib::ClassLoader", (
             package_dir / "test" / "test_load_motionbrain_hardware_interface.cpp"
         ).read_text())
