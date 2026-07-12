@@ -27,6 +27,7 @@ setup(
             "motionbrain_kinematics_node = motionbrain_ros_bridge.motionbrain_kinematics_node:main",
             "motionbrain_status_node = motionbrain_ros_bridge.motionbrain_status_node:main",
             "motionbrain_fake_endpoint = motionbrain_ros_bridge.fake_motionbrain_endpoint:main",
+            "motionbrain_m4_write_executor = motionbrain_ros_bridge.m4_write_executor_node:main",
         ],
     },
 )

@@ -52,6 +52,7 @@ EXPECTED_MESSAGE_FILES = {
 
 EXPECTED_SERVICE_FILES = {
     "GuardedRoutineCommand.srv",
+    "M4WriteConfirm.srv",
 }
 
 EXPECTED_ACTION_FILES = {

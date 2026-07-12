@@ -1,0 +1,9 @@
+string command_id
+---
+builtin_interfaces/Time stamp
+bool success
+bool forwarded
+string command_id
+string reason
+string message
+string raw_json

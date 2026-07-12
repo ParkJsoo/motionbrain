@@ -28,6 +28,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/RoutineResult.msg"
   "msg/RoutineStatus.msg"
   "srv/GuardedRoutineCommand.srv"
+  "srv/M4WriteConfirm.srv"
   DEPENDENCIES action_msgs builtin_interfaces
 )
 
