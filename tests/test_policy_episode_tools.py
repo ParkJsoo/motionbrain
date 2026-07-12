@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT))
 from tools.capture_policy_episodes import capture_policy_episodes  # noqa: E402
 from tools.evaluate_policy_replay import PolicyConfig  # noqa: E402
 from tools.evaluate_policy_replay import evaluate_policy_replay  # noqa: E402
+from tools.evaluate_policy_suite import evaluate_suite  # noqa: E402
 
 
 READY_STATUS = {
@@ -222,6 +223,55 @@ class PolicyEpisodeToolsTest(unittest.TestCase):
             self.assertEqual(3, metrics["operatorAgreements"])
             self.assertEqual(1.0, metrics["operatorAgreementRate"])
             self.assertEqual(3, len((dataset_dir / "policy_replay.jsonl").read_text(encoding="utf-8").splitlines()))
+
+    def test_policy_suite_aggregates_exit_criteria(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dataset = Path(tmpdir) / "suite"
+            dataset.mkdir()
+            episodes = [
+                {"ok": True, "status": {"state": "IDLE"}, "detection": {"fresh": True, "held": False}},
+                {"ok": True, "status": {"state": "ARMED"}, "detection": {"fresh": False, "held": False}},
+                {"ok": True, "status": {"state": "ARMED"}, "detection": {"fresh": True, "held": True}},
+            ]
+            results = [
+                {
+                    "operatorAction": "hold",
+                    "operatorAgreement": True,
+                    "unsafeProposal": False,
+                    "physicalMotionCandidate": False,
+                    "staleRejected": False,
+                    "heldRejected": False,
+                    "proposal": {"action": "hold", "reason": "state_not_armed", "preconditions": ["state_not_armed"]},
+                },
+                {
+                    "operatorAction": "hold",
+                    "operatorAgreement": True,
+                    "unsafeProposal": False,
+                    "physicalMotionCandidate": False,
+                    "staleRejected": True,
+                    "heldRejected": False,
+                    "proposal": {"action": "hold", "reason": "detection_stale", "preconditions": ["detection_stale"]},
+                },
+                {
+                    "operatorAction": "hold",
+                    "operatorAgreement": True,
+                    "unsafeProposal": False,
+                    "physicalMotionCandidate": False,
+                    "staleRejected": False,
+                    "heldRejected": True,
+                    "proposal": {"action": "hold", "reason": "held_detection", "preconditions": ["held_detection"]},
+                },
+            ]
+            (dataset / "episodes.jsonl").write_text("".join(json.dumps(item) + "\n" for item in episodes))
+            (dataset / "policy_replay.jsonl").write_text("".join(json.dumps(item) + "\n" for item in results))
+
+            summary = evaluate_suite([dataset])
+
+            self.assertTrue(summary["passed"])
+            self.assertEqual(3, summary["metrics"]["episodes"])
+            self.assertEqual(1, summary["metrics"]["staleCases"])
+            self.assertEqual(0, summary["metrics"]["staleMotionCandidates"])
+            self.assertEqual(1, summary["metrics"]["heldCases"])
 
 
 if __name__ == "__main__":
