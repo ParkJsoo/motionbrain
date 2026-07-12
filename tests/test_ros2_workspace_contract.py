@@ -1092,7 +1092,8 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         self.assertIn('<param name="transport_mode">m4_proposal</param>', proposal_urdf)
         self.assertIn('<command_interface name="position"/>', proposal_urdf)
         self.assertIn("m4_proposal_controller", proposal_launch)
-        self.assertIn("joint_trajectory_controller/JointTrajectoryController", proposal_config)
+        self.assertIn("forward_command_controller/ForwardCommandController", proposal_config)
+        self.assertNotIn("JointTrajectoryController", proposal_config)
 
         header_text = (
             package_dir
