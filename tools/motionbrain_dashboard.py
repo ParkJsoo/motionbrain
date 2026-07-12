@@ -36,6 +36,7 @@ DEFAULT_GRASP_SEQUENCE = [
     {"joint": "gripper", "action": "close", "percent": 35, "ms": 450},
     {"joint": "gripper", "action": "stop", "percent": 0, "ms": 0},
 ]
+POLICY_MIN_CONFIDENCE = 0.5
 
 
 def build_dashboard_policy_proposal(
@@ -1541,7 +1542,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             plan = build_grasp_dry_run_plan(
                 detection,
                 target_label=self.server.grasp_target_label,
-                min_confidence=self.server.grasp_min_confidence,
+                min_confidence=POLICY_MIN_CONFIDENCE,
             )
             if not plan.get("ok"):
                 self.send_json(plan, HTTPStatus.CONFLICT)

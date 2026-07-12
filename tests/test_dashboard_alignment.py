@@ -81,6 +81,31 @@ class DashboardAlignmentTest(unittest.TestCase):
         self.assertFalse(proposal["physicalMotionCandidate"])
         self.assertFalse(proposal["executionAvailable"])
 
+    def test_dashboard_policy_uses_policy_threshold_for_low_confidence_cup(self) -> None:
+        proposal = build_dashboard_policy_proposal(
+            {
+                "state": "ARMED",
+                "sensor": {"blocked": False, "faultLatched": False},
+                "baseAngle": {"active": False},
+                "motors": {},
+            },
+            {
+                "available": True,
+                "detected": True,
+                "fresh": True,
+                "held": False,
+                "label": "cup",
+                "confidence": 0.4,
+                "alignment": "RIGHT",
+            },
+            instruction="center cup",
+            min_confidence=dashboard.POLICY_MIN_CONFIDENCE,
+        )
+
+        self.assertEqual(proposal["action"], "ask_operator")
+        self.assertEqual(proposal["reason"], "confidence_below_threshold")
+        self.assertFalse(proposal["physicalMotionCandidate"])
+
     def test_dependency_error_payload_marks_controller_unavailable_as_degraded(self) -> None:
         payload = dependency_error_payload(
             "controller",
