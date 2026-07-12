@@ -4,6 +4,7 @@ import json
 import os
 import sys
 import threading
+import time
 import unittest
 import urllib.error
 import urllib.request
@@ -233,6 +234,17 @@ class DashboardSecurityTest(unittest.TestCase):
 
         with self.assertRaisesRegex(TimeoutError, "proposal_expired"):
             store.consume(issued["proposalId"])
+
+    def test_expired_proposal_is_not_reissued(self) -> None:
+        store = dashboard.PolicyConfirmationStore(ttl_seconds=20.0)
+        proposal = {"action": "light_toggle", "requiresOperatorConfirm": True}
+        first = store.issue(proposal, "toggle light")
+        store.pending[first["proposalId"]]["expiresAt"] = 0.0
+
+        second = store.issue(proposal, "toggle light")
+
+        self.assertNotEqual(first["proposalId"], second["proposalId"])
+        self.assertGreater(second["expiresAt"], time.time())
 
     def test_policy_proposal_rejects_oversized_instruction_without_fetching(self) -> None:
         with self.running_server() as server:

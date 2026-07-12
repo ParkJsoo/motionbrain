@@ -110,7 +110,11 @@ class PolicyConfirmationStore:
         with self.lock:
             self._prune(now)
             for proposal_id, transaction in self.pending.items():
-                if not transaction["consumed"] and transaction["fingerprint"] == fingerprint:
+                if (
+                    not transaction["consumed"]
+                    and now <= transaction["expiresAt"]
+                    and transaction["fingerprint"] == fingerprint
+                ):
                     return {**proposal, "proposalId": proposal_id, "expiresAt": transaction["expiresAt"]}
             proposal_id = secrets.token_urlsafe(18)
             expires_at = now + self.ttl_seconds
