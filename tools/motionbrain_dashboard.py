@@ -37,6 +37,7 @@ DEFAULT_GRASP_SEQUENCE = [
     {"joint": "gripper", "action": "stop", "percent": 0, "ms": 0},
 ]
 POLICY_MIN_CONFIDENCE = 0.5
+LIGHT_CONFIRM_TTL_SECONDS = 20.0
 
 
 def build_dashboard_policy_proposal(
@@ -93,6 +94,58 @@ def build_dashboard_policy_proposal(
     proposal["source"] = "dashboard_read_only"
     proposal["executionAvailable"] = False
     return proposal
+
+
+class PolicyConfirmationStore:
+    def __init__(self, ttl_seconds: float = LIGHT_CONFIRM_TTL_SECONDS) -> None:
+        self.ttl_seconds = ttl_seconds
+        self.lock = threading.Lock()
+        self.pending: dict[str, dict[str, Any]] = {}
+
+    def issue(self, proposal: dict[str, Any], instruction: str) -> dict[str, Any]:
+        if proposal.get("action") != "light_toggle" or not proposal.get("requiresOperatorConfirm"):
+            return proposal
+        now = time.time()
+        fingerprint = (instruction.strip(), proposal.get("action"))
+        with self.lock:
+            self._prune(now)
+            for proposal_id, transaction in self.pending.items():
+                if not transaction["consumed"] and transaction["fingerprint"] == fingerprint:
+                    return {**proposal, "proposalId": proposal_id, "expiresAt": transaction["expiresAt"]}
+            proposal_id = secrets.token_urlsafe(18)
+            expires_at = now + self.ttl_seconds
+            self.pending[proposal_id] = {
+                "fingerprint": fingerprint,
+                "instruction": instruction.strip(),
+                "action": "light_toggle",
+                "issuedAt": now,
+                "expiresAt": expires_at,
+                "consumed": False,
+            }
+        return {**proposal, "proposalId": proposal_id, "expiresAt": expires_at}
+
+    def consume(self, proposal_id: str) -> dict[str, Any]:
+        now = time.time()
+        with self.lock:
+            transaction = self.pending.get(proposal_id)
+            if transaction is None:
+                raise KeyError("proposal_not_found")
+            if transaction["consumed"]:
+                raise ValueError("proposal_already_consumed")
+            if now > transaction["expiresAt"]:
+                transaction["consumed"] = True
+                raise TimeoutError("proposal_expired")
+            transaction["consumed"] = True
+            return dict(transaction)
+
+    def _prune(self, now: float) -> None:
+        expired = [
+            proposal_id
+            for proposal_id, item in self.pending.items()
+            if item["consumed"] or now > item["expiresAt"] + self.ttl_seconds
+        ]
+        for proposal_id in expired:
+            self.pending.pop(proposal_id, None)
 
 
 INDEX_HTML = """<!doctype html>
@@ -633,6 +686,10 @@ INDEX_HTML = """<!doctype html>
             </div>
           </div>
           <div class="subvalue" id="policyPreconditions">preconditions -</div>
+          <div class="controls">
+            <button id="confirmLightProposalButton" class="primary" onclick="confirmLightProposal()" disabled>Confirm Light Proposal</button>
+          </div>
+          <div class="subvalue" id="policyTransaction">no executable proposal</div>
           <div class="subvalue">Proposal evaluation cannot execute controller commands.</div>
         </div>
       </section>
@@ -1101,6 +1158,11 @@ INDEX_HTML = """<!doctype html>
       document.getElementById("policyReason").textContent = proposal.reason || "-";
       const preconditions = Array.isArray(proposal.preconditions) ? proposal.preconditions.join(", ") : "-";
       document.getElementById("policyPreconditions").textContent = `preconditions ${preconditions || "none"}`;
+      const confirmButton = document.getElementById("confirmLightProposalButton");
+      const transaction = document.getElementById("policyTransaction");
+      const executable = proposal.action === "light_toggle" && Boolean(proposal.proposalId) && proposal.requiresOperatorConfirm === true;
+      confirmButton.disabled = !executable || !dashboardAuthToken;
+      transaction.textContent = executable ? `proposal ${proposal.proposalId} expires ${new Date(proposal.expiresAt * 1000).toLocaleTimeString()}` : "no executable proposal";
     }
 
     async function refreshPolicyProposal() {
@@ -1111,6 +1173,23 @@ INDEX_HTML = """<!doctype html>
         updatePolicyProposal(proposal);
       } catch (err) {
         pushLog(`policy proposal error: ${err.message}`);
+      }
+    }
+
+    async function confirmLightProposal() {
+      const proposal = lastPolicyProposal || {};
+      if (proposal.action !== "light_toggle" || !proposal.proposalId) {
+        pushLog("light confirmation blocked: no pending light proposal");
+        return;
+      }
+      try {
+        const data = await postJson("/api/policy_confirm", { proposalId: proposal.proposalId });
+        pushLog(`policy light confirmed: ${data.message || "ok"} proposal=${proposal.proposalId}`);
+        lastPolicyProposal = null;
+        await refreshPolicyProposal();
+        refresh();
+      } catch (err) {
+        pushLog(`policy light confirmation error: ${err.message}`);
       }
     }
 
@@ -1426,6 +1505,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.handle_align_nudge()
         elif parsed.path == "/api/cup_grasp_plan":
             self.handle_cup_grasp_plan()
+        elif parsed.path == "/api/policy_confirm":
+            self.handle_policy_confirm()
         else:
             self.send_error_json(HTTPStatus.NOT_FOUND, "not_found")
             return
@@ -1477,6 +1558,52 @@ class DashboardHandler(BaseHTTPRequestHandler):
             result["requestedAction"] = action
             self.send_json(result)
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError, OSError) as exc:
+            self.send_error_json(HTTPStatus.BAD_GATEWAY, str(exc))
+
+    def handle_policy_confirm(self) -> None:
+        try:
+            if not self.server.http_token:
+                self.send_error_json(HTTPStatus.FORBIDDEN, "http_token_required")
+                return
+            body = self.read_json_body()
+            proposal_id = str(body.get("proposalId", "")).strip()
+            if not proposal_id:
+                self.send_error_json(HTTPStatus.BAD_REQUEST, "proposalId_required")
+                return
+            transaction = self.server.policy_confirmations.consume(proposal_id)
+            status = fetch_json(f"{self.server.motion_base_url}/status", self.server.timeout)
+            detection = self.server.get_detection() if self.server.perception_url or self.server.camera_url else {}
+            proposal = build_dashboard_policy_proposal(
+                status,
+                detection,
+                instruction=transaction["instruction"],
+                target_label=self.server.grasp_target_label,
+                min_confidence=POLICY_MIN_CONFIDENCE,
+            )
+            if proposal.get("action") != transaction["action"]:
+                self.send_error_json(HTTPStatus.CONFLICT, f"proposal_changed:{proposal.get('reason', 'unknown')}")
+                return
+            result = post_motionbrain(
+                self.server.motion_base_url,
+                "/light?action=toggle",
+                self.server.timeout,
+                self.server.http_token,
+            )
+            result.update(
+                {
+                    "proposalId": proposal_id,
+                    "confirmedAction": transaction["action"],
+                    "consumed": True,
+                }
+            )
+            self.send_json(result)
+        except KeyError as exc:
+            self.send_error_json(HTTPStatus.NOT_FOUND, str(exc.args[0]))
+        except TimeoutError as exc:
+            self.send_error_json(HTTPStatus.GONE, str(exc))
+        except ValueError as exc:
+            self.send_error_json(HTTPStatus.CONFLICT, str(exc))
+        except (urllib.error.URLError, json.JSONDecodeError, OSError) as exc:
             self.send_error_json(HTTPStatus.BAD_GATEWAY, str(exc))
 
     def handle_align_nudge(self) -> None:
@@ -1609,6 +1736,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 target_label=self.server.grasp_target_label,
                 min_confidence=POLICY_MIN_CONFIDENCE,
             )
+            payload = self.server.policy_confirmations.issue(payload, instruction)
             self.send_json(payload)
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError, OSError) as exc:
             self.send_dependency_error("policy_inputs", "dashboard_status_and_detection", exc)
@@ -1701,6 +1829,7 @@ class DashboardServer(ThreadingHTTPServer):
         self.camera_cache: tuple[float, bytes, str] | None = None
         self.camera_cache_seconds = 0.25
         self.last_controller_status_success_at: float | None = None
+        self.policy_confirmations = PolicyConfirmationStore()
 
     def status_allows_align_nudge(self, status: dict[str, Any]) -> tuple[bool, str]:
         sensor = status.get("sensor", {})

@@ -172,6 +172,68 @@ class DashboardSecurityTest(unittest.TestCase):
         self.assertEqual(payload["action"], "ask_operator")
         self.assertEqual(payload["reason"], "confidence_below_threshold")
 
+    def test_light_policy_confirmation_is_one_shot_and_revalidates_status(self) -> None:
+        status_payload = {
+            "state": "IDLE",
+            "sensor": {"blocked": False, "faultLatched": False},
+            "baseAngle": {"active": False},
+            "motors": {},
+        }
+        with self.running_server() as server:
+            server.get_detection = lambda: {}  # type: ignore[method-assign]
+            with (
+                patch.object(dashboard, "fetch_json", return_value=status_payload) as fetch,
+                patch.object(
+                    dashboard,
+                    "post_motionbrain",
+                    return_value={"success": True, "message": "light toggled"},
+                ) as post,
+            ):
+                status, _headers, proposal = self.request_json(
+                    server,
+                    "/api/policy_proposal?instruction=toggle%20light",
+                )
+                confirm_status, _headers, confirmed = self.request_json(
+                    server,
+                    "/api/policy_confirm",
+                    method="POST",
+                    headers={"X-Dashboard-Token": "dashboard-secret-123456"},
+                    payload={"proposalId": proposal["proposalId"]},
+                )
+                duplicate_status, _headers, duplicate = self.request_json(
+                    server,
+                    "/api/policy_confirm",
+                    method="POST",
+                    headers={"X-Dashboard-Token": "dashboard-secret-123456"},
+                    payload={"proposalId": proposal["proposalId"]},
+                )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(proposal["action"], "light_toggle")
+        self.assertIn("expiresAt", proposal)
+        self.assertEqual(confirm_status, 200)
+        self.assertTrue(confirmed["consumed"])
+        self.assertEqual(duplicate_status, 409)
+        self.assertEqual(duplicate["error"], "proposal_already_consumed")
+        self.assertGreaterEqual(fetch.call_count, 2)
+        post.assert_called_once_with(
+            "http://controller.local",
+            "/light?action=toggle",
+            0.5,
+            "controller-secret",
+        )
+
+    def test_policy_confirmation_store_rejects_expired_proposal(self) -> None:
+        store = dashboard.PolicyConfirmationStore(ttl_seconds=20.0)
+        issued = store.issue(
+            {"action": "light_toggle", "requiresOperatorConfirm": True},
+            "toggle light",
+        )
+        store.pending[issued["proposalId"]]["expiresAt"] = 0.0
+
+        with self.assertRaisesRegex(TimeoutError, "proposal_expired"):
+            store.consume(issued["proposalId"])
+
     def test_policy_proposal_rejects_oversized_instruction_without_fetching(self) -> None:
         with self.running_server() as server:
             with patch.object(dashboard, "fetch_json") as fetch:
