@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<robot name="motionbrain_m4_proposal">
+  <link name="world"/>
+  <link name="shoulder_link"/>
+  <joint name="world_to_shoulder" type="fixed">
+    <parent link="world"/><child link="shoulder_link"/>
+  </joint>
+  <link name="upper_arm_link"/>
+  <joint name="shoulder_pitch_joint" type="revolute">
+    <parent link="shoulder_link"/><child link="upper_arm_link"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-1.757" upper="1.365" effort="1.0" velocity="1.0"/>
+  </joint>
+  <ros2_control name="MotionBrainM4ProposalSystem" type="system">
+    <hardware>
+      <plugin>motionbrain_hardware_interface/MotionBrainHardwareInterface</plugin>
+      <param name="transport_mode">m4_proposal</param>
+      <param name="status_topic">/motionbrain/status_typed</param>
+      <param name="proposal_topic">/motionbrain/m4_write_proposal</param>
+      <param name="feedback_source">m4_as5600</param>
+      <param name="shoulder_feedback_calibration_enabled">true</param>
+      <param name="shoulder_sensor_zero_deg">222.80</param>
+      <param name="shoulder_direction_sign">1</param>
+      <param name="shoulder_ros_joint_zero_rad">0.0</param>
+      <param name="state_stale_timeout_sec">2.0</param>
+    </hardware>
+    <joint name="shoulder_pitch_joint">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+  </ros2_control>
+</robot>

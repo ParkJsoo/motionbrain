@@ -1,0 +1,16 @@
+controller_manager:
+  ros__parameters:
+    update_rate: 20
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+    m4_proposal_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+m4_proposal_controller:
+  ros__parameters:
+    joints: [shoulder_pitch_joint]
+    command_interfaces: [position]
+    state_interfaces: [position, velocity]
+    allow_partial_joints_goal: false
+    open_loop_control: false
+    interpolate_from_desired_state: true

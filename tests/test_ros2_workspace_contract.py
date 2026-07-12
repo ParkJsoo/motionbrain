@@ -1086,6 +1086,13 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         self.assertTrue((package_dir / "launch" / "hardware_interface.launch.py").exists())
         self.assertTrue((package_dir / "config" / "controllers.yaml").exists())
         self.assertTrue((package_dir / "urdf" / "motionbrain_hardware_interface.urdf").exists())
+        proposal_urdf = (package_dir / "urdf" / "motionbrain_m4_proposal.urdf").read_text()
+        proposal_launch = (package_dir / "launch" / "m4_proposal.launch.py").read_text()
+        proposal_config = (package_dir / "config" / "m4_proposal_controllers.yaml").read_text()
+        self.assertIn('<param name="transport_mode">m4_proposal</param>', proposal_urdf)
+        self.assertIn('<command_interface name="position"/>', proposal_urdf)
+        self.assertIn("m4_proposal_controller", proposal_launch)
+        self.assertIn("joint_trajectory_controller/JointTrajectoryController", proposal_config)
 
         header_text = (
             package_dir
