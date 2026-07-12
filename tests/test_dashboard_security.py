@@ -111,6 +111,50 @@ class DashboardSecurityTest(unittest.TestCase):
         self.assertEqual(payload["error"], "dashboard_auth_required")
         post_motionbrain.assert_not_called()
 
+    def test_policy_proposal_get_is_read_only_and_never_proxies_post(self) -> None:
+        status_payload = {
+            "state": "IDLE",
+            "sensor": {"blocked": False, "faultLatched": False},
+            "baseAngle": {"active": False},
+            "motors": {},
+        }
+        detection_payload = {
+            "available": True,
+            "detected": True,
+            "fresh": True,
+            "held": False,
+            "label": "cup",
+            "confidence": 0.8,
+            "alignment": "CENTER",
+        }
+        with self.running_server() as server:
+            server.get_detection = lambda: detection_payload  # type: ignore[method-assign]
+            with (
+                patch.object(dashboard, "fetch_json", return_value=status_payload),
+                patch.object(dashboard, "post_motionbrain") as post_motionbrain,
+            ):
+                status, _headers, payload = self.request_json(
+                    server,
+                    "/api/policy_proposal?instruction=center%20cup",
+                )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["action"], "hold")
+        self.assertFalse(payload["executionAvailable"])
+        post_motionbrain.assert_not_called()
+
+    def test_policy_proposal_rejects_oversized_instruction_without_fetching(self) -> None:
+        with self.running_server() as server:
+            with patch.object(dashboard, "fetch_json") as fetch:
+                status, _headers, payload = self.request_json(
+                    server,
+                    f"/api/policy_proposal?instruction={'x' * 241}",
+                )
+
+        self.assertEqual(status, 400)
+        self.assertEqual(payload["error"], "instruction_too_long")
+        fetch.assert_not_called()
+
     def test_empty_dashboard_token_rejects_post_fail_closed(self) -> None:
         with self.running_server(dashboard_token="") as server:
             with patch.object(dashboard, "post_motionbrain") as post_motionbrain:
