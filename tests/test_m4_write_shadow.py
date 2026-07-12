@@ -34,16 +34,16 @@ class M4WriteShadowTest(unittest.TestCase):
         self.assertEqual("state_not_armed", evidence["reason"])
         self.assertFalse(evidence["transport"]["postAttempted"])
 
-    def test_out_of_range_is_rejected_before_status_fetch(self):
+    def test_out_of_live_soft_range_is_rejected_after_status_fetch(self):
         calls = []
         evidence = evaluate_shadow_request(
             status_url="http://controller/status",
-            target_sensor_deg=250.0,
+            target_sensor_deg=302.0,
             command_id="shadow-range",
             fetch_json_func=lambda url, timeout: calls.append((url, timeout)) or armed_status(),
         )
 
-        self.assertEqual([], calls)
+        self.assertEqual([("http://controller/status", 6.0)], calls)
         self.assertEqual("target_out_of_range", evidence["reason"])
         self.assertFalse(evidence["transport"]["postAttempted"])
 

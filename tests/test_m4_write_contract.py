@@ -38,24 +38,37 @@ class M4WriteContractTest(unittest.TestCase):
     def test_zero_and_round_trip_mapping(self):
         config = M4WriteConfig()
         self.assertAlmostEqual(222.8, sensor_deg_from_ros_rad(0.0, config), places=6)
-        for sensor_deg in (230.0, 237.5, 245.0):
+        for sensor_deg in (122.08, 222.8, 252.15, 301.02):
             self.assertAlmostEqual(
                 sensor_deg,
                 sensor_deg_from_ros_rad(ros_rad_from_sensor_deg(sensor_deg, config), config),
                 places=6,
             )
 
-    def test_non_finite_and_out_of_range_targets_are_rejected(self):
+    def test_non_finite_and_live_soft_limit_targets_are_rejected(self):
         with self.assertRaisesRegex(M4ContractError, "non_finite_target"):
             sensor_deg_from_ros_rad(math.nan, M4WriteConfig())
         with self.assertRaisesRegex(M4ContractError, "target_out_of_range"):
-            validate_m4_request(request_for_sensor_deg(229.99), armed_status())
+            validate_m4_request(request_for_sensor_deg(122.07), armed_status())
         with self.assertRaisesRegex(M4ContractError, "target_out_of_range"):
-            validate_m4_request(request_for_sensor_deg(245.01), armed_status())
+            validate_m4_request(request_for_sensor_deg(301.03), armed_status())
 
-    def test_narrow_range_boundaries_are_accepted(self):
-        self.assertAlmostEqual(230.0, validate_m4_request(request_for_sensor_deg(230.0), armed_status())["requestedSensorDeg"], places=6)
-        self.assertAlmostEqual(245.0, validate_m4_request(request_for_sensor_deg(245.0), armed_status())["requestedSensorDeg"], places=6)
+    def test_controller_reported_soft_limit_boundaries_are_accepted(self):
+        low = validate_m4_request(request_for_sensor_deg(122.08), armed_status())
+        high = validate_m4_request(request_for_sensor_deg(301.02), armed_status())
+        self.assertAlmostEqual(122.08, low["requestedSensorDeg"], places=6)
+        self.assertAlmostEqual(301.02, high["requestedSensorDeg"], places=6)
+        self.assertEqual((122.08, 301.02), (low["allowedMinDeg"], low["allowedMaxDeg"]))
+
+    def test_missing_or_invalid_live_soft_limits_fail_closed(self):
+        missing = armed_status()
+        del missing["shoulderAngle"]["softMinDeg"]
+        with self.assertRaisesRegex(M4ContractError, "soft_limits_unavailable"):
+            validate_m4_request(request_for_sensor_deg(252.0), missing)
+        invalid = armed_status()
+        invalid["shoulderAngle"]["softMinDeg"] = 302.0
+        with self.assertRaisesRegex(M4ContractError, "soft_limits_invalid"):
+            validate_m4_request(request_for_sensor_deg(252.0), invalid)
 
     def test_state_sensor_and_other_motor_guards(self):
         request = request_for_sensor_deg(237.0)

@@ -13,8 +13,6 @@ class M4WriteConfig:
     sensor_zero_deg: float = 222.80
     direction_sign: int = 1
     ros_joint_zero_rad: float = 0.0
-    min_sensor_deg: float = 230.0
-    max_sensor_deg: float = 245.0
     min_timeout_ms: int = 500
     max_timeout_ms: int = 10000
 
@@ -43,8 +41,6 @@ def confirmation_fingerprint(
     if not config.min_timeout_ms <= timeout_ms <= config.max_timeout_ms:
         raise M4ContractError("invalid_timeout")
     target_deg = sensor_deg_from_ros_rad(target_rad, config)
-    if target_deg < config.min_sensor_deg or target_deg > config.max_sensor_deg:
-        raise M4ContractError("target_out_of_range")
     return ("shoulder_pitch_joint", round(target_deg, 6), timeout_ms, mode)
 
 
@@ -139,13 +135,6 @@ def validate_m4_request(
     if not config.min_timeout_ms <= timeout_ms <= config.max_timeout_ms:
         raise M4ContractError("invalid_timeout")
     target_deg = sensor_deg_from_ros_rad(target_rad, config)
-    if target_deg < config.min_sensor_deg or target_deg > config.max_sensor_deg:
-        raise M4ContractError(
-            "target_out_of_range",
-            requestedSensorDeg=target_deg,
-            allowedMinDeg=config.min_sensor_deg,
-            allowedMaxDeg=config.max_sensor_deg,
-        )
     sensor = status.get("sensor") if isinstance(status.get("sensor"), dict) else {}
     shoulder = status.get("shoulderAngle") if isinstance(status.get("shoulderAngle"), dict) else {}
     motors = status.get("motors") if isinstance(status.get("motors"), dict) else {}
@@ -162,6 +151,24 @@ def validate_m4_request(
         raise M4ContractError("sensor_stale")
     if not shoulder.get("sensorReady"):
         raise M4ContractError("sensor_not_ready")
+    try:
+        allowed_min_deg = float(shoulder["softMinDeg"])
+        allowed_max_deg = float(shoulder["softMaxDeg"])
+    except (KeyError, TypeError, ValueError):
+        raise M4ContractError("soft_limits_unavailable") from None
+    if (
+        not math.isfinite(allowed_min_deg)
+        or not math.isfinite(allowed_max_deg)
+        or allowed_min_deg >= allowed_max_deg
+    ):
+        raise M4ContractError("soft_limits_invalid")
+    if target_deg < allowed_min_deg or target_deg > allowed_max_deg:
+        raise M4ContractError(
+            "target_out_of_range",
+            requestedSensorDeg=target_deg,
+            allowedMinDeg=allowed_min_deg,
+            allowedMaxDeg=allowed_max_deg,
+        )
     if shoulder.get("active"):
         raise M4ContractError("already_moving")
     if teleop.get("controlActive") or teleop.get("deadman"):
@@ -179,8 +186,8 @@ def validate_m4_request(
         "requestedPositionRad": target_rad,
         "requestedSensorDeg": target_deg,
         "timeoutMs": timeout_ms,
-        "allowedMinDeg": config.min_sensor_deg,
-        "allowedMaxDeg": config.max_sensor_deg,
+        "allowedMinDeg": allowed_min_deg,
+        "allowedMaxDeg": allowed_max_deg,
     }
 
 
