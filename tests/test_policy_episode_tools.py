@@ -46,6 +46,11 @@ class PolicyEpisodeToolsTest(unittest.TestCase):
                 },
                 "http://ros/guard": READY_GUARD,
                 "http://ros/mission": {"state": "ALIGN"},
+                "http://dashboard/policy": {
+                    "action": "align_left",
+                    "reason": "alignment_nudge_candidate",
+                    "executionAvailable": False,
+                },
             }
 
             def fake_fetch_bytes(_url: str, _timeout: float) -> tuple[bytes, str]:
@@ -63,6 +68,7 @@ class PolicyEpisodeToolsTest(unittest.TestCase):
                 detection_url="http://pi/detection",
                 guard_url="http://ros/guard",
                 mission_url="http://ros/mission",
+                policy_url="http://dashboard/policy",
                 instruction="align target",
                 operator_action="align_left",
                 count=2,
@@ -72,7 +78,7 @@ class PolicyEpisodeToolsTest(unittest.TestCase):
             )
 
             manifest = json.loads((dataset_dir / "manifest.json").read_text(encoding="utf-8"))
-            self.assertEqual("motionbrain.policy_episode.v1", manifest["schemaVersion"])
+            self.assertEqual("motionbrain.policy_episode.v2", manifest["schemaVersion"])
             self.assertEqual(2, manifest["capturedSamples"])
             self.assertTrue((dataset_dir / "frames" / "000000.jpg").exists())
             entries = (dataset_dir / "episodes.jsonl").read_text(encoding="utf-8").splitlines()
@@ -81,6 +87,37 @@ class PolicyEpisodeToolsTest(unittest.TestCase):
             self.assertEqual("align_left", first["operatorAction"])
             self.assertEqual("LEFT", first["detection"]["alignment"])
             self.assertEqual("ARMED", first["status"]["state"])
+            self.assertEqual("align_left", first["policyProposal"]["action"])
+            self.assertFalse(first["policyProposal"]["executionAvailable"])
+            self.assertTrue(first["controlGuard"]["ready"])
+
+    def test_capture_marks_required_source_failure_without_counting_sample(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dataset_dir = capture_policy_episodes(
+                output_root=Path(tmpdir),
+                session_name="missing_policy",
+                frame_url="http://camera/frame",
+                status_url="http://motion/status",
+                detection_url="http://pi/detection",
+                count=1,
+                interval=0,
+                fetch_bytes_func=lambda _url, _timeout: (b"jpeg", "image/jpeg"),
+                fetch_json_func=lambda url, _timeout: READY_STATUS if url.endswith("status") else READY_GUARD,
+            )
+
+            manifest = json.loads((dataset_dir / "manifest.json").read_text(encoding="utf-8"))
+            entry = json.loads((dataset_dir / "episodes.jsonl").read_text(encoding="utf-8"))
+            self.assertEqual(0, manifest["capturedSamples"])
+            self.assertFalse(entry["ok"])
+            self.assertIn(
+                {"source": "policyProposal", "error": "required_source_missing"},
+                entry["errors"],
+            )
+            self.assertTrue(entry["controlGuard"]["derived"])
+            self.assertEqual(
+                "episode_recorder_http_snapshot",
+                entry["controlGuard"]["provenance"],
+            )
 
     def test_policy_replay_reports_agreement_and_zero_unsafe_rate(self):
         with tempfile.TemporaryDirectory() as tmpdir:

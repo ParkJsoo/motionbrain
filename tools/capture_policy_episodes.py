@@ -16,7 +16,7 @@ from typing import Callable
 FetchBytes = Callable[[str, float], tuple[bytes, str]]
 FetchJson = Callable[[str, float], dict[str, Any]]
 
-SCHEMA_VERSION = "motionbrain.policy_episode.v1"
+SCHEMA_VERSION = "motionbrain.policy_episode.v2"
 
 
 def utc_timestamp() -> str:
@@ -70,12 +70,17 @@ def capture_policy_episodes(
     detection_url: str = "",
     guard_url: str = "",
     mission_url: str = "",
+    policy_url: str = "",
+    joint_state_url: str = "",
+    events_url: str = "",
     instruction: str = "",
     operator_action: str = "",
     count: int = 30,
     interval: float = 0.5,
     timeout: float = 6.0,
     notes: str = "",
+    required_sources: tuple[str, ...] = ("frame", "status", "detection", "policyProposal"),
+    derive_control_guard: bool = True,
     fetch_bytes_func: FetchBytes = fetch_bytes,
     fetch_json_func: FetchJson = fetch_json,
 ) -> Path:
@@ -100,7 +105,12 @@ def capture_policy_episodes(
             "detectionUrl": detection_url,
             "guardUrl": guard_url,
             "missionUrl": mission_url,
+            "policyUrl": policy_url,
+            "jointStateUrl": joint_state_url,
+            "eventsUrl": events_url,
         },
+        "requiredSources": list(required_sources),
+        "deriveControlGuard": derive_control_guard,
         "instruction": instruction,
         "operatorAction": operator_action,
         "requestedSamples": count,
@@ -145,6 +155,9 @@ def capture_policy_episodes(
             ("detection", detection_url),
             ("controlGuard", guard_url),
             ("missionState", mission_url),
+            ("policyProposal", policy_url),
+            ("jointState", joint_state_url),
+            ("events", events_url),
         ]:
             if not url:
                 continue
@@ -152,6 +165,30 @@ def capture_policy_episodes(
                 entry[key] = fetch_json_func(url, timeout)
             except Exception as exc:
                 sample_errors.append({"source": key, "error": str(exc)})
+
+        if derive_control_guard and "controlGuard" not in entry:
+            status = entry.get("status") if isinstance(entry.get("status"), dict) else {}
+            detection = entry.get("detection") if isinstance(entry.get("detection"), dict) else {}
+            status_available = bool(status) and not bool(status.get("degraded", False))
+            detection_fresh = bool(detection.get("fresh", False))
+            entry["controlGuard"] = {
+                "ready": status_available and detection_fresh,
+                "reason": "derived_ready" if status_available and detection_fresh else "derived_inputs_not_ready",
+                "statusFresh": status_available,
+                "detectionFresh": detection_fresh,
+                "derived": True,
+                "provenance": "episode_recorder_http_snapshot",
+            }
+
+        present_sources = {
+            "frame" if entry.get("frame") else "",
+            *(key for key in ("status", "detection", "controlGuard", "missionState", "policyProposal", "jointState", "events") if key in entry),
+        }
+        for source in required_sources:
+            if source and source not in present_sources and not any(
+                error.get("source") == source for error in sample_errors
+            ):
+                sample_errors.append({"source": source, "error": "required_source_missing"})
 
         if sample_errors:
             entry["ok"] = False
@@ -183,6 +220,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--detection-url", default="", help="Optional detection JSON endpoint")
     parser.add_argument("--guard-url", default="", help="Optional control guard JSON endpoint")
     parser.add_argument("--mission-url", default="", help="Optional mission state JSON endpoint")
+    parser.add_argument("--policy-url", default="", help="Optional read-only policy proposal JSON endpoint")
+    parser.add_argument("--joint-state-url", default="", help="Optional joint-state JSON endpoint")
+    parser.add_argument("--events-url", default="", help="Optional event summary JSON endpoint")
     parser.add_argument("--perception-url", default="", help="Optional Pi perception base URL; supplies /api/detection")
     parser.add_argument("--dashboard-url", default="", help="Optional Pi dashboard base URL; supplies /api/vision_frame")
     parser.add_argument("--instruction", default="", help="Instruction stored with every sample")
@@ -191,6 +231,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--interval", type=float, default=0.5, help="Seconds between samples")
     parser.add_argument("--timeout", type=float, default=6.0, help="HTTP timeout seconds")
     parser.add_argument("--notes", default="", help="Free-form capture notes stored in manifest.json")
+    parser.add_argument(
+        "--required-source",
+        action="append",
+        default=[],
+        help="Required sample source key; repeatable. Defaults to frame/status/detection/policyProposal.",
+    )
+    parser.add_argument(
+        "--no-derived-control-guard",
+        action="store_true",
+        help="Do not derive a conservative guard snapshot when --guard-url is absent.",
+    )
     return parser
 
 
@@ -215,12 +266,22 @@ def main() -> int:
         detection_url=detection_url,
         guard_url=args.guard_url.strip(),
         mission_url=args.mission_url.strip(),
+        policy_url=args.policy_url.strip(),
+        joint_state_url=args.joint_state_url.strip(),
+        events_url=args.events_url.strip(),
         instruction=args.instruction,
         operator_action=args.operator_action,
         count=args.count,
         interval=args.interval,
         timeout=args.timeout,
         notes=args.notes,
+        required_sources=tuple(args.required_source) if args.required_source else (
+            "frame",
+            "status",
+            "detection",
+            "policyProposal",
+        ),
+        derive_control_guard=not args.no_derived_control_guard,
     )
     print(f"captured policy episodes: {dataset_dir}")
     return 0
