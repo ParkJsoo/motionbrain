@@ -12,6 +12,7 @@ from tools.capture_policy_episodes import capture_policy_episodes  # noqa: E402
 from tools.evaluate_policy_replay import PolicyConfig  # noqa: E402
 from tools.evaluate_policy_replay import evaluate_policy_replay  # noqa: E402
 from tools.evaluate_policy_suite import evaluate_suite  # noqa: E402
+from tools.generate_policy_fault_cases import generate_fault_cases  # noqa: E402
 
 
 READY_STATUS = {
@@ -272,6 +273,33 @@ class PolicyEpisodeToolsTest(unittest.TestCase):
             self.assertEqual(1, summary["metrics"]["staleCases"])
             self.assertEqual(0, summary["metrics"]["staleMotionCandidates"])
             self.assertEqual(1, summary["metrics"]["heldCases"])
+
+    def test_fault_case_generator_marks_provenance_and_blocks_execution_label(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source = Path(tmpdir) / "source"
+            source.mkdir()
+            (source / "episodes.jsonl").write_text(
+                json.dumps(
+                    {
+                        "index": 4,
+                        "ok": True,
+                        "operatorAction": "align_left",
+                        "detection": {"fresh": True, "held": False, "alignment": "LEFT"},
+                        "controlGuard": {"detectionFresh": True},
+                        "policyProposal": {"action": "align_left"},
+                    }
+                )
+                + "\n"
+            )
+
+            output = generate_fault_cases(source, Path(tmpdir) / "stale", "stale")
+            entry = json.loads((output / "episodes.jsonl").read_text())
+
+            self.assertEqual("hold", entry["operatorAction"])
+            self.assertFalse(entry["detection"]["fresh"])
+            self.assertFalse(entry["controlGuard"]["detectionFresh"])
+            self.assertEqual("offline_fault_injection", entry["faultInjection"]["provenance"])
+            self.assertNotIn("policyProposal", entry)
 
 
 if __name__ == "__main__":
