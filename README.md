@@ -17,7 +17,7 @@ MotionBrain은 ESP32 기반 5축 로봇팔 제어기에서 시작해 STM32 센�
 | 실물 로봇 통합 | ESP32 5축 모션 제어기, STM32 유선 텔레오퍼레이션, ESP32-CAM, Raspberry Pi 호스트를 하나의 arm stack으로 통합 |
 | 임베디드 안전 경계 | `BOOT -> IDLE -> ARMED -> FAULT`, `Dispatcher` + `SafetyGate`, 토큰 기반 명령, deadman release stop, 프레임 타임아웃 |
 | 단일축 위치 피드백 | M4 어깨 AS5600 절대각 측정, 센서/자석 상태 감시, 230-245° 검증 범위의 폐루프 목표각 제어, `TARGET_MISSED` 실패 판정, 동일 고정 장착 무부하 22/22와 23.1g 하중 11/11 회귀, HTTP/대시보드/ROS2 텔레메트리 |
-| ROS2 시스템 소프트웨어 | ROS2 Jazzy typed topics, C++ control guard, mission supervisor, URDF/RViz, `ros2_control` dry-run mock/open-loop `SystemInterface`, M4 read-only measured state mode |
+| ROS2 시스템 소프트웨어 | ROS2 Jazzy typed topics, C++ control guard, mission supervisor, URDF/RViz, dry-run/read-only 모드와 operator-confirmed M4 physical `ros2_control` write |
 | 운영/검증 | Pi systemd 서비스, health-check 스크립트, runtime evidence, `ros2_control` evidence, PlatformIO/Python/ROS2 GitHub Actions, 물리 텔레오퍼레이션 데모 |
 
 검토자가 먼저 볼 만한 상세 근거:
@@ -36,13 +36,11 @@ MotionBrain은 ESP32 기반 5축 로봇팔 제어기에서 시작해 STM32 센�
 
 이 저장소의 핵심 증거는 실제 하드웨어 통합과 ROS2 기반 시스템 경계 설계다.
 ROS2 Jazzy typed interface, C++ control guard, mission supervisor, RViz/TF
-시각화, `ros2_control` dry-run mock bring-up, 안전한 open-loop `SystemInterface`
-scaffold, M4 read-only measured state mode를 포함한다.
-
-실제 물리 모션은 ESP32 firmware `SafetyGate` 뒤에 남겨 두었고,
-`ros2_control` physical write 경로는 열지 않았다. 현재 공개 경계는
-dry-run/open-loop scaffold와 M4 read-only measured state mode다. 초기 검증
-요약은 [2026-06-16 ros2_control evidence note](docs/evidence/2026-06-16-ros2-control-open-loop.md)를 본다.
+시각화, `ros2_control` dry-run/read-only 모드와 M4 한정 physical write 경로를
+포함한다. proposal은 자동 전달되지 않으며 작업자가 확인한 20초 one-shot만
+ESP32의 인증된 `/shoulder`와 firmware `SafetyGate`로 전달된다. 248.20°에서
+250.00° 목표를 명령해 249.96°(`TARGET_REACHED`, -0.04°)로 수렴했고 proposal
+재사용도 거부됨을 확인했다. [상세 검증](docs/evidence/2026-07-13-m4-physical-ros2-control.md)
 
 ## 데모 영상
 
@@ -76,8 +74,8 @@ Docker/noVNC RViz 화면은 Pi 대시보드 상태와 감지 결과를 읽기 �
 포트폴리오용 claim boundary는 [PORTFOLIO.md](PORTFOLIO.md)와
 [claim-to-evidence matrix](docs/evidence/claim-to-evidence-matrix.md)를 본다.
 
-- 물리 모션 권한은 ESP32 firmware `SafetyGate`에 남아 있고, ROS2 physical
-  write는 열지 않았다.
+- 물리 모션 권한은 ESP32 firmware `SafetyGate`에 남아 있다. ROS2 physical
+  write는 M4 단일 목표의 operator-confirmed one-shot에만 열려 있다.
 - 위치 피드백은 M4 어깨 한 축의 AS5600에 한정된다. 나머지 네 축은
   encoder-grade feedback이 없다.
 - M4의 matrix 검증 목표 범위는 230-245°다. 122.08-301.02°는 현재 자세
@@ -222,6 +220,7 @@ systemd wrapper는 ESP32-CAM 재부팅 후에도 이 카메라 프로필을 다�
 - [PIN_MAP.md](PIN_MAP.md): ESP32 핀 점유와 M4 AS5600 I2C 부트 조건
 - [docs/evidence/2026-06-28-m4-shoulder-closed-loop.md](docs/evidence/2026-06-28-m4-shoulder-closed-loop.md): M4 어깨 AS5600 절대각 피드백과 제한 폐루프 실물 검증
 - [docs/evidence/2026-06-16-ros2-control-open-loop.md](docs/evidence/2026-06-16-ros2-control-open-loop.md): `ros2_control` dry-run 검증 요약
+- [docs/evidence/2026-07-13-m4-physical-ros2-control.md](docs/evidence/2026-07-13-m4-physical-ros2-control.md): M4 physical `ros2_control` one-shot 검증
 - [docs/evidence/2026-06-16-pi-system-health.md](docs/evidence/2026-06-16-pi-system-health.md): Pi/systemd/ROS2 health 검증 요약
 - [docs/evidence/2026-06-17-runtime-measurements.md](docs/evidence/2026-06-17-runtime-measurements.md): Pi 런타임 endpoint latency, ROS2 topic/status probe, 계측 장비 inventory 측정 기록
 - [docs/evidence/2026-06-16-embedded-bench-checks.md](docs/evidence/2026-06-16-embedded-bench-checks.md): 멀티미터 기반 embedded bench sanity check 복구 기록

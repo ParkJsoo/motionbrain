@@ -17,9 +17,8 @@ The physical teleoperation demo media snapshot is tagged as `demo-ready-20260608
 - Safety boundary: state changes and physical output must pass token checks,
   state-machine checks, `SafetyGate`, deadman handling, and freshness timeouts.
 - ROS2 systems work: typed messages, ROS2 bridge, C++ control guard, mission
-  supervisor, URDF/RViz, and a `ros2_control` dry-run mock/open-loop
-  `SystemInterface` plus M4 read-only measured state mode, with no physical
-  actuation through `ros2_control`.
+  supervisor, URDF/RViz, `ros2_control` dry-run/read-only modes, and an
+  operator-confirmed physical-write path for M4 only.
 - Operations readiness: Pi systemd services, SSH/DNS recovery notes, health
   checks, runtime evidence, `ros2_control` evidence, and CI validation are
   documented.
@@ -36,6 +35,8 @@ The physical teleoperation demo media snapshot is tagged as `demo-ready-20260608
 - [`ros2_control` dry-run evidence](docs/evidence/2026-06-16-ros2-control-open-loop.en.md):
   controller manager, hardware-interface plugin, command/state interfaces,
   `FollowJointTrajectory`, and `/joint_states` dry-run state mirror
+- [M4 physical `ros2_control` evidence](docs/evidence/2026-07-13-m4-physical-ros2-control.en.md):
+  20-second one-shot confirmation, convergence, replay rejection, and systemd restart
 - [Pi/systemd/ROS2 health evidence](docs/evidence/2026-06-16-pi-system-health.en.md):
   dashboard, perception, ROS2 bridge services, typed topics, service, and action
 - [Pi runtime measurements](docs/evidence/2026-06-17-runtime-measurements.en.md):
@@ -78,6 +79,7 @@ I designed and implemented:
 - Safety-gated bounded base-nudge control surface
 - ROS2 Jazzy bridge, typed messages, C++ control guard, and mission supervisor
 - `ros2_control` dry-run mock demo and safe open-loop `SystemInterface` scaffold
+- M4 proposal hardware interface, operator-confirm executor, and systemd contract
 - Raspberry Pi systemd deployment and health checks
 - GitHub Actions quality gates for PlatformIO, Python tests, and ROS2 build/test
 
@@ -139,7 +141,7 @@ The ESP32-CAM acts as a camera node. The Raspberry Pi runs detection and overlay
 
 ### ROS2 Host Boundary
 
-ROS2 does not replace the embedded controller. It promotes ESP32 status/events/camera detection into typed topics and adds host-side guard and mission-state logic while preserving the ESP32 command boundary. The `ros2_control` surface includes dry-run mock control, an open-loop `SystemInterface` scaffold, and an M4 read-only measured state mode; physical writes remain disabled.
+ROS2 does not replace the embedded controller. The M4 physical path is `ForwardCommandController -> non-forwarded proposal -> 20-second one-shot operator confirmation -> authenticated /shoulder -> ESP32 SafetyGate -> AS5600 closed loop`. Direct `http`/`physical` transports, full-arm writes, and automatic trajectory tracking remain disabled.
 
 ### Demo-Ready Scope
 
@@ -179,7 +181,9 @@ The public demo is physical teleoperation. Supporting evidence covers direct cap
 - Raspberry Pi 4 + Ubuntu 24.04 + ROS2 Jazzy `colcon build/test` passed.
 - Health checks passed for `/motionbrain/status_typed`, `/camera/detection_typed`, estimated/measured `/joint_states`, `/motionbrain/kinematics_typed`, `/motionbrain/control_guard_typed`, and `/motionbrain/mission_state_typed`.
 - Pi perception service output was verified through ROS2 `/camera/detection_typed`.
-- `motionbrain_ros2_control_mock` and `motionbrain_hardware_interface` validated the `ros2_control` mock/controller, hardware-interface dry-run boundary, and M4 read-only measured state mode, not physical `ros2_control` actuation.
+- The M4 physical path moved from 248.20 deg toward 250.00 deg and ended at 249.96 deg (-0.04 deg, `TARGET_REACHED`); non-M4 outputs stayed zero.
+- Replay was rejected as `proposal_already_consumed`; IDLE was rejected as `state_not_armed`. A systemd restart restored exactly one executor.
+- Local Python tests passed 185/185; Pi ROS2 tests passed 72 with zero failures.
 - Docker/noVNC RViz validation visualized RobotModel/TF and live ROS2 topics mirrored from the Pi dashboard.
 - GitHub Actions validates PlatformIO firmware builds, Python tests, and ROS2 workspace build/test.
 
@@ -197,9 +201,9 @@ Current honest positioning:
 
 ## Current Limitations
 
-- Only the M4 shoulder has mechanically secured AS5600 position feedback. The other
-  four axes have no position feedback, and there is no full-arm absolute pose
-  or physical closed-loop `ros2_control` path.
+- Only M4 has secured AS5600 feedback and an operator-confirmed physical
+  `ros2_control` single-target path. Other-axis feedback, full-arm writes, and
+  automatic trajectory tracking are unavailable.
 - M4 GPIO0/GPIO15 is the supported allocation under the current pin budget but
   requires boot-strap discipline. The sensor and magnet are mechanically
   secured; ROS zero is `222.80 deg` with sign `+1`. The 230-245 deg range is the
@@ -230,6 +234,7 @@ Current honest positioning:
 - [PIN_MAP.en.md](PIN_MAP.en.md): ESP32 allocation and M4 AS5600 wiring policy
 - [docs/evidence/2026-06-28-m4-shoulder-closed-loop.en.md](docs/evidence/2026-06-28-m4-shoulder-closed-loop.en.md): physical M4 single-axis closed-loop evidence
 - [docs/evidence/2026-06-16-ros2-control-open-loop.en.md](docs/evidence/2026-06-16-ros2-control-open-loop.en.md): ros2_control dry-run evidence summary
+- [docs/evidence/2026-07-13-m4-physical-ros2-control.en.md](docs/evidence/2026-07-13-m4-physical-ros2-control.en.md): M4 physical one-shot evidence
 - [docs/evidence/2026-06-16-pi-system-health.en.md](docs/evidence/2026-06-16-pi-system-health.en.md): Pi/systemd/ROS2 health evidence summary
 - [docs/evidence/2026-06-17-runtime-measurements.en.md](docs/evidence/2026-06-17-runtime-measurements.en.md): Pi runtime and ROS2 measurement note
 - [EMBEDDED_BRINGUP.md](EMBEDDED_BRINGUP.md): STM32/ESP32 bring-up and measurement checklist

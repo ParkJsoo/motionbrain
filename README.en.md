@@ -17,7 +17,7 @@ input -> decision -> state -> motion -> feedback
 | Real robot integration | ESP32 5-axis motion controller, STM32 wired teleop layer, ESP32-CAM, and Raspberry Pi host integrated into one arm stack |
 | Embedded safety boundary | `BOOT -> IDLE -> ARMED -> FAULT`, `Dispatcher` + `SafetyGate`, token-gated commands, deadman release stop, and frame timeouts |
 | Single-axis position feedback | M4 shoulder AS5600 sensing, magnet/sensor health, bounded 230-245 deg proven closed-loop targets, explicit `TARGET_MISSED`, 22/22 no-added-load plus 11/11 at 23.1 g on the fixed mount, and HTTP/dashboard/ROS2 telemetry |
-| ROS2 system software | ROS2 Jazzy typed topics, C++ control guard, mission supervisor, URDF/RViz, a `ros2_control` dry-run mock/open-loop `SystemInterface`, and M4 read-only measured state mode |
+| ROS2 system software | ROS2 Jazzy typed topics, C++ control guard, mission supervisor, URDF/RViz, dry-run/read-only modes, and operator-confirmed physical `ros2_control` writes for M4 |
 | Operations and validation | Pi systemd services, health-check scripts, runtime evidence, `ros2_control` evidence, PlatformIO/Python/ROS2 GitHub Actions, and a physical teleoperation demo |
 
 Good first evidence links for reviewers:
@@ -37,13 +37,11 @@ Good first evidence links for reviewers:
 The strongest system-level evidence in this repository is the combination of
 real hardware integration and ROS2 boundary design: ROS2 Jazzy typed
 interfaces, C++ guard logic, mission supervision, RViz/TF visualization,
-`ros2_control` dry-run mock bring-up, and a safe open-loop `SystemInterface`
-scaffold, plus M4 read-only measured state mode.
-
-Physical motion remains behind the ESP32 firmware `SafetyGate`; physical
-`ros2_control` writes are not exposed. The public boundary is dry-run/open-loop
-scaffolding plus an M4 read-only measured state mode. See the initial
-[2026-06-16 ros2_control evidence note](docs/evidence/2026-06-16-ros2-control-open-loop.en.md).
+`ros2_control` dry-run/read-only modes, and an M4-only physical-write path.
+Proposals are not forwarded automatically; only an operator-confirmed 20-second
+one-shot can reach the authenticated ESP32 `/shoulder` endpoint and `SafetyGate`.
+A 248.20 deg start reached 249.96 deg for a 250.00 deg target
+(`TARGET_REACHED`, -0.04 deg), and proposal reuse was rejected. [Detailed evidence](docs/evidence/2026-07-13-m4-physical-ros2-control.en.md)
 
 ## Demo Video
 
@@ -78,8 +76,8 @@ commands. Detailed validation results and portfolio claim boundaries live in
 [PORTFOLIO.en.md](PORTFOLIO.en.md) and the
 [claim-to-evidence matrix](docs/evidence/claim-to-evidence-matrix.md).
 
-- Physical motion authority remains inside the ESP32 firmware `SafetyGate`;
-  physical ROS2 writes are not exposed.
+- Physical motion authority remains inside the ESP32 firmware `SafetyGate`.
+  ROS2 physical writes are limited to an operator-confirmed one-shot M4 target.
 - Position feedback is limited to the M4 shoulder AS5600. The other four axes do
   not have encoder-grade feedback.
 - The matrix-proven M4 target range is 230-245 deg. 122.08-301.02 deg is only a
@@ -227,6 +225,7 @@ stable minimum.
 - [PIN_MAP.en.md](PIN_MAP.en.md): ESP32 allocation and M4 AS5600 I2C boot conditions
 - [docs/evidence/2026-06-28-m4-shoulder-closed-loop.en.md](docs/evidence/2026-06-28-m4-shoulder-closed-loop.en.md): M4 shoulder AS5600 absolute feedback and bounded physical closed-loop evidence
 - [docs/evidence/2026-06-16-ros2-control-open-loop.en.md](docs/evidence/2026-06-16-ros2-control-open-loop.en.md): public ros2_control dry-run evidence note
+- [docs/evidence/2026-07-13-m4-physical-ros2-control.en.md](docs/evidence/2026-07-13-m4-physical-ros2-control.en.md): M4 physical `ros2_control` one-shot evidence
 - [docs/evidence/2026-06-16-pi-system-health.en.md](docs/evidence/2026-06-16-pi-system-health.en.md): public Pi/systemd/ROS2 health evidence note
 - [docs/evidence/2026-06-17-runtime-measurements.en.md](docs/evidence/2026-06-17-runtime-measurements.en.md): Pi runtime endpoint latency, ROS2 topic/status probe, and instrument inventory record
 - [docs/evidence/2026-06-16-embedded-bench-checks.en.md](docs/evidence/2026-06-16-embedded-bench-checks.en.md): recovered DMM-level embedded bench sanity-check evidence

@@ -17,9 +17,8 @@ MotionBrain은 ESP32 모션 제어기, STM32 센서/텔레오퍼레이션 계층
 - 안전 경계 중심: 모든 상태 변경과 물리 출력은 토큰, 상태 머신,
   `SafetyGate`, deadman, freshness timeout을 통과해야 한다.
 - ROS2 시스템 역량: typed messages, ROS2 bridge, C++ control guard,
-  mission supervisor, URDF/RViz, `ros2_control` dry-run mock/open-loop
-  `SystemInterface`, M4 read-only measured state mode를 갖췄고,
-  `ros2_control`을 통한 물리 출력은 열지 않았다.
+  mission supervisor, URDF/RViz, `ros2_control` dry-run/read-only 모드와
+  operator-confirmed M4 physical write 경로를 갖췄다.
 - 운영 가능성: Pi systemd 서비스, SSH/DNS 복구 절차, health check,
   runtime evidence, `ros2_control` evidence, CI 검증까지 문서화했다.
 - 주장 경계: M4 어깨 한 축의 제한 폐루프 검증과 로봇팔 전체의 위치 제어를
@@ -34,6 +33,8 @@ MotionBrain은 ESP32 모션 제어기, STM32 센서/텔레오퍼레이션 계층
 - [`ros2_control` dry-run 검증](docs/evidence/2026-06-16-ros2-control-open-loop.md):
   controller manager, hardware-interface plugin, command/state interface,
   `FollowJointTrajectory`, `/joint_states` dry-run state mirror
+- [M4 physical `ros2_control` 검증](docs/evidence/2026-07-13-m4-physical-ros2-control.md):
+  20초 one-shot 확인, 실물 수렴, replay 거부, systemd 재기동
 - [Pi/systemd/ROS2 health 검증](docs/evidence/2026-06-16-pi-system-health.md):
   dashboard, perception, ROS2 bridge service와 typed topic/service/action 상태
 - [Pi runtime 측정](docs/evidence/2026-06-17-runtime-measurements.md):
@@ -72,6 +73,7 @@ MotionBrain은 ESP32 모션 제어기, STM32 센서/텔레오퍼레이션 계층
 - 안전 게이트 기반 bounded base nudge 제어 표면
 - ROS2 Jazzy 브리지, 타입 지정 메시지, C++ 제어 guard, mission supervisor
 - `ros2_control` dry-run mock 데모와 안전한 open-loop `SystemInterface` 스캐폴드
+- M4 proposal hardware interface, operator-confirm executor와 systemd 운영 계약
 - Raspberry Pi systemd 배포와 상태 점검
 - GitHub Actions 기반 PlatformIO/Python/ROS2 품질 게이트
 
@@ -133,7 +135,7 @@ ESP32-CAM은 카메라 노드로만 두고, Raspberry Pi에서 감지와 오버�
 
 ### ROS2 호스트 경계
 
-ROS2는 ESP32 내부 제어를 대체하지 않는다. 대신 `/status`, `/events`, `/camera/detection`을 타입 지정 토픽으로 승격하고, C++ 제어 guard와 mission supervisor가 현재 상태와 타겟 정렬을 판단한다. `ros2_control`은 dry-run mock controller, open-loop `SystemInterface` 스캐폴드, M4 read-only measured state mode까지 제공하며, 물리 출력은 여전히 ESP32 firmware safety 경계 뒤에 둔다.
+ROS2는 ESP32 내부 제어를 대체하지 않는다. M4 physical 경로는 `ForwardCommandController -> non-forwarded proposal -> 20초 one-shot operator confirm -> 인증 /shoulder -> ESP32 SafetyGate -> AS5600 폐루프` 순서다. direct `http`/`physical` transport, full-arm write, 자동 trajectory tracking은 비활성화했다.
 
 ### 검증 가능한 데모 경계
 
@@ -170,7 +172,9 @@ ROS2는 ESP32 내부 제어를 대체하지 않는다. 대신 `/status`, `/event
 - `/motionbrain/status_typed`, `/camera/detection_typed`, estimated/measured `/joint_states`, `/motionbrain/kinematics_typed`, `/motionbrain/control_guard_typed`, `/motionbrain/mission_state_typed` 상태 점검 통과
 - Pi 인식 서비스 결과가 ROS2 `/camera/detection_typed`까지 전달되는 것 확인
 - Docker/noVNC RViz 검증 환경에서 RobotModel/TF와 Pi dashboard mirror 기반 live ROS2 topic 시각화 확인
-- `motionbrain_ros2_control_mock`과 `motionbrain_hardware_interface`로 `ros2_control` controller/hardware interface dry-run 경계와 M4 read-only measured state mode 검증
+- M4 physical `ros2_control`에서 248.20° 시작, 250.00° 목표, 249.96° 종료(-0.04°, `TARGET_REACHED`) 확인; 비-M4 출력은 0 유지
+- replay는 `proposal_already_consumed`, IDLE smoke는 `state_not_armed`로 전달 없이 거부; systemd 재시작 뒤 executor 한 개 자동 복구
+- 로컬 Python 185/185, Pi ROS2 72 tests/0 failures 통과
 - GitHub Actions에서 PlatformIO, Python 테스트, ROS2 workspace 검증
 
 ## 객체 인식 현황
@@ -187,8 +191,8 @@ Pi에서 OpenCV DNN/ONNX 기반 constrained known-object detection 경로는 구
 
 ## 현재 한계
 
-- M4 어깨 한 축만 기구적으로 고정된 AS5600 피드백을 사용한다. 나머지 네 축에는
-  위치 피드백이 없고 전체 관절 절대 위치나 `ros2_control` 물리 폐루프는 없다.
+- M4 어깨만 AS5600 피드백과 operator-confirmed physical `ros2_control`
+  single-target 경로가 있다. 나머지 축 피드백, full-arm write, 자동 trajectory tracking은 없다.
 - M4 GPIO0/GPIO15는 현재 핀 점유에서 유지하는 지원 배치지만 부트 스트랩
   조건을 준수해야 한다. 센서·자석 고정은 완료했고 ROS zero는 `222.80°`,
   sign `+1`로 적용했다. `230-245°`는 matrix로 검증한 목표 범위이고,
@@ -219,5 +223,6 @@ Pi에서 OpenCV DNN/ONNX 기반 constrained known-object detection 경로는 구
 - [PIN_MAP.md](PIN_MAP.md): ESP32 핀 점유와 M4 AS5600 배치 정책
 - [docs/evidence/2026-06-28-m4-shoulder-closed-loop.md](docs/evidence/2026-06-28-m4-shoulder-closed-loop.md): M4 어깨 단일축 폐루프 실물 검증
 - [docs/evidence/2026-06-16-ros2-control-open-loop.md](docs/evidence/2026-06-16-ros2-control-open-loop.md): `ros2_control` dry-run 검증 요약
+- [docs/evidence/2026-07-13-m4-physical-ros2-control.md](docs/evidence/2026-07-13-m4-physical-ros2-control.md): M4 physical one-shot 검증
 - [docs/evidence/2026-06-16-pi-system-health.md](docs/evidence/2026-06-16-pi-system-health.md): Pi/systemd/ROS2 health 검증 요약
 - [docs/evidence/2026-06-17-runtime-measurements.md](docs/evidence/2026-06-17-runtime-measurements.md): Pi runtime/ROS2 측정 기록
