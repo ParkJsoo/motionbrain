@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 from tools import motionbrain_dashboard as dashboard
 from tools.motionbrain_dashboard import DashboardServer
+from tools.motionbrain_dashboard import build_dashboard_policy_proposal
 from tools.motionbrain_dashboard import build_grasp_dry_run_plan
 from tools.motionbrain_dashboard import dependency_error_payload
 
@@ -28,6 +29,57 @@ class DashboardAlignmentTest(unittest.TestCase):
 
         busy = {"state": "ARMED", "sensor": {"blocked": False}, "baseAngle": {"active": True}}
         self.assertEqual(server.status_allows_align_nudge(busy), (False, "base_busy"))
+
+    def test_dashboard_policy_proposal_holds_while_idle_without_execution(self) -> None:
+        proposal = build_dashboard_policy_proposal(
+            {
+                "state": "IDLE",
+                "motorEnabled": False,
+                "sensor": {"blocked": False, "faultLatched": False},
+                "baseAngle": {"active": False},
+                "motors": {},
+            },
+            {
+                "available": True,
+                "detected": True,
+                "fresh": True,
+                "held": False,
+                "label": "cup",
+                "confidence": 0.8,
+                "alignment": "CENTER",
+            },
+            instruction="center cup",
+        )
+
+        self.assertEqual(proposal["action"], "hold")
+        self.assertEqual(proposal["reason"], "state_not_armed")
+        self.assertFalse(proposal["physicalMotionCandidate"])
+        self.assertFalse(proposal["executionAvailable"])
+
+    def test_dashboard_policy_proposal_exposes_confirmed_dry_run_candidate(self) -> None:
+        proposal = build_dashboard_policy_proposal(
+            {
+                "state": "ARMED",
+                "sensor": {"blocked": False, "faultLatched": False},
+                "baseAngle": {"active": False},
+                "motors": {},
+            },
+            {
+                "available": True,
+                "detected": True,
+                "fresh": True,
+                "held": False,
+                "label": "cup",
+                "confidence": 0.8,
+                "alignment": "CENTER",
+            },
+            instruction="center cup",
+        )
+
+        self.assertEqual(proposal["action"], "cup_grasp_plan")
+        self.assertTrue(proposal["requiresOperatorConfirm"])
+        self.assertFalse(proposal["physicalMotionCandidate"])
+        self.assertFalse(proposal["executionAvailable"])
 
     def test_dependency_error_payload_marks_controller_unavailable_as_degraded(self) -> None:
         payload = dependency_error_payload(

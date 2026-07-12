@@ -1,0 +1,9 @@
+builtin_interfaces/Time stamp
+string instruction
+string action
+float32 confidence
+string reason
+bool requires_operator_confirm
+bool physical_motion_candidate
+string[] preconditions
+string raw_json

@@ -21,6 +21,7 @@ setup(
     entry_points={
         "console_scripts": [
             "motionbrain_mission_supervisor = motionbrain_mission.mission_supervisor_node:main",
+            "motionbrain_policy_proposal_node = motionbrain_mission.policy_proposal_node:main",
         ],
     },
 )

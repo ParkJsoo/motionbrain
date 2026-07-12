@@ -41,6 +41,7 @@ EXPECTED_MESSAGE_FILES = {
     "MissionCommand.msg",
     "MissionState.msg",
     "NodeLifecycleStatus.msg",
+    "PolicyProposal.msg",
     "MotionEvent.msg",
     "MotionStatus.msg",
     "RoutineCommand.msg",

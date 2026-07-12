@@ -16,10 +16,18 @@ from pathlib import Path
 from typing import Any
 
 ROS_BRIDGE_SRC = Path(__file__).resolve().parents[1] / "ros2_ws" / "src" / "motionbrain_ros_bridge"
+MISSION_SRC = Path(__file__).resolve().parents[1] / "ros2_ws" / "src" / "motionbrain_mission"
 if str(ROS_BRIDGE_SRC) not in sys.path:
     sys.path.insert(0, str(ROS_BRIDGE_SRC))
+if str(MISSION_SRC) not in sys.path:
+    sys.path.insert(0, str(MISSION_SRC))
 
 from motionbrain_ros_bridge.vision_detection import detect_colored_target  # noqa: E402
+from motionbrain_mission.policy_proposal import PolicyConfig  # noqa: E402
+from motionbrain_mission.policy_proposal import PolicyDetectionSnapshot  # noqa: E402
+from motionbrain_mission.policy_proposal import PolicyGuardSnapshot  # noqa: E402
+from motionbrain_mission.policy_proposal import PolicyStatusSnapshot  # noqa: E402
+from motionbrain_mission.policy_proposal import propose_policy_action  # noqa: E402
 
 
 DEFAULT_GRASP_SEQUENCE = [
@@ -28,6 +36,62 @@ DEFAULT_GRASP_SEQUENCE = [
     {"joint": "gripper", "action": "close", "percent": 35, "ms": 450},
     {"joint": "gripper", "action": "stop", "percent": 0, "ms": 0},
 ]
+
+
+def build_dashboard_policy_proposal(
+    status: dict[str, Any],
+    detection: dict[str, Any],
+    *,
+    instruction: str,
+    target_label: str = "cup",
+    min_confidence: float = 0.5,
+) -> dict[str, Any]:
+    sensor = status.get("sensor") if isinstance(status.get("sensor"), dict) else {}
+    base = status.get("baseAngle") if isinstance(status.get("baseAngle"), dict) else {}
+    state = str(status.get("state", "UNKNOWN"))
+    detection_fresh = bool(detection.get("fresh", False))
+    status_snapshot = PolicyStatusSnapshot(
+        available=bool(status) and not bool(status.get("degraded", False)),
+        state=state,
+        moving=bool(status.get("moving", False)) or any(
+            bool(motor.get("enabled", False))
+            for motor in (status.get("motors", {}) or {}).values()
+            if isinstance(motor, dict)
+        ),
+        faulted=state == "FAULT",
+        base_active=bool(base.get("active", False)),
+        safety_blocked=bool(sensor.get("blocked", False)),
+        fault_latched=bool(sensor.get("faultLatched", False)),
+    )
+    detection_snapshot = PolicyDetectionSnapshot(
+        available=bool(detection.get("available", False)),
+        detected=bool(detection.get("detected", False)),
+        fresh=detection_fresh,
+        held=bool(detection.get("held", False)),
+        alignment=str(detection.get("alignment", "LOST")),
+        command_suggestion=str(detection.get("commandSuggestion", "none")),
+        label=str(detection.get("label", "")),
+        color=str(detection.get("color", "")),
+        confidence=detection.get("confidence") if isinstance(detection.get("confidence"), (int, float)) else None,
+        area_ratio=float(detection.get("areaRatio", detection.get("ratio", 0.0)) or 0.0),
+    )
+    guard = PolicyGuardSnapshot(
+        ready=status_snapshot.available and detection_fresh,
+        reason="ready" if status_snapshot.available and detection_fresh else "inputs_not_ready",
+        status_fresh=status_snapshot.available,
+        detection_fresh=detection_fresh,
+    )
+    proposal = propose_policy_action(
+        instruction=instruction,
+        status=status_snapshot,
+        detection=detection_snapshot,
+        guard=guard,
+        config=PolicyConfig(target_label=target_label, min_confidence=min_confidence),
+    ).to_dict()
+    proposal["ok"] = True
+    proposal["source"] = "dashboard_read_only"
+    proposal["executionAvailable"] = False
+    return proposal
 
 
 INDEX_HTML = """<!doctype html>
@@ -549,6 +613,30 @@ INDEX_HTML = """<!doctype html>
       </section>
 
       <section>
+        <h2>Policy Proposal · Read Only</h2>
+        <div class="panel-body">
+          <div class="controls">
+            <input id="policyInstruction" type="text" value="center cup" placeholder="Policy instruction">
+            <button onclick="refreshPolicyProposal()">Evaluate</button>
+          </div>
+          <div class="grid">
+            <div class="metric">
+              <div class="label">Action</div>
+              <div class="value" id="policyAction">-</div>
+              <div class="subvalue" id="policyConfidence">confidence -</div>
+            </div>
+            <div class="metric">
+              <div class="label">Decision</div>
+              <div class="value" id="policyConfirm">-</div>
+              <div class="subvalue" id="policyReason">-</div>
+            </div>
+          </div>
+          <div class="subvalue" id="policyPreconditions">preconditions -</div>
+          <div class="subvalue">Proposal evaluation cannot execute controller commands.</div>
+        </div>
+      </section>
+
+      <section>
         <h2>Action Log</h2>
         <div class="log" id="actionLog"></div>
       </section>
@@ -559,6 +647,7 @@ INDEX_HTML = """<!doctype html>
     const logLines = [];
     let lastStatus = null;
     let lastDetection = null;
+    let lastPolicyProposal = null;
     let dashboardConfig = null;
     let dashboardAuthToken = sessionStorage.getItem("motionbrainDashboardToken") || "";
 
@@ -1001,6 +1090,29 @@ INDEX_HTML = """<!doctype html>
       }
     }
 
+    function updatePolicyProposal(proposal) {
+      lastPolicyProposal = proposal;
+      const action = proposal.action || "hold";
+      const physical = proposal.physicalMotionCandidate === true;
+      setText("policyAction", action, physical ? "warn" : "ok");
+      document.getElementById("policyConfidence").textContent = `confidence ${fmtNum(proposal.confidence, 2)}`;
+      setText("policyConfirm", proposal.requiresOperatorConfirm ? "CONFIRM" : "NO EXEC", proposal.requiresOperatorConfirm ? "warn" : "ok");
+      document.getElementById("policyReason").textContent = proposal.reason || "-";
+      const preconditions = Array.isArray(proposal.preconditions) ? proposal.preconditions.join(", ") : "-";
+      document.getElementById("policyPreconditions").textContent = `preconditions ${preconditions || "none"}`;
+    }
+
+    async function refreshPolicyProposal() {
+      const input = document.getElementById("policyInstruction");
+      const instruction = input ? input.value.trim() : "";
+      try {
+        const proposal = await getJson(`/api/policy_proposal?instruction=${encodeURIComponent(instruction)}`);
+        updatePolicyProposal(proposal);
+      } catch (err) {
+        pushLog(`policy proposal error: ${err.message}`);
+      }
+    }
+
     async function sendLight(action) {
       try {
         const data = await postJson("/api/light", { action });
@@ -1063,12 +1175,16 @@ INDEX_HTML = """<!doctype html>
     updateDashboardAuthState();
     refresh();
     refreshVision();
+    refreshPolicyProposal();
     setInterval(() => {
       if (!document.hidden) refresh();
     }, 2500);
     setInterval(() => {
       if (!document.hidden) refreshVision();
     }, 350);
+    setInterval(() => {
+      if (!document.hidden) refreshPolicyProposal();
+    }, 2500);
   </script>
 </body>
 </html>
@@ -1289,6 +1405,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self.handle_capture(allow_cross_origin=True)
             elif parsed.path == "/api/detection":
                 self.handle_detection()
+            elif parsed.path == "/api/policy_proposal":
+                query = urllib.parse.parse_qs(parsed.query)
+                instruction = query.get("instruction", [""])[0]
+                self.handle_policy_proposal(instruction)
             else:
                 self.send_error_json(HTTPStatus.NOT_FOUND, "not_found")
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as exc:
@@ -1473,6 +1593,24 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.send_dependency_error(dependency, url, exc)
             return
         self.send_json(payload, allow_cross_origin=True)
+
+    def handle_policy_proposal(self, instruction: str) -> None:
+        if len(instruction) > 240:
+            self.send_error_json(HTTPStatus.BAD_REQUEST, "instruction_too_long")
+            return
+        try:
+            status = fetch_json(f"{self.server.motion_base_url}/status", self.server.timeout)
+            detection = self.server.get_detection()
+            payload = build_dashboard_policy_proposal(
+                status,
+                detection,
+                instruction=instruction,
+                target_label=self.server.grasp_target_label,
+                min_confidence=self.server.grasp_min_confidence,
+            )
+            self.send_json(payload)
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError, OSError) as exc:
+            self.send_dependency_error("policy_inputs", "dashboard_status_and_detection", exc)
 
     def send_html(self, html: str) -> None:
         body = html.encode("utf-8")
