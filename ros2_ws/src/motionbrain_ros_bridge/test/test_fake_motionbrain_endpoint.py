@@ -55,6 +55,18 @@ class FakeEndpointServer:
 
 
 class FakeMotionBrainEndpointTest(unittest.TestCase):
+    def confirmed_m4_request(self, server: FakeEndpointServer, command_id: str = "cmd") -> dict:
+        request = {
+            "commandId": command_id,
+            "joint": "shoulder_pitch_joint",
+            "targetPositionRad": 0.25,
+            "timeoutMs": 5000,
+            "mode": "shadow",
+        }
+        confirmation = server.post_json("/m4/confirm", request)
+        request["confirmId"] = confirmation["confirmId"]
+        return request
+
     def test_ready_scenario_serves_status_routine_events_and_detection(self):
         with FakeEndpointServer("ready") as server:
             status = server.get_json("/status")
@@ -133,16 +145,18 @@ class FakeMotionBrainEndpointTest(unittest.TestCase):
 
     def test_m4_ready_scenario_simulates_target_without_forwarding(self):
         with FakeEndpointServer("m4_ready") as server:
+            request = {
+                "commandId": "cmd-1",
+                "joint": "shoulder_pitch_joint",
+                "targetPositionRad": 0.25,
+                "timeoutMs": 5000,
+                "mode": "shadow",
+            }
+            confirmation = server.post_json("/m4/confirm", request)
+            request["confirmId"] = confirmation["confirmId"]
             result = server.post_json(
                 "/m4/target",
-                {
-                    "commandId": "cmd-1",
-                    "joint": "shoulder_pitch_joint",
-                    "targetPositionRad": 0.25,
-                    "timeoutMs": 5000,
-                    "confirmId": "confirm-1",
-                    "mode": "shadow",
-                },
+                request,
             )
 
         self.assertTrue(result["accepted"])
@@ -157,16 +171,69 @@ class FakeMotionBrainEndpointTest(unittest.TestCase):
             "joint": "shoulder_pitch_joint",
             "targetPositionRad": 0.25,
             "timeoutMs": 5000,
-            "confirmId": "confirm-1",
             "mode": "shadow",
         }
         with FakeEndpointServer("m4_ready") as server:
+            confirmation = server.post_json("/m4/confirm", request)
+            request["confirmId"] = confirmation["confirmId"]
             first = server.post_json("/m4/target", request)
             second = server.post_json("/m4/target", request)
 
         self.assertTrue(first["accepted"])
         self.assertFalse(second["accepted"])
         self.assertEqual("duplicate_command_id", second["reason"])
+
+    def test_m4_confirmation_rejects_changed_target(self):
+        request = {
+            "commandId": "changed-target",
+            "joint": "shoulder_pitch_joint",
+            "targetPositionRad": 0.25,
+            "timeoutMs": 5000,
+            "mode": "shadow",
+        }
+        with FakeEndpointServer("m4_ready") as server:
+            confirmation = server.post_json("/m4/confirm", request)
+            request["confirmId"] = confirmation["confirmId"]
+            request["targetPositionRad"] = 0.27
+            result = server.post_json("/m4/target", request)
+
+        self.assertFalse(result["accepted"])
+        self.assertEqual("confirmation_command_mismatch", result["reason"])
+
+    def test_m4_target_missed_returns_bounded_failure(self):
+        with FakeEndpointServer("m4_target_missed") as server:
+            result = server.post_json(
+                "/m4/target", self.confirmed_m4_request(server, "missed")
+            )
+
+        self.assertTrue(result["accepted"])
+        self.assertFalse(result["executed"])
+        self.assertFalse(result["forwarded"])
+        self.assertEqual("TARGET_MISSED", result["stopReason"])
+        self.assertEqual(409, result["httpStatus"])
+
+    def test_m4_timeout_returns_non_forwarded_timeout(self):
+        with FakeEndpointServer("m4_timeout") as server:
+            result = server.post_json(
+                "/m4/target", self.confirmed_m4_request(server, "timeout")
+            )
+
+        self.assertTrue(result["accepted"])
+        self.assertFalse(result["executed"])
+        self.assertFalse(result["forwarded"])
+        self.assertEqual("TIMEOUT", result["stopReason"])
+        self.assertEqual(504, result["httpStatus"])
+
+    def test_m4_stale_sensor_is_rejected_before_execution(self):
+        with FakeEndpointServer("m4_stale_shoulder") as server:
+            result = server.post_json(
+                "/m4/target", self.confirmed_m4_request(server, "stale")
+            )
+
+        self.assertFalse(result["accepted"])
+        self.assertFalse(result["executed"])
+        self.assertFalse(result["forwarded"])
+        self.assertEqual("sensor_stale", result["reason"])
 
     def test_unknown_path_returns_404_json(self):
         with FakeEndpointServer("ready") as server:

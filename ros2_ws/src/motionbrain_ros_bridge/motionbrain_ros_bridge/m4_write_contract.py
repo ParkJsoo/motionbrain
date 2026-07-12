@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import math
+import secrets
+import threading
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -21,6 +24,72 @@ class M4ContractError(ValueError):
         super().__init__(reason)
         self.reason = reason
         self.detail = detail
+
+
+def confirmation_fingerprint(
+    request: dict[str, Any], config: M4WriteConfig | None = None
+) -> tuple[str, float, int, str]:
+    config = config or M4WriteConfig()
+    if str(request.get("joint", "")) != "shoulder_pitch_joint":
+        raise M4ContractError("unsupported_joint")
+    mode = str(request.get("mode", ""))
+    if mode not in {"shadow", "physical"}:
+        raise M4ContractError("invalid_mode")
+    try:
+        target_rad = float(request["targetPositionRad"])
+        timeout_ms = int(request.get("timeoutMs", 5000))
+    except (KeyError, TypeError, ValueError):
+        raise M4ContractError("invalid_confirmation_request") from None
+    if not config.min_timeout_ms <= timeout_ms <= config.max_timeout_ms:
+        raise M4ContractError("invalid_timeout")
+    target_deg = sensor_deg_from_ros_rad(target_rad, config)
+    if target_deg < config.min_sensor_deg or target_deg > config.max_sensor_deg:
+        raise M4ContractError("target_out_of_range")
+    return ("shoulder_pitch_joint", round(target_deg, 6), timeout_ms, mode)
+
+
+class M4ConfirmationStore:
+    def __init__(self, ttl_seconds: float = 20.0) -> None:
+        self.ttl_seconds = ttl_seconds
+        self.lock = threading.Lock()
+        self.pending: dict[str, dict[str, Any]] = {}
+
+    def issue(self, request: dict[str, Any]) -> dict[str, Any]:
+        fingerprint = confirmation_fingerprint(request)
+        now = time.time()
+        confirm_id = secrets.token_urlsafe(18)
+        with self.lock:
+            self.pending[confirm_id] = {
+                "fingerprint": fingerprint,
+                "expiresAt": now + self.ttl_seconds,
+                "consumed": False,
+            }
+        return {
+            "confirmId": confirm_id,
+            "expiresAt": now + self.ttl_seconds,
+            "fingerprint": {
+                "joint": fingerprint[0],
+                "targetSensorDeg": fingerprint[1],
+                "timeoutMs": fingerprint[2],
+                "mode": fingerprint[3],
+            },
+        }
+
+    def consume(self, confirm_id: str, request: dict[str, Any]) -> None:
+        fingerprint = confirmation_fingerprint(request)
+        now = time.time()
+        with self.lock:
+            item = self.pending.get(confirm_id)
+            if item is None:
+                raise M4ContractError("confirmation_not_found")
+            if item["consumed"]:
+                raise M4ContractError("confirmation_already_consumed")
+            if now > item["expiresAt"]:
+                item["consumed"] = True
+                raise M4ContractError("confirmation_expired")
+            item["consumed"] = True
+            if item["fingerprint"] != fingerprint:
+                raise M4ContractError("confirmation_command_mismatch")
 
 
 def sensor_deg_from_ros_rad(position_rad: float, config: M4WriteConfig) -> float:

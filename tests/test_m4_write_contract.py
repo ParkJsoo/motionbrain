@@ -10,6 +10,7 @@ sys.path.insert(0, str(BRIDGE_SRC))
 
 from motionbrain_ros_bridge.fake_motionbrain_endpoint import base_status_payload  # noqa: E402
 from motionbrain_ros_bridge.m4_write_contract import M4ContractError  # noqa: E402
+from motionbrain_ros_bridge.m4_write_contract import M4ConfirmationStore  # noqa: E402
 from motionbrain_ros_bridge.m4_write_contract import M4WriteConfig  # noqa: E402
 from motionbrain_ros_bridge.m4_write_contract import ros_rad_from_sensor_deg  # noqa: E402
 from motionbrain_ros_bridge.m4_write_contract import sensor_deg_from_ros_rad  # noqa: E402
@@ -82,6 +83,30 @@ class M4WriteContractTest(unittest.TestCase):
         request["timeoutMs"] = 100
         with self.assertRaisesRegex(M4ContractError, "invalid_timeout"):
             validate_m4_request(request, armed_status())
+
+    def test_confirmation_is_one_shot_and_bound_to_target(self):
+        store = M4ConfirmationStore()
+        request = request_for_sensor_deg(237.0)
+        confirmation = store.issue(request)
+        request["confirmId"] = confirmation["confirmId"]
+        store.consume(confirmation["confirmId"], request)
+        with self.assertRaisesRegex(M4ContractError, "confirmation_already_consumed"):
+            store.consume(confirmation["confirmId"], request)
+
+        changed = request_for_sensor_deg(238.0)
+        confirmation = store.issue(changed)
+        changed["confirmId"] = confirmation["confirmId"]
+        changed["targetPositionRad"] = ros_rad_from_sensor_deg(239.0)
+        with self.assertRaisesRegex(M4ContractError, "confirmation_command_mismatch"):
+            store.consume(confirmation["confirmId"], changed)
+
+    def test_expired_confirmation_is_rejected(self):
+        store = M4ConfirmationStore()
+        request = request_for_sensor_deg(237.0)
+        confirmation = store.issue(request)
+        store.pending[confirmation["confirmId"]]["expiresAt"] = 0.0
+        with self.assertRaisesRegex(M4ContractError, "confirmation_expired"):
+            store.consume(confirmation["confirmId"], request)
 
 
 if __name__ == "__main__":

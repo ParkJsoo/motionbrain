@@ -10,6 +10,7 @@ from http.server import ThreadingHTTPServer
 from typing import Any
 
 from motionbrain_ros_bridge.m4_write_contract import M4ContractError
+from motionbrain_ros_bridge.m4_write_contract import M4ConfirmationStore
 from motionbrain_ros_bridge.m4_write_contract import rejection_payload
 from motionbrain_ros_bridge.m4_write_contract import ros_rad_from_sensor_deg
 from motionbrain_ros_bridge.m4_write_contract import validate_m4_request
@@ -26,6 +27,7 @@ SCENARIOS = {
     "m4_ready",
     "m4_target_missed",
     "m4_timeout",
+    "m4_stale_shoulder",
 }
 
 
@@ -250,7 +252,7 @@ def status_payload_for_scenario(scenario: str) -> dict[str, Any]:
         payload["sensor"]["faultReason"] = "FAKE_CONTROLLER_FAULT"
         payload["recovery"]["action"] = "clear_fault"
         payload["recovery"]["requiresFaultClear"] = True
-    elif scenario == "stale_shoulder":
+    if scenario in {"stale_shoulder", "m4_stale_shoulder"}:
         shoulder = payload["shoulderAngle"]
         shoulder["available"] = True
         shoulder["sensorConnected"] = True
@@ -419,6 +421,9 @@ class FakeMotionBrainRequestHandler(BaseHTTPRequestHandler):
         if path == "/m4/target":
             self.handle_m4_target()
             return
+        if path == "/m4/confirm":
+            self.handle_m4_confirm()
+            return
         self.send_json({"ok": False, "error": "not_found", "path": path}, status=404)
 
     def handle_m4_target(self) -> None:
@@ -430,6 +435,9 @@ class FakeMotionBrainRequestHandler(BaseHTTPRequestHandler):
             command_id = str(request.get("commandId", ""))
             if command_id in self.server.m4_command_ids:  # type: ignore[attr-defined]
                 raise M4ContractError("duplicate_command_id")
+            self.server.m4_confirmations.consume(  # type: ignore[attr-defined]
+                str(request.get("confirmId", "")), request
+            )
             validated = validate_m4_request(request, status_payload_for_scenario(self.scenario))
             self.server.m4_command_ids.add(command_id)  # type: ignore[attr-defined]
             if self.scenario == "m4_timeout":
@@ -476,6 +484,27 @@ class FakeMotionBrainRequestHandler(BaseHTTPRequestHandler):
         except (json.JSONDecodeError, ValueError):
             self.send_json(rejection_payload(M4ContractError("invalid_json")), status=400)
 
+    def handle_m4_confirm(self) -> None:
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            request = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+            if not isinstance(request, dict):
+                raise M4ContractError("json_object_required")
+            confirmation = self.server.m4_confirmations.issue(request)  # type: ignore[attr-defined]
+            self.send_json(
+                {
+                    "accepted": True,
+                    "executed": False,
+                    "forwarded": False,
+                    "simulated": True,
+                    **confirmation,
+                }
+            )
+        except M4ContractError as exc:
+            self.send_json(rejection_payload(exc), status=409)
+        except (json.JSONDecodeError, ValueError):
+            self.send_json(rejection_payload(M4ContractError("invalid_json")), status=400)
+
 
 def make_server(
     host: str,
@@ -492,6 +521,7 @@ def make_server(
     server.delay_sec = max(float(delay_sec), 0.0)  # type: ignore[attr-defined]
     server.quiet = bool(quiet)  # type: ignore[attr-defined]
     server.m4_command_ids = set()  # type: ignore[attr-defined]
+    server.m4_confirmations = M4ConfirmationStore()  # type: ignore[attr-defined]
     return server
 
 
