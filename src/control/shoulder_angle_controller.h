@@ -54,12 +54,14 @@ public:
   // attempt cap still bound the correction before this maximum duration.
   static constexpr uint32_t UP_CORRECTION_PULSE_MS = 500;
   static constexpr uint32_t DOWN_CORRECTION_PULSE_MS = 250;
-  static constexpr uint8_t MAX_CORRECTION_ATTEMPTS = 4;
+  // Keep correction pulses unchanged, but allow two additional bounded
+  // attempts for small moves that settle just outside acceptance.
+  static constexpr uint8_t MAX_CORRECTION_ATTEMPTS = 6;
   static constexpr uint8_t DEFAULT_PERCENT = 100;
   static constexpr uint8_t MIN_DRIVE_PERCENT = 75;
   static constexpr uint8_t SLOW_PERCENT = 75;
   static constexpr uint32_t SENSOR_STALE_MS = 150;
-  static constexpr uint32_t COMMAND_TIMEOUT_MS = 7000;
+  static constexpr uint32_t COMMAND_TIMEOUT_MS = 10000;
   static constexpr uint32_t PROGRESS_GRACE_MS = 900;
   static constexpr uint32_t PROGRESS_TIMEOUT_MS = 900;
   static constexpr float MIN_PROGRESS_DEGREES = 0.20f;

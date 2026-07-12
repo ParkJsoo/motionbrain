@@ -41,7 +41,7 @@ class ShoulderClosedLoopContractTest(unittest.TestCase):
             "SETTLED_SUCCESS_TOLERANCE_DEGREES = 0.40f",
             "STOP_THRESHOLD_WINDOW_DEGREES = 0.35f",
             "SENSOR_STALE_MS = 150",
-            "COMMAND_TIMEOUT_MS = 7000",
+            "COMMAND_TIMEOUT_MS = 10000",
             "PROGRESS_TIMEOUT_MS = 900",
             "UP_STOP_LEAD_DEGREES = 0.90f",
             "DOWN_STOP_LEAD_DEGREES = 1.50f",
@@ -55,7 +55,7 @@ class ShoulderClosedLoopContractTest(unittest.TestCase):
             "DOWN_CORRECTION_PERCENT = 35",
             "UP_CORRECTION_PULSE_MS = 500",
             "DOWN_CORRECTION_PULSE_MS = 250",
-            "MAX_CORRECTION_ATTEMPTS = 4",
+            "MAX_CORRECTION_ATTEMPTS = 6",
         }
         for fragment in expected:
             with self.subTest(fragment=fragment):
