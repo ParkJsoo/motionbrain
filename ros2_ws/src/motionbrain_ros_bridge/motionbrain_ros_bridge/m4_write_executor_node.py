@@ -14,7 +14,7 @@ from motionbrain_ros_bridge.m4_write_executor_core import M4WriteExecutorCore
 
 
 def request_json(url: str, *, timeout: float, token: str = "", method: str = "GET") -> dict:
-    headers = {"Accept": "application/json"}
+    headers = {"Accept": "application/json", "X-MotionBrain": "1"}
     if token:
         headers["X-MotionBrain-Token"] = token
     request = urllib.request.Request(url, headers=headers, method=method)

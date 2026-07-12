@@ -1159,6 +1159,13 @@ class Ros2WorkspaceContractTest(unittest.TestCase):
         ).read_text()
         self.assertIn('executable="motionbrain_m4_write_executor"', bridge_launch)
         self.assertNotIn('"http_token"', bridge_launch)
+        executor_node = (
+            ROS2_SRC
+            / "motionbrain_ros_bridge"
+            / "motionbrain_ros_bridge"
+            / "m4_write_executor_node.py"
+        ).read_text()
+        self.assertIn('"X-MotionBrain": "1"', executor_node)
         self.assertIn("pluginlib::ClassLoader", (
             package_dir / "test" / "test_load_motionbrain_hardware_interface.cpp"
         ).read_text())
