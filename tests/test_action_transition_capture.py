@@ -129,6 +129,90 @@ class TransitionCaptureTest(unittest.TestCase):
         self.assertEqual(result["status"], "aborted")
         self.assertEqual(result["executionState"], "outcome_unknown")
 
+    def test_clock_uncertainty_expired_before_never_executes(self):
+        adapter = SyntheticAdapter()
+        runner = CaptureRunner(ArtifactStore(self.base / "uncertainty"), adapter,
+                               quality_policy={"maxSourceAgeMs": 20.5, "maxM4AgeMs": 20,
+                                               "minimumSettlingMs": 50})
+        result = runner.capture(transition_id="expired")
+        before = result["transition"]["before"]
+        self.assertLess(before["sourceAgeMs"], runner.policy["maxSourceAgeMs"])
+        self.assertGreater(before["sourceAgeMs"] + before["captureHostBoundsUncertaintySeconds"] * 1000,
+                           runner.policy["maxSourceAgeMs"])
+        self.assertEqual(adapter.execute_calls, 0)
+        self.assertEqual(result["status"], "aborted")
+        self.assertEqual(result["executionState"], "not_sent")
+        self.assertIn("before:source_expired", result["errors"][0]["message"])
+        self.assertEqual((runner.store.root / before["image"]["artifactRef"]).read_bytes(), JPEG_BYTES)
+        raw = json.loads((runner.store.root / "raw/expired/before.json").read_text())
+        self.assertEqual(raw["captureHostBoundsUncertaintySeconds"], .001)
+        events, errors = read_events(runner.store.root)
+        self.assertEqual(errors, [])
+        self.assertNotIn("action_intent", [event["kind"] for event in events])
+        runner.close()
+        audit = audit_run(runner.store.root)
+        self.assertTrue(audit["ok"], audit)
+        self.assertEqual(audit["attempts"][0]["executionState"], "not_sent")
+
+    def test_intent_delay_and_clock_uncertainty_together_block_execution(self):
+        adapter = SyntheticAdapter()
+        def delay(stage):
+            if stage == "action_intent":
+                adapter.clock.advance(.002)
+        runner = CaptureRunner(ArtifactStore(self.base / "uncertainty-delay"), adapter,
+                               checkpoint=delay,
+                               quality_policy={"maxSourceAgeMs": 22.5, "maxM4AgeMs": 20,
+                                               "minimumSettlingMs": 50})
+        result = runner.capture(transition_id="expired")
+        self.assertEqual(adapter.execute_calls, 0)
+        self.assertEqual(result["status"], "aborted")
+        self.assertEqual(result["executionState"], "outcome_unknown")
+        self.assertIn("before:source_expired", result["errors"][0]["message"])
+        events, errors = read_events(runner.store.root)
+        self.assertEqual(errors, [])
+        kinds = [event["kind"] for event in events]
+        self.assertIn("action_intent", kinds)
+        self.assertNotIn("action_received", kinds)
+        runner.close()
+        self.assertEqual(audit_run(runner.store.root)["attempts"][0]["executionState"], "outcome_unknown")
+
+    def test_finite_uncertainty_at_freshness_limit_allows_one_execution(self):
+        for index, uncertainty in enumerate((0, .001)):
+            with self.subTest(uncertainty=uncertainty):
+                adapter = SyntheticAdapter()
+                original = adapter.observe
+                def observe(phase):
+                    observation = original(phase)
+                    observation["captureHostBoundsUncertaintySeconds"] = uncertainty
+                    return observation
+                runner = CaptureRunner(ArtifactStore(self.base / f"boundary-{index}"), adapter,
+                                       quality_policy={"maxSourceAgeMs": 20.000001 + uncertainty * 1000,
+                                                       "maxM4AgeMs": 20, "minimumSettlingMs": 50})
+                with patch.object(adapter, "observe", side_effect=observe):
+                    result = runner.capture()
+                self.assertEqual(adapter.execute_calls, 1)
+                self.assertEqual(result["status"], "completed", result["errors"])
+                self.assertEqual(result["validation"]["exclusionReasons"], ["synthetic_dry_run"])
+
+    def test_missing_or_invalid_clock_uncertainty_cannot_relax_dispatch_gate(self):
+        changes = [{"captureHostBoundsUncertaintySeconds": value} for value in (None, -.001, True, "0.001")]
+        changes += [{"captureHostBoundsCalibrated": False}]
+        for index, change in enumerate(changes):
+            with self.subTest(change=change):
+                adapter = SyntheticAdapter()
+                original = adapter.observe
+                def observe(phase):
+                    observation = original(phase)
+                    observation.update(change)
+                    return observation
+                runner = CaptureRunner(ArtifactStore(self.base / f"invalid-uncertainty-{index}"), adapter)
+                with patch.object(adapter, "observe", side_effect=observe):
+                    result = runner.capture()
+                self.assertEqual(adapter.execute_calls, 0)
+                self.assertEqual(result["status"], "aborted")
+                self.assertEqual(result["executionState"], "not_sent")
+                self.assertIn("before:source_clock_uncertainty_invalid", result["errors"][0]["message"])
+
     def test_wrong_command_result_never_establishes_intended_outcome(self):
         runner = self.runner()
         original = runner.adapter.execute

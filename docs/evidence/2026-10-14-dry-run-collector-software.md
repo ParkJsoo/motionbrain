@@ -130,6 +130,31 @@ readback을 수행한다. 이는 소프트웨어 수준의 불변 기록 규칙�
 실행 목록은 `datasets/action_transitions/dry_run/smoke-630b281ff7b34c66be78350047426e8a.json`에 있다.
 이 파일은 커밋된 evidence fixture가 아니며 위 명령으로 새로 재현할 수 있다.
 
+## 중간 리뷰 후 실행 전 시계 오차 검사 수정
+
+`2bda97e`까지의 전체 리뷰에서 실행 직전 검사와 schema의 source-age 계산 차이를
+확인했다. sourceAgeMs 약 20ms, 교정 오차 1ms, 허용 한계 20.5ms인 경우 기존 runner는
+가상 행동을 1회 호출한 뒤 schema에서 제외했다.
+
+실행 전 두 검사 지점 모두 `sourceAgeMs + 교정 오차(ms) + 추론 이후 경과시간(ms)`에
+동일한 허용 한계를 적용한다. 교정 여부가 true가 아니거나 오차가 누락·잘못된 타입·
+음수·비유한이면 호출 전에 중단한다. 원본 관측을 수정하거나 오차를 0으로 대체하지 않는다.
+M4 age 계산과 저장된 intent 이후의 보수적 `outcome_unknown` 구분은 유지한다.
+
+추가한 4개 회귀 테스트의 핵심 조건:
+
+| 조건 | 가상 execute 호출 / 결과 |
+|---|---|
+| 약 20ms 관측 + 1ms 오차 > 20.5ms 한계 | 0회, aborted/not_sent, 원본 JPEG·관측 보존 |
+| 약 20ms 관측 + 1ms 오차 + intent 지연 2ms > 22.5ms 한계 | 0회, aborted/outcome_unknown, intent 보존 |
+| 오차 0 또는 1ms를 포함해 정확히 한계인 관측 | 1회, completed; 합성 학습 제외 유지 |
+| null·음수·bool·문자열 오차 또는 미교정 표시 | 0회, aborted/not_sent |
+
+앞의 두 테스트는 수정 전 코드에서 모두 executeCalls=1로 실패하는 것을 확인했다.
+수정 후에는 실행 0회 및 감사의 not_sent/outcome_unknown 구분까지 통과했다.
+전체 suite **372개 통과(10.949초)**, 독립 재리뷰에서 남은 차단 문제 없음.
+이 검증은 가상 시계·출력과 실제 임시 저장 파일을 사용하며 실물 구동 시험이 아니다.
+
 ## 남은 작업과 실물 관문
 
 이번 완료는 **장치 없는 데이터 계약·수집 실패 처리**다. 합성 adapter의 clock 교정·M4 실측·

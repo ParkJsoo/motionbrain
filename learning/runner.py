@@ -110,16 +110,23 @@ class CaptureRunner:
             raise CaptureFault("before:source_identity_mismatch")
         if observation.get("hostClockId") != self.adapter.host_clock_id:
             raise CaptureFault("before:host_clock_mismatch")
+        uncertainty = observation.get("captureHostBoundsUncertaintySeconds")
+        if (observation.get("captureHostBoundsCalibrated") is not True
+                or type(uncertainty) not in (int, float)
+                or not math.isfinite(uncertainty) or uncertainty < 0):
+            raise CaptureFault("before:source_clock_uncertainty_invalid")
+        # Match the schema's conservative source age, then include time spent
+        # since inference, including durable intent writes before the second check.
         now = self.adapter.clock.monotonic()
-        for age, stamp, limit, name in (
+        for age, stamp, uncertainty_ms, limit, name in (
             (observation.get("sourceAgeMs"), observation.get("inferenceCompletedMonotonic"),
-             self.policy["maxSourceAgeMs"], "source"),
+             uncertainty * 1000, self.policy["maxSourceAgeMs"], "source"),
             (observation.get("m4", {}).get("sampleAgeMs"), observation.get("receivedMonotonic"),
-             self.policy["maxM4AgeMs"], "m4"),
+             0, self.policy["maxM4AgeMs"], "m4"),
         ):
             if (type(age) not in (int, float) or type(stamp) not in (int, float)
                     or not all(math.isfinite(v) for v in (age, stamp, now))
-                    or age < 0 or now < stamp or age + (now - stamp) * 1000 > limit + 1e-6):
+                    or age < 0 or now < stamp or age + uncertainty_ms + (now - stamp) * 1000 > limit + 1e-6):
                 raise CaptureFault(f"before:{name}_expired")
         m4 = observation.get("m4", {})
         if m4.get("measured") is not True or m4.get("motor") != 4 or m4.get("sensor") != "AS5600":
