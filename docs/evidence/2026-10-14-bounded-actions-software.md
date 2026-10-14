@@ -1,5 +1,7 @@
 # MCU 명령 식별·제한 실행·출력 기록 — 소프트웨어 검증
 
+> 현재 상태 (2026-10-14): 이 단계는 `1bcd59e`에 커밋되었다. 최신 코드 수정은 `73132e9`이며, 수정 후 전체 **372개 테스트 통과(10.949초)**와 독립 재리뷰를 기록했다. 아래 단계별 테스트 수는 당시 결과로 보존한다. 완료 범위·미완료 구현·다음 학습 단계는 [종합 계획서](../ai-manipulation-plan-2026-10-14.md), 마지막 회귀는 [시계 오차 수정 기록](2026-10-14-dry-run-collector-software.md#중간-리뷰-후-실행-전-시계-오차-검사-수정)을 기준으로 한다. 오늘 새 실물 검증이나 실제 데이터 학습은 하지 않았다.
+
 작성: 2026-10-14 KST. 기반 커밋: `f581253` (이전 호스트 명령 journal 변경).
 사용자는 외부에 있어 로봇팔과 Raspberry Pi 연결이 불가능하다. 이번 작업은 로컬 구현·빌드·가상 시간/출력 검증이며 장치 접속, 배포, 업로드, 보드 재시작, 실제 구동은 하지 않았다.
 
@@ -83,7 +85,7 @@ unsigned 시간 차이는 millis wrap을 지원하지만 loop가 2^32ms 이상 �
   128건 ring이 넘치면 오래된 출력 로그가 사라지고 dropped가 증가한다. action 기록은 지우지 않는다.
 - 수집기는 마지막 sequence와 dropped를 추적해야 한다. 전후 행동 구간이 ring 밖으로 사라졌으면
   완전한 trace라고 판단하지 않는다. 한 행동이 128개 이상의 ramp/보정 기록을 만들 수도 있다.
-- 원본 frame ID/획득 신선도·행동 전후 수집·카메라 동기화는 다음 단계이며 이번 로그만으로 학습 샘플이 완성되지 않는다.
+- 후속 커밋에서 원본 frame ID/신선도·행동 전후 dry-run 수집을 구현했다. 실제 adapter와 카메라 시계 교정은 남아 있으며 출력 로그만으로 학습 샘플이 완성되지 않는다.
 
 ## 소프트웨어 시험
 
@@ -140,6 +142,7 @@ STM32 안전 heartbeat/imuOk, M4 AS5600 상태, 현재 자세/카메라 시야�
 5. M4는 기존 검증 자세/부하/범위부터 재검증한다. 넓은 임시 soft limits를 전 자세 충돌 안전 범위로 쓰지 않는다.
 6. 결과 불명/registry_full을 풀기 위해 자동 재부팅하지 않는다. 출력/자세/기록 보존을 확인한 새 작업자 세션 절차가 필요하다.
 
-다음 소프트웨어 묶음: 활성 UART seq/session 중복·역순과 freshness, 원본 관측 ID/age,
-transition validator/수집기, 그리고 host의 새 capability/boot 기반 API adapter.
+원본 관측 ID/age, transition validator와 dry-run 수집기·manifest는 후속 커밋에서 완료했다.
+남은 구현: 활성 UART seq/session 중복·역순과 freshness, host의 새 capability/boot 기반 실제 수집 adapter.
+장치 없이 진행할 다음 학습 단계는 manifest loader·특징/기준선·train-only 전처리·평가 코드다.
 기존 모든 시리얼/웹 숫자 파서의 통일, 장치 HTTP runtime 시험, 물리 결과 reconciliation도 남아 있다.

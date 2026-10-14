@@ -1,8 +1,10 @@
 # 2026-10-14 M4 명령 기록 소프트웨어 검증
 
+> 현재 상태 (2026-10-14): 이 단계는 `f581253`에 커밋되었다. 최신 코드 수정은 `73132e9`이며, 수정 후 전체 **372개 테스트 통과(10.949초)**와 독립 재리뷰를 기록했다. 아래 단계별 테스트 수는 당시 결과로 보존한다. 완료 범위·미완료 구현·다음 학습 단계는 [종합 계획서](../ai-manipulation-plan-2026-10-14.md), 마지막 회귀는 [시계 오차 수정 기록](2026-10-14-dry-run-collector-software.md#중간-리뷰-후-실행-전-시계-오차-검사-수정)을 기준으로 한다. 오늘 새 실물 검증이나 실제 데이터 학습은 하지 않았다.
+
 ## 범위와 출발점
 
-- 기준 HEAD: `99ea0d6`. 이 문서는 그 위의 미커밋 변경을 검증한 기록이다.
+- 기준 HEAD: `99ea0d6`. 이 문서는 그 위에서 구현하여 `f581253`으로 커밋한 변경의 검증 기록이다.
 - 실행 환경: macOS, Python 3.12.11, 로컬 clang++/선택된 Xcode SDK.
 - fake 상태/POST callback, 가상 monotonic clock, 임시 SQLite 파일, fake ROS Node,
   native C++ 실행과 기존 localhost fake HTTP 서버만 사용했다.
@@ -77,14 +79,13 @@ git diff --check
 - `success`는 MCU 수락 응답일 뿐이다. `acknowledged`는 유효 응답(거부 포함),
   `forwarded`/`dispatchAttempted`는 시도 또는 crash 전 시도 가능성이다.
   기록 부재/읽기 실패의 unknown에서 false는 물리 미실행 증명이 아니다.
-- 현재 MCU에는 ID별 결과 조회·dedup·요청 timeout 적용이 없다. `timeoutMs`는
+- 기존 호스트가 쓰는 `/shoulder`에는 ID별 결과 조회·dedup·요청 timeout 적용이 없다. 후속 MCU `/actions`에는 구현했지만 host 연결은 미완료다. 기존 `timeoutMs`는
   호스트 검증/명령 동일성에만 반영된다. 결과 불명 해제 API도 아직 없다.
 - 최초 수신 이전에 지연된 proposal의 source-age/producer session 허가는 후속 작업이다.
   원 ROS 시각을 host monotonic과 직접 비교하지 않는다.
-- 이번 구현에는 bounded MCU executor/실제 출력 로그/frame identity/transition 수집기가
-  아직 포함되지 않았다. [파일별 후속 계획](../ai-manipulation-plan-2026-10-14.md)에
+- 이 S1 커밋의 범위 밖이었던 bounded MCU executor/출력 로그/frame identity/transition dry-run 수집기는 후속 커밋에서 구현했다. [파일별 후속 계획](../ai-manipulation-plan-2026-10-14.md)에
   순서·완료 기준·실물 준비와 교정 실험을 기록했다.
 
-다음 소프트웨어 작업은 공통 숫자 검증 및 MCU boot/action registry의 가상 시간·출력
-시험이다. 원본 관측 계약과 transition validator는 병행할 수 있다. 실물 단계에서는
+현재 다음 학습 작업은 manifest 기반 loader·특징/기준선·train-only 전처리·평가 코드다.
+실제 host→MCU 수집 adapter와 남은 입력 경계 검사는 별도로 필요하다. 실물 단계에서는
 모터 전원 분리 부팅 확인 → 한 축 최소 행동/종료 측정 → 관측 연결 검증 순서로 진행한다.

@@ -1,5 +1,7 @@
 # 데이터셋 manifest·분할 검증 — 2026-10-14
 
+> 현재 상태 (2026-10-14): 이 단계는 `2bda97e`에 커밋되었다. 최신 코드 수정은 `73132e9`이며, 수정 후 전체 **372개 테스트 통과(10.949초)**와 독립 재리뷰를 기록했다. 아래 단계별 테스트 수는 당시 결과로 보존한다. 완료 범위·미완료 구현·다음 학습 단계는 [종합 계획서](../ai-manipulation-plan-2026-10-14.md), 마지막 회귀는 [시계 오차 수정 기록](2026-10-14-dry-run-collector-software.md#중간-리뷰-후-실행-전-시계-오차-검사-수정)을 기준으로 한다. 오늘 새 실물 검증이나 실제 데이터 학습은 하지 않았다.
+
 기준 커밋: `9ad4935` (`feat: collect immutable dry-run action transition evidence`).
 이전 dry-run runner 변경은 독립 리뷰와 전체 331개 테스트를 통과한 뒤 커밋했다.
 이 문서는 이후 S5a의 장치 없는 데이터셋 준비 구현과 검증을 기록한다.
@@ -82,7 +84,7 @@ python3 -m unittest discover -s tests -q
 | 검증 | 결과 |
 |---|---|
 | 이번 추가 테스트 | 37개 통과 |
-| 전체 회귀 | 368개 통과, 8.945초 |
+| manifest 커밋 당시 전체 회귀 | 368개 통과, 8.945초 |
 | 기존 dry-run 10개 세션 / 11개 시도 | inputIssues 0, eligible 0, excluded 11 |
 | 실제 저장 manifest 생성·읽기 전용 재검증 | valid=true, 각각 종료 코드 0 |
 | 같은 manifest의 `--require-ready` | readyForTraining=false, 종료 코드 2 |
@@ -104,7 +106,7 @@ python3 -m unittest discover -s tests -q
 점검·보강했다. 커밋 전 재리뷰에서는 config snapshot과 session의 qualityPolicy 불일치가
 검증을 통과하는 문제를 추가로 발견해 무결성 오류로 처리하고 회귀 시험을 추가했다.
 수정 재현과 독립 재리뷰에서 남은 확정 차단 문제는 발견하지 못했다.
-전체 368개 회귀 통과는 소프트웨어 범위의 결과다.
+manifest 커밋 당시 전체 368개 회귀 통과는 소프트웨어 범위의 결과다. 후속 runner 시계 오차 수정 후 최신 전체 결과는 372개 통과이며, 실제 학습 적격 데이터는 여전히 0개다.
 
 ## 한계와 다음 실물 조건
 

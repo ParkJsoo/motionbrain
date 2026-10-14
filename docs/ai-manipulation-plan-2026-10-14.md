@@ -4,9 +4,13 @@
 
 ## 1. 현재 상태와 인계 대조
 
+최신화: 2026-10-14 KST, 구현 기준 커밋 `73132e9`. **데이터 수집·검증 기반의 소프트웨어 구현은 아래 범위까지 완료했지만, 실제 학습 준비가 모두 끝난 것은 아니다.** 로봇팔·Pi·카메라는 현재 연결할 수 없으며, 오늘 새 실물 검증은 수행하지 않았다.
+
+### 작업 시작 당시 인계 대조 (과거 기준)
+
 - 시작 HEAD: `99ea0d6` (`Update portfolio with physical M4 ros2_control evidence`), 로컬 `main...origin/main`, tracked/untracked 변경 없음. 원격 fetch 및 현재 Pi/보드 상태 확인은 하지 않았다.
 - 저장소와 상위 경로에서 `AGENTS.md` 없음. `.codex/START_HERE.md`, `.codex/README.md`, `.claude/CLAUDE.md` 참고. 로컬 메모의 HEAD `be5c521`와 7월 장치 연결 상태는 과거 기록이며 현재 사실로 사용하지 않는다. `.codex/`는 Git 제외이므로 이 계획은 `docs/`에 보관한다.
-- 외부 인계 `MotionBrain_AI_개발인계_2026-10-14.txt` 314행과 `MotionBrain_개발·개선계획_2026-09-23.md` 전체를 읽었다. 인계 이후 코드 변화는 없었다. 명령 경계, 펌웨어, 관찰/학습 전문 에이전트가 나눠 확인하고 교차 검토했다.
+- 외부 인계 `MotionBrain_AI_개발인계_2026-10-14.txt` 314행과 `MotionBrain_개발·개선계획_2026-09-23.md` 전체를 읽었다. 작업 시작 당시 인계 이후 코드 변화는 없었다. 명령 경계, 펌웨어, 관찰/학습 전문 에이전트가 나눠 확인하고 교차 검토했다.
 - 같은 proposal 재접수 뒤 confirm하면 POST가 2회 발생하는 결함과 POST 응답 유실을 `forwarded=false`로 표시하는 결함을 fake callback으로 재현했다. C++ ID는 프로세스 내 순번뿐이고 ROS `created_at`은 Python core로 전달되지 않았다.
 - 카메라는 이중 버퍼/`CAMERA_GRAB_LATEST`를 사용할 수 있다. `/capture`를 행동 종료 후 요청했다고 종료 후 **촬영**을 보장하지 않는다. 인식 완료 `ts`와 재발행 stamp는 원본 획득시각이 아니다.
 - 텔레옵은 Dispatcher 밖에서 출력한다. 시퀀스는 일반 stop 뒤 곧바로 다음 단계를 시작하므로 ramp-down 중 축 출력이 겹칠 수 있다. 기존 시퀀스를 그대로 학습용 단일 행동 실행기로 쓰지 않는다.
@@ -16,28 +20,35 @@
 
 9월 계획에서 M0-01~05와 선택 경로의 시간/출력 검증을 이어받는다. 전체 MCU 정비 완료를 AI 착수 조건으로 삼지 않는다. 비활성 진동 정책, RTOS/DMA 전환, 두 번째 축 센서, 전 축 ros2_control/MoveIt, 대형 VLA 학습은 선행조건에서 제외한다. 기존 카메라·M4·실제 실행 이력, Mac CPU와 필요할 때만 소액 클라우드로 시작한다.
 
-### 이번 소프트웨어 후속 진행
+### 완료한 구현과 최신 검증
 
-- S1 host journal/ROS adapter/producer ID는 독립 리뷰 후 `f581253`으로 커밋했다.
-- S2의 MCU boot/action registry, 단일 제한 행동, 실제 드라이버 출력 기록, 수동/teleop 소유권,
-  신규 API 숫자 검사와 공통 M4 finite 검사를 구현했다. 기본 실행 비활성 상태다.
-- 새 API는 기존 `/shoulder` 호스트 실행과 별개이며 새 runner의 capability/boot 기반 연결은 남아 있다.
-- S2 MCU 변경은 독립 코드리뷰와 native 회귀 후 `1bcd59e`로 커밋했다.
-- S3a/S3b/S4a의 원본 프레임 식별, exact JPEG/관측 조회, ROS 신선도 전달과
-  행동 전후 schema 검증을 구현했다. 카메라 시계 오차의 실물 근거가 없는 데이터는 학습에서 제외한다.
-- 관측/schema는 독립 리뷰 수정과 291개 테스트 후 `ca48f04`로 커밋했다.
-- S4b의 dry-run runner·원본 이미지/hash 저장·중단/누락 감사는 구현했다.
-  [331개 소프트웨어 테스트와 CLI 10종 결과](evidence/2026-10-14-dry-run-collector-software.md)를 남겼다.
-  독립 리뷰·전체 회귀 후 `9ad4935`로 커밋했다.
-- S5a manifest·그룹 분할·누수/합성 혼입 검증은 장치 없이 구현했다.
-  [데이터셋 검증 기록](evidence/2026-10-14-dataset-manifest-software.md)에 정책과 제한을 남겼다.
-  현재 11개 합성 시도는 모두 제외되며 실제 학습·평가 데이터와 모델은 아직 없다.
-- 활성 UART seq/session 검증, 기존 모든 숫자 입력 경로 통일, S4b의 실제 장치 adapter와
-  시계·출력·관측 연결 검증은 남아 있다.
-- 현재 장치와 Raspberry Pi는 연결할 수 없다. 소프트웨어 235 tests와 ESP32 빌드가 통과했으며,
-  [구현·검증·실물 관문 기록](evidence/2026-10-14-bounded-actions-software.md)에 분리해 남겼다.
-- 후속 관측/schema 결과와 파일별 완료 범위는
-  [원본 관측·transition 소프트웨어 검증](evidence/2026-10-14-source-observations-software.md)에 기록했다.
+| 단계 | 완료한 소프트웨어 범위 | 커밋 / 상세 기록 |
+|---|---|---|
+| S1 | 영속 명령 journal, ID 중복·충돌 차단, 재시작·결과 불명 처리, ROS adapter/producer ID | `f581253` · [호스트](evidence/2026-10-14-command-journal-software.md) |
+| S2 일부 | MCU boot/command ID, 제한 실행·deadline·취소, 드라이버 PWM write 기록, 제어권 관리, 신규 API 숫자 검사 | `1bcd59e` · [MCU](evidence/2026-10-14-bounded-actions-software.md) |
+| S3a/S3b/S4a | 원본 프레임 ID·exact JPEG 조회, 신선도 전달, 행동 전후 schema | `ca48f04` · [관측](evidence/2026-10-14-source-observations-software.md) |
+| S4b dry-run | 원본 이미지/hash·설정 저장, 실행 의도·중단·누락·불명 기록, 읽기 전용 감사 | `9ad4935` · [수집 runner](evidence/2026-10-14-dry-run-collector-software.md) |
+| S5a | manifest, 원본 무결성·출처 재검증, 세션/episode 및 연결 그룹 분할, 누수·합성 혼입 차단 | `2bda97e` · [데이터셋](evidence/2026-10-14-dataset-manifest-software.md) |
+| 리뷰 후 수정 | 실행 직전 source age에 시계 교정 오차와 경과시간 포함, 한계 초과 시 실행 0회 회귀 | `73132e9` · [수정·회귀 결과](evidence/2026-10-14-dry-run-collector-software.md#중간-리뷰-후-실행-전-시계-오차-검사-수정) |
+
+- 최신 전체 회귀: **372개 통과, 10.949초** (`python3 -m unittest discover -s tests -q`, 마지막 코드 수정 후 실행). 독립 재리뷰에서 남은 확정 차단 문제는 발견하지 못했다. 이번 문서 최신화에서는 코드 테스트를 재실행하지 않았다.
+- ESP32와 ESP32-CAM은 각 구현 단계에서 compile/link 성공. 업로드·보드 실행·모터 구동은 하지 않았다. native 가상 시간/출력·fake ROS·로컬 파일 시험은 ROS Jazzy 전체 빌드/lifecycle 시험이나 물리 정지·파지 성공의 증거가 아니다.
+- 저장된 dry-run은 **10개 세션, 11개 합성 시도**이며 모두 학습·평가 제외다. manifest `valid=true`, `readyForTraining=false`, 적격 0개다. 실제 행동 데이터·학습 모델·조작 성능 개선 결과는 아직 없다.
+- 단계별 증거 문서의 217/235/291/331/368개 결과는 해당 단계 당시 기록이다. 최신 전체 기준은 위 372개다.
+
+### 남은 구현과 바로 다음 단계
+
+**장치 없이 다음에 할 일은 S5b 학습·평가 코드 준비다.** 아래 파일은 예정이며 아직 구현되지 않았다. 기존 manifest를 재사용하고 추가 센서·대형 VLA·유료 GPU를 선행조건으로 삼지 않는다.
+
+| 순서 | 예정 파일 / 작업 | 완료 기준 |
+|---|---|---|
+| 1 | `learning/features.py`, `learning/dataset.py` 확장: manifest 기반 loader, 입력·정답 계약 | 소비할 원본 bytes hash 재확인, 부적격/합성 데이터의 실제 학습 진입 거부, 현재 행동의 after·실제 출력 trace를 사전 예측 입력에 넣지 않음 |
+| 2 | `learning/models.py`, `tools/train_visual_dynamics.py`: 무변화·선형 기준선부터, 필요 시 작은 MLP | 정규화는 train만 fit, validation/test 오염 회귀, seed·분할·설정·모델 저장과 재현, Mac CPU에서 분리된 합성 smoke |
+| 3 | `tools/evaluate_visual_dynamics.py`, `tools/evaluate_robot_trials.py`: 예측 및 실물 trial 평가 | 예측 MAE와 조작 성공률 구분, 실패/unknown 포함 분모, 모델 비교표; 합성 점수를 실물 성과로 발표하지 않음 |
+
+병행할 미완료 소프트웨어는 실제 수집 adapter(기존 host journal ↔ MCU capability/boot/결과·출력 조회 ↔ 원본 perception API), 결과 불명 reconciliation, 활성 UART seq/session 검증, 기존 숫자 입력 경로 통일, 제어 상태 polling 분리·deadline/queue 상한이다. 전체 펌웨어 재설계는 범위에 넣지 않는다. 새 `/actions`는 기본 비활성이며 기존 host `/shoulder`가 자동 전환되지는 않는다.
+
+**실제 데이터로 학습하기 전**에는 아래 §7의 장치 준비·시계/출력 교정·한 축 수집 검증을 통과해야 한다. 실제 데이터로 기준 모델과 학습 모델을 평가한 뒤, 같은 조건의 접근·집기·배치 trial에서 개선 여부를 확인한다. 소프트웨어 기반 완료와 실물 학습·성능 입증 완료를 구분한다.
 
 ## 2. 공통 계약과 보장 범위
 
@@ -59,27 +70,27 @@
 
 ## 3. 파일별 실행 순서와 완료 기준
 
-각 단계는 작은 PR/변경 묶음 단위다. S3·S4의 오프라인 작업은 S2 장치 검증과 병행할 수 있다.
+아래의 구현 완료는 소프트웨어 범위다. 별도 실물 관문은 모두 남아 있다. S2a는 신규 API와 공통 M4 finite 검사만 완료했으며 기존 모든 파서 통일은 미완료다. S4b의 실제 장치 adapter는 미구현이다.
 
 | 순서 | 수정·추가 파일 | 구체 작업 | 소프트웨어 완료 기준 | 별도 실물 관문 |
 |---|---|---|---|---|
-| S1a 이번 구현 | `ros2_ws/src/motionbrain_ros_bridge/motionbrain_ros_bridge/m4_write_executor_core.py`, 신규 `m4_command_journal.py`, `tests/test_m4_write_executor_core.py` | SQLite 기록, 동일 ID 재접수/충돌, monotonic TTL, 원자 예약, 응답 유실 분리, 재시작 복구, 결과 조회, 기록 상한 | fake clock/POST로 재전달·동시 confirm·만료·충돌·fetch 실패·POST 유실·기록 오류·재시작 시험; ID당 POST 최대 1회 | 아직 MCU의 실제 중복 억제 증거 아님 |
-| S1b 이번 구현 | `m4_write_executor_node.py`, `motionbrain_hardware_interface.hpp/.cpp`, 신규 표준 C++ ID helper 및 테스트 | 영속 journal 기본값, read-only 결과 서비스, 원 created_at 보존, 랜덤 producer session ID | Python adapter fake ROS 시험, native C++ ID 생성/실패 시험, 기존 호스트 회귀 | ROS Jazzy 전체 빌드/launch와 재시작 시험 필요 |
-| S2a 다음 구현 | 신규 `src/control/numeric_validation.h`, `src/control/shoulder_angle_controller.cpp`, `src/input/serial_command.cpp`, `src/network/web_server.cpp` | 전체 숫자 소비/finite/overflow/범위 검사, 공통 start 경계 재검사 | NaN/Inf/부분 숫자/과대값 거부 및 fake 출력 0회; ESP32 compile | 모터 전원 분리 상태에서 입력 거부 확인 |
-| S2b | `src/control/command.h`, 신규 `action_registry.h/.cpp`, `src/network/web_server.*` | boot/action ID, 정규화 요청, 같은 ID 재조회/충돌, 제한 결과 ring/상한 정책, capability version | boot mismatch 거부, 결과 유실은 unknown, 만료 ID 재실행 금지 | 응답 유실/재부팅/중복 수신 후 드라이버 로그 확인 |
-| S2c | 신규 `src/control/bounded_action_executor.h/.cpp`, `dispatcher.*`, `safety_gate.*`, `src/main.cpp` | 한 축·한 행동, busy, MCU deadline/취소, M4 기존 제어기 위임, 종료 후 output_off 대기 | 가짜 clock·출력으로 timeout/cancel/safety/시간 wrap, 만료 뒤 재출력 없음 | 한 축 최소 행동과 종료 지연 측정 |
-| S2d | 신규 `src/motor/applied_output_log.h/.cpp`, `motor_driver.*`, `teleop_adapter.*`, `motion_sequence.*`, `dispatcher.*`, `web_server.*` | 공통 드라이버 write/강제 off 감사, 제어권 lease, 수동 개입 취소, 이전 sequence/M4/teleop cache 정리 | ramp·방향·off 기록, overflow/drop 감지, override 후 이전 출력 재개 없음 | HTTP 부하/단절/deadman 중 off/잔여 이동 확인 |
-| S2e | `src/bridge/stm32_bridge.*`, `src/input/teleop_adapter.*`, `src/main.cpp` | 활성 UART seq/session 검증, reject freshness 갱신 금지, loop 간격/deadline overrun 계측 | 중복·역순·재부팅·wrap 입력, stale 반복으로 재무장 불가 | STM32 heartbeat 유지 및 stale 차단 시험 |
-| S3a | `firmware/esp32cam/src/main.cpp`, `tools/motionbrain_perception_service.py`, `tests/test_perception_service.py` | camera boot/source timestamp 의미 확인, 원본 frame identity, 불변 JPEG+검출 캐시/ID 조회 | A metadata에 B JPEG 혼합 불가, 만료 ID 404/410, held 별도 source, wall clock 점프 시험 | 같은 버퍼 반복/카메라 재시작/획득 지연 관찰 |
-| S3b | `ros2_ws/src/motionbrain_msgs/msg/CameraDetection.msg`, `motionbrain_status_node.py`, `ros2_ws/src/motionbrain_control/src/control_guard_node.cpp`, 기존 guard 테스트 | source ID/held/validity/age 전파, 재발행으로 freshness 회복 금지 | 오래된 ID 연속 수신해도 stale, metadata 미상은 제어 거부 | 느린 2초 polling에서 stop-observe 루프 확인 |
-| S4a | 신규 `learning/schema.py`, `tests/test_action_transition_schema.py` | observation/action/transition validator, 버전·품질·판정 출처 | 잘못 연결된 frame·동일 before/after·unknown·stale M4·NaN·missing metadata 격리 | 합성 fixture 성공은 데이터 수집 성공 아님 |
-| S4b | 신규 `learning/runner.py` 단일-step 골격, `tools/capture_action_transitions.py`, `tests/test_action_transition_capture.py`; 기존 두 policy episode 도구는 유지 | 공통 action/observation adapter로 runner의 before/실제 행동/after 연결, append-only 원본 로그, 이미지 hash와 설정 snapshot | 취소/관측 소실/기록 손실까지 기록, 종료 후 획득 증거 없으면 부적합 | 한 물체/정해진 자세에서 작은 교정 데이터 수집 |
-| S5a 구현 | 신규 `learning/dataset.py`, `learning/splits.py`, `learning/provenance.py`, `tools/build_action_dataset.py`, 대응 테스트 | 원본 무결성·raw/요약 연결·출처 재검증, 모든 시도 inventory, 세션/episode/hash/frame/행동/배치 그룹 분할 | 수동 manifest 변조·누락·합성 혼입·교차 분할 거부, 합성 11개 적격 0 | 실제 수집 adapter와 교정 근거 연결 후 별도 세션 실물 데이터 적용 |
-| S5b | 신규 `features.py`, `models.py`, `tools/train_visual_dynamics.py`, `evaluate_visual_dynamics.py`, `evaluate_robot_trials.py` | 무변화·선형·작은 MLP 비교, 그룹 분할, artifact 저장/재현 | Mac CPU 합성 smoke, train-only 정규화, episode/배치/frame 누수 검사 | 별도 세션 실제 접근·집기·배치 trials |
-| S6 | S4b의 공유 `learning/runner.py` 확장, 신규 `tools/run_manipulation_trial.py`; `tools/motionbrain_dashboard.py`와 ROS adapter | 관찰→선택→제한 실행→off→정착→재관찰 단일 루프, shadow/작업자 한 단계/감독 반복 모드 | restart 기본 비구동, goal 소실·범위 밖·unknown 중단, 기존 confirm 자동 위조 없음 | 접근부터 검증 후 집기·들기·이동·놓기 순차 확장 |
-| S7 | `docs/evidence/`, `PORTFOLIO.md`, `README.md`, `claim-to-evidence-matrix.md` | 조건/버전/원시 로그/영상/실패 표 연결 | 코드·합성·저장된 실물·새 실물 증거 분리 | 학습 개선이 입증된 범위만 발표 |
+| S1a 구현 완료 | `ros2_ws/src/motionbrain_ros_bridge/motionbrain_ros_bridge/m4_write_executor_core.py`, 신규 `m4_command_journal.py`, `tests/test_m4_write_executor_core.py` | SQLite 기록, 동일 ID 재접수/충돌, monotonic TTL, 원자 예약, 응답 유실 분리, 재시작 복구, 결과 조회, 기록 상한 | fake clock/POST로 재전달·동시 confirm·만료·충돌·fetch 실패·POST 유실·기록 오류·재시작 시험; ID당 POST 최대 1회 | 아직 MCU의 실제 중복 억제 증거 아님 |
+| S1b 구현 완료 | `m4_write_executor_node.py`, `motionbrain_hardware_interface.hpp/.cpp`, 신규 표준 C++ ID helper 및 테스트 | 영속 journal 기본값, read-only 결과 서비스, 원 created_at 보존, 랜덤 producer session ID | Python adapter fake ROS 시험, native C++ ID 생성/실패 시험, 기존 호스트 회귀 | ROS Jazzy 전체 빌드/launch와 재시작 시험 필요 |
+| S2a 일부 구현 | 신규 `src/control/numeric_validation.h`, `src/control/shoulder_angle_controller.cpp`, `src/input/serial_command.cpp`, `src/network/web_server.cpp` | 전체 숫자 소비/finite/overflow/범위 검사, 공통 start 경계 재검사 | NaN/Inf/부분 숫자/과대값 거부 및 fake 출력 0회; ESP32 compile | 모터 전원 분리 상태에서 입력 거부 확인 |
+| S2b 구현 완료 | `src/control/command.h`, `src/control/action_registry.h`, `src/network/web_server.*` | boot/action ID, 정규화 요청, 같은 ID 재조회/충돌, 32건 무퇴거 기록/상한 정책, capability version | boot mismatch 거부, 결과 유실은 unknown, 만료 ID 재실행 금지 | 응답 유실/재부팅/중복 수신 후 드라이버 로그 확인 |
+| S2c 구현 완료 | 신규 `src/control/bounded_action_executor.h/.cpp`, `dispatcher.*`, `safety_gate.*`, `src/main.cpp` | 한 축·한 행동, busy, MCU deadline/취소, M4 기존 제어기 위임, 종료 후 output_off 대기 | 가짜 clock·출력으로 timeout/cancel/safety/시간 wrap, 만료 뒤 재출력 없음 | 한 축 최소 행동과 종료 지연 측정 |
+| S2d 구현 완료 | `src/motor/applied_output_log.h`, `motor_driver.*`, `teleop_adapter.*`, `motion_sequence.*`, `dispatcher.*`, `web_server.*` | 공통 드라이버 write/강제 off 감사, 제어권 lease, 수동 개입 취소, 이전 sequence/M4/teleop cache 정리 | ramp·방향·off 기록, overflow/drop 감지, override 후 이전 출력 재개 없음 | HTTP 부하/단절/deadman 중 off/잔여 이동 확인 |
+| S2e 미구현 | `src/bridge/stm32_bridge.*`, `src/input/teleop_adapter.*`, `src/main.cpp` | 활성 UART seq/session 검증, reject freshness 갱신 금지, loop 간격/deadline overrun 계측 | 중복·역순·재부팅·wrap 입력, stale 반복으로 재무장 불가 | STM32 heartbeat 유지 및 stale 차단 시험 |
+| S3a 구현 완료 | `firmware/esp32cam/src/main.cpp`, `tools/motionbrain_perception_service.py`, `tests/test_perception_service.py` | camera boot/source timestamp 의미 확인, 원본 frame identity, 불변 JPEG+검출 캐시/ID 조회 | A metadata에 B JPEG 혼합 불가, 만료 ID 404/410, held 별도 source, wall clock 점프 시험 | 같은 버퍼 반복/카메라 재시작/획득 지연 관찰 |
+| S3b 구현 완료 | `ros2_ws/src/motionbrain_msgs/msg/CameraDetection.msg`, `motionbrain_status_node.py`, `ros2_ws/src/motionbrain_control/src/control_guard_node.cpp`, 기존 guard 테스트 | source ID/held/validity/age 전파, 재발행으로 freshness 회복 금지 | 오래된 ID 연속 수신해도 stale, metadata 미상은 제어 거부 | 느린 2초 polling에서 stop-observe 루프 확인 |
+| S4a 구현 완료 | 신규 `learning/schema.py`, `tests/test_action_transition_schema.py` | observation/action/transition validator, 버전·품질·판정 출처 | 잘못 연결된 frame·동일 before/after·unknown·stale M4·NaN·missing metadata 격리 | 합성 fixture 성공은 데이터 수집 성공 아님 |
+| S4b dry-run 완료 | 신규 `learning/runner.py` 단일-step 골격, `tools/capture_action_transitions.py`, `tests/test_action_transition_capture.py`; 기존 두 policy episode 도구는 유지 | 공통 action/observation adapter로 runner의 before/실제 행동/after 연결, append-only 원본 로그, 이미지 hash와 설정 snapshot | 취소/관측 소실/기록 손실까지 기록, 종료 후 획득 증거 없으면 부적합 | 한 물체/정해진 자세에서 작은 교정 데이터 수집 |
+| S5a 구현 완료 | 신규 `learning/dataset.py`, `learning/splits.py`, `learning/provenance.py`, `tools/build_action_dataset.py`, 대응 테스트 | 원본 무결성·raw/요약 연결·출처 재검증, 모든 시도 inventory, 세션/episode/hash/frame/행동/배치 그룹 분할 | 수동 manifest 변조·누락·합성 혼입·교차 분할 거부, 합성 11개 적격 0 | 실제 수집 adapter와 교정 근거 연결 후 별도 세션 실물 데이터 적용 |
+| S5b 다음 구현 | 예정 `learning/features.py`, `learning/models.py`, `tools/train_visual_dynamics.py`, `tools/evaluate_visual_dynamics.py`, `tools/evaluate_robot_trials.py` | 무변화·선형·작은 MLP 비교, 그룹 분할, artifact 저장/재현 | Mac CPU 합성 smoke, train-only 정규화, episode/배치/frame 누수 검사 | 별도 세션 실제 접근·집기·배치 trials |
+| S6 미구현 | S4b의 공유 `learning/runner.py` 확장, 신규 `tools/run_manipulation_trial.py`; `tools/motionbrain_dashboard.py`와 ROS adapter | 관찰→선택→제한 실행→off→정착→재관찰 단일 루프, shadow/작업자 한 단계/감독 반복 모드 | restart 기본 비구동, goal 소실·범위 밖·unknown 중단, 기존 confirm 자동 위조 없음 | 접근부터 검증 후 집기·들기·이동·놓기 순차 확장 |
+| S7 소프트웨어 기록 / 실물 비교 미완료 | `docs/evidence/`, `PORTFOLIO.md`, `README.md`, `claim-to-evidence-matrix.md` | 조건/버전/원시 로그/영상/실패 표 연결 | 코드·합성·저장된 실물·새 실물 증거 분리 | 학습 개선이 입증된 범위만 발표 |
 
-S2c의 종료 정책은 API에 명시한다. 초기 후보는 기존 hardStop을 재사용한 deadline 시 출력 차단이며, ramp 종료가 필요하면 최대 drain deadline과 output_off 확인까지 lease를 유지한다. 관절별 최소 PWM/시간/정착값은 실측 전 확정하지 않는다. applied_pwm는 `ledcWrite`에 전달한 명령값(`evidence=driver_write`)이며 핀 파형이나 실측 RPM이 아니다.
+S2c는 deadline/취소 시 기존 hardStopAll을 호출하고 output_off를 확인하는 방식으로 구현했다. 출력 종료를 확인하지 못하면 unknown과 제어권을 유지하며 새 구동을 차단한다. cooperative loop의 blocking 중에는 즉시 정지를 보장하지 못한다. 관절별 최소 PWM/시간/정착값은 실측 전 확정하지 않는다. applied_pwm는 `ledcWrite`에 전달한 명령값(`evidence=driver_write`)이며 핀 파형이나 실측 RPM이 아니다.
 
 `motionbrain_status_node.py`의 제어 상태 polling은 camera/routine/events와 분리하고 요청 deadline/queue 상한을 S3~S6 통합 전에 둔다. 카메라 지연 때문에 guard/명령 판단이 오래된 로봇 상태를 쓰지 않는 장애 주입 테스트가 완료 기준이다. 전체 ROS 운영 도구 재패키징은 선행조건이 아니다.
 
@@ -92,7 +103,7 @@ S2c의 종료 정책은 API에 명시한다. 초기 후보는 기존 hardStop을
 - `/motionbrain/m4_write_result`는 기존 `motionbrain_msgs/srv/M4WriteConfirm` wire shape를 재사용하는 **읽기 전용** 서비스다. 명령 ID만 받아 journal을 읽는다. `/motionbrain/m4_write_confirm`은 명시적 작업자 승인 경로로 유지한다.
 - `raw_json`의 `executionState`, `dispatchAttempted`, `acknowledged`, `ledgerState`, `proposalMetadata`를 판정에 사용한다. `success=true`는 MCU 수락 응답, `acknowledged=true`는 유효한 수락/거부 응답, `forwarded=true`는 전송 시도 또는 crash 전에 시도했을 가능성이다. bool 하나로 물리 실행 여부를 판단하지 않는다. 결과 조회의 미존재는 `result_not_found/outcome_unknown`이며 미실행 증거가 아니다.
 - 원 `created_at`은 ROS clock metadata로 보존만 한다. TTL은 최초 호스트 수신 monotonic 기준이다. 아직 처음 보는 오래된 proposal의 source-age를 보장하지 못하며 새 producer/실험 session handshake는 S2에 남아 있다.
-- 현재 `/shoulder`는 command ID와 요청별 timeout을 지원하지 않는다. 무시되는 query 필드를 붙여 해결됐다고 주장하지 않는다. `timeoutMs`는 호스트 검증/fingerprint에만 반영되는 기존 제한이며 MCU 동작 deadline은 S2에서 연결한다. S1만으로 학습 행동 실험을 시작하지 않는다.
+- 현재 `/shoulder`는 command ID와 요청별 timeout을 지원하지 않는다. 무시되는 query 필드를 붙여 해결됐다고 주장하지 않는다. `timeoutMs`는 호스트 검증/fingerprint에만 반영되는 기존 제한이며 MCU 동작 deadline은 새 `/actions`에 구현했으나 이 호스트 경로와의 연결은 남아 있다. S1만으로 학습 행동 실험을 시작하지 않는다.
 
 ## 5. 행동 데이터와 평가 설계
 
@@ -111,8 +122,8 @@ transition 최소 필드: schema/session/episode/transition/action ID; robot/con
 
 ## 6. 일정과 범위 축소 기준
 
-- 10/14~10/18 목표: S1 완료, S2 순수 코어/관찰 schema와 synthetic 시험, 장비 준비 목록 확정.
-- 10/19~10/30 교육 기간: 가능한 시간에 S2/S3 통합과 첫 작은 행동 데이터 수집. 오프라인 S4/S5 병행. 교육 완료를 구현 시작 조건으로 삼지 않는다.
+- 10/14 완료: 위 S1~S5a의 명시된 소프트웨어 범위와 리뷰 수정. 10/18까지의 다음 목표: S5b loader·특징/기준선·평가 준비, 실제 adapter 계약 구체화. 장비 연결 가능 시점은 미정이다.
+- 10/19~10/30 교육 기간: 가능한 시간에 S2/S3 통합과 첫 작은 행동 데이터 수집. S5b 오프라인 준비와 실제 adapter 구현 병행. 교육 완료를 구현 시작 조건으로 삼지 않는다.
 - 10월 말~11월 초 목표: 접근 성능 기준선과 학습 비교를 먼저 확보하고, 관측 가능한 집기·들기·배치를 연결한다.
 - 11월 지원: 동작 영상, 설정/분할 manifest, 재현 명령, 비교표, 실패 사례, 판단 가능한 증거를 묶는다. 전체 작업이 미완료면 검증한 접근 개선과 남은 단계를 명확히 표시한다.
 - 축소 순서: 객체 종류·배치 다양성·UI 장식·자연어 인터페이스부터 줄인다. 정확한 action/frame 연결, 결과 불명 처리, 비교 평가를 생략하지 않는다. 접근도 개선되지 않으면 단순 객체 인식을 조작 학습 성공으로 대체하지 않는다.

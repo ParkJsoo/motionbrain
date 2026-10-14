@@ -5,6 +5,21 @@
 This is the operator-oriented view of MotionBrain on Raspberry Pi. It is useful
 for system-quality, Linux operations, and troubleshooting discussions.
 
+## Current software / physical boundary (2026-10-14)
+
+Implementation baseline: `73132e9`. The last code verification passed **372 tests
+(10.949 s)**, followed by independent re-review; this is a recorded software result.
+The MCU and camera firmware compiled at their respective implementation stages,
+but no upload or new physical trial was performed. Full ROS Jazzy build/lifecycle
+validation and the physical collection adapter remain pending. The 10 saved dry-run
+sessions contain 11 synthetic attempts, all excluded from training/evaluation.
+
+Next device-free work is a manifest loader with byte/hash revalidation, features,
+baseline models, train-only preprocessing, and evaluation code. Real-data learning
+requires the adapter, clock/output calibration, and small one-axis collection trials.
+Use the [current plan and physical preparation steps](docs/ai-manipulation-plan-2026-10-14.md)
+for the pending work; software passes do not establish physical stopping or grasping.
+
 ## M4 command journal
 
 The operator-confirmed M4 executor stores command records at
@@ -68,6 +83,10 @@ JPEGs, hashes, raw observations, intent, and partial/error records under ignored
 `datasets/action_transitions/dry_run/`. Use `--audit-run PATH` for read-only integrity
 checks; this never resumes or retries actions. Synthetic records remain ineligible
 for physical training. There is no device adapter or physical execution switch.
+Before dispatch, the runner checks source age plus calibrated clock uncertainty and
+elapsed monotonic time, both before and after durable intent. Exceeding the limit
+results in zero execute calls. If intent was already stored, the audit conservatively
+retains `outcome_unknown`; it does not resume or retry the action.
 
 ## Dataset manifests (offline)
 

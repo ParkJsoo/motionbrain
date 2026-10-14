@@ -1,5 +1,7 @@
 # 행동 전후 수집 runner dry-run — 2026-10-14
 
+> 현재 상태 (2026-10-14): 이 단계는 `9ad4935`에 커밋되었다. 최신 코드 수정은 `73132e9`이며, 수정 후 전체 **372개 테스트 통과(10.949초)**와 독립 재리뷰를 기록했다. 아래 단계별 테스트 수는 당시 결과로 보존한다. 완료 범위·미완료 구현·다음 학습 단계는 [종합 계획서](../ai-manipulation-plan-2026-10-14.md), 마지막 회귀는 [시계 오차 수정 기록](2026-10-14-dry-run-collector-software.md#중간-리뷰-후-실행-전-시계-오차-검사-수정)을 기준으로 한다. 오늘 새 실물 검증이나 실제 데이터 학습은 하지 않았다.
+
 기준 커밋: `ca48f04` (`feat: preserve source observations and validate action transitions`).
 관측·schema 변경은 독립 리뷰에서 조기 완료 pulse/종료 상태 모순을 수정하고
 291개 테스트를 통과한 뒤 이 커밋으로 저장했다. 이 문서는 그 이후 S4b의
@@ -18,7 +20,7 @@
 | `learning/dry_run.py` | 가상 시간, 원본 2×2 JPEG, 합성 카메라/M4/MCU adapter, 실패 주입 10종 |
 | `tools/capture_action_transitions.py` | 명시적 `--dry-run`, 읽기 전용 `--audit-run`, 종료 코드, SIGINT/일반 SIGTERM 중단 처리 |
 | `learning/schema.py` | collection 또는 관측/action의 synthetic 표시가 있으면 `synthetic_dry_run` 학습 제외 |
-| `tests/test_action_transition_capture.py` | 17개 통합 테스트: 정상·누락·중단·저장 실패·ID 혼선·실행 전 stale·감사·CLI |
+| `tests/test_action_transition_capture.py` | 21개 통합 테스트: 기존 17개 정상·누락·중단·저장 실패·ID 혼선·stale·감사·CLI + 시계 오차 회귀 4개 |
 | `tests/test_transition_artifacts.py` | 13개 실제 임시 디스크 테스트: 원본 보존·오염·삭제·경로·원자적 쓰기 실패 |
 | `tests/test_dry_run_adapter.py` | 9개 가상 시계/원본 JPEG/실패 adapter 시험 |
 | `tests/test_action_transition_schema.py` | 합성 데이터가 wrapper 없이도 실물 학습 적격으로 섞이지 않는 회귀 시험 추가 |
@@ -152,7 +154,7 @@ M4 age 계산과 저장된 intent 이후의 보수적 `outcome_unknown` 구분�
 
 앞의 두 테스트는 수정 전 코드에서 모두 executeCalls=1로 실패하는 것을 확인했다.
 수정 후에는 실행 0회 및 감사의 not_sent/outcome_unknown 구분까지 통과했다.
-전체 suite **372개 통과(10.949초)**, 독립 재리뷰에서 남은 차단 문제 없음.
+수정은 `73132e9`로 커밋했다. 전체 suite **372개 통과(10.949초)**, 독립 재리뷰에서 남은 차단 문제는 발견하지 못했다.
 이 검증은 가상 시계·출력과 실제 임시 저장 파일을 사용하며 실물 구동 시험이 아니다.
 
 ## 남은 작업과 실물 관문
@@ -162,8 +164,9 @@ driver write 필드는 형태를 시험하기 위한 값이며 실제 측정 증
 `mode=dry_run`, `evidence=synthetic`, `trainingEligible=false`다. 학습 개선·물리 정지·집기
 성공을 입증하지 않는다. 기존 ROS 전체 빌드와 새 firmware 실물 검증도 여전히 남아 있다.
 
-다음 소프트웨어 단계는 저장 artifact로부터 데이터셋 manifest를 만들고 hash/episode 단위
-분할 검사를 구현하는 것이다. 실물 adapter는 기존 journal, MCU capability/boot/결과 조회,
+저장 artifact 기반 manifest·hash/episode 및 연결 그룹 분할 검사는 `2bda97e`에서 완료했다.
+다음 학습 준비는 manifest loader·특징/기준선·train-only 전처리·평가 코드다.
+실물 adapter는 기존 journal, MCU capability/boot/결과 조회,
 원본 perception API와 명시적으로 연결해야 한다. 이 dry-run adapter를 physical로 표시만
 바꾸어 사용하지 않는다. collector checkpoint/cancel은 현재 물리 stop 호출이 아니다.
 

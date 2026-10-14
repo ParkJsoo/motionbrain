@@ -1,5 +1,7 @@
 # 원본 프레임·신선도·행동 전후 schema — 2026-10-14
 
+> 현재 상태 (2026-10-14): 이 단계는 `ca48f04`에 커밋되었다. 최신 코드 수정은 `73132e9`이며, 수정 후 전체 **372개 테스트 통과(10.949초)**와 독립 재리뷰를 기록했다. 아래 단계별 테스트 수는 당시 결과로 보존한다. 완료 범위·미완료 구현·다음 학습 단계는 [종합 계획서](../ai-manipulation-plan-2026-10-14.md), 마지막 회귀는 [시계 오차 수정 기록](2026-10-14-dry-run-collector-software.md#중간-리뷰-후-실행-전-시계-오차-검사-수정)을 기준으로 한다. 오늘 새 실물 검증이나 실제 데이터 학습은 하지 않았다.
+
 MCU 기반 커밋: `1bcd59e` (`feat: add bounded MCU actions and applied output records`).
 MCU 변경은 독립 리뷰에서 확정된 P1/P2 문제 없이 커밋했다. 이 문서는 그 이후의
 S3a/S3b/S4a 소프트웨어 작업을 기록한다. 로봇팔·Pi·카메라에 연결하거나 업로드하지 않았다.
@@ -108,13 +110,13 @@ before의 가장 늦은 촬영이 행동의 가장 이른 시작보다 앞서고
 정책 조건이며 물리적으로 정착했다는 측정 증거의 대체물이 아니다.
 기재된 source age가 capture→inference 구간보다 짧으면 제외하며 보정 오차를 포함한
 age에 품질 한계를 적용한다. 이 정책은 관측 snapshot의 신선도이고, 실행 직전 재검사는
-향후 collector/runner에도 별도로 필요하다.
+현재 collector/runner가 별도로 수행하며, `73132e9`에서 교정 오차와 실행 직전 경과시간을 함께 검사하도록 보강했다.
 
 결과 불명·실행 중·출력 종료 미확인·stale·held·같은 before/after·frame 연결 오류·출력 누락은
 학습에서 제외한다. 타당한 출력/관측이 있는 취소·실패·timeout은 동역학 학습 후보가 될 수 있다.
 `targetReached`, `outputOff`, `driver_write`를 taskSuccess의 판정 출처로 허용하지 않는다.
 검증기는 기록된 주장 간의 일관성을 검사한다. JPEG bytes를 읽어 hash를 검증하거나
-물리 정지·집기 성공을 측정하지 않는다. artifact 검증은 다음 collector에서 구현해야 한다.
+물리 정지·집기 성공을 측정하지 않는다. artifact 저장·hash 검증은 후속 dry-run collector와 manifest에 구현했다. 실제 장치 adapter는 남아 있다.
 
 ## 검증과 한계
 
@@ -140,8 +142,8 @@ git diff --check
 
 ## 다음 장치 세션과 구현 순서
 
-1. 장치 없이: S4b collector의 dry-run adapter, exact artifact 저장·hash 검증, append-only 원본
-   manifest, timeout/중단/누락 기록을 먼저 구현한다. existing policy episode 로그를 전이로 재해석하지 않는다.
+1. 장치 없이 구현한 S4b dry-run 수집·원본 저장/hash·중단/누락 기록과 S5a manifest를 바탕으로
+   S5b loader·특징/기준선·train-only 전처리·평가 코드를 준비한다. 실제 수집 adapter는 별도 구현한다. 기존 policy episode 로그를 전이로 재해석하지 않는다.
 2. 장비 연결 가능 시: 모터 전원을 분리하고 ESP32-CAM 보드·현재 firmware·포트를 확인한 뒤
    camera firmware를 업로드한다. `/capture` 반복에서 ID/age, 재부팅 boot 변경, Wi-Fi 지연,
    오래된 buffer와 같은 ID의 bytes 일치, exact API의 JPEG hash를 확인한다.

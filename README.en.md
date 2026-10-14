@@ -53,6 +53,20 @@ The subsequent [MCU bounded-action and output-log implementation](docs/evidence/
 passes virtual time/output tests and the ESP32 build. Its new execution API remains
 disabled by default pending physical validation.
 
+Source frame identity/freshness and the before/after transition schema are implemented,
+along with an [immutable dry-run collector](docs/evidence/2026-10-14-dry-run-collector-software.md)
+and [dataset manifest validation](docs/evidence/2026-10-14-dataset-manifest-software.md).
+These preserve original JPEGs, hashes, interrupted/missing records, and grouped splits
+that reject leakage and declared/known synthetic contamination. All 11 saved synthetic
+attempts are excluded; there are no real action-training data or learned manipulation results.
+After the last code fix (`73132e9`), **372 tests passed (10.949 s)** and independent
+re-review found no remaining confirmed blockers. Regression tests verify zero execution
+when source age plus clock uncertainty and elapsed time exceeds the freshness limit.
+Next is device-free preparation of the manifest loader, features, baseline models,
+train-only preprocessing, and evaluation. The physical collector adapter, full ROS
+integration, clock/output calibration, and small one-axis real-data trials remain pending.
+See the [current status and next steps (Korean)](docs/ai-manipulation-plan-2026-10-14.md).
+
 ## Demo Video
 
 The GIF below shows the final physical teleoperation demo directly in the README.
