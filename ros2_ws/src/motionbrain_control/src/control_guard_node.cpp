@@ -6,6 +6,7 @@
 #include <string>
 
 #include "motionbrain_control/control_guard_logic.hpp"
+#include "motionbrain_control/source_observation_freshness.hpp"
 #include "motionbrain_msgs/msg/camera_detection.hpp"
 #include "motionbrain_msgs/msg/control_guard.hpp"
 #include "motionbrain_msgs/msg/motion_status.hpp"
@@ -253,7 +254,23 @@ private:
       10,
       [this](motionbrain_msgs::msg::CameraDetection::SharedPtr msg) {
         latest_detection_ = msg;
-        last_detection_time_ = now();
+        motionbrain_control::SourceObservation source;
+        source.frame_id = msg->source_frame_id;
+        source.boot_id = msg->camera_boot_id;
+        source.detection_frame_id = msg->detection_source_frame_id;
+        source.captured_us = msg->captured_us;
+        source.clock_domain = msg->source_clock_domain;
+        source.timestamp_semantics = msg->source_timestamp_semantics;
+        source.age_ms = msg->source_age_ms;
+        source.time_known = msg->source_time_known;
+        source.source_fresh = msg->source_fresh;
+        source.held = msg->held;
+        source.control_eligible = msg->control_eligible;
+        // stamp is bridge publication time in the shared ROS clock domain.
+        const rclcpp::Time published(msg->stamp, RCL_ROS_TIME);
+        const double transit = published.nanoseconds() > 0 ?
+          (now() - published).seconds() : -1.0;
+        source_freshness_.observe(source, steady_seconds(), transit);
       });
 
     guard_pub_ =
@@ -271,7 +288,7 @@ private:
     latest_status_.reset();
     latest_detection_.reset();
     last_status_time_ = rclcpp::Time(0, 0, RCL_ROS_TIME);
-    last_detection_time_ = rclcpp::Time(0, 0, RCL_ROS_TIME);
+    source_freshness_.invalidate();
     configured_ = false;
   }
 
@@ -301,6 +318,12 @@ private:
     return std::max((now() - stamp).seconds(), 0.0);
   }
 
+  static double steady_seconds()
+  {
+    return std::chrono::duration<double>(
+      std::chrono::steady_clock::now().time_since_epoch()).count();
+  }
+
   void publish_guard_state()
   {
     if (!processing_active_ || !guard_pub_ || !guard_json_pub_) {
@@ -308,9 +331,13 @@ private:
     }
 
     const double status_age = age_seconds(last_status_time_);
-    const double detection_age = age_seconds(last_detection_time_);
+    const double steady_now = steady_seconds();
+    const double source_age = source_freshness_.age_seconds(steady_now);
+    // Keep JSON numeric even when provenance is unknown.
+    const double detection_age = std::isfinite(source_age) ? source_age : stale_timeout_sec_ + 1.0;
     const bool status_fresh = latest_status_ && status_age <= stale_timeout_sec_;
-    const bool detection_fresh = latest_detection_ && detection_age <= stale_timeout_sec_;
+    const bool detection_fresh = latest_detection_ &&
+      source_freshness_.fresh(steady_now, stale_timeout_sec_);
 
     motionbrain_control::MotionStatusSnapshot status;
     if (latest_status_) {
@@ -322,7 +349,9 @@ private:
     }
 
     motionbrain_control::CameraDetectionSnapshot detection;
-    if (latest_detection_) {
+    // A status-only guard may still be ready when detection is optional, but
+    // stale/display-only observations must never produce a motion suggestion.
+    if (latest_detection_ && detection_fresh) {
       detection.available = latest_detection_->available;
       detection.detected = latest_detection_->detected;
       detection.alignment = latest_detection_->alignment;
@@ -446,7 +475,7 @@ private:
   bool configured_{false};
   bool processing_active_{false};
   rclcpp::Time last_status_time_{0, 0, RCL_ROS_TIME};
-  rclcpp::Time last_detection_time_{0, 0, RCL_ROS_TIME};
+  motionbrain_control::SourceObservationFreshness source_freshness_;
   motionbrain_msgs::msg::MotionStatus::SharedPtr latest_status_;
   motionbrain_msgs::msg::CameraDetection::SharedPtr latest_detection_;
   rclcpp::Subscription<motionbrain_msgs::msg::MotionStatus>::SharedPtr status_sub_;

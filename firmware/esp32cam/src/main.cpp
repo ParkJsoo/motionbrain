@@ -5,6 +5,8 @@
 #include <Preferences.h>
 #include "esp_camera.h"
 #include "esp_system.h"
+#include "esp_timer.h"
+#include "source_frame_metadata.h"
 
 // AI Thinker ESP32-CAM pin map.
 #define PWDN_GPIO_NUM     32
@@ -25,6 +27,8 @@
 #define PCLK_GPIO_NUM     22
 
 namespace {
+
+char cameraBootId[33] = {};
 
 #ifndef MOTIONBRAIN_CAMERA_HOSTNAME
 #define MOTIONBRAIN_CAMERA_HOSTNAME "motionbrain-cam"
@@ -649,6 +653,8 @@ void handleStatus() {
 
   String json = "{";
   json += "\"node\":\"esp32cam\",";
+  json += "\"cameraBootId\":\"" + String(cameraBootId) + "\",";
+  json += "\"sourceClockDomain\":\"camera_boot_us\",\"timestampSemantics\":\"first_dma_buffer\",";
   json += "\"hostname\":\"" + String(MOTIONBRAIN_CAMERA_HOSTNAME) + "\",";
   json += "\"wifi\":\"configured\",";
   json += "\"ip\":\"" + WiFi.localIP().toString() + "\",";
@@ -769,13 +775,18 @@ void handleCapture() {
   WiFiClient client = server.client();
   client.setTimeout(CLIENT_IO_TIMEOUT_MS);
   client.setNoDelay(true);
+  const auto source = camera_source::identify(cameraBootId, fb->timestamp.tv_sec,
+                                               fb->timestamp.tv_usec, esp_timer_get_time());
+  char sourceHeaders[512];
+  camera_source::headers(source, sourceHeaders, sizeof(sourceHeaders));
   const bool headerOk = client.connected() &&
                         client.printf("HTTP/1.1 200 OK\r\n"
                                       "Content-Type: image/jpeg\r\n"
                                       "Content-Length: %u\r\n"
                                       "Cache-Control: no-store\r\n"
+                                      "%s"
                                       "Connection: close\r\n\r\n",
-                                      static_cast<unsigned>(fb->len)) > 0;
+                                      static_cast<unsigned>(fb->len), sourceHeaders) > 0;
   size_t written = 0;
   const uint32_t writeStartedAt = millis();
   const bool bodyOk = headerOk && client.connected() &&
@@ -863,6 +874,10 @@ void setup() {
   }
 
   connectWifi();
+  // Generate once per MCU boot with the Wi-Fi hardware entropy source active.
+  snprintf(cameraBootId, sizeof(cameraBootId), "%08lx%08lx%08lx%08lx",
+           static_cast<unsigned long>(esp_random()), static_cast<unsigned long>(esp_random()),
+           static_cast<unsigned long>(esp_random()), static_cast<unsigned long>(esp_random()));
   server.on("/", HTTP_GET, handleRoot);
   server.on("/status", HTTP_GET, handleStatus);
   server.on("/camera", HTTP_GET, handleCameraProfile);

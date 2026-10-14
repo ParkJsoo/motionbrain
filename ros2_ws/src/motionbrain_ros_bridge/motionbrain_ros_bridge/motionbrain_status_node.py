@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import json
+import math
 import os
 import time
 import urllib.error
@@ -64,6 +65,44 @@ def poll_error_reason(exc: BaseException | None) -> str:
 
 def poll_error_is_downstream_unavailable(exc: BaseException | None) -> bool:
     return isinstance(exc, NETWORK_EXCEPTIONS)
+
+
+def source_observation_fields(payload: dict[str, Any]) -> dict[str, Any]:
+    """Keep missing/invalid acquisition evidence fail-closed across typed ROS."""
+    captured = payload.get("capturedUs")
+    captured_valid = type(captured) is int and 0 < captured < 2**64
+    boot = payload.get("cameraBootId")
+    boot_valid = type(boot) is str and len(boot) == 32 and all(ch in "0123456789abcdef" for ch in boot)
+    age = payload.get("sourceAgeMs")
+    age_valid = type(age) in (int, float) and 0 <= age <= 1.7976931348623157e308
+    return {
+        "source_frame_id": as_str(payload.get("sourceFrameId")),
+        "camera_boot_id": as_str(payload.get("cameraBootId")),
+        "captured_us": captured if captured_valid else 0,
+        "source_clock_domain": as_str(payload.get("sourceClockDomain")),
+        "source_timestamp_semantics": as_str(payload.get("sourceTimestampSemantics")),
+        "source_time_known": payload.get("sourceTimeKnown") is True and captured_valid and boot_valid and age_valid,
+        "source_age_ms": float(age) if age_valid else -1.0,
+        "source_fresh": payload.get("sourceFresh") is True,
+        "held": payload.get("held") is not False,
+        "detection_source_frame_id": as_str(payload.get("detectionSourceFrameId")),
+        "control_eligible": payload.get("controlEligible") is True,
+    }
+
+
+def add_perception_transport_age(payload: dict[str, Any], elapsed_seconds: float) -> None:
+    # Entire HTTP round trip is a conservative upper bound from payload creation
+    # to receipt; never subtract clocks belonging to the camera or perception host.
+    age = payload.get("sourceAgeMs")
+    if (type(age) in (int, float) and 0 <= age <= 1.7976931348623157e308 and
+            math.isfinite(elapsed_seconds) and elapsed_seconds >= 0):
+        adjusted_age = age + elapsed_seconds * 1000.0
+        if math.isfinite(adjusted_age):
+            payload["sourceAgeMs"] = adjusted_age
+            return
+    payload["sourceTimeKnown"] = False
+    payload["sourceFresh"] = False
+    payload["controlEligible"] = False
 
 
 def fetch_json(url: str, timeout: float) -> dict[str, Any]:
@@ -1131,6 +1170,8 @@ class MotionBrainStatusNode(LifecycleNode):
         message.offset_y = as_float(payload.get("offsetY"))
         message.align_deadband = as_float(payload.get("alignDeadband"), ALIGN_DEADBAND)
         message.camera_url = as_str(payload.get("cameraUrl"))
+        for field, value in source_observation_fields(payload).items():
+            setattr(message, field, value)
         message.reason = as_str(payload.get("reason"))
         message.raw_json = compact_json(payload)
         self.detection_typed_pub.publish(message)
@@ -1322,9 +1363,11 @@ class MotionBrainStatusNode(LifecycleNode):
 
     def poll_perception(self, perception_url: str, timeout: float) -> dict[str, Any]:
         try:
+            started = time.monotonic()
             detection = fetch_json(perception_detection_url(perception_url), timeout)
             if not isinstance(detection, dict):
                 raise ValueError("perception_detection_not_object")
+            add_perception_transport_age(detection, time.monotonic() - started)
             detection.setdefault("ts", time.time())
             detection.setdefault("perceptionUrl", perception_url)
             self.publish_json(self.detection_pub, detection)
@@ -1346,6 +1389,9 @@ class MotionBrainStatusNode(LifecycleNode):
         try:
             frame = fetch_bytes(f"{camera_url}/capture", timeout)
             detection = detect_colored_target(frame, color)
+            # Legacy byte-only capture cannot establish original source age.
+            detection.update(sourceTimeKnown=False, sourceFresh=False, held=False,
+                             controlEligible=False)
             detection["ts"] = time.time()
             detection["cameraUrl"] = camera_url
             self.publish_json(self.detection_pub, detection)

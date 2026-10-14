@@ -14,6 +14,22 @@ from unittest.mock import patch
 from tools import motionbrain_dashboard as dashboard
 
 
+SOURCE_OBSERVATION = {
+    "sourceFrameId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:10",
+    "cameraBootId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "capturedUs": 10,
+    "detectionSourceFrameId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:10",
+    "sourceClockDomain": "camera_boot_us",
+    "sourceTimestampSemantics": "first_dma_buffer",
+    "sourceTimeKnown": True,
+    "sourceMetadataValid": True,
+    "sourceAgeMs": 20.0,
+    "sourceFresh": True,
+    "controlEligible": True,
+    "liveDetected": True,
+}
+
+
 class DashboardSecurityTest(unittest.TestCase):
     @contextlib.contextmanager
     def running_server(
@@ -123,6 +139,7 @@ class DashboardSecurityTest(unittest.TestCase):
             "available": True,
             "detected": True,
             "fresh": True,
+            **SOURCE_OBSERVATION,
             "held": False,
             "label": "cup",
             "confidence": 0.8,
@@ -155,6 +172,7 @@ class DashboardSecurityTest(unittest.TestCase):
             "available": True,
             "detected": True,
             "fresh": True,
+            **SOURCE_OBSERVATION,
             "held": False,
             "label": "cup",
             "confidence": 0.4,

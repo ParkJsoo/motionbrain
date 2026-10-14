@@ -22,9 +22,15 @@
 - S2의 MCU boot/action registry, 단일 제한 행동, 실제 드라이버 출력 기록, 수동/teleop 소유권,
   신규 API 숫자 검사와 공통 M4 finite 검사를 구현했다. 기본 실행 비활성 상태다.
 - 새 API는 기존 `/shoulder` 호스트 실행과 별개이며 새 runner의 capability/boot 기반 연결은 남아 있다.
-- 활성 UART seq/session 검증, 기존 모든 숫자 입력 경로 통일, 원본 프레임/transition 작업은 아직 남아 있다.
+- S2 MCU 변경은 독립 코드리뷰와 native 회귀 후 `1bcd59e`로 커밋했다.
+- S3a/S3b/S4a의 원본 프레임 식별, exact JPEG/관측 조회, ROS 신선도 전달과
+  행동 전후 schema 검증을 구현했다. 카메라 시계 오차의 실물 근거가 없는 데이터는 학습에서 제외한다.
+- 활성 UART seq/session 검증, 기존 모든 숫자 입력 경로 통일, S4b 수집 runner와
+  실제 장치 시계·출력·관측 연결 검증은 남아 있다.
 - 현재 장치와 Raspberry Pi는 연결할 수 없다. 소프트웨어 235 tests와 ESP32 빌드가 통과했으며,
   [구현·검증·실물 관문 기록](evidence/2026-10-14-bounded-actions-software.md)에 분리해 남겼다.
+- 후속 관측/schema 결과와 파일별 완료 범위는
+  [원본 관측·transition 소프트웨어 검증](evidence/2026-10-14-source-observations-software.md)에 기록했다.
 
 ## 2. 공통 계약과 보장 범위
 

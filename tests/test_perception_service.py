@@ -21,6 +21,17 @@ def make_jpeg_with_red_target() -> bytes:
     return encoded.tobytes()
 
 
+def capture_headers(captured: int = 1000, age: int = 0, boot: str = "a" * 32) -> dict[str, str]:
+    return {
+        "X-MotionBrain-Camera-Boot-Id": boot,
+        "X-MotionBrain-Frame-Id": f"{boot}:{captured}",
+        "X-MotionBrain-Captured-Us": str(captured),
+        "X-MotionBrain-Source-Age-Us": str(age),
+        "X-MotionBrain-Clock-Domain": "camera_boot_us",
+        "X-MotionBrain-Timestamp-Semantics": "first_dma_buffer",
+    }
+
+
 class PerceptionServiceTest(unittest.TestCase):
     def make_state(self) -> PerceptionState:
         return PerceptionState(
@@ -35,7 +46,7 @@ class PerceptionServiceTest(unittest.TestCase):
         state = self.make_state()
         frame = make_jpeg_with_red_target()
 
-        with patch.object(service, "fetch_bytes", return_value=(frame, "image/jpeg")):
+        with patch.object(service, "fetch_capture", return_value=(frame, "image/jpeg", capture_headers())):
             state.run_once()
 
         detection = state.detection_payload()
@@ -85,7 +96,7 @@ class PerceptionServiceTest(unittest.TestCase):
             "stableFrames": 0,
         }
 
-        with patch.object(service, "fetch_bytes", return_value=(b"jpeg", "image/jpeg")):
+        with patch.object(service, "fetch_capture", side_effect=[(b"jpeg", "image/jpeg", capture_headers(1000)), (b"jpeg", "image/jpeg", capture_headers(2000))]):
             with patch.object(service, "detect_frame", side_effect=[dict(live_detection), dict(miss)]):
                 state.run_once()
                 state.run_once()
@@ -191,7 +202,7 @@ class PerceptionServiceTest(unittest.TestCase):
         state = self.make_state()
         frame = make_jpeg_with_red_target()
 
-        with patch.object(service, "fetch_bytes", return_value=(frame, "image/jpeg")):
+        with patch.object(service, "fetch_capture", return_value=(frame, "image/jpeg", capture_headers())):
             state.run_once()
         state.mark_error(TimeoutError("intermittent timeout"))
 
@@ -280,7 +291,7 @@ class PerceptionServiceTest(unittest.TestCase):
     def test_handler_routes_detection_health_and_frame_paths(self) -> None:
         state = self.make_state()
         frame = make_jpeg_with_red_target()
-        with patch.object(service, "fetch_bytes", return_value=(frame, "image/jpeg")):
+        with patch.object(service, "fetch_capture", return_value=(frame, "image/jpeg", capture_headers())):
             state.run_once()
 
         class FakeServer:

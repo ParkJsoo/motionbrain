@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import math
 import os
 import secrets
 import sys
@@ -37,6 +38,32 @@ DEFAULT_GRASP_SEQUENCE = [
     {"joint": "gripper", "action": "stop", "percent": 0, "ms": 0},
 ]
 POLICY_MIN_CONFIDENCE = 0.5
+# Software observation-age cap, matching the perception default; not a calibrated
+# safe movement latency. Producers may reject sooner via sourceFresh/controlEligible.
+POLICY_MAX_SOURCE_AGE_MS = 2000.0
+
+
+def policy_detection_eligible(detection: dict[str, Any], elapsed_seconds: float = 0.0) -> bool:
+    """Require original capture evidence, never display freshness, for vision actions."""
+    boot = detection.get("cameraBootId")
+    captured = detection.get("capturedUs")
+    age = detection.get("sourceAgeMs")
+    return bool(
+        type(boot) is str and len(boot) == 32 and all(ch in "0123456789abcdef" for ch in boot)
+        and type(captured) is int and 0 < captured < 2**64
+        and detection.get("sourceFrameId") == f"{boot}:{captured}"
+        and detection.get("detectionSourceFrameId") == detection.get("sourceFrameId")
+        and detection.get("sourceClockDomain") == "camera_boot_us"
+        and detection.get("sourceTimestampSemantics") == "first_dma_buffer"
+        and all(detection.get(key) is True for key in (
+            "sourceTimeKnown", "sourceMetadataValid", "sourceFresh", "controlEligible",
+            "available", "detected", "liveDetected"))
+        and detection.get("held") is False
+        and type(age) in (int, float) and 0 <= age <= POLICY_MAX_SOURCE_AGE_MS
+        and math.isfinite(elapsed_seconds) and elapsed_seconds >= 0
+        and age + elapsed_seconds * 1000.0 <= POLICY_MAX_SOURCE_AGE_MS
+    )
+
 LIGHT_CONFIRM_TTL_SECONDS = 20.0
 
 
@@ -51,7 +78,7 @@ def build_dashboard_policy_proposal(
     sensor = status.get("sensor") if isinstance(status.get("sensor"), dict) else {}
     base = status.get("baseAngle") if isinstance(status.get("baseAngle"), dict) else {}
     state = str(status.get("state", "UNKNOWN"))
-    detection_fresh = bool(detection.get("fresh", False))
+    detection_fresh = policy_detection_eligible(detection)
     status_snapshot = PolicyStatusSnapshot(
         available=bool(status) and not bool(status.get("degraded", False)),
         state=state,
@@ -1626,6 +1653,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return
 
             detection = self.server.get_detection()
+            observation_received = time.monotonic()
+            if not policy_detection_eligible(detection):
+                self.send_error_json(HTTPStatus.CONFLICT, "alignment_source_not_eligible")
+                return
             if not detection.get("detected") or detection.get("alignment") != alignment:
                 detected_alignment = str(detection.get("alignment", "LOST"))
                 self.send_error_json(HTTPStatus.CONFLICT, f"alignment_changed:{detected_alignment}")
@@ -1640,6 +1671,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self.send_error_json(HTTPStatus.CONFLICT, f"alignment_not_allowed:{reason}")
                 return
 
+            if not policy_detection_eligible(detection, time.monotonic() - observation_received):
+                self.send_error_json(HTTPStatus.CONFLICT, "alignment_source_expired")
+                return
             direction = alignment.lower()
             result = execute_base_nudge(
                 self.server.motion_base_url,
@@ -1870,9 +1904,16 @@ class DashboardServer(ThreadingHTTPServer):
 
     def get_detection(self) -> dict[str, Any]:
         if self.perception_url:
+            started = time.monotonic()
             payload = fetch_json(f"{self.perception_url}/api/detection", self.timeout)
             if not isinstance(payload, dict):
                 raise ValueError("perception_detection_not_object")
+            elapsed = time.monotonic() - started
+            # Include response transport before evaluating the local policy age cap.
+            if policy_detection_eligible(payload, elapsed):
+                payload["sourceAgeMs"] += elapsed * 1000.0
+            else:
+                payload["controlEligible"] = False
             return payload
 
         frame, _ = self.get_camera_frame()

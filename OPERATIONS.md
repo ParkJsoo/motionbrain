@@ -46,6 +46,22 @@ clear records automatically to bypass unknown/full states.
 See the [API, verification and physical checklist](docs/evidence/2026-10-14-bounded-actions-software.md).
 No deployment or physical validation was performed; the robot and Pi are unavailable.
 
+## Source observations and transition records
+
+ESP32-CAM `/capture` now identifies the original camera buffer using a boot ID and
+first-DMA timestamp. The perception service offers exact metadata and JPEG lookup
+by `frameId`; expired IDs return 404 without substituting the latest image. Old
+camera firmware remains display-only because it cannot establish source age.
+`CameraDetection.msg` has new source fields: rebuild the ROS workspace together
+before deployment. The guard assumes bridge/subscriber ROS clocks are shared,
+then uses a steady clock to age observations. `require_detection=false` still
+allows status-only readiness, but stale observations produce no motion suggestion.
+
+`learning.schema.validate_transition` separates schema validity from training
+eligibility. Raw records with unknown outcomes, held/stale frames, dropped output
+history, or unverified clock bounds remain excluded from training. There is no
+automatic collection runner yet. See the [contract and verification](docs/evidence/2026-10-14-source-observations-software.md).
+
 ## Pi Access / SSH
 
 Use a hostname-based SSH alias for the Pi. Do not pin the alias to a DHCP IP:

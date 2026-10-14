@@ -51,7 +51,7 @@ def wait_for_subscribers(node, topics: list[str], nodes: list) -> None:
     raise AssertionError(f"missing subscribers: {topics}")
 
 
-def publish_inputs(status_pub, detection_pub) -> None:
+def publish_inputs(status_pub, detection_pub, clock) -> None:
     status = MotionStatus()
     status.available = True
     status.armed = True
@@ -61,6 +61,18 @@ def publish_inputs(status_pub, detection_pub) -> None:
     status_pub.publish(status)
 
     detection = CameraDetection()
+    detection.stamp = clock.now().to_msg()
+    detection.camera_boot_id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    detection.captured_us = time.monotonic_ns() // 1000
+    detection.source_frame_id = f"{detection.camera_boot_id}:{detection.captured_us}"
+    detection.detection_source_frame_id = detection.source_frame_id
+    detection.source_clock_domain = "camera_boot_us"
+    detection.source_timestamp_semantics = "first_dma_buffer"
+    detection.source_time_known = True
+    detection.source_age_ms = 0.0
+    detection.source_fresh = True
+    detection.held = False
+    detection.control_eligible = True
     detection.available = True
     detection.detected = True
     detection.alignment = "CENTER"
@@ -71,7 +83,7 @@ def publish_inputs(status_pub, detection_pub) -> None:
 def publish_until_guard(status_pub, detection_pub, nodes: list, messages: list) -> None:
     deadline = time.monotonic() + 4.0
     while time.monotonic() < deadline:
-        publish_inputs(status_pub, detection_pub)
+        publish_inputs(status_pub, detection_pub, nodes[0].get_clock())
         spin_for(nodes, 0.1)
         if messages:
             return
@@ -106,6 +118,8 @@ def test_control_guard_lifecycle_blocks_outputs_until_active() -> None:
             f"json_output_topic:={json_output_topic}",
             "-p",
             "publish_rate_hz:=20.0",
+            "-p",
+            "require_detection:=true",
         ],
         env=env,
         stdout=subprocess.DEVNULL,
@@ -137,7 +151,7 @@ def test_control_guard_lifecycle_blocks_outputs_until_active() -> None:
 
         change_state(io_node, transition_client, Transition.TRANSITION_CONFIGURE)
         wait_for_subscribers(io_node, [status_topic, detection_topic], nodes)
-        publish_inputs(status_pub, detection_pub)
+        publish_inputs(status_pub, detection_pub, nodes[0].get_clock())
         spin_for(nodes, 0.4)
         assert messages == []
 
@@ -151,7 +165,7 @@ def test_control_guard_lifecycle_blocks_outputs_until_active() -> None:
         change_state(io_node, transition_client, Transition.TRANSITION_DEACTIVATE)
         spin_for(nodes, 0.2)
         messages.clear()
-        publish_inputs(status_pub, detection_pub)
+        publish_inputs(status_pub, detection_pub, nodes[0].get_clock())
         spin_for(nodes, 0.4)
         assert messages == []
 

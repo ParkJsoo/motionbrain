@@ -1,5 +1,6 @@
 import unittest
 import urllib.error
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from tools import motionbrain_dashboard as dashboard
@@ -7,6 +8,22 @@ from tools.motionbrain_dashboard import DashboardServer
 from tools.motionbrain_dashboard import build_dashboard_policy_proposal
 from tools.motionbrain_dashboard import build_grasp_dry_run_plan
 from tools.motionbrain_dashboard import dependency_error_payload
+
+
+SOURCE_OBSERVATION = {
+    "sourceFrameId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:10",
+    "cameraBootId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "capturedUs": 10,
+    "detectionSourceFrameId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:10",
+    "sourceClockDomain": "camera_boot_us",
+    "sourceTimestampSemantics": "first_dma_buffer",
+    "sourceTimeKnown": True,
+    "sourceMetadataValid": True,
+    "sourceAgeMs": 20.0,
+    "sourceFresh": True,
+    "controlEligible": True,
+    "liveDetected": True,
+}
 
 
 class DashboardAlignmentTest(unittest.TestCase):
@@ -43,6 +60,7 @@ class DashboardAlignmentTest(unittest.TestCase):
                 "available": True,
                 "detected": True,
                 "fresh": True,
+                **SOURCE_OBSERVATION,
                 "held": False,
                 "label": "cup",
                 "confidence": 0.8,
@@ -68,6 +86,7 @@ class DashboardAlignmentTest(unittest.TestCase):
                 "available": True,
                 "detected": True,
                 "fresh": True,
+                **SOURCE_OBSERVATION,
                 "held": False,
                 "label": "cup",
                 "confidence": 0.8,
@@ -93,6 +112,7 @@ class DashboardAlignmentTest(unittest.TestCase):
                 "available": True,
                 "detected": True,
                 "fresh": True,
+                **SOURCE_OBSERVATION,
                 "held": False,
                 "label": "cup",
                 "confidence": 0.4,
@@ -105,6 +125,78 @@ class DashboardAlignmentTest(unittest.TestCase):
         self.assertEqual(proposal["action"], "ask_operator")
         self.assertEqual(proposal["reason"], "confidence_below_threshold")
         self.assertFalse(proposal["physicalMotionCandidate"])
+
+    def fresh_source_detection(self):
+        return {**SOURCE_OBSERVATION, "available": True, "detected": True, "fresh": True,
+                "held": False, "label": "cup", "confidence": 0.8, "alignment": "LEFT"}
+
+    def test_policy_rejects_held_unknown_and_stale_original_even_when_display_fresh(self):
+        status = {"state": "ARMED", "sensor": {}, "baseAngle": {}, "motors": {}}
+        valid = self.fresh_source_detection()
+        self.assertEqual(build_dashboard_policy_proposal(status, valid, instruction="align target")["action"], "align_left")
+        invalid = [
+            {**valid, "held": True}, {**valid, "sourceTimeKnown": False},
+            {**valid, "sourceFresh": False}, {**valid, "controlEligible": False},
+            {**valid, "sourceAgeMs": 2001}, {**valid, "sourceAgeMs": float("nan")},
+            {**valid, "detectionSourceFrameId": "other"},
+            {key: value for key, value in valid.items() if key not in SOURCE_OBSERVATION},
+        ]
+        for detection in invalid:
+            with self.subTest(detection=detection):
+                proposal = build_dashboard_policy_proposal(status, detection, instruction="align target")
+                self.assertEqual(proposal["action"], "hold")
+                self.assertFalse(proposal["physicalMotionCandidate"])
+
+    def align_handler(self, detection):
+        handler = dashboard.DashboardHandler.__new__(dashboard.DashboardHandler)
+        handler.server = SimpleNamespace(
+            http_token="token", camera_url="", perception_url="http://perception",
+            get_detection=lambda: detection, motion_base_url="http://controller", timeout=1,
+            status_allows_align_nudge=lambda status: (True, "ok"), align_percent=25, align_nudge_ms=100)
+        handler.read_json_body = lambda: {"alignment": "LEFT"}
+        handler.responses = []
+        handler.send_error_json = lambda status, error: handler.responses.append((int(status), error))
+        handler.send_json = lambda result: handler.responses.append((200, result))
+        return handler
+
+    def test_align_endpoint_never_executes_on_missing_held_or_stale_source(self):
+        valid = self.fresh_source_detection()
+        for detection in ({}, {**valid, "held": True}, {**valid, "sourceFresh": False},
+                          {**valid, "sourceTimeKnown": False}):
+            handler = self.align_handler(detection)
+            with patch.object(dashboard, "execute_base_nudge") as execute:
+                handler.handle_align_nudge()
+            execute.assert_not_called()
+            self.assertEqual(handler.responses, [(409, "alignment_source_not_eligible")])
+
+    def test_align_endpoint_rechecks_source_age_after_status_request(self):
+        handler = self.align_handler(self.fresh_source_detection())
+        with (patch.object(dashboard.time, "monotonic", side_effect=[10.0, 12.1]),
+              patch.object(dashboard, "fetch_json", return_value={}),
+              patch.object(dashboard, "execute_base_nudge") as execute):
+            handler.handle_align_nudge()
+        execute.assert_not_called()
+        self.assertEqual(handler.responses, [(409, "alignment_source_expired")])
+
+    def test_align_endpoint_accepts_valid_original_source(self):
+        handler = self.align_handler(self.fresh_source_detection())
+        with (patch.object(dashboard, "fetch_json", return_value={}),
+              patch.object(dashboard, "execute_base_nudge", return_value={"success": True}) as execute):
+            handler.handle_align_nudge()
+        execute.assert_called_once()
+        self.assertEqual(handler.responses[0][0], 200)
+
+    def test_dashboard_perception_transport_age_is_counted(self):
+        server = self.make_server(); server.perception_url = "http://perception"; server.timeout = 1
+        with (patch.object(dashboard, "fetch_json", return_value=self.fresh_source_detection()),
+              patch.object(dashboard.time, "monotonic", side_effect=[10.0, 10.1])):
+            detection = server.get_detection()
+        self.assertAlmostEqual(detection["sourceAgeMs"], 120.0)
+        self.assertTrue(detection["controlEligible"])
+        with (patch.object(dashboard, "fetch_json", return_value=self.fresh_source_detection()),
+              patch.object(dashboard.time, "monotonic", side_effect=[10.0, 12.1])):
+            detection = server.get_detection()
+        self.assertFalse(detection["controlEligible"])
 
     def test_dependency_error_payload_marks_controller_unavailable_as_degraded(self) -> None:
         payload = dependency_error_payload(

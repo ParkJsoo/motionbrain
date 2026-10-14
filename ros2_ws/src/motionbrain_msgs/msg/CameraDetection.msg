@@ -21,3 +21,16 @@ float32 align_deadband
 string camera_url
 string reason
 string raw_json
+
+# Original capture identity; stamp above is bridge publication time, not capture time.
+string source_frame_id
+string camera_boot_id
+uint64 captured_us
+string source_clock_domain
+string source_timestamp_semantics
+bool source_time_known
+float64 source_age_ms
+bool source_fresh
+bool held
+string detection_source_frame_id
+bool control_eligible
