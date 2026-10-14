@@ -69,6 +69,27 @@ JPEGs, hashes, raw observations, intent, and partial/error records under ignored
 checks; this never resumes or retries actions. Synthetic records remain ineligible
 for physical training. There is no device adapter or physical execution switch.
 
+## Dataset manifests (offline)
+
+Use explicit saved run directories and a new output directory:
+
+```sh
+python3 tools/build_action_dataset.py --runs datasets/action_transitions/dry_run/RUN_ID --output-dir datasets/action_transitions/manifests/MANIFEST_ID
+python3 tools/build_action_dataset.py --validate datasets/action_transitions/manifests/MANIFEST_ID/manifest.json
+python3 tools/build_action_dataset.py --validate datasets/action_transitions/manifests/MANIFEST_ID/manifest.json --require-ready
+```
+
+`manifest.json` retains all attempts and exclusion reasons. `validation.json` is
+an immutable validation snapshot; `--validate` reloads source files and recomputes
+eligibility, integrity and assignments. Keep source directories with the manifest.
+No images are rewritten and existing output directories cannot be overwritten.
+The default exit code 0 means a consistent inventory, including an inventory with
+zero eligible samples. Training callers must use `--require-ready`: exit 2 rejects
+invalid inventories or empty physical train/validation/test partitions. Current
+synthetic runs correctly fail that readiness gate. Physical provenance declarations
+are required but are not hardware authentication; there is no physical collector yet.
+See [dataset policy, tests and limitations](docs/evidence/2026-10-14-dataset-manifest-software.md).
+
 ## Pi Access / SSH
 
 Use a hostname-based SSH alias for the Pi. Do not pin the alias to a DHCP IP:

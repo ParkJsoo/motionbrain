@@ -28,6 +28,10 @@
 - 관측/schema는 독립 리뷰 수정과 291개 테스트 후 `ca48f04`로 커밋했다.
 - S4b의 dry-run runner·원본 이미지/hash 저장·중단/누락 감사는 구현했다.
   [331개 소프트웨어 테스트와 CLI 10종 결과](evidence/2026-10-14-dry-run-collector-software.md)를 남겼다.
+  독립 리뷰·전체 회귀 후 `9ad4935`로 커밋했다.
+- S5a manifest·그룹 분할·누수/합성 혼입 검증은 장치 없이 구현했다.
+  [데이터셋 검증 기록](evidence/2026-10-14-dataset-manifest-software.md)에 정책과 제한을 남겼다.
+  현재 11개 합성 시도는 모두 제외되며 실제 학습·평가 데이터와 모델은 아직 없다.
 - 활성 UART seq/session 검증, 기존 모든 숫자 입력 경로 통일, S4b의 실제 장치 adapter와
   시계·출력·관측 연결 검증은 남아 있다.
 - 현재 장치와 Raspberry Pi는 연결할 수 없다. 소프트웨어 235 tests와 ESP32 빌드가 통과했으며,
@@ -70,7 +74,8 @@
 | S3b | `ros2_ws/src/motionbrain_msgs/msg/CameraDetection.msg`, `motionbrain_status_node.py`, `ros2_ws/src/motionbrain_control/src/control_guard_node.cpp`, 기존 guard 테스트 | source ID/held/validity/age 전파, 재발행으로 freshness 회복 금지 | 오래된 ID 연속 수신해도 stale, metadata 미상은 제어 거부 | 느린 2초 polling에서 stop-observe 루프 확인 |
 | S4a | 신규 `learning/schema.py`, `tests/test_action_transition_schema.py` | observation/action/transition validator, 버전·품질·판정 출처 | 잘못 연결된 frame·동일 before/after·unknown·stale M4·NaN·missing metadata 격리 | 합성 fixture 성공은 데이터 수집 성공 아님 |
 | S4b | 신규 `learning/runner.py` 단일-step 골격, `tools/capture_action_transitions.py`, `tests/test_action_transition_capture.py`; 기존 두 policy episode 도구는 유지 | 공통 action/observation adapter로 runner의 before/실제 행동/after 연결, append-only 원본 로그, 이미지 hash와 설정 snapshot | 취소/관측 소실/기록 손실까지 기록, 종료 후 획득 증거 없으면 부적합 | 한 물체/정해진 자세에서 작은 교정 데이터 수집 |
-| S5 | 신규 `learning/dataset.py`, `features.py`, `models.py`, `tools/train_visual_dynamics.py`, `evaluate_visual_dynamics.py`, `evaluate_robot_trials.py` | 무변화·선형·작은 MLP 비교, 그룹 분할, artifact 저장/재현 | Mac CPU 합성 smoke, train-only 정규화, episode/배치/frame 누수 검사 | 별도 세션 실제 접근·집기·배치 trials |
+| S5a 구현 | 신규 `learning/dataset.py`, `learning/splits.py`, `learning/provenance.py`, `tools/build_action_dataset.py`, 대응 테스트 | 원본 무결성·raw/요약 연결·출처 재검증, 모든 시도 inventory, 세션/episode/hash/frame/행동/배치 그룹 분할 | 수동 manifest 변조·누락·합성 혼입·교차 분할 거부, 합성 11개 적격 0 | 실제 수집 adapter와 교정 근거 연결 후 별도 세션 실물 데이터 적용 |
+| S5b | 신규 `features.py`, `models.py`, `tools/train_visual_dynamics.py`, `evaluate_visual_dynamics.py`, `evaluate_robot_trials.py` | 무변화·선형·작은 MLP 비교, 그룹 분할, artifact 저장/재현 | Mac CPU 합성 smoke, train-only 정규화, episode/배치/frame 누수 검사 | 별도 세션 실제 접근·집기·배치 trials |
 | S6 | S4b의 공유 `learning/runner.py` 확장, 신규 `tools/run_manipulation_trial.py`; `tools/motionbrain_dashboard.py`와 ROS adapter | 관찰→선택→제한 실행→off→정착→재관찰 단일 루프, shadow/작업자 한 단계/감독 반복 모드 | restart 기본 비구동, goal 소실·범위 밖·unknown 중단, 기존 confirm 자동 위조 없음 | 접근부터 검증 후 집기·들기·이동·놓기 순차 확장 |
 | S7 | `docs/evidence/`, `PORTFOLIO.md`, `README.md`, `claim-to-evidence-matrix.md` | 조건/버전/원시 로그/영상/실패 표 연결 | 코드·합성·저장된 실물·새 실물 증거 분리 | 학습 개선이 입증된 범위만 발표 |
 

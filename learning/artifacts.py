@@ -230,6 +230,12 @@ def read_json_artifact(root, descriptor):
         raise StorageError(f"invalid JSON artifact: {exc}") from exc
 
 
+def describe_artifact(root, relative):
+    """Fingerprint an existing local file; this alone does not establish trust."""
+    content = _read(root, relative)
+    return {"artifactRef": relative, "sha256": hashlib.sha256(content).hexdigest(), "bytes": len(content)}
+
+
 def read_events(root):
     """Read a verified structural event prefix; absent terminal evidence is unknown.
 

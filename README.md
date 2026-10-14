@@ -55,6 +55,9 @@ ESP32의 인증된 `/shoulder`와 firmware `SafetyGate`로 전달된다. 248.20�
 후속 [dry-run 수집 runner](docs/evidence/2026-10-14-dry-run-collector-software.md)는
 원본 JPEG·hash·실행 의도·부분 기록을 저장하고 누락·중단을 감사한다. 합성 결과는
 실물 학습 데이터에서 제외하며, 장치 실행 adapter는 아직 연결하지 않았다.
+[데이터셋 manifest·분할 검증](docs/evidence/2026-10-14-dataset-manifest-software.md)은 원본 파일을 다시 검증하고
+세션/episode·동일 이미지/hash·프레임·명령의 교차 분할을 차단한다. 합성과 출처 미상은 제외하며,
+현재 dry-run 11개 시도는 모두 학습·평가 제외다. 모델 학습이나 실물 성능 개선 결과는 아직 없다.
 
 ## 데모 영상
 
