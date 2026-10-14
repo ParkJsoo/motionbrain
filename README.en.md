@@ -41,7 +41,14 @@ interfaces, C++ guard logic, mission supervision, RViz/TF visualization,
 Proposals are not forwarded automatically; only an operator-confirmed 20-second
 one-shot can reach the authenticated ESP32 `/shoulder` endpoint and `SafetyGate`.
 A 248.20 deg start reached 249.96 deg for a 250.00 deg target
-(`TARGET_REACHED`, -0.04 deg), and proposal reuse was rejected. [Detailed evidence](docs/evidence/2026-07-13-m4-physical-ros2-control.en.md)
+(`TARGET_REACHED`, -0.04 deg), and repeated confirmation of the same pending proposal
+was rejected. [Detailed evidence](docs/evidence/2026-07-13-m4-physical-ros2-control.en.md)
+
+The 2026-10-14 host changes use a persistent command journal for proposal redelivery,
+restart recovery, and lost responses. Unknown outcomes block further confirmation;
+controller acceptance is separate from physical attainment. These are software tests,
+not MCU-level exactly-once evidence. See the [implementation plan (Korean)](docs/ai-manipulation-plan-2026-10-14.md)
+and [software verification record](docs/evidence/2026-10-14-command-journal-software.md).
 
 ## Demo Video
 

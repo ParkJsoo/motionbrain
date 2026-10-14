@@ -40,7 +40,13 @@ ROS2 Jazzy typed interface, C++ control guard, mission supervisor, RViz/TF
 포함한다. proposal은 자동 전달되지 않으며 작업자가 확인한 20초 one-shot만
 ESP32의 인증된 `/shoulder`와 firmware `SafetyGate`로 전달된다. 248.20°에서
 250.00° 목표를 명령해 249.96°(`TARGET_REACHED`, -0.04°)로 수렴했고 proposal
-재사용도 거부됨을 확인했다. [상세 검증](docs/evidence/2026-07-13-m4-physical-ros2-control.md)
+같은 pending proposal의 연속 confirm도 거부됨을 확인했다. [상세 검증](docs/evidence/2026-07-13-m4-physical-ros2-control.md)
+
+2026-10-14 호스트 개선은 proposal 재접수·재시작·응답 유실을 영속 명령 기록으로
+처리한다. 결과 불명은 자동 재시도하지 않으며 MCU 수락과 물리 도달을 구분한다.
+이는 소프트웨어 검증이며 MCU의 ID별 실행·결과 조회는 아직 후속 작업이다.
+추가 관절 센서 없이 시각 기반 조작 학습을 진행하는 [파일별 실행 계획](docs/ai-manipulation-plan-2026-10-14.md)과
+[이번 소프트웨어 검증 범위](docs/evidence/2026-10-14-command-journal-software.md)를 참고한다.
 
 ## 데모 영상
 

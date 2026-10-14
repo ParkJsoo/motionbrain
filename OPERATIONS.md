@@ -5,6 +5,34 @@
 This is the operator-oriented view of MotionBrain on Raspberry Pi. It is useful
 for system-quality, Linux operations, and troubleshooting discussions.
 
+## M4 command journal
+
+The operator-confirmed M4 executor stores command records at
+`$XDG_STATE_HOME/motionbrain/m4_commands.sqlite3` (default:
+`~/.local/state/motionbrain/m4_commands.sqlite3`). Keep one durable journal and
+one executor for a controller. Empty/relative `XDG_STATE_HOME` falls back to the home
+directory; explicit journal paths must be absolute (home expansion is allowed).
+`command_journal_path` and
+`command_journal_max_records` are ROS parameters. A second owner of the same file
+fails closed; a different path or host is outside that protection.
+
+`/motionbrain/m4_write_result` uses `motionbrain_msgs/srv/M4WriteConfirm` with only
+`command_id` as its request. It is read-only and never calls the controller.
+Inspect `raw_json.executionState`: `accepted` is a controller acknowledgment,
+not target attainment. `forwarded` indicates a transport attempt or possible
+attempt before a crash; it does not prove physical motion. Repeated confirmation
+returns the recorded outcome and `proposal_already_consumed` without another POST.
+
+An `outcome_unknown` record blocks new confirmations. There is no reconciliation
+API yet. Do not delete the database or select a new path to clear this condition.
+The 10,000-record default cap includes pending and consumed records; reaching it
+rejects new proposals without evicting old IDs. Pending requests are canceled on
+restart, and a reserved dispatch becomes unknown. Missing results do not prove
+non-execution. The legacy MCU endpoint still lacks command-ID deduplication and
+per-request deadline enforcement; this host change is not sufficient to start
+learning-driven physical trials. See the [implementation plan](docs/ai-manipulation-plan-2026-10-14.md)
+and [software evidence](docs/evidence/2026-10-14-command-journal-software.md).
+
 ## Pi Access / SSH
 
 Use a hostname-based SSH alias for the Pi. Do not pin the alias to a DHCP IP:

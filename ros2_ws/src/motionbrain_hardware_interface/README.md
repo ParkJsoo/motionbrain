@@ -50,9 +50,15 @@ or open-loop tilt estimates.
 
 ## Safety Boundary
 
-In the current repository state this package is non-physical. `write()` does
-not POST to the ESP32 controller, and no STM32, motor, gripper, camera, or light
-is contacted by this plugin.
+`write()` does not POST to the ESP32 controller. In `m4_proposal` mode it publishes
+a typed proposal for the separate operator-confirmed physical executor. The plugin
+itself does not contact a motor, STM32, camera, or light.
+
+Proposal IDs contain a random producer session and sequence. The executor uses a
+persistent host journal to preserve consumed IDs and unknown outcomes across restarts.
+This does not provide MCU-level deduplication or physical completion evidence.
+See the [command journal verification](../../../docs/evidence/2026-10-14-command-journal-software.md)
+and [execution plan](../../../docs/ai-manipulation-plan-2026-10-14.md).
 
 The dry-run URDF uses `transport_mode=dry_run`. The M4 measured URDF uses
 `transport_mode=m4_state`, subscribes only to typed status, and exposes no

@@ -291,6 +291,11 @@ MotionBrainHardwareInterface::export_command_interfaces()
 hardware_interface::CallbackReturn MotionBrainHardwareInterface::on_configure(
   const rclcpp_lifecycle::State &)
 {
+  configured_ = false;
+  active_ = false;
+  if (proposal_mode() && !proposal_command_ids_.initialize()) {
+    return hardware_interface::CallbackReturn::ERROR;
+  }
   if (measured_m4_mode()) {
     set_state_only_interfaces_unavailable();
     try {
@@ -424,7 +429,10 @@ hardware_interface::return_type MotionBrainHardwareInterface::write(
       }
       motionbrain_msgs::msg::M4WriteProposal proposal;
       proposal.schema_version = "motionbrain.m4_write_proposal.v1";
-      proposal.command_id = "ros2-control-" + std::to_string(++proposal_sequence_);
+      if (!proposal_command_ids_.next(proposal.command_id)) {
+        active_ = false;
+        return hardware_interface::return_type::ERROR;
+      }
       proposal.joint = kM4StateJointName;
       proposal.target_position_rad = commands_.front();
       proposal.timeout_ms = 10000;

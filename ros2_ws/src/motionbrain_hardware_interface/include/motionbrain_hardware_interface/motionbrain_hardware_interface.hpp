@@ -12,6 +12,7 @@
 #include "hardware_interface/types/hardware_interface_return_values.hpp"
 #include "motionbrain_msgs/msg/motion_status.hpp"
 #include "motionbrain_msgs/msg/m4_write_proposal.hpp"
+#include "motionbrain_hardware_interface/proposal_command_ids.hpp"
 #include "rclcpp/duration.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp/time.hpp"
@@ -102,7 +103,7 @@ private:
   rclcpp::Publisher<motionbrain_msgs::msg::M4WriteProposal>::SharedPtr proposal_publisher_;
   std::mutex state_cache_mutex_;
   bool state_cache_has_sample_{false};
-  uint64_t proposal_sequence_{0};
+  ProposalCommandIds proposal_command_ids_;
   double cached_shoulder_position_{0.0};
   double cached_shoulder_velocity_{0.0};
   std::chrono::steady_clock::time_point cached_shoulder_time_;

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 import urllib.request
 
 import rclpy
@@ -32,15 +33,34 @@ class M4WriteExecutorNode(Node):
         self.declare_parameter("http_token", os.environ.get("MOTIONBRAIN_HTTP_TOKEN", ""))
         self.declare_parameter("http_timeout_sec", 3.0)
         self.declare_parameter("proposal_ttl_sec", 20.0)
-        self.core = M4WriteExecutorCore(float(self.get_parameter("proposal_ttl_sec").value))
-        self.create_subscription(
-            M4WriteProposal, "/motionbrain/m4_write_proposal", self.handle_proposal, 10
+        state_home = Path(os.environ.get("XDG_STATE_HOME", ""))
+        if not state_home.is_absolute():
+            state_home = Path.home() / ".local" / "state"
+        self.declare_parameter("command_journal_path", str(state_home / "motionbrain" / "m4_commands.sqlite3"))
+        self.declare_parameter("command_journal_max_records", 10000)
+        journal_path = str(self.get_parameter("command_journal_path").value)
+        if not journal_path.strip() or not Path(journal_path).expanduser().is_absolute():
+            raise ValueError("physical executor requires a persistent command journal at an absolute path")
+        self.core = M4WriteExecutorCore(
+            float(self.get_parameter("proposal_ttl_sec").value),
+            journal_path=journal_path,
+            max_records=int(self.get_parameter("command_journal_max_records").value),
         )
-        self.create_service(M4WriteConfirm, "/motionbrain/m4_write_confirm", self.handle_confirm)
+        try:
+            self.create_subscription(
+                M4WriteProposal, "/motionbrain/m4_write_proposal", self.handle_proposal, 10
+            )
+            self.create_service(M4WriteConfirm, "/motionbrain/m4_write_confirm", self.handle_confirm)
+            # Same wire shape, separate read-only endpoint: never fetches or POSTs.
+            self.create_service(M4WriteConfirm, "/motionbrain/m4_write_result", self.handle_result)
+        except Exception:
+            self.core.close()
+            super().destroy_node()
+            raise
 
     def handle_proposal(self, message: M4WriteProposal) -> None:
         try:
-            self.core.accept_proposal(
+            result = self.core.accept_proposal(
                 {
                     "commandId": message.command_id,
                     "joint": message.joint,
@@ -48,9 +68,14 @@ class M4WriteExecutorNode(Node):
                     "timeoutMs": message.timeout_ms,
                     "forwarded": message.forwarded,
                     "operatorConfirmationRequired": message.operator_confirmation_required,
+                    "createdAt": {"sec": message.created_at.sec, "nanosec": message.created_at.nanosec},
+                    "createdClockDomain": "ros",
+                    "schemaVersion": message.schema_version,
                 }
             )
-            self.get_logger().info(f"M4 proposal pending confirmation: {message.command_id}")
+            self.get_logger().info(
+                f"M4 proposal {message.command_id}: {result['executionState']} ({result['reason']})"
+            )
         except (M4ContractError, TypeError, ValueError) as exc:
             self.get_logger().warning(f"Rejected M4 proposal: {exc}")
 
@@ -63,6 +88,22 @@ class M4WriteExecutorNode(Node):
             lambda: request_json(f"{base}/status", timeout=timeout),
             lambda path: request_json(f"{base}{path}", timeout=timeout, token=token, method="POST"),
         )
+        return self._fill_response(result, response)
+
+    def handle_result(self, request: M4WriteConfirm.Request, response: M4WriteConfirm.Response):
+        result = self.core.get_result(request.command_id)
+        if result is None:
+            # Absence from this host journal does not prove physical non-execution.
+            result = {
+                "success": False, "forwarded": False, "commandId": request.command_id,
+                "reason": "result_not_found", "message": "result_not_found",
+                "executionState": "outcome_unknown", "dispatchAttempted": None,
+                "acknowledged": False,
+            }
+            result["rawJson"] = json.dumps(result, separators=(",", ":"), sort_keys=True)
+        return self._fill_response(result, response)
+
+    def _fill_response(self, result: dict, response: M4WriteConfirm.Response):
         response.stamp = self.get_clock().now().to_msg()
         response.success = result["success"]
         response.forwarded = result["forwarded"]
@@ -72,14 +113,20 @@ class M4WriteExecutorNode(Node):
         response.raw_json = result["rawJson"]
         return response
 
+    def destroy_node(self):
+        self.core.close()
+        return super().destroy_node()
+
 
 def main(args=None) -> None:
     rclpy.init(args=args)
-    node = M4WriteExecutorNode()
+    node = None
     try:
+        node = M4WriteExecutorNode()
         rclpy.spin(node)
     finally:
-        node.destroy_node()
+        if node is not None:
+            node.destroy_node()
         rclpy.shutdown()
 
 
