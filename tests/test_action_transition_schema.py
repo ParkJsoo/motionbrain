@@ -60,6 +60,18 @@ def make_transition():
 
 
 class ActionTransitionSchemaTest(unittest.TestCase):
+    def test_synthetic_provenance_cannot_be_used_as_physical_training_data(self):
+        for key in ("collection", "before", "after", "action"):
+            value = make_transition()
+            if key == "collection":
+                value[key] = {"mode": "dry_run", "evidence": "synthetic"}
+            else:
+                value[key]["synthetic"] = True
+            report = validate_transition(value)
+            self.assertTrue(report["valid"])
+            self.assertFalse(report["trainingEligible"])
+            self.assertIn("synthetic_dry_run", report["exclusionReasons"])
+
     def test_complete_synthetic_contract_is_eligible_and_input_is_unchanged(self):
         value = make_transition()
         original = copy.deepcopy(value)

@@ -52,6 +52,9 @@ ESP32의 인증된 `/shoulder`와 firmware `SafetyGate`로 전달된다. 248.20�
 원본 프레임 식별·신선도 전달과 행동 전후 데이터 검증도 구현했다.
 [관측·transition 계약과 소프트웨어 검증](docs/evidence/2026-10-14-source-observations-software.md)에
 장치 없이 확인한 범위와 시계 교정·실물 시험 등 남은 조건을 구분했다.
+후속 [dry-run 수집 runner](docs/evidence/2026-10-14-dry-run-collector-software.md)는
+원본 JPEG·hash·실행 의도·부분 기록을 저장하고 누락·중단을 감사한다. 합성 결과는
+실물 학습 데이터에서 제외하며, 장치 실행 adapter는 아직 연결하지 않았다.
 
 ## 데모 영상
 

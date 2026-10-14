@@ -25,8 +25,11 @@
 - S2 MCU 변경은 독립 코드리뷰와 native 회귀 후 `1bcd59e`로 커밋했다.
 - S3a/S3b/S4a의 원본 프레임 식별, exact JPEG/관측 조회, ROS 신선도 전달과
   행동 전후 schema 검증을 구현했다. 카메라 시계 오차의 실물 근거가 없는 데이터는 학습에서 제외한다.
-- 활성 UART seq/session 검증, 기존 모든 숫자 입력 경로 통일, S4b 수집 runner와
-  실제 장치 시계·출력·관측 연결 검증은 남아 있다.
+- 관측/schema는 독립 리뷰 수정과 291개 테스트 후 `ca48f04`로 커밋했다.
+- S4b의 dry-run runner·원본 이미지/hash 저장·중단/누락 감사는 구현했다.
+  [331개 소프트웨어 테스트와 CLI 10종 결과](evidence/2026-10-14-dry-run-collector-software.md)를 남겼다.
+- 활성 UART seq/session 검증, 기존 모든 숫자 입력 경로 통일, S4b의 실제 장치 adapter와
+  시계·출력·관측 연결 검증은 남아 있다.
 - 현재 장치와 Raspberry Pi는 연결할 수 없다. 소프트웨어 235 tests와 ESP32 빌드가 통과했으며,
   [구현·검증·실물 관문 기록](evidence/2026-10-14-bounded-actions-software.md)에 분리해 남겼다.
 - 후속 관측/schema 결과와 파일별 완료 범위는

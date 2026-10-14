@@ -59,8 +59,15 @@ allows status-only readiness, but stale observations produce no motion suggestio
 
 `learning.schema.validate_transition` separates schema validity from training
 eligibility. Raw records with unknown outcomes, held/stale frames, dropped output
-history, or unverified clock bounds remain excluded from training. There is no
-automatic collection runner yet. See the [contract and verification](docs/evidence/2026-10-14-source-observations-software.md).
+history, or unverified clock bounds remain excluded from training.
+See the [contract and verification](docs/evidence/2026-10-14-source-observations-software.md).
+
+The [dry-run collector](docs/evidence/2026-10-14-dry-run-collector-software.md) is available via
+`python3 tools/capture_action_transitions.py --dry-run`. It stores synthetic original
+JPEGs, hashes, raw observations, intent, and partial/error records under ignored
+`datasets/action_transitions/dry_run/`. Use `--audit-run PATH` for read-only integrity
+checks; this never resumes or retries actions. Synthetic records remain ineligible
+for physical training. There is no device adapter or physical execution switch.
 
 ## Pi Access / SSH
 

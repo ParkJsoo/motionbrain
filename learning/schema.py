@@ -95,6 +95,11 @@ def validate_transition(transition):
 
     t = obj(transition, "transition")
     all_finite(t, "transition")
+    collection = t.get("collection")
+    marked_synthetic = any(isinstance(t.get(key), dict) and t[key].get("synthetic") is True
+                           for key in ("before", "after", "action"))
+    if marked_synthetic or (isinstance(collection, dict) and (collection.get("mode") == "dry_run" or collection.get("evidence") == "synthetic")):
+        exclude("synthetic_dry_run")
     if t.get("schemaVersion") != SCHEMA_VERSION:
         error("schemaVersion", f"must be {SCHEMA_VERSION}")
     for key in ("transitionId", "sessionId", "episodeId"):
