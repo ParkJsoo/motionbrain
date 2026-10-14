@@ -184,7 +184,7 @@ bool ShoulderAngleController::startAbsolute(float targetDegrees, uint8_t percent
     }
     return false;
   }
-  if (targetDegrees < SOFT_MIN_DEGREES || targetDegrees > SOFT_MAX_DEGREES) {
+  if (!isfinite(targetDegrees) || targetDegrees < SOFT_MIN_DEGREES || targetDegrees > SOFT_MAX_DEGREES) {
     if (message != nullptr && messageSize > 0) {
       snprintf(message, messageSize, "Shoulder target must be %.1f-%.1f deg",
                SOFT_MIN_DEGREES, SOFT_MAX_DEGREES);

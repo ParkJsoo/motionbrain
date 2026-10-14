@@ -1,3 +1,4 @@
+#include "control/bounded_action_service.h"
 #include "input/teleop_adapter.h"
 
 #include <math.h>
@@ -512,8 +513,15 @@ void TeleopAdapter::handleFreshFrame(uint32_t now) {
     return;
   }
 
+  BoundedActions::cancel(bounded::Reason::OperatorOverride);
+  if (BoundedActions::active()) return;
   systemState_->resetTimeout();
   applyContinuousOutputs();
+}
+
+void TeleopAdapter::resetOutputCache() {
+  appliedGripPercent_ = appliedWristPercent_ = appliedElbowPercent_ = 0;
+  appliedShoulderPercent_ = appliedBasePercent_ = 0;
 }
 
 void TeleopAdapter::stopControlledOutputs(TeleopStopReason reason, const char* detail, bool updateReason) {

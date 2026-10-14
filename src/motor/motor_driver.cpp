@@ -82,10 +82,15 @@ bool MotorControl::init() {
   
   // 3. 모든 PWM 출력을 0으로 설정 (5개 모터만)
   ledcWrite(PWM_CHANNEL_M1, 0);  // M1: 그리퍼
+  outputLog_.append(millis(), 0, MOTOR_1, 0, bounded::OutputReason::ForcedOff);
   ledcWrite(PWM_CHANNEL_M2, 0);  // M2: 손목
+  outputLog_.append(millis(), 0, MOTOR_2, 0, bounded::OutputReason::ForcedOff);
   ledcWrite(PWM_CHANNEL_M3, 0);  // M3: 팔꿈치
+  outputLog_.append(millis(), 0, MOTOR_3, 0, bounded::OutputReason::ForcedOff);
   ledcWrite(PWM_CHANNEL_M4, 0);  // M4: 어깨
+  outputLog_.append(millis(), 0, MOTOR_4, 0, bounded::OutputReason::ForcedOff);
   ledcWrite(PWM_CHANNEL_M5, 0);  // M5: 베이스
+  outputLog_.append(millis(), 0, MOTOR_5, 0, bounded::OutputReason::ForcedOff);
   
   // 5. 모든 방향 핀을 LOW로 설정
   digitalWrite(PIN_AIN1_1, LOW);
@@ -401,6 +406,13 @@ int16_t MotorControl::getSpeed(uint8_t motorId) const {
   return currentSpeed_[index];
 }
 
+bool MotorControl::hasPendingOutput() const {
+  for (uint8_t i = 0; i < NUM_MOTORS; i++) {
+    if (currentSpeed_[i] != 0 || targetSpeed_[i] != 0) return true;
+  }
+  return false;
+}
+
 /**
  * 모터 제어 업데이트 (주기적으로 호출)
  * 점진적 속도 변경 처리
@@ -585,6 +597,8 @@ bool MotorControl::setMotorSpeedInternal(uint8_t motorId, int16_t speed) {
 
   // PWM 출력 — PWM_CHANNELS[] 배열 사용 (산술 의존 없음, emergencyStop/update와 동일 패턴)
   ledcWrite(PWM_CHANNELS[index], pwmValue);
+  outputLog_.append(millis(), actionOrdinal_, motorId, speed,
+                    bounded::OutputReason::DriverWrite);
   
   // 상태 업데이트
   currentSpeed_[index] = speed;
@@ -614,6 +628,8 @@ void MotorControl::forceMotorOutputOff(uint8_t motorId) {
   lastUpdateTime_[index] = 0;
 
   ledcWrite(PWM_CHANNELS[index], 0);
+  outputLog_.append(millis(), actionOrdinal_, motorId, 0,
+                    bounded::OutputReason::ForcedOff);
 
   uint8_t driverId = getDriverId(motorId);
   uint8_t motorIndex = getMotorIndexInDriver(motorId);

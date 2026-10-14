@@ -49,6 +49,9 @@ restart recovery, and lost responses. Unknown outcomes block further confirmatio
 controller acceptance is separate from physical attainment. These are software tests,
 not MCU-level exactly-once evidence. See the [implementation plan (Korean)](docs/ai-manipulation-plan-2026-10-14.md)
 and [software verification record](docs/evidence/2026-10-14-command-journal-software.md).
+The subsequent [MCU bounded-action and output-log implementation](docs/evidence/2026-10-14-bounded-actions-software.md)
+passes virtual time/output tests and the ESP32 build. Its new execution API remains
+disabled by default pending physical validation.
 
 ## Demo Video
 

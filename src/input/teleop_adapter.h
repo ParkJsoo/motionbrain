@@ -74,6 +74,7 @@ public:
   void processInput();
   void updateControl();
 
+  void resetOutputCache();
   bool isReady() const;
   bool isConnected() const;
   bool isDeadmanHeld() const;

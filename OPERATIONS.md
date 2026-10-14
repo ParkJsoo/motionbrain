@@ -33,6 +33,19 @@ per-request deadline enforcement; this host change is not sufficient to start
 learning-driven physical trials. See the [implementation plan](docs/ai-manipulation-plan-2026-10-14.md)
 and [software evidence](docs/evidence/2026-10-14-command-journal-software.md).
 
+## Experimental MCU bounded actions
+
+The new `/actions` API uses a controller boot ID and command ID, one active action,
+a fixed 32-record registry without eviction, and MCU deadlines. It is disabled by
+default (`MOTIONBRAIN_ENABLE_BOUNDED_ACTIONS=0`). This does not change the existing
+host executor's legacy `/shoulder` transport. `/action_outputs` exposes software
+PWM writes, not electrical measurements or joint travel. Unknown outcomes block
+new motion but never the existing emergency stop/disarm path. Do not reboot or
+clear records automatically to bypass unknown/full states.
+
+See the [API, verification and physical checklist](docs/evidence/2026-10-14-bounded-actions-software.md).
+No deployment or physical validation was performed; the robot and Pi are unavailable.
+
 ## Pi Access / SSH
 
 Use a hostname-based SSH alias for the Pi. Do not pin the alias to a DHCP IP:

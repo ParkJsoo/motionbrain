@@ -1,3 +1,5 @@
+#include "control/bounded_action_service.h"
+#include "control/numeric_validation.h"
 #include "web_server.h"
 
 #include <string.h>
@@ -108,6 +110,10 @@ bool MotionBrainWebServer::init(SystemStateManager* systemState, MotorControl* m
   // 람다 함수를 사용하여 클래스 메서드 호출
   server_.on("/", HTTP_GET, [this]() { this->handleRoot(); });
   server_.on("/status", HTTP_GET, [this]() { this->handleStatus(); });
+  server_.on("/actions", HTTP_POST, [this]() { this->handleAction(); });
+  server_.on("/actions", HTTP_GET, [this]() { this->handleActionStatus(); });
+  server_.on("/actions/cancel", HTTP_POST, [this]() { this->handleActionCancel(); });
+  server_.on("/action_outputs", HTTP_GET, [this]() { this->handleActionOutputs(); });
   server_.on("/events", HTTP_GET, [this]() { this->handleEvents(); });
   server_.on("/command", HTTP_POST, [this]() { this->handleCommand(); });
   server_.on("/motor", HTTP_POST, [this]() { this->handleMotor(); });
@@ -1957,4 +1963,93 @@ void MotionBrainWebServer::handleLight() {
   CommandResult result;
   submitCommand(command, result);
   sendCommandResult(result, String("\"light\":") + (searchLight_->isOn() ? "true" : "false"));
+}
+
+// New experimental path: original /motor, /joint and /shoulder remain available.
+// No blocking host sleep or second HTTP stop request is used for its deadline.
+void MotionBrainWebServer::handleAction() {
+  if (!requireCommandAuth()) return;
+  if (!BoundedActions::enabled()) {
+    sendErrorJson(403, "bounded_actions_disabled"); return;
+  }
+  bounded::Request request;
+  const String boot = server_.arg("bootId");
+  const String id = server_.arg("commandId");
+  if (boot.length() == 0 || boot.length() >= sizeof(request.bootId) ||
+      id.length() == 0 || id.length() >= sizeof(request.commandId)) {
+    sendErrorJson(400, "invalid_action_identity"); return;
+  }
+  strlcpy(request.bootId, boot.c_str(), sizeof(request.bootId));
+  strlcpy(request.commandId, id.c_str(), sizeof(request.commandId));
+  long motor, duration, pwm, percent;
+  if (!NumericValidation::integer(server_.arg("motor").c_str(), 1, 5, motor) ||
+      !NumericValidation::integer(server_.arg("durationMs").c_str(), 1, 10000, duration)) {
+    sendErrorJson(400, "invalid_motor_or_duration"); return;
+  }
+  request.motor = static_cast<uint8_t>(motor);
+  request.durationMs = static_cast<uint32_t>(duration);
+  const String kind = server_.arg("kind");
+  if (kind == "pulse") {
+    if (!NumericValidation::integer(server_.arg("pwm").c_str(), -255, 255, pwm) || pwm == 0 || motor == 4) {
+      sendErrorJson(400, "invalid_pulse"); return;
+    }
+    request.pwm = static_cast<int16_t>(pwm);
+  } else if (kind == "shoulder") {
+    request.kind = bounded::Kind::Shoulder;
+    if (motor != 4 || !NumericValidation::real(server_.arg("targetDegrees").c_str(),
+        ShoulderAngleController::SOFT_MIN_DEGREES, ShoulderAngleController::SOFT_MAX_DEGREES,
+        request.targetDegrees) ||
+        !NumericValidation::integer(server_.arg("percent").c_str(),
+          ShoulderAngleController::MIN_DRIVE_PERCENT, 100, percent)) {
+      sendErrorJson(400, "invalid_shoulder_target"); return;
+    }
+    request.percent = static_cast<uint8_t>(percent);
+  } else {
+    sendErrorJson(400, "invalid_action_kind"); return;
+  }
+  const auto result = BoundedActions::submit(request);
+  const bool accepted = result.code == bounded::SubmitCode::Accepted || result.code == bounded::SubmitCode::Duplicate;
+  String json = "{\"accepted\":";
+  json += accepted ? "true" : "false";
+  json += ",\"code\":\""; json += bounded::toString(result.code); json += "\",\"record\":";
+  if (result.record) BoundedActions::appendRecordJson(json, *result.record); else json += "null";
+  json += '}';
+  server_.send(accepted ? 200 : 409, "application/json", json);
+}
+
+void MotionBrainWebServer::handleActionStatus() {
+  String json;
+  const auto* executor = BoundedActions::executor();
+  if (!server_.hasArg("commandId")) {
+    BoundedActions::appendStatusJson(json);
+    server_.send(200, "application/json", json); return;
+  }
+  if (!executor) { sendErrorJson(503, "action_service_unavailable"); return; }
+  const auto result = executor->find(server_.arg("bootId").c_str(), server_.arg("commandId").c_str());
+  if (result.code != bounded::LookupCode::Found) {
+    // Missing in this boot never means the request was physically unexecuted.
+    json = "{\"state\":\"outcome_unknown\",\"code\":\"";
+    json += bounded::toString(result.code); json += "\"}";
+    server_.send(result.code == bounded::LookupCode::NotFound ? 404 : 409, "application/json", json); return;
+  }
+  BoundedActions::appendRecordJson(json, *result.record);
+  server_.send(200, "application/json", json);
+}
+
+void MotionBrainWebServer::handleActionCancel() {
+  if (!requireCommandAuth()) return;
+  const auto* executor = BoundedActions::executor();
+  if (!executor) { sendErrorJson(503, "action_service_unavailable"); return; }
+  const auto result = executor->find(server_.arg("bootId").c_str(), server_.arg("commandId").c_str());
+  if (result.code != bounded::LookupCode::Found) { sendErrorJson(409, "action_not_in_this_boot"); return; }
+  if (executor->activeOrdinal() == result.record->ordinal) BoundedActions::cancel(bounded::Reason::Cancelled);
+  String json;
+  BoundedActions::appendRecordJson(json, *result.record);
+  server_.send(200, "application/json", json);
+}
+
+void MotionBrainWebServer::handleActionOutputs() {
+  String json;
+  BoundedActions::appendOutputJson(json);
+  server_.send(200, "application/json", json);
 }

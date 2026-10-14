@@ -15,6 +15,7 @@
 #include "control/command_bus.h"
 #include "control/event_log.h"
 #include "control/dispatcher.h"
+#include "control/bounded_action_service.h"
 #include "control/guarded_routine_executor.h"
 #include "control/hardware_feedback.h"
 #include "control/safety_gate.h"
@@ -167,6 +168,7 @@ void setup() {
   }
 
   // 12. 웹 서버 초기화 (Wi-Fi AP 이후에 초기화)
+  BoundedActions::init();
   if (!webServer.init(&systemState, &motorControl, &robotArm, &motionSequence, &searchLight,
                       &commandBus, &dispatcher, 80,
                       wifiConfig.commandToken)) {
@@ -204,10 +206,12 @@ void loop() {
   // 센서 기반 safety 평가
   const SensorSnapshot& safetySnapshot = getActiveSafetySnapshot();
   safetyMonitor.update(safetySnapshot);
+  BoundedActions::tick();
 
   // M4 AS5600 절대각 갱신 및 폐루프 제어. 모터 출력 업데이트 전에
   // 실행해 목표 도달/센서 고장 시 즉시 M4를 차단한다.
   shoulderAngleSensor.update(motorControl.getSpeed(MotorControl::MOTOR_4));
+  BoundedActions::tick();
   shoulderAngleController.update();
 
   // base 상대각 폐루프 업데이트
@@ -224,6 +228,7 @@ void loop() {
   teleopAdapter.updateControl();
   
   // 모터 제어 업데이트 (점진적 속도 변경 처리)
+  BoundedActions::tick();
   motorControl.update();
 
   // 모션 시퀀스 업데이트 (Phase 2-B)
@@ -241,6 +246,7 @@ void loop() {
   
   // 웹 서버 업데이트 (HTTP 요청 처리)
   webServer.update();
+  BoundedActions::tick();
   
   // 최소 딜레이 (CPU 부하 완화 + 웹 서버 응답성 개선)
   delay(1);

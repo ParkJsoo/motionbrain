@@ -79,6 +79,7 @@ public:
    * @return 웹 서버 활성화 여부
    */
   bool isActive() const;
+  void clearManualControlLeases() { clearAllManualLeases(); }
 
 private:
   // ESP32 WebServer 객체 (포트 80으로 명시적 초기화)
@@ -158,6 +159,10 @@ private:
    */
   void handleBase();
   void handleShoulder();
+  void handleAction();
+  void handleActionStatus();
+  void handleActionCancel();
+  void handleActionOutputs();
 
   /**
    * POST /sequence 처리

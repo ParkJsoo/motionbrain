@@ -46,7 +46,9 @@ ESP32의 인증된 `/shoulder`와 firmware `SafetyGate`로 전달된다. 248.20�
 처리한다. 결과 불명은 자동 재시도하지 않으며 MCU 수락과 물리 도달을 구분한다.
 이는 소프트웨어 검증이며 MCU의 ID별 실행·결과 조회는 아직 후속 작업이다.
 추가 관절 센서 없이 시각 기반 조작 학습을 진행하는 [파일별 실행 계획](docs/ai-manipulation-plan-2026-10-14.md)과
-[이번 소프트웨어 검증 범위](docs/evidence/2026-10-14-command-journal-software.md)를 참고한다.
+[호스트 소프트웨어 검증 범위](docs/evidence/2026-10-14-command-journal-software.md)를 참고한다.
+후속 [MCU 제한 행동·출력 기록](docs/evidence/2026-10-14-bounded-actions-software.md)은
+가상 시간/출력 시험과 ESP32 빌드를 통과했으며, 새 실행 API는 실물 검증 전 기본 비활성이다.
 
 ## 데모 영상
 

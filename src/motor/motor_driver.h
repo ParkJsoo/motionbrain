@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include <stdint.h>
 #include "system/system_init.h"
+#include "applied_output_log.h"
 
 // 전방 선언 (순환 참조 방지)
 class SystemStateManager;
@@ -174,7 +175,15 @@ public:
    */
   void update();
 
+  // Applied signed PWM writes, not measured shaft speed. Ordinal 0 is legacy/
+  // unowned output; the bounded executor owns attribution while an action runs.
+  void setActionOrdinal(uint32_t ordinal) { actionOrdinal_ = ordinal; }
+  const bounded::AppliedOutputLog& outputLog() const { return outputLog_; }
+  bool hasPendingOutput() const;
+
 private:
+  uint32_t actionOrdinal_ = 0;
+  bounded::AppliedOutputLog outputLog_;
   // TB6612FNG 핀 정의
   // TB6612FNG #1 (모터 M1, M2)
   static const uint8_t PIN_AIN1_1 = 16;     // 모터 A 방향 1

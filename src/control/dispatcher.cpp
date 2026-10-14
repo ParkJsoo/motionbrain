@@ -1,4 +1,5 @@
 #include "control/dispatcher.h"
+#include "control/bounded_action_service.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -251,6 +252,12 @@ bool Dispatcher::execute(const Command& command, CommandResult& result) {
 
   if (!safetyGate_->allows(command, result)) {
     DebugLog::command(commandTypeToString(command.type), false, result.message);
+    recordCommandResult(command, result);
+    return false;
+  }
+
+  if (!BoundedActions::beforeLegacyCommand(command.type)) {
+    setResult(result, command.id, false, "Bounded output stop unconfirmed");
     recordCommandResult(command, result);
     return false;
   }

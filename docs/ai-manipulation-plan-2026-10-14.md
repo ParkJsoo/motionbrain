@@ -16,6 +16,16 @@
 
 9월 계획에서 M0-01~05와 선택 경로의 시간/출력 검증을 이어받는다. 전체 MCU 정비 완료를 AI 착수 조건으로 삼지 않는다. 비활성 진동 정책, RTOS/DMA 전환, 두 번째 축 센서, 전 축 ros2_control/MoveIt, 대형 VLA 학습은 선행조건에서 제외한다. 기존 카메라·M4·실제 실행 이력, Mac CPU와 필요할 때만 소액 클라우드로 시작한다.
 
+### 이번 소프트웨어 후속 진행
+
+- S1 host journal/ROS adapter/producer ID는 독립 리뷰 후 `f581253`으로 커밋했다.
+- S2의 MCU boot/action registry, 단일 제한 행동, 실제 드라이버 출력 기록, 수동/teleop 소유권,
+  신규 API 숫자 검사와 공통 M4 finite 검사를 구현했다. 기본 실행 비활성 상태다.
+- 새 API는 기존 `/shoulder` 호스트 실행과 별개이며 새 runner의 capability/boot 기반 연결은 남아 있다.
+- 활성 UART seq/session 검증, 기존 모든 숫자 입력 경로 통일, 원본 프레임/transition 작업은 아직 남아 있다.
+- 현재 장치와 Raspberry Pi는 연결할 수 없다. 소프트웨어 235 tests와 ESP32 빌드가 통과했으며,
+  [구현·검증·실물 관문 기록](evidence/2026-10-14-bounded-actions-software.md)에 분리해 남겼다.
+
 ## 2. 공통 계약과 보장 범위
 
 ### 명령과 결과
