@@ -7,6 +7,7 @@ NOT have this property. Equal clock rates within the request are still assumed.
 """
 import math
 
+from learning.fresh_capture import validate_fresh_capture
 from learning.http_timing import TRACE_STAMPS, SEND_START_SEMANTICS
 from ros2_ws.src.motionbrain_ros_bridge.motionbrain_ros_bridge.observation import parse_capture_headers
 
@@ -39,6 +40,7 @@ def source_age_basis(receipt, source, *, request_started, received, host_clock_i
             "sourceFrameId", "cameraBootId", "capturedUs", "reportedSourceAgeMs",
             "sourceClockDomain", "sourceTimestampSemantics", "sourceMetadataValid")):
         raise ValueError("capture_receipt_mismatch")
+    validate_fresh_capture(receipt, parsed)
     trace = receipt.get("connectionTiming")
     if trace is None and "connectionTiming" not in receipt:
         return fallback

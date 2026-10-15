@@ -11,6 +11,7 @@ from learning.artifacts import verify_artifacts
 from learning.capture_timing import capture_timing as analyze_capture_timing, summarize_capture_timing
 from learning.device_adapter import DeviceReadAdapter, DeviceReadError, _object
 from learning.device_probe import _idle
+from learning.fresh_capture import validate_fresh_capture
 from learning.fast_observation import AnchoredRoiMeasurement
 from ros2_ws.src.motionbrain_ros_bridge.motionbrain_ros_bridge.observation import parse_capture_headers
 
@@ -73,7 +74,7 @@ def _persist_capture(store, index, receipt, body, pending, record, artifacts, *,
 
 
 def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.sleep, capture_timing=False,
-                   match_workers=3, parallel_persistence=True):
+                   match_workers=3, parallel_persistence=True, fresh_capture=False):
     if type(samples) is not int or not 1 <= samples <= 100:
         raise ValueError("samples must be 1..100")
     if type(interval) not in (int, float) or not 0 <= interval <= 1:
@@ -84,6 +85,8 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
         raise ValueError("match_workers must be 1..3")
     if type(parallel_persistence) is not bool:
         raise ValueError("parallel_persistence must be boolean")
+    if type(fresh_capture) is not bool:
+        raise ValueError("fresh_capture must be boolean")
     artifacts, results = [], []
     timing_samples = []
     adapter = DeviceReadAdapter(transport)
@@ -114,7 +117,7 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
 
     source_root = Path(__file__).resolve().parents[1]
     sources = ["learning/fast_observation.py", "learning/fast_probe.py", "learning/device_adapter.py",
-               "learning/capture_timing.py", "learning/http_timing.py", "learning/source_age.py",
+               "learning/capture_timing.py", "learning/http_timing.py", "learning/source_age.py", "learning/fresh_capture.py",
                "learning/artifacts.py", "tools/probe_fast_observation.py",
                "ros2_ws/src/motionbrain_ros_bridge/motionbrain_ros_bridge/observation.py"]
     save_json("session.json", {"schemaVersion": "motionbrain.fast_probe_session.v1",
@@ -122,6 +125,7 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
                               "interval": interval, "hostClockId": transport.host_clock_id,
                               "capturePersistence": "single_frame_after_measurement",
                               "parallelPersistence": parallel_persistence,
+                              "freshCaptureRequested": fresh_capture,
                               "captureTimingEnabled": capture_timing,
                               "connectionTimingEnabled": getattr(transport, "connection_timing", False),
                               "opencvVersion": cv2.__version__, "numpyVersion": np.__version__,
@@ -138,6 +142,10 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
         before = adapter.outputs()
         if not _idle(adapter.status()):
             raise DeviceReadError("controller_not_idle")
+        if fresh_capture:
+            capability = _object(transport.get("camera", "/status")[0])
+            if capability.get("freshCaptureSupported") is not True:
+                raise DeviceReadError("fresh_capture_unsupported")
         anchor_bytes = []
 
         def save_anchor(body, digest):
@@ -161,10 +169,14 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
             receipt, body = None, None
             camera_receipts = []
             try:
-                receipt, body = transport.get("camera", "/capture")
+                receipt, body = transport.get("camera", "/capture", {"fresh": "1"}) if fresh_capture else transport.get("camera", "/capture")
                 if receipt.get("status") != 200:
                     raise DeviceReadError("camera_capture_failed")
                 source = {**parse_capture_headers(receipt["headers"]), "imageSha256": receipt["sha256"]}
+                if fresh_capture:
+                    if receipt.get("query") != {"fresh": "1"}:
+                        raise DeviceReadError("fresh_capture_query_mismatch")
+                    validate_fresh_capture(receipt, source)
                 result = tracker.measure(body, source, request_started=receipt["requestStartedMonotonic"],
                                          received=receipt["receivedMonotonic"], host_clock_id=transport.host_clock_id,
                                          capture_receipt=receipt)

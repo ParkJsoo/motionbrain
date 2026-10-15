@@ -8,6 +8,7 @@
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "source_frame_metadata.h"
+#include "fresh_capture.h"
 
 // AI Thinker ESP32-CAM pin map.
 #define PWDN_GPIO_NUM     32
@@ -78,6 +79,9 @@ struct CameraStats {
   uint32_t statusRequests = 0;
   uint32_t cameraProfileRequests = 0;
   uint32_t captureRequests = 0;
+  uint32_t freshCaptureRequests = 0;
+  uint32_t freshCaptureRejected = 0;
+  uint32_t freshDiscardedFrames = 0;
   uint32_t streamRequests = 0;
   uint32_t captures = 0;
   uint32_t captureFailures = 0;
@@ -671,6 +675,12 @@ void handleStatus() {
   json += "\"statusRequests\":" + String(cameraStats.statusRequests) + ",";
   json += "\"cameraProfileRequests\":" + String(cameraStats.cameraProfileRequests) + ",";
   json += "\"captureRequests\":" + String(cameraStats.captureRequests) + ",";
+  json += "\"freshCaptureSupported\":true,";
+  json += "\"freshCaptureBudgetMs\":" + String(camera_fresh::BUDGET_US / 1000) + ",";
+  json += "\"freshCaptureMaxFrames\":" + String(camera_fresh::MAX_FRAMES) + ",";
+  json += "\"freshCaptureRequests\":" + String(cameraStats.freshCaptureRequests) + ",";
+  json += "\"freshCaptureRejected\":" + String(cameraStats.freshCaptureRejected) + ",";
+  json += "\"freshDiscardedFrames\":" + String(cameraStats.freshDiscardedFrames) + ",";
   json += "\"streamRequests\":" + String(cameraStats.streamRequests) + ",";
   json += "\"captures\":" + String(cameraStats.captures) + ",";
   json += "\"captureFailures\":" + String(cameraStats.captureFailures) + ",";
@@ -747,14 +757,48 @@ void handleCameraProfile() {
 void handleCapture() {
   ScopedHttpRequest request("capture");
   cameraStats.captureRequests++;
+  unsigned freshArgs = 0;
+  for (int i = 0; i < server.args(); ++i) if (server.argName(i) == "fresh") ++freshArgs;
+  const auto captureMode = camera_fresh::mode(freshArgs, server.arg("fresh").c_str());
+  if (captureMode == camera_fresh::Mode::Invalid) {
+    server.sendHeader("Connection", "close");
+    server.send(400, "text/plain", "invalid_fresh_option");
+    server.client().stop();
+    return;
+  }
+  const bool fresh = captureMode == camera_fresh::Mode::Fresh;
+  const int64_t requestedUs = fresh ? esp_timer_get_time() : 0;
   const uint32_t startedAt = millis();
-  camera_fb_t* fb = esp_camera_fb_get();
+  camera_fresh::Result selection;
+  camera_fb_t* fb = nullptr;
+  if (fresh) {
+    ++cameraStats.freshCaptureRequests;
+    fb = camera_fresh::acquire<camera_fb_t>(cameraBootId, requestedUs, selection,
+        []() { return esp_camera_fb_get(); },
+        [](camera_fb_t* frame) { esp_camera_fb_return(frame); },
+        []() { return esp_timer_get_time(); },
+        []() { return server.client().connected(); },
+        []() { delay(1); });
+    cameraStats.freshDiscardedFrames += selection.discarded;
+  } else {
+    fb = esp_camera_fb_get();
+  }
   const uint32_t captureMs = millis() - startedAt;
   cameraStats.lastCaptureMs = captureMs;
   if (captureMs > cameraStats.maxCaptureMs) {
     cameraStats.maxCaptureMs = captureMs;
   }
   if (fb == nullptr) {
+    if (fresh) {
+      ++cameraStats.freshCaptureRejected;
+      ++cameraStats.captureFailures;
+      ++cameraStats.consecutiveCaptureFailures;
+      lastCameraError = selection.error ? selection.error : "fresh_capture_failed";
+      server.sendHeader("Connection", "close");
+      server.send(503, "text/plain", lastCameraError);
+      server.client().stop();
+      return;  // Expected selection misses never fall back or reconfigure the camera.
+    }
     cameraStats.captureFailures++;
     cameraStats.consecutiveCaptureFailures++;
     lastCameraError = "camera_capture_failed";
@@ -788,14 +832,18 @@ void handleCapture() {
                                                fb->timestamp.tv_usec, esp_timer_get_time());
   char sourceHeaders[512];
   camera_source::headers(source, sourceHeaders, sizeof(sourceHeaders));
-  const bool headerOk = timeoutOk && client.connected() &&
+  char freshHeaders[192] = {};
+  const bool freshOk = !fresh || (source.valid &&
+      source.capturedUs > static_cast<uint64_t>(requestedUs) &&
+      camera_fresh::headers(requestedUs, selection.discarded, freshHeaders, sizeof(freshHeaders)) > 0);
+  const bool headerOk = freshOk && timeoutOk && client.connected() &&
                         client.printf("HTTP/1.1 200 OK\r\n"
                                       "Content-Type: image/jpeg\r\n"
                                       "Content-Length: %u\r\n"
                                       "Cache-Control: no-store\r\n"
-                                      "%s"
+                                      "%s%s"
                                       "Connection: close\r\n\r\n",
-                                      static_cast<unsigned>(fb->len), sourceHeaders) > 0;
+                                      static_cast<unsigned>(fb->len), sourceHeaders, freshHeaders) > 0;
   size_t written = 0;
   const uint32_t writeStartedAt = millis();
   const bool bodyOk = headerOk && client.connected() &&

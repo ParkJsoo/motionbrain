@@ -34,6 +34,8 @@
 
 최신 저장 경로 개선: GET 전 디렉터리 준비와 receipt/JPEG 병렬 저장을 추가하고 file/parent fsync·hash readback을 유지했다. 같은 원본 12개 저장 중앙값 **42.72→34.93ms(18.2%)**, GET 전 준비 5.12ms 별도다. 독립 리뷰의 중단 대기 descriptor 누락 P2를 수정했고 실제 SIGINT 복합 회귀 포함 **481개 전체 테스트 통과(18.249초)**. 실제 GET 12개에서는 계산 시점 2개 수락, 원본·측정 저장 후 **134~180ms로 전부 100ms 초과**다. 원본 13개·artifact 108개·event 26개 hash/terminal/source 검증, 모터 0회·출력 불변·운영 서비스 유지. 다음은 기존 기본 동작을 보존하는 선택형 최신 프레임 캡처 가능성 검토·가상 검증이며, 펌웨어 업로드는 준비 후 별도 승인 대상이다. 버퍼가 원인이라고 확정하거나 제어 준비 완료로 간주하지 않는다. [저장 내구성·중단 수정·실측·다음 조건](evidence/2026-10-15-capture-persistence.md) 참조.
 
+최신 선택형 캡처 구현: 기본 `/capture`를 유지하며 `?fresh=1`로 요청 처리 시작보다 first-DMA timestamp가 뒤인 프레임만 선택한다. 최대 4개 버퍼·200ms 선택 예산(취소 불가능한 SDK 호출 때문에 HTTP 완료 deadline은 아님), 거부 버퍼 반환·503 무fallback, host capability/proof/boot 검증을 추가했다. **496개 전체 테스트 통과(19.748초)·CAM 빌드 성공**. 업로드·실물 요청·모터 구동은 하지 않았으며 실제 100ms 개선은 미검증이다. 기존 나이 상한식은 선택 대기까지 포함하고 100ms 기준은 유지한다. 다음은 배터리 분리·USB/Pi 유지 상태에서 **CAM만 업로드 승인 후** 기본/선택형 캡처 비구동 교차 비교다. [계약·한계·빌드 증거·구체적인 업로드 후 검증 순서](evidence/2026-10-15-fresh-capture.md) 참조.
+
 ### 작업 시작 당시 인계 대조 (과거 기준)
 
 - 시작 HEAD: `99ea0d6` (`Update portfolio with physical M4 ros2_control evidence`), 로컬 `main...origin/main`, tracked/untracked 변경 없음. 원격 fetch 및 현재 Pi/보드 상태 확인은 하지 않았다.

@@ -66,9 +66,12 @@ class ReadOnlyHTTP:
         if path not in self.PATHS.get(device, set()):
             raise DeviceReadError("endpoint_not_read_only")
         allowed = {"frameId"} if path in ("/api/observation", "/api/vision_frame") else (
-            {"bootId", "commandId"} if path == "/actions" else set())
+            {"bootId", "commandId"} if path == "/actions" else (
+            {"fresh"} if device == "camera" and path == "/capture" else set()))
         if query and not set(query).issubset(allowed):
             raise DeviceReadError("unsupported_query")
+        if device == "camera" and path == "/capture" and query and query != {"fresh": "1"}:
+            raise DeviceReadError("unsupported_fresh_query")
         url = self.bases[device] + path
         if query:
             url += "?" + urllib.parse.urlencode(query)

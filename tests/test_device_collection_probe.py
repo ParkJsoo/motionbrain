@@ -339,6 +339,21 @@ class ReadOnlyTransportTest(unittest.TestCase):
         origin = f"http://127.0.0.1:{self.server.server_port}"
         self.http = ReadOnlyHTTP(controller_url=origin, camera_url=origin, perception_url=origin)
 
+    def test_fresh_query_is_exact_opt_in_camera_get_without_retry(self):
+        receipt, _ = self.http.get("camera", "/capture", {"fresh":"1"})
+        self.assertEqual(self.paths, [("GET", "/capture?fresh=1")])
+        self.assertEqual(receipt["query"], {"fresh":"1"})
+        self.assertEqual(receipt["status"], 404)
+
+    def test_fresh_query_rejects_other_values_devices_and_endpoints_before_io(self):
+        for query in ({"fresh":1}, {"fresh":True}, {"fresh":"0"}, {"fresh":["1","1"]},
+                      {"fresh":"1", "extra":"1"}):
+            with self.subTest(query=query), self.assertRaises(DeviceReadError):
+                self.http.get("camera", "/capture", query)
+        for device,path in (("controller","/status"),("camera","/status"),("perception","/health")):
+            with self.assertRaises(DeviceReadError): self.http.get(device,path,{"fresh":"1"})
+        self.assertEqual(self.paths, [])
+
     def test_redirect_never_follows_to_control_endpoint(self):
         with self.assertRaisesRegex(DeviceReadError, "redirect_refused"):
             self.http.get("controller", "/status")

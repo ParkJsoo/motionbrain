@@ -85,9 +85,11 @@ def capture_timing(receipt, before, after):
           or any(type(after.get(k)) is not int or after[k] < 0 for k in ("lastCaptureMs", "lastWriteMs"))):
         result["serverStatsReason"] = "frame_size_or_server_duration_invalid"
     else:
-        result.update(serverStatsAssociated=True, serverFrameAcquireWaitMs=after["lastCaptureMs"],
-                      serverBodyWriteMs=after["lastWriteMs"],
-                      serverTimingMeaning="fb_get_wait_and_socket_write_not_sensor_exposure_or_network_delivery")
+        fresh = receipt.get("query", {}).get("fresh") == "1"
+        result.update(serverStatsAssociated=True, serverBodyWriteMs=after["lastWriteMs"],
+                      serverTimingMeaning=("fresh_selection_including_fb_get_return_yield_and_socket_write"
+                                           if fresh else "fb_get_wait_and_socket_write_not_sensor_exposure_or_network_delivery"))
+        result["serverFreshFrameSelectionMs" if fresh else "serverFrameAcquireWaitMs"] = after["lastCaptureMs"]
     return result
 
 
@@ -118,7 +120,7 @@ def summarize_capture_timing(rows):
                   offsetIntersectionSeconds=[low,high] if consistent else None,
                   offsetIntersectionWidthMs=(high-low)*1000 if consistent else None)
     metrics = ("reportedSourceAgeMs", "requestToHeadersMs", "headersToBodyReadCompleteMs",
-               "bodyReadToReceiptMs", "requestTotalMs", "serverFrameAcquireWaitMs", "serverBodyWriteMs",
+               "bodyReadToReceiptMs", "requestTotalMs", "serverFrameAcquireWaitMs", "serverFreshFrameSelectionMs", "serverBodyWriteMs",
                "clientSetupMs", "addressResolutionMs", "tcpConnectMs", "connectedToSendMs",
                "requestSendMs", "requestSentToHeadersMs", "causalBoundReductionMs", "causalAgeAtReceiptUpperMs")
     report["statistics"] = {}
