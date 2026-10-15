@@ -16,7 +16,7 @@ import cv2
 import numpy as np
 
 from learning.artifacts import MAX_IMAGE_BYTES
-from learning.source_age import source_age_basis
+from learning.source_age import source_age_basis, source_age_upper_ms
 
 
 class MeasurementError(ValueError):
@@ -136,7 +136,7 @@ class AnchoredRoiMeasurement:
                   "imageSha256": source.get("imageSha256"), "hostClockId": host_clock_id,
                   "accepted": False, "controlEligible": False, "trainingEligible": False,
                   "captureHostBoundsCalibrated": False}
-        age_start = request_started
+        age_basis = {"sourceAgeBoundStartedMonotonic": request_started}
         last_checked = started
         try:
             if self.invalidated:
@@ -162,7 +162,7 @@ class AnchoredRoiMeasurement:
             except ValueError as exc:
                 raise MeasurementError(str(exc)) from exc
             result.update(basis)
-            age_start = basis["sourceAgeBoundStartedMonotonic"]
+            age_basis = basis
             result.update(requestStartedMonotonic=request_started, receivedMonotonic=received,
                           measurementStartedMonotonic=started, reportedSourceAgeMs=reported_age,
                           httpIntervalMs=(received-request_started)*1000,
@@ -193,7 +193,7 @@ class AnchoredRoiMeasurement:
                 raise MeasurementError("invalid_local_timing")
             last_checked = completed
             # Causal pre-server bound + all compute time; no cross-clock subtraction.
-            age = reported_age + (completed - age_start) * 1000
+            age = source_age_upper_ms(age_basis, reported_age, completed)
             result.update(reportedAgePlusElapsedMs=age, processingMs=(completed-started)*1000)
             if age > self.POLICY["maxSourceAgeMs"]:
                 raise MeasurementError("source_age_exceeds_policy")
@@ -213,7 +213,7 @@ class AnchoredRoiMeasurement:
             if (all(_number(v) for v in (request_started, received, source.get("reportedSourceAgeMs")))
                     and request_started <= received <= started and source["reportedSourceAgeMs"] >= 0):
                 result["fullRequestAgePlusElapsedMs"] = source["reportedSourceAgeMs"] + (completed-request_started)*1000
-                result["reportedAgePlusElapsedMs"] = source["reportedSourceAgeMs"] + (completed-age_start)*1000
+                result["reportedAgePlusElapsedMs"] = source_age_upper_ms(age_basis, source["reportedSourceAgeMs"], completed)
                 if result["accepted"] and result["reportedAgePlusElapsedMs"] > self.POLICY["maxSourceAgeMs"]:
                     result.update(accepted=False, reason="source_age_exceeds_policy")
                     for key in ("targetBox", "centerX", "centerY", "deltaX", "deltaY"):

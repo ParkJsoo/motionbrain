@@ -1,0 +1,52 @@
+{
+  "baseCommit": "94173d8278cd658ebe6ff6a4be22d466094ddb35",
+  "sourceSha256": {
+    "learning/source_age.py": "3e12eb464472805addd8d4674ee21102e741d54ab976743df05919a18ca6495f",
+    "learning/fresh_capture.py": "0ee84691a3c86f21a20650286a329a567671bd7d9b457d106555ac8bbbbde8ae",
+    "learning/fast_observation.py": "ae2693036fb53d374e6de8fd334eaeed1e7b855f4c313693eb8a580012fbe15c",
+    "learning/fast_probe.py": "64ba88d88dee95cbe3d19ab648a9f4bf63ac3a1d2129dcbb639f46b26e59c9b8",
+    "learning/capture_timing.py": "a4e6cad8f0db4f2ea53dbd1db9d04b58c38144ed92544e82acbd4268730c8db6",
+    "tests/test_fresh_source_age.py": "745c26bbe9e842618cfd0daf794ef9f14ca5066854f7aa6c177a049e77e88beb"
+  },
+  "softwareTests": 506,
+  "testSeconds": 21.419,
+  "sourceAgeLimitMs": 100,
+  "freshClockRateErrorPpm": 1000,
+  "freshTimestampErrorMs": 0.002,
+  "clockErrorPhysicallyCalibrated": false,
+  "firmwareUploaded": false,
+  "servicesRestarted": false,
+  "motorCommandsSent": 0,
+  "outputLogUnchanged": true,
+  "cameraBefore": {
+    "cameraBootId": "5bfe5283286bc8599cae44c1612b6869",
+    "frameSize": "qvga",
+    "jpegQuality": 15,
+    "captures": 259,
+    "captureFailures": 0,
+    "cameraRecoveries": 0,
+    "freshCaptureRequests": 24,
+    "freshCaptureRejected": 0,
+    "freshDiscardedFrames": 47
+  },
+  "cameraAfter": {
+    "cameraBootId": "5bfe5283286bc8599cae44c1612b6869",
+    "frameSize": "qvga",
+    "jpegQuality": 15,
+    "captures": 318,
+    "captureFailures": 0,
+    "cameraRecoveries": 0,
+    "freshCaptureRequests": 48,
+    "freshCaptureRejected": 0,
+    "freshDiscardedFrames": 95
+  },
+  "comparisonFilesSha256": {
+    "comparison-runs.json": "9ae439002cb03e9a38bbde1f2c62c32a408e6fe8f6b5139c2e30d88b958b357c",
+    "comparison-before.json": "dae430a62c1e2079c4437ff61bbcf438b88489fcf387417aa58b5d4afe3f724c",
+    "comparison-after.json": "cc8635a1d6853e6ff4089eff95f4b30d26c729b9fcaff596e7152368025a2113",
+    "after-0.json": "006467499a5be74a0b3f7e86d793ee398944945e108ff2193a6d3bc9ea54b2c4",
+    "after-1.json": "9b21a3ac32b679961ed4a274307e8a93891ec62a4fdb51d2b0989dacfaad2bac",
+    "after-2.json": "1731be068f2b8a30eb5bd1bd880040f9eea6df523ea799d82335f995795f3ba8",
+    "after-3.json": "cc8635a1d6853e6ff4089eff95f4b30d26c729b9fcaff596e7152368025a2113"
+  }
+}

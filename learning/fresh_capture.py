@@ -3,7 +3,10 @@ import re
 
 
 def validate_fresh_capture(receipt, source):
-    if receipt.get("query", {}).get("fresh") != "1":
+    query = receipt.get("query", {})
+    if not isinstance(query, dict) or ("fresh" in query and query != {"fresh": "1"}):
+        raise ValueError("fresh_capture_contract_mismatch")
+    if query.get("fresh") != "1":
         return None
     headers = {str(k).lower(): str(v) for k,v in receipt.get("headers", {}).items()}
     requested = headers.get("x-motionbrain-capture-requested-us", "")

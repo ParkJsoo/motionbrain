@@ -8,7 +8,7 @@ import math
 import statistics
 
 from learning.http_timing import TRACE_STAMPS, connection_metrics
-from learning.source_age import source_age_basis
+from learning.source_age import source_age_basis, source_age_upper_ms
 
 from ros2_ws.src.motionbrain_ros_bridge.motionbrain_ros_bridge.observation import parse_capture_headers
 
@@ -68,8 +68,11 @@ def capture_timing(receipt, before, after):
     bound_start = basis["sourceAgeBoundStartedMonotonic"]
     result.update(basis)
     # Keep legacy full-request intervals for direct, same-frame comparison.
-    result.update(causalAgeAtReceiptUpperMs=age+(end-bound_start)*1000,
-                  causalBoundReductionMs=(bound_start-start)*1000)
+    upper = source_age_upper_ms(basis, age, end)
+    result.update(causalAgeAtReceiptUpperMs=upper,
+                  causalBoundReductionMs=age+(end-start)*1000-upper,
+                  sendStartBoundReductionMs=(bound_start-start)*1000,
+                  preCaptureBoundReductionMs=basis.get("sourceAgeBoundReductionMs", 0))
     counters = ("captureRequests", "captures", "captureFailures", "cameraRecoveries")
     if not all(isinstance(s, dict) and all(type(s.get(k)) is int and s[k] >= 0 for k in counters)
                for s in (before, after)):
@@ -122,7 +125,8 @@ def summarize_capture_timing(rows):
     metrics = ("reportedSourceAgeMs", "requestToHeadersMs", "headersToBodyReadCompleteMs",
                "bodyReadToReceiptMs", "requestTotalMs", "serverFrameAcquireWaitMs", "serverFreshFrameSelectionMs", "serverBodyWriteMs",
                "clientSetupMs", "addressResolutionMs", "tcpConnectMs", "connectedToSendMs",
-               "requestSendMs", "requestSentToHeadersMs", "causalBoundReductionMs", "causalAgeAtReceiptUpperMs")
+               "requestSendMs", "requestSentToHeadersMs", "causalBoundReductionMs", "causalAgeAtReceiptUpperMs",
+               "sendStartBoundReductionMs", "preCaptureBoundReductionMs")
     report["statistics"] = {}
     for key in metrics:
         values = [r[key] for r in rows if key in r]

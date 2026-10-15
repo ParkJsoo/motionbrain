@@ -13,6 +13,7 @@ from learning.device_adapter import DeviceReadAdapter, DeviceReadError, _object
 from learning.device_probe import _idle
 from learning.fresh_capture import validate_fresh_capture
 from learning.fast_observation import AnchoredRoiMeasurement
+from learning.source_age import source_age_upper_ms
 from ros2_ws.src.motionbrain_ros_bridge.motionbrain_ros_bridge.observation import parse_capture_headers
 
 
@@ -194,7 +195,7 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
                                  if "measurementCompletedMonotonic" in result else None)
             reported_age = source.get("reportedSourceAgeMs")
             bound_start = result.get("sourceAgeBoundStartedMonotonic")
-            age_at_persistence = (reported_age + (persisted-bound_start)*1000
+            age_at_persistence = (source_age_upper_ms(result, reported_age, persisted)
                                   if reported_age is not None and bound_start is not None
                                   and persisted >= result.get("measurementCompletedMonotonic", float("inf")) else None)
             # Acceptance refers to calculation time, never to later consumption.
@@ -205,6 +206,10 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
                            "reportedAgeAtPersistenceMs": age_at_persistence,
                            "sourceAgeBoundBasis": result.get("sourceAgeBoundBasis"),
                            "sourceAgeBoundStartedMonotonic": bound_start,
+                           **{key: result[key] for key in (
+                               "sourceCaptureLowerBoundMonotonic", "sourceAgeBoundReductionMs",
+                               "freshCaptureDelayMs", "freshCaptureDelayLowerMs", "freshClockRateErrorPpm",
+                               "freshTimestampErrorMs", "freshClockErrorCalibrated") if key in result},
                            "fullRequestAgeAtPersistenceMs": (reported_age + (persisted-receipt["requestStartedMonotonic"])*1000
                                                              if reported_age is not None else None),
                            "withinAgePolicyAtPersistence": age_at_persistence is not None
