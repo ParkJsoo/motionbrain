@@ -13,6 +13,7 @@ from learning.artifacts import ArtifactStore, StorageError
 from learning.dataset import build_manifest
 from learning.device_adapter import DeviceReadAdapter, DeviceReadError, ReadOnlyHTTP
 from learning.device_probe import audit_device_probe, observation_blockers, run_device_probe
+from learning.http_timing import TRACE_STAMPS, connection_metrics
 from learning.dry_run import JPEG_BYTES, VirtualClock
 from learning.runner import CaptureRunner
 
@@ -309,6 +310,10 @@ class DeviceProbeTest(unittest.TestCase):
 
 
 class ReadOnlyTransportTest(unittest.TestCase):
+    def enable_connection_timing(self):
+        self.http = ReadOnlyHTTP(**{f"{k}_url": v for k,v in self.http.bases.items()},
+                                 connection_timing=True)
+
     def setUp(self):
         self.paths = []
         paths = self.paths
@@ -386,6 +391,79 @@ class ReadOnlyTransportTest(unittest.TestCase):
             clock.monotonic.side_effect = [100, 100.05, 100.02, 100.06, 100.06]
             with self.assertRaisesRegex(DeviceReadError, "interval_invalid"):
                 self.http.get("controller", "/actions")
+
+    def test_connection_timing_is_opt_in_camera_only_and_preserves_body(self):
+        plain, body = self.http.get("camera", "/capture")
+        self.assertNotIn("connectionTiming", plain)
+        self.enable_connection_timing()
+        traced, traced_body = self.http.get("camera", "/capture")
+        self.assertEqual(traced_body, body)
+        self.assertEqual(traced["sha256"], plain["sha256"])
+        self.assertEqual(traced["status"], 404)
+        t = traced["connectionTiming"]
+        stamps = [traced["requestStartedMonotonic"], *(t[k] for k in TRACE_STAMPS),
+                  traced["headersAvailableMonotonic"]]
+        self.assertEqual(stamps, sorted(stamps))
+        self.assertEqual(t["addressAttempts"], 1)
+        self.assertAlmostEqual(sum(connection_metrics(traced).values()),
+            (traced["headersAvailableMonotonic"]-traced["requestStartedMonotonic"])*1000)
+        other, _ = self.http.get("controller", "/actions")
+        self.assertNotIn("connectionTiming", other)
+        self.assertEqual(len(self.paths), 3)
+
+    def test_timed_redirect_and_unknown_endpoint_still_refused(self):
+        self.enable_connection_timing()
+        for path in ("/status", "/motor"):
+            with self.assertRaises(DeviceReadError):
+                self.http.get("camera", path)
+        self.assertEqual(self.paths, [("GET", "/status")])
+
+    def test_connection_timing_rejects_https_and_non_boolean(self):
+        for camera, option in (("https://camera", True), ("http://camera", 1)):
+            with self.assertRaises(ValueError):
+                ReadOnlyHTTP(controller_url="http://controller", camera_url=camera,
+                             perception_url="http://pi", connection_timing=option)
+
+    def test_resolution_failure_records_partial_trace_without_http_retry(self):
+        self.enable_connection_timing()
+        records = []
+        self.http.recorder = records.append
+        with patch("learning.http_timing.socket.getaddrinfo", side_effect=OSError("DNS failed")) as resolver:
+            with self.assertRaises(OSError):
+                self.http.get("camera", "/capture")
+        self.assertEqual(resolver.call_count, 1)
+        self.assertEqual(self.paths, [])
+        self.assertIn("error", records[0])
+        self.assertIn("resolveStartedMonotonic", records[0]["connectionTiming"])
+        self.assertNotIn("connectedMonotonic", records[0]["connectionTiming"])
+
+    def test_connect_failure_closes_socket_and_does_not_send_request(self):
+        self.enable_connection_timing()
+        with patch("learning.http_timing.socket.socket") as factory:
+            factory.return_value.connect.side_effect = OSError("connect failed")
+            with self.assertRaises(OSError):
+                self.http.get("camera", "/capture")
+        factory.return_value.close.assert_called_once()
+        factory.return_value.sendall.assert_not_called()
+        self.assertEqual(self.paths, [])
+
+    def test_regressed_connection_stamp_rejects_receipt(self):
+        self.enable_connection_timing()
+        with patch.object(self.http, "clock") as clock:
+            clock.monotonic.side_effect = [100, 100.01, 100.02, 100.015, 100.03, 100.04,
+                                          100.05, 100.06, 100.07, 100.08]
+            with self.assertRaisesRegex(DeviceReadError, "connection_timing_invalid"):
+                self.http.get("camera", "/capture")
+
+    def test_opener_is_reused_with_fresh_per_request_trace(self):
+        self.enable_connection_timing()
+        with patch("learning.device_adapter.urllib.request.build_opener",
+                   side_effect=AssertionError("opener built inside GET")):
+            first, _ = self.http.get("camera", "/capture")
+            second, _ = self.http.get("camera", "/capture")
+        self.assertIsNot(first["connectionTiming"], second["connectionTiming"])
+        self.assertLess(first["receivedMonotonic"], second["requestStartedMonotonic"])
+        self.assertEqual(len(self.paths), 2)
 
 
 if __name__ == "__main__":

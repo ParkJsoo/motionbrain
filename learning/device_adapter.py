@@ -16,6 +16,7 @@ import urllib.request
 import uuid
 
 from learning.artifacts import MAX_IMAGE_BYTES, _decode_json
+from learning.http_timing import TimedHTTPHandler, TRACE_STAMPS
 from learning.runner import _action_matches
 from ros2_ws.src.motionbrain_ros_bridge.motionbrain_ros_bridge.observation import parse_capture_headers
 
@@ -38,7 +39,7 @@ class ReadOnlyHTTP:
     }
 
     def __init__(self, *, controller_url, camera_url, perception_url, timeout=4.0,
-                 clock=time, recorder=None):
+                 clock=time, recorder=None, connection_timing=False):
         if type(timeout) not in (int, float) or not math.isfinite(timeout) or not 0 < timeout <= 30:
             raise ValueError("timeout must be in (0, 30] seconds")
         self.bases = {}
@@ -48,9 +49,17 @@ class ReadOnlyHTTP:
                     or parsed.password or parsed.path not in ("", "/") or parsed.query or parsed.fragment):
                 raise ValueError("device URL must be an HTTP(S) origin without credentials")
             self.bases[name] = url.rstrip("/")
+        if type(connection_timing) is not bool or (connection_timing and
+                urllib.parse.urlsplit(camera_url).scheme != "http"):
+            raise ValueError("connection timing requires an HTTP camera origin and a boolean option")
+        self.connection_timing = connection_timing
         self.timeout, self.clock, self.recorder = timeout, clock, recorder
         self.host_clock_id = uuid.uuid4().hex
         self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
+        # build_opener also creates a default HTTPS context. Do it once, outside
+        # measured requests, even though the diagnostic camera itself is HTTP.
+        self.timed_opener = (urllib.request.build_opener(urllib.request.ProxyHandler({}),
+                             _NoRedirect(), TimedHTTPHandler()) if connection_timing else None)
         self.get_calls = 0
 
     def get(self, device, path, query=None):
@@ -68,8 +77,15 @@ class ReadOnlyHTTP:
                    "hostClockId": self.host_clock_id, "requestStartedMonotonic": started}
         self.get_calls += 1
         try:
+            opener = self.opener
+            request = urllib.request.Request(url, method="GET")
+            if self.connection_timing and device == "camera":
+                receipt["connectionTiming"] = {}
+                request.motionbrain_clock = self.clock
+                request.motionbrain_connection_timing = receipt["connectionTiming"]
+                opener = self.timed_opener
             try:
-                response = self.opener.open(urllib.request.Request(url, method="GET"), timeout=self.timeout)
+                response = opener.open(request, timeout=self.timeout)
             except urllib.error.HTTPError as exc:
                 response = exc  # 404/409 are evidence, never a reason to retry.
             with response:
@@ -90,6 +106,12 @@ class ReadOnlyHTTP:
                 # Socket timeout is per blocking operation, not an end-to-end
                 # guarantee. Reject overruns even if a slow peer completed.
                 raise DeviceReadError("request_interval_invalid_or_over_budget")
+            if "connectionTiming" in receipt:
+                stamps = [started, *(receipt["connectionTiming"].get(k) for k in TRACE_STAMPS),
+                          receipt["headersAvailableMonotonic"]]
+                if (not all(type(v) in (int, float) and math.isfinite(v) for v in stamps)
+                        or stamps != sorted(stamps)):
+                    raise DeviceReadError("connection_timing_invalid")
             return receipt, body
         except Exception as exc:
             receipt["error"] = type(exc).__name__

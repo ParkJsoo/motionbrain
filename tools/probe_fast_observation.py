@@ -24,11 +24,15 @@ def main(argv=None):
     parser.add_argument("--samples", type=int, default=8)
     parser.add_argument("--capture-timing", action="store_true",
                         help="record header/body timing and guarded camera status association (GET only)")
+    parser.add_argument("--connection-timing", action="store_true",
+                        help="also split HTTP camera resolution/connect/send intervals; requires --capture-timing")
     args = parser.parse_args(argv)
     if not 1 <= args.samples <= 100:
         parser.error("samples must be 1..100")
+    if args.connection_timing and not args.capture_timing:
+        parser.error("--connection-timing requires --capture-timing")
     transport = ReadOnlyHTTP(controller_url=args.controller_url, camera_url=args.camera_url,
-                             perception_url=args.perception_url)
+                             perception_url=args.perception_url, connection_timing=args.connection_timing)
     run_dir = args.output_dir / uuid.uuid4().hex
     previous = signal.getsignal(signal.SIGTERM)
 

@@ -28,6 +28,33 @@ def status(count):
 
 
 class CaptureTimingTest(unittest.TestCase):
+    def test_connection_intervals_partition_headers_without_narrowing_age(self):
+        r = receipt()
+        baseline = capture_timing(r, status(5), status(6))
+        r["connectionTiming"] = {"resolveStartedMonotonic": 100.001,
+            "resolveCompletedMonotonic": 100.002, "connectedMonotonic": 100.01,
+            "requestSendStartedMonotonic": 100.012, "requestSendCompletedMonotonic": 100.015,
+            "addressAttempts": 1}
+        value = capture_timing(r, status(5), status(6))
+        self.assertTrue(value["valid"])
+        self.assertAlmostEqual(value["tcpConnectMs"], 8)
+        self.assertAlmostEqual(value["requestSentToHeadersMs"], 25)
+        self.assertEqual(value["reportedAgeAtReceiptIntervalMs"], baseline["reportedAgeAtReceiptIntervalMs"])
+        self.assertEqual(value["cameraToHostOffsetIntervalSeconds"], baseline["cameraToHostOffsetIntervalSeconds"])
+        self.assertFalse(value["controlEligible"])
+        self.assertEqual(summarize_capture_timing([value])["statistics"]["tcpConnectMs"]["n"], 1)
+
+    def test_incomplete_outside_and_nonfinite_connection_trace_rejected(self):
+        good = {"resolveStartedMonotonic": 100.001, "resolveCompletedMonotonic": 100.002,
+                "connectedMonotonic": 100.01, "requestSendStartedMonotonic": 100.012,
+                "requestSendCompletedMonotonic": 100.015, "addressAttempts": 1}
+        for trace in (None, {}, {**good, "resolveStartedMonotonic": 99},
+                      {**good, "requestSendCompletedMonotonic": 101},
+                      {**good, "connectedMonotonic": float("nan")},
+                      {**good, "addressAttempts": True}):
+            self.assertFalse(capture_timing({**receipt(), "connectionTiming": trace},
+                                           status(5), status(6))["valid"])
+
     def test_causal_intervals_do_not_assume_symmetric_network(self):
         value = capture_timing(receipt(), status(5), status(6))
         self.assertTrue(value["valid"])

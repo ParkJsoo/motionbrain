@@ -7,6 +7,8 @@ These intervals cannot split exposure/readout from frame-buffer residence.
 import math
 import statistics
 
+from learning.http_timing import TRACE_STAMPS, connection_metrics
+
 from ros2_ws.src.motionbrain_ros_bridge.motionbrain_ros_bridge.observation import parse_capture_headers
 
 
@@ -31,6 +33,18 @@ def capture_timing(receipt, before, after):
         result["reason"] = "invalid_source_or_request_timing"
         return result
     start, headers, body, end = stamps
+    if "connectionTiming" in receipt:
+        trace = receipt["connectionTiming"]
+        detail = [trace.get(k) for k in TRACE_STAMPS] if isinstance(trace, dict) else []
+        order = [start, *detail, headers]
+        if (len(detail) != len(TRACE_STAMPS) or not all(_number(v) for v in order)
+                or order != sorted(order) or type(trace.get("addressAttempts")) is not int
+                or trace["addressAttempts"] < 1):
+            result["reason"] = "invalid_connection_timing"
+            return result
+        result.update(connection_metrics(receipt))
+        result["connectionTiming"] = trace
+        result["responseWaitMeaning"] = "request_send_complete_to_parsed_headers_includes_server_network_and_scheduling"
     age = source["reportedSourceAgeMs"]
     headers_map = {str(k).lower(): str(v) for k,v in receipt["headers"].items()}
     camera_now_us = source["capturedUs"] + int(headers_map["x-motionbrain-source-age-us"])
@@ -92,7 +106,9 @@ def summarize_capture_timing(rows):
                   offsetIntersectionSeconds=[low,high] if consistent else None,
                   offsetIntersectionWidthMs=(high-low)*1000 if consistent else None)
     metrics = ("reportedSourceAgeMs", "requestToHeadersMs", "headersToBodyReadCompleteMs",
-               "bodyReadToReceiptMs", "requestTotalMs", "serverFrameAcquireWaitMs", "serverBodyWriteMs")
+               "bodyReadToReceiptMs", "requestTotalMs", "serverFrameAcquireWaitMs", "serverBodyWriteMs",
+               "clientSetupMs", "addressResolutionMs", "tcpConnectMs", "connectedToSendMs",
+               "requestSendMs", "requestSentToHeadersMs")
     report["statistics"] = {}
     for key in metrics:
         values = [r[key] for r in rows if key in r]

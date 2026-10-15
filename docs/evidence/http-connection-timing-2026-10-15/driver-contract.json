@@ -1,0 +1,36 @@
+{
+  "package": {
+    "name": "framework-arduinoespressif32",
+    "version": "3.20017.241212+sha.dcc1105b",
+    "description": "Arduino Wiring-based Framework for the Espressif ESP32, ESP32-S and ESP32-C series of SoCs",
+    "keywords": [
+      "framework",
+      "arduino",
+      "espressif",
+      "esp32"
+    ],
+    "license": "LGPL-2.1-or-later",
+    "repository": {
+      "type": "git",
+      "url": "https://github.com/espressif/arduino-esp32"
+    }
+  },
+  "localSourceSha256": {
+    "package.json": "f35415c75f6f43755df92bbbf7ef10c9e65c2edb2569d512636a0477be64d5bf",
+    "tools/sdk/esp32/include/esp32-camera/driver/include/esp_camera.h": "fb13779551477d5e9baf2af721e3a9d5e4625ba66114b687d25ed15e3edffd23",
+    "tools/sdk/esp32/lib/libesp32-camera.a": "f2f3cc5a5825df5b1f6dd9b4cd1827f9cc211193c6fc7e351a092845d2753985",
+    "tools/sdk/esp32/sdkconfig": "a4fe490abd8cd6447874edd79bde1e78d9630af7845bd53f70440a56b3504907"
+  },
+  "frameFields": [
+    "buf",
+    "len",
+    "width",
+    "height",
+    "format",
+    "timestamp"
+  ],
+  "timestampContract": "Timestamp since boot of the first DMA buffer of the frame",
+  "readyOrEnqueueTimestampPublicAPI": false,
+  "firmwareModified": false,
+  "uploaded": false
+}

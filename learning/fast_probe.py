@@ -51,7 +51,7 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
 
     source_root = Path(__file__).resolve().parents[1]
     sources = ["learning/fast_observation.py", "learning/fast_probe.py", "learning/device_adapter.py",
-               "learning/capture_timing.py",
+               "learning/capture_timing.py", "learning/http_timing.py",
                "learning/artifacts.py", "tools/probe_fast_observation.py",
                "ros2_ws/src/motionbrain_ros_bridge/motionbrain_ros_bridge/observation.py"]
     save_json("session.json", {"schemaVersion": "motionbrain.fast_probe_session.v1",
@@ -59,6 +59,7 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
                               "interval": interval, "hostClockId": transport.host_clock_id,
                               "capturePersistence": "single_frame_after_measurement",
                               "captureTimingEnabled": capture_timing,
+                              "connectionTimingEnabled": getattr(transport, "connection_timing", False),
                               "opencvVersion": cv2.__version__, "numpyVersion": np.__version__,
                               "opencvThreads": cv2.getNumThreads(),
                               "sourceSha256": {p: hashlib.sha256((source_root / p).read_bytes()).hexdigest()
