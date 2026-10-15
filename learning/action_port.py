@@ -15,12 +15,13 @@ from learning.device_adapter import DeviceReadAdapter, DeviceReadError, ReadOnly
 
 
 class BoundedActionHTTP:
-    def __init__(self, controller_url, *, token_provider=None, writes_enabled=False, timeout=1.0, clock=None):
+    def __init__(self, controller_url, *, token_provider=None, writes_enabled=False, timeout=1.0, clock=None,
+                 camera_url=None, perception_url=None):
         if type(writes_enabled) is not bool:
             raise ValueError("writes_enabled_must_be_boolean")
         options = {} if clock is None else {"clock": clock}
-        self.transport = ReadOnlyHTTP(controller_url=controller_url, camera_url=controller_url,
-                                      perception_url=controller_url, timeout=timeout, **options)
+        self.transport = ReadOnlyHTTP(controller_url=controller_url, camera_url=camera_url or controller_url,
+                                      perception_url=perception_url or controller_url, timeout=timeout, **options)
         self.reader = DeviceReadAdapter(self.transport)
         self.clock, self.host_clock_id = self.transport.clock, self.transport.host_clock_id
         self.writes_enabled, self.token_provider = writes_enabled, token_provider

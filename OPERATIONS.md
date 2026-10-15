@@ -73,8 +73,21 @@ Credentials are prepared in memory before the final guard; receipts contain no
 credentials. Terminal receipts require matching controller records and contiguous
 output-off traces; they do not prove physical arrival or training eligibility.
 `JournaledSyntheticCaptureAdapter` exercises this path only with a synthetic port.
-Physical observation/settling integration remains unavailable; the 100 ms frame,
-15 s anchor and 250 ms persistence gates still apply.
+`learning.device_capture.DeviceCaptureSession` connects the executor to exact-frame
+GETs, raw JPEG/metadata storage and independent M4 status samples on a shared local
+transport. It accepts one exact confirmation per new session and never resumes or
+reuses an existing command ID. Before dispatch it requires verified producer clock
+evidence, frame age at most 100 ms, M4 age at most 20 ms and persistence at most
+250 ms. Anchored shadow observations are rejected; their separate 15 s limit is unchanged.
+
+After software output-off, at most six samples over 500 ms must establish a 50 ms
+M4 stationary interval within an explicitly supplied tolerance. Output history and
+M4 are checked again after the final image. This is M4 stability evidence only:
+`physicalSettledVerified` and `trainingEligible` remain false. The separate
+commissioning schema preserves remote clocks and cannot enter the action dataset.
+`audit_device_capture` checks saved evidence without executing or reconciling commands.
+Current uncalibrated perception observations fail the dispatch gate; no live CLI or
+physical calibration override is provided.
 
 ## Source observations and transition records
 
