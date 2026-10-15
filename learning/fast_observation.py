@@ -9,6 +9,8 @@ import hashlib
 import math
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 
 import cv2
 import numpy as np
@@ -59,6 +61,27 @@ def _distant_peak(scores, center_x, center_y, candidate_width, candidate_height,
     return max((float(cv2.minMaxLoc(region)[1]) for region in regions if region.size), default=-1.0)
 
 
+def _match_one(frame, item):
+    scale, template = item
+    th, tw = template.shape
+    scores = cv2.matchTemplate(frame, template, cv2.TM_CCOEFF_NORMED)
+    _, score, _, (px, py) = cv2.minMaxLoc(scores)
+    return float(score), scale, px, py, tw, th, scores
+
+
+def _match_candidates(frame, templates, workers):
+    """One frame, all scales, deterministic input order; no persistent workers.
+
+    Context exit joins every submitted task, also on error or interruption.
+    This does not queue frames or change OpenCV's process-wide thread setting.
+    """
+    if workers == 1 or len(templates) == 1:
+        return [_match_one(frame, item) for item in templates]
+    with ThreadPoolExecutor(max_workers=min(workers, len(templates)),
+                            thread_name_prefix="roi-scale") as pool:
+        return list(pool.map(partial(_match_one, frame), templates))
+
+
 class AnchoredRoiMeasurement:
     """Fixed anchor, bounded lifetime, no adaptation/reacquisition/coordinate hold.
 
@@ -71,7 +94,10 @@ class AnchoredRoiMeasurement:
               "maxTranslationPx": 40.0, "minTextureStd": 8.0,
               "scaleProbes": [0.8, 1.0, 1.2]}
 
-    def __init__(self, observation, body, *, clock=time):
+    def __init__(self, observation, body, *, clock=time, match_workers=3):
+        if type(match_workers) is not int or not 1 <= match_workers <= 3:
+            raise ValueError("match_workers must be 1..3")
+        self.match_workers = match_workers
         self.boot, self.anchor_us = _identity(observation)
         if (observation.get("detected") is not True or observation.get("liveDetected") is not True
                 or observation.get("held") is not False
@@ -135,12 +161,7 @@ class AnchoredRoiMeasurement:
             if frame.shape != self.shape:
                 raise MeasurementError("frame_dimensions_changed")
             x, y, w, h = self.box
-            candidates = []
-            for scale, template in self.templates:
-                th, tw = template.shape
-                scores = cv2.matchTemplate(frame, template, cv2.TM_CCOEFF_NORMED)
-                _, score, _, (px, py) = cv2.minMaxLoc(scores)
-                candidates.append((float(score), scale, px, py, tw, th, scores))
+            candidates = _match_candidates(frame, self.templates, self.match_workers)
             best = max(candidates, key=lambda c: c[0])
             score, scale, px, py, tw, th, _ = best
             # Compare all distant hypotheses, including differently scaled ones.

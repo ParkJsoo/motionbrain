@@ -1,0 +1,41 @@
+{
+  "runId": "b0db7fec3b654d73bb5eb601b5199d8f",
+  "artifacts": 108,
+  "images": 13,
+  "events": 26,
+  "terminalAndHashesVerified": true,
+  "sourceHashesMatchCurrent": true,
+  "outputLogUnchanged": true,
+  "motorCommandsSent": 0,
+  "statistics": {
+    "processingMs": {
+      "n": 12,
+      "min": 19.733050001377705,
+      "median": 24.242654999397928,
+      "max": 27.297880998958135
+    },
+    "reportedAgePlusElapsedMs": {
+      "n": 12,
+      "min": 103.01422699841659,
+      "median": 122.58148900057917,
+      "max": 136.65238699958869
+    },
+    "anchorAgeMs": {
+      "n": 12,
+      "min": 3601.852,
+      "median": 6789.4185,
+      "max": 10337.197
+    },
+    "reportedAgeAtPersistenceMs": {
+      "n": 12,
+      "min": 143.8187459999566,
+      "median": 166.0512210004268,
+      "max": 356.5204039999968
+    }
+  },
+  "rejectionReasons": {
+    "source_age_exceeds_policy": 12
+  },
+  "controlEligible": false,
+  "trainingEligible": false
+}

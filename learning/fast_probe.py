@@ -14,13 +14,16 @@ from learning.fast_observation import AnchoredRoiMeasurement
 from ros2_ws.src.motionbrain_ros_bridge.motionbrain_ros_bridge.observation import parse_capture_headers
 
 
-def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.sleep, capture_timing=False):
+def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.sleep, capture_timing=False,
+                   match_workers=3):
     if type(samples) is not int or not 1 <= samples <= 100:
         raise ValueError("samples must be 1..100")
     if type(interval) not in (int, float) or not 0 <= interval <= 1:
         raise ValueError("interval must be 0..1 seconds")
     if type(capture_timing) is not bool:
         raise ValueError("capture_timing must be boolean")
+    if type(match_workers) is not int or not 1 <= match_workers <= 3:
+        raise ValueError("match_workers must be 1..3")
     artifacts, results = [], []
     timing_samples = []
     adapter = DeviceReadAdapter(transport)
@@ -62,6 +65,7 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
                               "connectionTimingEnabled": getattr(transport, "connection_timing", False),
                               "opencvVersion": cv2.__version__, "numpyVersion": np.__version__,
                               "opencvThreads": cv2.getNumThreads(),
+                              "matchWorkers": match_workers,
                               "sourceSha256": {p: hashlib.sha256((source_root / p).read_bytes()).hexdigest()
                                                for p in sources},
                               "trainingEligible": False, "controlEligible": False})
@@ -81,7 +85,8 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
 
         anchor = adapter.observe(save_anchor)
         save_json("anchor.json", anchor)
-        tracker = AnchoredRoiMeasurement(anchor["observation"], anchor_bytes[0], clock=transport.clock)
+        tracker = AnchoredRoiMeasurement(anchor["observation"], anchor_bytes[0], clock=transport.clock,
+                                         match_workers=match_workers)
         for index in range(samples):
             if not _idle(adapter.status()):
                 raise DeviceReadError("controller_not_idle")

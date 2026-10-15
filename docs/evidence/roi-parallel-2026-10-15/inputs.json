@@ -1,0 +1,1092 @@
+{
+  "anchorObservation": "datasets/fast_probes/f26becbdc20948209a2699369a00a7cb/anchor.json",
+  "anchorImage": "datasets/fast_probes/f26becbdc20948209a2699369a00a7cb/images/anchor/source.jpg",
+  "frames": [
+    {
+      "phase": "baseline",
+      "path": "datasets/fast_probes/f26becbdc20948209a2699369a00a7cb/images/0/source.jpg",
+      "source": {
+        "cameraBootId": "4a5ba0ac0adad7522700201e83767811",
+        "capturedUs": 6062305681,
+        "imageSha256": "d04cac94ada202f246809d557be8c6603e0c79145c591f4b2c2971c2f25ee8d9",
+        "reportedSourceAgeMs": 63.545,
+        "sourceClockDomain": "camera_boot_us",
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6062305681",
+        "sourceMetadataError": null,
+        "sourceMetadataValid": true,
+        "sourceTimeKnown": true,
+        "sourceTimestampSemantics": "first_dma_buffer"
+      }
+    },
+    {
+      "phase": "baseline",
+      "path": "datasets/fast_probes/f26becbdc20948209a2699369a00a7cb/images/1/source.jpg",
+      "source": {
+        "cameraBootId": "4a5ba0ac0adad7522700201e83767811",
+        "capturedUs": 6062917771,
+        "imageSha256": "29892a462793bdbef1df6de53481a199be86b84189ead724880cdaafa0d79cd0",
+        "reportedSourceAgeMs": 43.512,
+        "sourceClockDomain": "camera_boot_us",
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6062917771",
+        "sourceMetadataError": null,
+        "sourceMetadataValid": true,
+        "sourceTimeKnown": true,
+        "sourceTimestampSemantics": "first_dma_buffer"
+      }
+    },
+    {
+      "phase": "baseline",
+      "path": "datasets/fast_probes/f26becbdc20948209a2699369a00a7cb/images/2/source.jpg",
+      "source": {
+        "cameraBootId": "4a5ba0ac0adad7522700201e83767811",
+        "capturedUs": 6063530067,
+        "imageSha256": "ee8ee7fe771fb0bc91824c6fb6ad83d276112bad316114dfdb68b2848734a944",
+        "reportedSourceAgeMs": 59.155,
+        "sourceClockDomain": "camera_boot_us",
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6063530067",
+        "sourceMetadataError": null,
+        "sourceMetadataValid": true,
+        "sourceTimeKnown": true,
+        "sourceTimestampSemantics": "first_dma_buffer"
+      }
+    },
+    {
+      "phase": "baseline",
+      "path": "datasets/fast_probes/f26becbdc20948209a2699369a00a7cb/images/3/source.jpg",
+      "source": {
+        "cameraBootId": "4a5ba0ac0adad7522700201e83767811",
+        "capturedUs": 6064142375,
+        "imageSha256": "f966b5831f6caf52f2f81ee311a08fd1c53ab8eb56ea40f69f9c172329088de7",
+        "reportedSourceAgeMs": 42.881,
+        "sourceClockDomain": "camera_boot_us",
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6064142375",
+        "sourceMetadataError": null,
+        "sourceMetadataValid": true,
+        "sourceTimeKnown": true,
+        "sourceTimestampSemantics": "first_dma_buffer"
+      }
+    },
+    {
+      "phase": "baseline",
+      "path": "datasets/fast_probes/f26becbdc20948209a2699369a00a7cb/images/4/source.jpg",
+      "source": {
+        "cameraBootId": "4a5ba0ac0adad7522700201e83767811",
+        "capturedUs": 6064934775,
+        "imageSha256": "c0ccf320f0788a951f1ec3ff673f8b1b72852acf816681d6d253a7011345abfc",
+        "reportedSourceAgeMs": 39.391,
+        "sourceClockDomain": "camera_boot_us",
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6064934775",
+        "sourceMetadataError": null,
+        "sourceMetadataValid": true,
+        "sourceTimeKnown": true,
+        "sourceTimestampSemantics": "first_dma_buffer"
+      }
+    },
+    {
+      "phase": "baseline",
+      "path": "datasets/fast_probes/f26becbdc20948209a2699369a00a7cb/images/5/source.jpg",
+      "source": {
+        "cameraBootId": "4a5ba0ac0adad7522700201e83767811",
+        "capturedUs": 6065366986,
+        "imageSha256": "e77d84c2a66757159a45d2882ae353aa17a45fcdbbc39ef4ed26561e9b4568cb",
+        "reportedSourceAgeMs": 60.236,
+        "sourceClockDomain": "camera_boot_us",
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6065366986",
+        "sourceMetadataError": null,
+        "sourceMetadataValid": true,
+        "sourceTimeKnown": true,
+        "sourceTimestampSemantics": "first_dma_buffer"
+      }
+    },
+    {
+      "phase": "moved_large",
+      "path": "datasets/device_probes/74c2b9334d524bc6862c40c890d4ff54/images/0/camera.jpg",
+      "source": {
+        "cameraBootId": "4a5ba0ac0adad7522700201e83767811",
+        "cameraNowUs": 6207474126,
+        "captureHostBoundsCalibrated": false,
+        "capturedUs": 6207421997,
+        "hostClockId": "7061fe89223b47ebad8ddfec0dfb2ae2",
+        "image": {
+          "artifactRef": "images/0/camera.jpg",
+          "bytes": 3779,
+          "expectedSha256": "506dce88034012dcacfd1d75dc16aec50824434b5208a1747ee0b7adf29c42e0",
+          "hashMatches": true,
+          "sha256": "506dce88034012dcacfd1d75dc16aec50824434b5208a1747ee0b7adf29c42e0"
+        },
+        "offsetIntervalSeconds": [
+          6729.123434329001,
+          6729.161532822999
+        ],
+        "receivedMonotonic": 12936.635658823,
+        "reportedSourceAgeMs": 52.129,
+        "requestStartedMonotonic": 12936.597560329,
+        "rttMs": 38.09849399840459,
+        "sourceClockDomain": "camera_boot_us",
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6207421997",
+        "sourceMetadataError": null,
+        "sourceMetadataValid": true,
+        "sourceTimeKnown": true,
+        "sourceTimestampSemantics": "first_dma_buffer",
+        "imageSha256": "506dce88034012dcacfd1d75dc16aec50824434b5208a1747ee0b7adf29c42e0"
+      }
+    },
+    {
+      "phase": "moved_large",
+      "path": "datasets/device_probes/74c2b9334d524bc6862c40c890d4ff54/images/1/camera.jpg",
+      "source": {
+        "cameraBootId": "4a5ba0ac0adad7522700201e83767811",
+        "cameraNowUs": 6208079470,
+        "captureHostBoundsCalibrated": false,
+        "capturedUs": 6207998225,
+        "hostClockId": "7061fe89223b47ebad8ddfec0dfb2ae2",
+        "image": {
+          "artifactRef": "images/1/camera.jpg",
+          "bytes": 3779,
+          "expectedSha256": "af71159850c61b61173871f2dd7b3a00a7d309fcee5dd51b61a4dfc501910cd3",
+          "hashMatches": true,
+          "sha256": "af71159850c61b61173871f2dd7b3a00a7d309fcee5dd51b61a4dfc501910cd3"
+        },
+        "offsetIntervalSeconds": [
+          6729.124301752,
+          6729.174144963
+        ],
+        "receivedMonotonic": 12937.253614963,
+        "reportedSourceAgeMs": 81.245,
+        "requestStartedMonotonic": 12937.203771752,
+        "rttMs": 49.843210999824805,
+        "sourceClockDomain": "camera_boot_us",
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6207998225",
+        "sourceMetadataError": null,
+        "sourceMetadataValid": true,
+        "sourceTimeKnown": true,
+        "sourceTimestampSemantics": "first_dma_buffer",
+        "imageSha256": "af71159850c61b61173871f2dd7b3a00a7d309fcee5dd51b61a4dfc501910cd3"
+      }
+    },
+    {
+      "phase": "moved_large",
+      "path": "datasets/device_probes/74c2b9334d524bc6862c40c890d4ff54/images/2/camera.jpg",
+      "source": {
+        "cameraBootId": "4a5ba0ac0adad7522700201e83767811",
+        "cameraNowUs": 6208972107,
+        "captureHostBoundsCalibrated": false,
+        "capturedUs": 6208934713,
+        "hostClockId": "7061fe89223b47ebad8ddfec0dfb2ae2",
+        "image": {
+          "artifactRef": "images/2/camera.jpg",
+          "bytes": 3785,
+          "expectedSha256": "d89218daf0a35f328766d966a8df0687b2185827c827d6eee26e425ec8cfb97f",
+          "hashMatches": true,
+          "sha256": "d89218daf0a35f328766d966a8df0687b2185827c827d6eee26e425ec8cfb97f"
+        },
+        "offsetIntervalSeconds": [
+          6729.120380407001,
+          6729.163325791
+        ],
+        "receivedMonotonic": 12938.135432791,
+        "reportedSourceAgeMs": 37.394,
+        "requestStartedMonotonic": 12938.092487407,
+        "rttMs": 42.94538399881276,
+        "sourceClockDomain": "camera_boot_us",
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6208934713",
+        "sourceMetadataError": null,
+        "sourceMetadataValid": true,
+        "sourceTimeKnown": true,
+        "sourceTimestampSemantics": "first_dma_buffer",
+        "imageSha256": "d89218daf0a35f328766d966a8df0687b2185827c827d6eee26e425ec8cfb97f"
+      }
+    },
+    {
+      "phase": "moved_large",
+      "path": "datasets/device_probes/74c2b9334d524bc6862c40c890d4ff54/images/3/camera.jpg",
+      "source": {
+        "cameraBootId": "4a5ba0ac0adad7522700201e83767811",
+        "cameraNowUs": 6209876306,
+        "captureHostBoundsCalibrated": false,
+        "capturedUs": 6209835147,
+        "hostClockId": "7061fe89223b47ebad8ddfec0dfb2ae2",
+        "image": {
+          "artifactRef": "images/3/camera.jpg",
+          "bytes": 3781,
+          "expectedSha256": "a0a285341ed68817e19e0f98728e4c423c2c5f7390c0b1e304a335fbe620d0e5",
+          "hashMatches": true,
+          "sha256": "a0a285341ed68817e19e0f98728e4c423c2c5f7390c0b1e304a335fbe620d0e5"
+        },
+        "offsetIntervalSeconds": [
+          6729.123942208,
+          6729.165957613999
+        ],
+        "receivedMonotonic": 12939.042263614,
+        "reportedSourceAgeMs": 41.159,
+        "requestStartedMonotonic": 12939.000248208,
+        "rttMs": 42.01540599933651,
+        "sourceClockDomain": "camera_boot_us",
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6209835147",
+        "sourceMetadataError": null,
+        "sourceMetadataValid": true,
+        "sourceTimeKnown": true,
+        "sourceTimestampSemantics": "first_dma_buffer",
+        "imageSha256": "a0a285341ed68817e19e0f98728e4c423c2c5f7390c0b1e304a335fbe620d0e5"
+      }
+    },
+    {
+      "phase": "moved_large",
+      "path": "datasets/device_probes/74c2b9334d524bc6862c40c890d4ff54/images/4/camera.jpg",
+      "source": {
+        "cameraBootId": "4a5ba0ac0adad7522700201e83767811",
+        "cameraNowUs": 6210510131,
+        "captureHostBoundsCalibrated": false,
+        "capturedUs": 6210447453,
+        "hostClockId": "7061fe89223b47ebad8ddfec0dfb2ae2",
+        "image": {
+          "artifactRef": "images/4/camera.jpg",
+          "bytes": 3778,
+          "expectedSha256": "8a2737ed1ce11146abedde96609e1e1f6d0baffa34e2348226cf0e59f0bd2e25",
+          "hashMatches": true,
+          "sha256": "8a2737ed1ce11146abedde96609e1e1f6d0baffa34e2348226cf0e59f0bd2e25"
+        },
+        "offsetIntervalSeconds": [
+          6729.112349198999,
+          6729.1675703440005
+        ],
+        "receivedMonotonic": 12939.677701344,
+        "reportedSourceAgeMs": 62.678,
+        "requestStartedMonotonic": 12939.622480199,
+        "rttMs": 55.22114500126918,
+        "sourceClockDomain": "camera_boot_us",
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6210447453",
+        "sourceMetadataError": null,
+        "sourceMetadataValid": true,
+        "sourceTimeKnown": true,
+        "sourceTimestampSemantics": "first_dma_buffer",
+        "imageSha256": "8a2737ed1ce11146abedde96609e1e1f6d0baffa34e2348226cf0e59f0bd2e25"
+      }
+    },
+    {
+      "phase": "moved_large",
+      "path": "datasets/device_probes/74c2b9334d524bc6862c40c890d4ff54/images/5/camera.jpg",
+      "source": {
+        "cameraBootId": "4a5ba0ac0adad7522700201e83767811",
+        "cameraNowUs": 6211194125,
+        "captureHostBoundsCalibrated": false,
+        "capturedUs": 6211131817,
+        "hostClockId": "7061fe89223b47ebad8ddfec0dfb2ae2",
+        "image": {
+          "artifactRef": "images/5/camera.jpg",
+          "bytes": 3773,
+          "expectedSha256": "c48c272fb92631e49fc2cc23fa8ce9ee6d8f32fd0a414c8fae7fe3f3228a040b",
+          "hashMatches": true,
+          "sha256": "c48c272fb92631e49fc2cc23fa8ce9ee6d8f32fd0a414c8fae7fe3f3228a040b"
+        },
+        "offsetIntervalSeconds": [
+          6729.119769798999,
+          6729.166181328001
+        ],
+        "receivedMonotonic": 12940.360306328,
+        "reportedSourceAgeMs": 62.308,
+        "requestStartedMonotonic": 12940.313894799,
+        "rttMs": 46.411529001488816,
+        "sourceClockDomain": "camera_boot_us",
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6211131817",
+        "sourceMetadataError": null,
+        "sourceMetadataValid": true,
+        "sourceTimeKnown": true,
+        "sourceTimestampSemantics": "first_dma_buffer",
+        "imageSha256": "c48c272fb92631e49fc2cc23fa8ce9ee6d8f32fd0a414c8fae7fe3f3228a040b"
+      }
+    },
+    {
+      "phase": "moved_small",
+      "path": "datasets/device_probes/685a7b1649a240db8e1563812f03c188/images/0/camera.jpg",
+      "source": {
+        "cameraBootId": "4a5ba0ac0adad7522700201e83767811",
+        "cameraNowUs": 6332468128,
+        "captureHostBoundsCalibrated": false,
+        "capturedUs": 6332404408,
+        "hostClockId": "610f18181c7048f0be7b78f492c9ee42",
+        "image": {
+          "artifactRef": "images/0/camera.jpg",
+          "bytes": 3789,
+          "expectedSha256": "b1a3a1aa86112f2f0ad9ed49e5d6b7670924ae92f4dcff5680871db3c0aedd27",
+          "hashMatches": true,
+          "sha256": "b1a3a1aa86112f2f0ad9ed49e5d6b7670924ae92f4dcff5680871db3c0aedd27"
+        },
+        "offsetIntervalSeconds": [
+          6729.127012326999,
+          6729.166353152999
+        ],
+        "receivedMonotonic": 13061.634481153,
+        "reportedSourceAgeMs": 63.72,
+        "requestStartedMonotonic": 13061.595140327,
+        "rttMs": 39.340826000625384,
+        "sourceClockDomain": "camera_boot_us",
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6332404408",
+        "sourceMetadataError": null,
+        "sourceMetadataValid": true,
+        "sourceTimeKnown": true,
+        "sourceTimestampSemantics": "first_dma_buffer",
+        "imageSha256": "b1a3a1aa86112f2f0ad9ed49e5d6b7670924ae92f4dcff5680871db3c0aedd27"
+      }
+    },
+    {
+      "phase": "moved_small",
+      "path": "datasets/device_probes/685a7b1649a240db8e1563812f03c188/images/1/camera.jpg",
+      "source": {
+        "cameraBootId": "4a5ba0ac0adad7522700201e83767811",
+        "cameraNowUs": 6333154138,
+        "captureHostBoundsCalibrated": false,
+        "capturedUs": 6333088807,
+        "hostClockId": "610f18181c7048f0be7b78f492c9ee42",
+        "image": {
+          "artifactRef": "images/1/camera.jpg",
+          "bytes": 3788,
+          "expectedSha256": "34f02f4abbe79afebf79d7f5982cefe28ee6647e5cb8d4f773485d2f6c79c06d",
+          "hashMatches": true,
+          "sha256": "34f02f4abbe79afebf79d7f5982cefe28ee6647e5cb8d4f773485d2f6c79c06d"
+        },
+        "offsetIntervalSeconds": [
+          6729.123472777999,
+          6729.162590645999
+        ],
+        "receivedMonotonic": 13062.316728646,
+        "reportedSourceAgeMs": 65.331,
+        "requestStartedMonotonic": 13062.277610778,
+        "rttMs": 39.117868000175804,
+        "sourceClockDomain": "camera_boot_us",
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6333088807",
+        "sourceMetadataError": null,
+        "sourceMetadataValid": true,
+        "sourceTimeKnown": true,
+        "sourceTimestampSemantics": "first_dma_buffer",
+        "imageSha256": "34f02f4abbe79afebf79d7f5982cefe28ee6647e5cb8d4f773485d2f6c79c06d"
+      }
+    },
+    {
+      "phase": "moved_small",
+      "path": "datasets/device_probes/685a7b1649a240db8e1563812f03c188/images/2/camera.jpg",
+      "source": {
+        "cameraBootId": "4a5ba0ac0adad7522700201e83767811",
+        "cameraNowUs": 6333996173,
+        "captureHostBoundsCalibrated": false,
+        "capturedUs": 6333953167,
+        "hostClockId": "610f18181c7048f0be7b78f492c9ee42",
+        "image": {
+          "artifactRef": "images/2/camera.jpg",
+          "bytes": 3772,
+          "expectedSha256": "fa7ab070ab051151a3dc7f39a262ea86e701ed3fe727bdabca21390cfa770e2d",
+          "hashMatches": true,
+          "sha256": "fa7ab070ab051151a3dc7f39a262ea86e701ed3fe727bdabca21390cfa770e2d"
+        },
+        "offsetIntervalSeconds": [
+          6729.122082773,
+          6729.172206839
+        ],
+        "receivedMonotonic": 13063.168379839,
+        "reportedSourceAgeMs": 43.006,
+        "requestStartedMonotonic": 13063.118255773,
+        "rttMs": 50.1240659996256,
+        "sourceClockDomain": "camera_boot_us",
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6333953167",
+        "sourceMetadataError": null,
+        "sourceMetadataValid": true,
+        "sourceTimeKnown": true,
+        "sourceTimestampSemantics": "first_dma_buffer",
+        "imageSha256": "fa7ab070ab051151a3dc7f39a262ea86e701ed3fe727bdabca21390cfa770e2d"
+      }
+    },
+    {
+      "phase": "moved_small",
+      "path": "datasets/device_probes/685a7b1649a240db8e1563812f03c188/images/3/camera.jpg",
+      "source": {
+        "cameraBootId": "4a5ba0ac0adad7522700201e83767811",
+        "cameraNowUs": 6334917131,
+        "captureHostBoundsCalibrated": false,
+        "capturedUs": 6334853630,
+        "hostClockId": "610f18181c7048f0be7b78f492c9ee42",
+        "image": {
+          "artifactRef": "images/3/camera.jpg",
+          "bytes": 3777,
+          "expectedSha256": "ff9062ead73846ba166b439d7d3900d959769616755264417e5c7e352c154f99",
+          "hashMatches": true,
+          "sha256": "ff9062ead73846ba166b439d7d3900d959769616755264417e5c7e352c154f99"
+        },
+        "offsetIntervalSeconds": [
+          6729.123678051999,
+          6729.160846073999
+        ],
+        "receivedMonotonic": 13064.077977074,
+        "reportedSourceAgeMs": 63.501,
+        "requestStartedMonotonic": 13064.040809052,
+        "rttMs": 37.168021999605116,
+        "sourceClockDomain": "camera_boot_us",
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6334853630",
+        "sourceMetadataError": null,
+        "sourceMetadataValid": true,
+        "sourceTimeKnown": true,
+        "sourceTimestampSemantics": "first_dma_buffer",
+        "imageSha256": "ff9062ead73846ba166b439d7d3900d959769616755264417e5c7e352c154f99"
+      }
+    },
+    {
+      "phase": "moved_small",
+      "path": "datasets/device_probes/685a7b1649a240db8e1563812f03c188/images/4/camera.jpg",
+      "source": {
+        "cameraBootId": "4a5ba0ac0adad7522700201e83767811",
+        "cameraNowUs": 6335544101,
+        "captureHostBoundsCalibrated": false,
+        "capturedUs": 6335501962,
+        "hostClockId": "610f18181c7048f0be7b78f492c9ee42",
+        "image": {
+          "artifactRef": "images/4/camera.jpg",
+          "bytes": 3761,
+          "expectedSha256": "7faed9fd7deecf57d7163fbdb2bbd67888a7395070db73b15fd5738737ab3177",
+          "hashMatches": true,
+          "sha256": "7faed9fd7deecf57d7163fbdb2bbd67888a7395070db73b15fd5738737ab3177"
+        },
+        "offsetIntervalSeconds": [
+          6729.122585971999,
+          6729.162607522999
+        ],
+        "receivedMonotonic": 13064.706708523,
+        "reportedSourceAgeMs": 42.139,
+        "requestStartedMonotonic": 13064.666686972,
+        "rttMs": 40.02155099988158,
+        "sourceClockDomain": "camera_boot_us",
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6335501962",
+        "sourceMetadataError": null,
+        "sourceMetadataValid": true,
+        "sourceTimeKnown": true,
+        "sourceTimestampSemantics": "first_dma_buffer",
+        "imageSha256": "7faed9fd7deecf57d7163fbdb2bbd67888a7395070db73b15fd5738737ab3177"
+      }
+    },
+    {
+      "phase": "moved_small",
+      "path": "datasets/device_probes/685a7b1649a240db8e1563812f03c188/images/5/camera.jpg",
+      "source": {
+        "cameraBootId": "4a5ba0ac0adad7522700201e83767811",
+        "cameraNowUs": 6336228105,
+        "captureHostBoundsCalibrated": false,
+        "capturedUs": 6336186293,
+        "hostClockId": "610f18181c7048f0be7b78f492c9ee42",
+        "image": {
+          "artifactRef": "images/5/camera.jpg",
+          "bytes": 3767,
+          "expectedSha256": "10ae03f70f21180257e5a23a53a77d9705329000579455c411c793b3aecd7e60",
+          "hashMatches": true,
+          "sha256": "10ae03f70f21180257e5a23a53a77d9705329000579455c411c793b3aecd7e60"
+        },
+        "offsetIntervalSeconds": [
+          6729.119264094999,
+          6729.161512023
+        ],
+        "receivedMonotonic": 13065.389617023,
+        "reportedSourceAgeMs": 41.812,
+        "requestStartedMonotonic": 13065.347369095,
+        "rttMs": 42.24792800050636,
+        "sourceClockDomain": "camera_boot_us",
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6336186293",
+        "sourceMetadataError": null,
+        "sourceMetadataValid": true,
+        "sourceTimeKnown": true,
+        "sourceTimestampSemantics": "first_dma_buffer",
+        "imageSha256": "10ae03f70f21180257e5a23a53a77d9705329000579455c411c793b3aecd7e60"
+      }
+    },
+    {
+      "phase": "partial_occlusion",
+      "path": "datasets/device_probes/8131dfecf11942439112bc9a9fd610cc/images/0/camera.jpg",
+      "source": {
+        "cameraBootId": "4a5ba0ac0adad7522700201e83767811",
+        "cameraNowUs": 6438431360,
+        "captureHostBoundsCalibrated": false,
+        "capturedUs": 6438369351,
+        "hostClockId": "e9a985c0755445d7a2a77a140bf674fd",
+        "image": {
+          "artifactRef": "images/0/camera.jpg",
+          "bytes": 3937,
+          "expectedSha256": "467c51e123d0e9940cac6f8f04203ff57cf1aea4ffb34acc06be6d7a432d84bc",
+          "hashMatches": true,
+          "sha256": "467c51e123d0e9940cac6f8f04203ff57cf1aea4ffb34acc06be6d7a432d84bc"
+        },
+        "offsetIntervalSeconds": [
+          6729.115334462001,
+          6729.165467312
+        ],
+        "receivedMonotonic": 13167.596827312,
+        "reportedSourceAgeMs": 62.009,
+        "requestStartedMonotonic": 13167.546694462,
+        "rttMs": 50.13284999949974,
+        "sourceClockDomain": "camera_boot_us",
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6438369351",
+        "sourceMetadataError": null,
+        "sourceMetadataValid": true,
+        "sourceTimeKnown": true,
+        "sourceTimestampSemantics": "first_dma_buffer",
+        "imageSha256": "467c51e123d0e9940cac6f8f04203ff57cf1aea4ffb34acc06be6d7a432d84bc"
+      }
+    },
+    {
+      "phase": "partial_occlusion",
+      "path": "datasets/device_probes/8131dfecf11942439112bc9a9fd610cc/images/1/camera.jpg",
+      "source": {
+        "cameraBootId": "4a5ba0ac0adad7522700201e83767811",
+        "cameraNowUs": 6439160087,
+        "captureHostBoundsCalibrated": false,
+        "capturedUs": 6439089723,
+        "hostClockId": "e9a985c0755445d7a2a77a140bf674fd",
+        "image": {
+          "artifactRef": "images/1/camera.jpg",
+          "bytes": 3946,
+          "expectedSha256": "4161c3db9194519d604dd127e2c28a55dab8778b1ad33ab07c17eec6e3aa7222",
+          "hashMatches": true,
+          "sha256": "4161c3db9194519d604dd127e2c28a55dab8778b1ad33ab07c17eec6e3aa7222"
+        },
+        "offsetIntervalSeconds": [
+          6729.114892338999,
+          6729.167870940999
+        ],
+        "receivedMonotonic": 13168.327957941,
+        "reportedSourceAgeMs": 70.364,
+        "requestStartedMonotonic": 13168.274979339,
+        "rttMs": 52.97860199971183,
+        "sourceClockDomain": "camera_boot_us",
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6439089723",
+        "sourceMetadataError": null,
+        "sourceMetadataValid": true,
+        "sourceTimeKnown": true,
+        "sourceTimestampSemantics": "first_dma_buffer",
+        "imageSha256": "4161c3db9194519d604dd127e2c28a55dab8778b1ad33ab07c17eec6e3aa7222"
+      }
+    },
+    {
+      "phase": "partial_occlusion",
+      "path": "datasets/device_probes/8131dfecf11942439112bc9a9fd610cc/images/2/camera.jpg",
+      "source": {
+        "cameraBootId": "4a5ba0ac0adad7522700201e83767811",
+        "cameraNowUs": 6439971844,
+        "captureHostBoundsCalibrated": false,
+        "capturedUs": 6439918119,
+        "hostClockId": "e9a985c0755445d7a2a77a140bf674fd",
+        "image": {
+          "artifactRef": "images/2/camera.jpg",
+          "bytes": 3935,
+          "expectedSha256": "779009efa830bbef9494fdb191a47559e7fb807ce93079575c5f988083ab8522",
+          "hashMatches": true,
+          "sha256": "779009efa830bbef9494fdb191a47559e7fb807ce93079575c5f988083ab8522"
+        },
+        "offsetIntervalSeconds": [
+          6729.1211200220005,
+          6729.157468586
+        ],
+        "receivedMonotonic": 13169.129312586,
+        "reportedSourceAgeMs": 53.725,
+        "requestStartedMonotonic": 13169.092964022,
+        "rttMs": 36.34856399912678,
+        "sourceClockDomain": "camera_boot_us",
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6439918119",
+        "sourceMetadataError": null,
+        "sourceMetadataValid": true,
+        "sourceTimeKnown": true,
+        "sourceTimestampSemantics": "first_dma_buffer",
+        "imageSha256": "779009efa830bbef9494fdb191a47559e7fb807ce93079575c5f988083ab8522"
+      }
+    },
+    {
+      "phase": "partial_occlusion",
+      "path": "datasets/device_probes/8131dfecf11942439112bc9a9fd610cc/images/3/camera.jpg",
+      "source": {
+        "cameraBootId": "4a5ba0ac0adad7522700201e83767811",
+        "cameraNowUs": 6440581375,
+        "captureHostBoundsCalibrated": false,
+        "capturedUs": 6440530432,
+        "hostClockId": "e9a985c0755445d7a2a77a140bf674fd",
+        "image": {
+          "artifactRef": "images/3/camera.jpg",
+          "bytes": 3931,
+          "expectedSha256": "4a91dd8c802d69a6005874549d88fcbf8a62df4f559318e82b7de4f815d1a65a",
+          "hashMatches": true,
+          "sha256": "4a91dd8c802d69a6005874549d88fcbf8a62df4f559318e82b7de4f815d1a65a"
+        },
+        "offsetIntervalSeconds": [
+          6729.1170947909995,
+          6729.167163328
+        ],
+        "receivedMonotonic": 13169.748538328,
+        "reportedSourceAgeMs": 50.943,
+        "requestStartedMonotonic": 13169.698469791,
+        "rttMs": 50.06853700069769,
+        "sourceClockDomain": "camera_boot_us",
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6440530432",
+        "sourceMetadataError": null,
+        "sourceMetadataValid": true,
+        "sourceTimeKnown": true,
+        "sourceTimestampSemantics": "first_dma_buffer",
+        "imageSha256": "4a91dd8c802d69a6005874549d88fcbf8a62df4f559318e82b7de4f815d1a65a"
+      }
+    },
+    {
+      "phase": "partial_occlusion",
+      "path": "datasets/device_probes/8131dfecf11942439112bc9a9fd610cc/images/4/camera.jpg",
+      "source": {
+        "cameraBootId": "4a5ba0ac0adad7522700201e83767811",
+        "cameraNowUs": 6441321096,
+        "captureHostBoundsCalibrated": false,
+        "capturedUs": 6441250796,
+        "hostClockId": "e9a985c0755445d7a2a77a140bf674fd",
+        "image": {
+          "artifactRef": "images/4/camera.jpg",
+          "bytes": 3935,
+          "expectedSha256": "187b25b4a5cd195751761c8e1c4ab7fa90a607fef69af3ccb38f12038288a951",
+          "hashMatches": true,
+          "sha256": "187b25b4a5cd195751761c8e1c4ab7fa90a607fef69af3ccb38f12038288a951"
+        },
+        "offsetIntervalSeconds": [
+          6729.123708473,
+          6729.162420725001
+        ],
+        "receivedMonotonic": 13170.483516725,
+        "reportedSourceAgeMs": 70.3,
+        "requestStartedMonotonic": 13170.444804473,
+        "rttMs": 38.71225200055051,
+        "sourceClockDomain": "camera_boot_us",
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6441250796",
+        "sourceMetadataError": null,
+        "sourceMetadataValid": true,
+        "sourceTimeKnown": true,
+        "sourceTimestampSemantics": "first_dma_buffer",
+        "imageSha256": "187b25b4a5cd195751761c8e1c4ab7fa90a607fef69af3ccb38f12038288a951"
+      }
+    },
+    {
+      "phase": "partial_occlusion",
+      "path": "datasets/device_probes/8131dfecf11942439112bc9a9fd610cc/images/5/camera.jpg",
+      "source": {
+        "cameraBootId": "4a5ba0ac0adad7522700201e83767811",
+        "cameraNowUs": 6442135099,
+        "captureHostBoundsCalibrated": false,
+        "capturedUs": 6442079210,
+        "hostClockId": "e9a985c0755445d7a2a77a140bf674fd",
+        "image": {
+          "artifactRef": "images/5/camera.jpg",
+          "bytes": 3927,
+          "expectedSha256": "6f67e87fca3696e3ba3ecd57e6612415204d72696c1b5e9b55e39268f57470e4",
+          "hashMatches": true,
+          "sha256": "6f67e87fca3696e3ba3ecd57e6612415204d72696c1b5e9b55e39268f57470e4"
+        },
+        "offsetIntervalSeconds": [
+          6729.117678825,
+          6729.162470775999
+        ],
+        "receivedMonotonic": 13171.297569776,
+        "reportedSourceAgeMs": 55.889,
+        "requestStartedMonotonic": 13171.252777825,
+        "rttMs": 44.79195099884237,
+        "sourceClockDomain": "camera_boot_us",
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6442079210",
+        "sourceMetadataError": null,
+        "sourceMetadataValid": true,
+        "sourceTimeKnown": true,
+        "sourceTimestampSemantics": "first_dma_buffer",
+        "imageSha256": "6f67e87fca3696e3ba3ecd57e6612415204d72696c1b5e9b55e39268f57470e4"
+      }
+    },
+    {
+      "phase": "full_occlusion",
+      "path": "datasets/device_probes/6b9a29d38918462dbc60748db1422941/images/0/camera.jpg",
+      "source": {
+        "cameraBootId": "4a5ba0ac0adad7522700201e83767811",
+        "cameraNowUs": 6555509190,
+        "captureHostBoundsCalibrated": false,
+        "capturedUs": 6555463888,
+        "hostClockId": "9f99ae48d3f84bdb877c2c1f017b5564",
+        "image": {
+          "artifactRef": "images/0/camera.jpg",
+          "bytes": 3442,
+          "expectedSha256": "ba9834b34cfce5b709c58171c89ef75dfa4eb9779e63f10debc033ced2e19771",
+          "hashMatches": true,
+          "sha256": "ba9834b34cfce5b709c58171c89ef75dfa4eb9779e63f10debc033ced2e19771"
+        },
+        "offsetIntervalSeconds": [
+          6729.120967495,
+          6729.175456477999
+        ],
+        "receivedMonotonic": 13284.684646478,
+        "reportedSourceAgeMs": 45.302,
+        "requestStartedMonotonic": 13284.630157495,
+        "rttMs": 54.488982999828295,
+        "sourceClockDomain": "camera_boot_us",
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6555463888",
+        "sourceMetadataError": null,
+        "sourceMetadataValid": true,
+        "sourceTimeKnown": true,
+        "sourceTimestampSemantics": "first_dma_buffer",
+        "imageSha256": "ba9834b34cfce5b709c58171c89ef75dfa4eb9779e63f10debc033ced2e19771"
+      }
+    },
+    {
+      "phase": "full_occlusion",
+      "path": "datasets/device_probes/6b9a29d38918462dbc60748db1422941/images/1/camera.jpg",
+      "source": {
+        "cameraBootId": "4a5ba0ac0adad7522700201e83767811",
+        "cameraNowUs": 6556207206,
+        "captureHostBoundsCalibrated": false,
+        "capturedUs": 6556148220,
+        "hostClockId": "9f99ae48d3f84bdb877c2c1f017b5564",
+        "image": {
+          "artifactRef": "images/1/camera.jpg",
+          "bytes": 3443,
+          "expectedSha256": "9d6559f1bb51d97daec92b8be13c93445b37ecc441d4707e15f16628a14c0c5f",
+          "hashMatches": true,
+          "sha256": "9d6559f1bb51d97daec92b8be13c93445b37ecc441d4707e15f16628a14c0c5f"
+        },
+        "offsetIntervalSeconds": [
+          6729.121300267,
+          6729.162678150001
+        ],
+        "receivedMonotonic": 13285.36988415,
+        "reportedSourceAgeMs": 58.986,
+        "requestStartedMonotonic": 13285.328506267,
+        "rttMs": 41.377883000677684,
+        "sourceClockDomain": "camera_boot_us",
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6556148220",
+        "sourceMetadataError": null,
+        "sourceMetadataValid": true,
+        "sourceTimeKnown": true,
+        "sourceTimestampSemantics": "first_dma_buffer",
+        "imageSha256": "9d6559f1bb51d97daec92b8be13c93445b37ecc441d4707e15f16628a14c0c5f"
+      }
+    },
+    {
+      "phase": "full_occlusion",
+      "path": "datasets/device_probes/6b9a29d38918462dbc60748db1422941/images/2/camera.jpg",
+      "source": {
+        "cameraBootId": "4a5ba0ac0adad7522700201e83767811",
+        "cameraNowUs": 6557031209,
+        "captureHostBoundsCalibrated": false,
+        "capturedUs": 6556976627,
+        "hostClockId": "9f99ae48d3f84bdb877c2c1f017b5564",
+        "image": {
+          "artifactRef": "images/2/camera.jpg",
+          "bytes": 3443,
+          "expectedSha256": "783952d95cd5b94047f076d7277def407e84e1cca6844aa8bdac6fb39227c70c",
+          "hashMatches": true,
+          "sha256": "783952d95cd5b94047f076d7277def407e84e1cca6844aa8bdac6fb39227c70c"
+        },
+        "offsetIntervalSeconds": [
+          6729.118414145,
+          6729.165955836
+        ],
+        "receivedMonotonic": 13286.197164836,
+        "reportedSourceAgeMs": 54.582,
+        "requestStartedMonotonic": 13286.149623145,
+        "rttMs": 47.541690999423736,
+        "sourceClockDomain": "camera_boot_us",
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6556976627",
+        "sourceMetadataError": null,
+        "sourceMetadataValid": true,
+        "sourceTimeKnown": true,
+        "sourceTimestampSemantics": "first_dma_buffer",
+        "imageSha256": "783952d95cd5b94047f076d7277def407e84e1cca6844aa8bdac6fb39227c70c"
+      }
+    },
+    {
+      "phase": "full_occlusion",
+      "path": "datasets/device_probes/6b9a29d38918462dbc60748db1422941/images/3/camera.jpg",
+      "source": {
+        "cameraBootId": "4a5ba0ac0adad7522700201e83767811",
+        "cameraNowUs": 6557947294,
+        "captureHostBoundsCalibrated": false,
+        "capturedUs": 6557877107,
+        "hostClockId": "9f99ae48d3f84bdb877c2c1f017b5564",
+        "image": {
+          "artifactRef": "images/3/camera.jpg",
+          "bytes": 3446,
+          "expectedSha256": "1df61140fe8f07eddcc64d65d30c9c4d8f875244e0d2e66e9d4a393d73830009",
+          "hashMatches": true,
+          "sha256": "1df61140fe8f07eddcc64d65d30c9c4d8f875244e0d2e66e9d4a393d73830009"
+        },
+        "offsetIntervalSeconds": [
+          6729.117058809001,
+          6729.158994142001
+        ],
+        "receivedMonotonic": 13287.106288142,
+        "reportedSourceAgeMs": 70.187,
+        "requestStartedMonotonic": 13287.064352809,
+        "rttMs": 41.935332999855746,
+        "sourceClockDomain": "camera_boot_us",
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6557877107",
+        "sourceMetadataError": null,
+        "sourceMetadataValid": true,
+        "sourceTimeKnown": true,
+        "sourceTimestampSemantics": "first_dma_buffer",
+        "imageSha256": "1df61140fe8f07eddcc64d65d30c9c4d8f875244e0d2e66e9d4a393d73830009"
+      }
+    },
+    {
+      "phase": "full_occlusion",
+      "path": "datasets/device_probes/6b9a29d38918462dbc60748db1422941/images/4/camera.jpg",
+      "source": {
+        "cameraBootId": "4a5ba0ac0adad7522700201e83767811",
+        "cameraNowUs": 6558565131,
+        "captureHostBoundsCalibrated": false,
+        "capturedUs": 6558525430,
+        "hostClockId": "9f99ae48d3f84bdb877c2c1f017b5564",
+        "image": {
+          "artifactRef": "images/4/camera.jpg",
+          "bytes": 3439,
+          "expectedSha256": "39945c3f9a26eb980b75e0075d9a98214e66fb23f0bb58b038dcf7fd5c25b408",
+          "hashMatches": true,
+          "sha256": "39945c3f9a26eb980b75e0075d9a98214e66fb23f0bb58b038dcf7fd5c25b408"
+        },
+        "offsetIntervalSeconds": [
+          6729.123203759999,
+          6729.16242632
+        ],
+        "receivedMonotonic": 13287.72755732,
+        "reportedSourceAgeMs": 39.701,
+        "requestStartedMonotonic": 13287.68833476,
+        "rttMs": 39.222560000780504,
+        "sourceClockDomain": "camera_boot_us",
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6558525430",
+        "sourceMetadataError": null,
+        "sourceMetadataValid": true,
+        "sourceTimeKnown": true,
+        "sourceTimestampSemantics": "first_dma_buffer",
+        "imageSha256": "39945c3f9a26eb980b75e0075d9a98214e66fb23f0bb58b038dcf7fd5c25b408"
+      }
+    },
+    {
+      "phase": "full_occlusion",
+      "path": "datasets/device_probes/6b9a29d38918462dbc60748db1422941/images/5/camera.jpg",
+      "source": {
+        "cameraBootId": "4a5ba0ac0adad7522700201e83767811",
+        "cameraNowUs": 6559317466,
+        "captureHostBoundsCalibrated": false,
+        "capturedUs": 6559245786,
+        "hostClockId": "9f99ae48d3f84bdb877c2c1f017b5564",
+        "image": {
+          "artifactRef": "images/5/camera.jpg",
+          "bytes": 3438,
+          "expectedSha256": "f0f356c0b4809f5177740f6e0205045a7aa0be99b916347370fb004c99793993",
+          "hashMatches": true,
+          "sha256": "f0f356c0b4809f5177740f6e0205045a7aa0be99b916347370fb004c99793993"
+        },
+        "offsetIntervalSeconds": [
+          6729.117429618,
+          6729.161085820999
+        ],
+        "receivedMonotonic": 13288.478551821,
+        "reportedSourceAgeMs": 71.68,
+        "requestStartedMonotonic": 13288.434895618,
+        "rttMs": 43.65620299904549,
+        "sourceClockDomain": "camera_boot_us",
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6559245786",
+        "sourceMetadataError": null,
+        "sourceMetadataValid": true,
+        "sourceTimeKnown": true,
+        "sourceTimestampSemantics": "first_dma_buffer",
+        "imageSha256": "f0f356c0b4809f5177740f6e0205045a7aa0be99b916347370fb004c99793993"
+      }
+    },
+    {
+      "phase": "restored",
+      "path": "datasets/device_probes/6331233fbfa44c41b1d01bca84d1963d/images/0/camera.jpg",
+      "source": {
+        "cameraBootId": "4a5ba0ac0adad7522700201e83767811",
+        "cameraNowUs": 6646394142,
+        "captureHostBoundsCalibrated": false,
+        "capturedUs": 6646337348,
+        "hostClockId": "c7c79a089fed44deaf9a1ae5d562703c",
+        "image": {
+          "artifactRef": "images/0/camera.jpg",
+          "bytes": 3779,
+          "expectedSha256": "bed08dad6341e242eaf3f46ce2537e8e085eb896459a7a04d2190f9b4bd58f5f",
+          "hashMatches": true,
+          "sha256": "bed08dad6341e242eaf3f46ce2537e8e085eb896459a7a04d2190f9b4bd58f5f"
+        },
+        "offsetIntervalSeconds": [
+          6729.114578551999,
+          6729.167304002999
+        ],
+        "receivedMonotonic": 13375.561446003,
+        "reportedSourceAgeMs": 56.794,
+        "requestStartedMonotonic": 13375.508720552,
+        "rttMs": 52.72545099978743,
+        "sourceClockDomain": "camera_boot_us",
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6646337348",
+        "sourceMetadataError": null,
+        "sourceMetadataValid": true,
+        "sourceTimeKnown": true,
+        "sourceTimestampSemantics": "first_dma_buffer",
+        "imageSha256": "bed08dad6341e242eaf3f46ce2537e8e085eb896459a7a04d2190f9b4bd58f5f"
+      }
+    },
+    {
+      "phase": "restored",
+      "path": "datasets/device_probes/6331233fbfa44c41b1d01bca84d1963d/images/1/camera.jpg",
+      "source": {
+        "cameraBootId": "4a5ba0ac0adad7522700201e83767811",
+        "cameraNowUs": 6647101377,
+        "captureHostBoundsCalibrated": false,
+        "capturedUs": 6647057659,
+        "hostClockId": "c7c79a089fed44deaf9a1ae5d562703c",
+        "image": {
+          "artifactRef": "images/1/camera.jpg",
+          "bytes": 3773,
+          "expectedSha256": "d32e73de8f841635f60c7472cbac838c9219b5c8f6ced8e241013c4c31e32a5c",
+          "hashMatches": true,
+          "sha256": "d32e73de8f841635f60c7472cbac838c9219b5c8f6ced8e241013c4c31e32a5c"
+        },
+        "offsetIntervalSeconds": [
+          6729.1285714470005,
+          6729.168800932
+        ],
+        "receivedMonotonic": 13376.270177932,
+        "reportedSourceAgeMs": 43.718,
+        "requestStartedMonotonic": 13376.229948447,
+        "rttMs": 40.229484999144915,
+        "sourceClockDomain": "camera_boot_us",
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6647057659",
+        "sourceMetadataError": null,
+        "sourceMetadataValid": true,
+        "sourceTimeKnown": true,
+        "sourceTimestampSemantics": "first_dma_buffer",
+        "imageSha256": "d32e73de8f841635f60c7472cbac838c9219b5c8f6ced8e241013c4c31e32a5c"
+      }
+    },
+    {
+      "phase": "restored",
+      "path": "datasets/device_probes/6331233fbfa44c41b1d01bca84d1963d/images/2/camera.jpg",
+      "source": {
+        "cameraBootId": "4a5ba0ac0adad7522700201e83767811",
+        "cameraNowUs": 6647955122,
+        "captureHostBoundsCalibrated": false,
+        "capturedUs": 6647886075,
+        "hostClockId": "c7c79a089fed44deaf9a1ae5d562703c",
+        "image": {
+          "artifactRef": "images/2/camera.jpg",
+          "bytes": 3781,
+          "expectedSha256": "a95326ecf1dfd1ab842969a0ff97c4687d8d27cb63ed88c3183e2bb52dea1090",
+          "hashMatches": true,
+          "sha256": "a95326ecf1dfd1ab842969a0ff97c4687d8d27cb63ed88c3183e2bb52dea1090"
+        },
+        "offsetIntervalSeconds": [
+          6729.1209898160005,
+          6729.175623726001
+        ],
+        "receivedMonotonic": 13377.130745726,
+        "reportedSourceAgeMs": 69.047,
+        "requestStartedMonotonic": 13377.076111816,
+        "rttMs": 54.63391000012052,
+        "sourceClockDomain": "camera_boot_us",
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6647886075",
+        "sourceMetadataError": null,
+        "sourceMetadataValid": true,
+        "sourceTimeKnown": true,
+        "sourceTimestampSemantics": "first_dma_buffer",
+        "imageSha256": "a95326ecf1dfd1ab842969a0ff97c4687d8d27cb63ed88c3183e2bb52dea1090"
+      }
+    },
+    {
+      "phase": "restored",
+      "path": "datasets/device_probes/6331233fbfa44c41b1d01bca84d1963d/images/3/camera.jpg",
+      "source": {
+        "cameraBootId": "4a5ba0ac0adad7522700201e83767811",
+        "cameraNowUs": 6648853172,
+        "captureHostBoundsCalibrated": false,
+        "capturedUs": 6648786539,
+        "hostClockId": "c7c79a089fed44deaf9a1ae5d562703c",
+        "image": {
+          "artifactRef": "images/3/camera.jpg",
+          "bytes": 3761,
+          "expectedSha256": "ee10f2ff0cef744546a3f9cd6a435f52a829ca316b615b9b4d9db2251ac68b00",
+          "hashMatches": true,
+          "sha256": "ee10f2ff0cef744546a3f9cd6a435f52a829ca316b615b9b4d9db2251ac68b00"
+        },
+        "offsetIntervalSeconds": [
+          6729.1252370619995,
+          6729.172555337001
+        ],
+        "receivedMonotonic": 13378.025727337,
+        "reportedSourceAgeMs": 66.633,
+        "requestStartedMonotonic": 13377.978409062,
+        "rttMs": 47.318275001089205,
+        "sourceClockDomain": "camera_boot_us",
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6648786539",
+        "sourceMetadataError": null,
+        "sourceMetadataValid": true,
+        "sourceTimeKnown": true,
+        "sourceTimestampSemantics": "first_dma_buffer",
+        "imageSha256": "ee10f2ff0cef744546a3f9cd6a435f52a829ca316b615b9b4d9db2251ac68b00"
+      }
+    },
+    {
+      "phase": "restored",
+      "path": "datasets/device_probes/6331233fbfa44c41b1d01bca84d1963d/images/4/camera.jpg",
+      "source": {
+        "cameraBootId": "4a5ba0ac0adad7522700201e83767811",
+        "cameraNowUs": 6649494428,
+        "captureHostBoundsCalibrated": false,
+        "capturedUs": 6649434836,
+        "hostClockId": "c7c79a089fed44deaf9a1ae5d562703c",
+        "image": {
+          "artifactRef": "images/4/camera.jpg",
+          "bytes": 3809,
+          "expectedSha256": "6ff469fbd7912401c7a0ea50385811a42cf2bc995f763eecd2c895c0cd3a313f",
+          "hashMatches": true,
+          "sha256": "6ff469fbd7912401c7a0ea50385811a42cf2bc995f763eecd2c895c0cd3a313f"
+        },
+        "offsetIntervalSeconds": [
+          6729.125889073999,
+          6729.170658052
+        ],
+        "receivedMonotonic": 13378.665086052,
+        "reportedSourceAgeMs": 59.592,
+        "requestStartedMonotonic": 13378.620317074,
+        "rttMs": 44.7689780012297,
+        "sourceClockDomain": "camera_boot_us",
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6649434836",
+        "sourceMetadataError": null,
+        "sourceMetadataValid": true,
+        "sourceTimeKnown": true,
+        "sourceTimestampSemantics": "first_dma_buffer",
+        "imageSha256": "6ff469fbd7912401c7a0ea50385811a42cf2bc995f763eecd2c895c0cd3a313f"
+      }
+    },
+    {
+      "phase": "restored",
+      "path": "datasets/device_probes/6331233fbfa44c41b1d01bca84d1963d/images/5/camera.jpg",
+      "source": {
+        "cameraBootId": "4a5ba0ac0adad7522700201e83767811",
+        "cameraNowUs": 6650189128,
+        "captureHostBoundsCalibrated": false,
+        "capturedUs": 6650119231,
+        "hostClockId": "c7c79a089fed44deaf9a1ae5d562703c",
+        "image": {
+          "artifactRef": "images/5/camera.jpg",
+          "bytes": 3774,
+          "expectedSha256": "2497ff30953936f8f4e299853ef8f6bfbaa2c8d9c8154d374218599aa9bfe0b6",
+          "hashMatches": true,
+          "sha256": "2497ff30953936f8f4e299853ef8f6bfbaa2c8d9c8154d374218599aa9bfe0b6"
+        },
+        "offsetIntervalSeconds": [
+          6729.124096685,
+          6729.168176697
+        ],
+        "receivedMonotonic": 13379.357304697,
+        "reportedSourceAgeMs": 69.897,
+        "requestStartedMonotonic": 13379.313224685,
+        "rttMs": 44.08001199954015,
+        "sourceClockDomain": "camera_boot_us",
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6650119231",
+        "sourceMetadataError": null,
+        "sourceMetadataValid": true,
+        "sourceTimeKnown": true,
+        "sourceTimestampSemantics": "first_dma_buffer",
+        "imageSha256": "2497ff30953936f8f4e299853ef8f6bfbaa2c8d9c8154d374218599aa9bfe0b6"
+      }
+    }
+  ]
+}

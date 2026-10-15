@@ -1,0 +1,1978 @@
+{
+  "mode": "offline_paired_compute_benchmark",
+  "controlEligible": false,
+  "trainingEligible": false,
+  "uniqueFrames": 36,
+  "repeats": 3,
+  "opencvVersion": "4.12.0",
+  "numpyVersion": "2.2.6",
+  "opencvThreads": 4,
+  "sourceSha256": {
+    "learning/fast_observation.py": "e82b03c516036b40554528085217baff21b7a47df2d8e585ac9b7513392b7328",
+    "docs/evidence/roi-parallel-2026-10-15/benchmark.py": "dc7eec21b4e4b383e184cc0929c985febacb52fd3f6194fff85af90aeff9442c",
+    "docs/evidence/roi-parallel-2026-10-15/inputs.json": "26e24fc365d55654f8e66a719c5ff3c22e95cf56e5e307276ddd7da48037e9f0"
+  },
+  "serial": {
+    "n": 108,
+    "min": 30.530800000633462,
+    "median": 33.588599999347934,
+    "max": 47.364093999931356
+  },
+  "parallel": {
+    "n": 108,
+    "min": 17.010587000186206,
+    "median": 21.251299000141444,
+    "max": 39.9259460009489
+  },
+  "samples": [
+    {
+      "phase": "baseline",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6062305681",
+      "imageSha256": "d04cac94ada202f246809d557be8c6603e0c79145c591f4b2c2971c2f25ee8d9",
+      "repeat": 0,
+      "serialMs": 35.626549999506096,
+      "parallelMs": 28.184734999740613,
+      "mapsExactlyEqual": true,
+      "score": 0.9967177510261536,
+      "peakMargin": 0.4998820126056671,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        146,
+        125,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "baseline",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6062917771",
+      "imageSha256": "29892a462793bdbef1df6de53481a199be86b84189ead724880cdaafa0d79cd0",
+      "repeat": 0,
+      "serialMs": 34.17643099965062,
+      "parallelMs": 32.55740699933085,
+      "mapsExactlyEqual": true,
+      "score": 0.9969396591186523,
+      "peakMargin": 0.5039500296115875,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        146,
+        125,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "baseline",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6063530067",
+      "imageSha256": "ee8ee7fe771fb0bc91824c6fb6ad83d276112bad316114dfdb68b2848734a944",
+      "repeat": 0,
+      "serialMs": 39.315328000157024,
+      "parallelMs": 30.08595599931141,
+      "mapsExactlyEqual": true,
+      "score": 0.9967522621154785,
+      "peakMargin": 0.5041703879833221,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        146,
+        125,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "baseline",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6064142375",
+      "imageSha256": "f966b5831f6caf52f2f81ee311a08fd1c53ab8eb56ea40f69f9c172329088de7",
+      "repeat": 0,
+      "serialMs": 33.63873799935391,
+      "parallelMs": 21.297854000295047,
+      "mapsExactlyEqual": true,
+      "score": 0.9963372945785522,
+      "peakMargin": 0.5032370686531067,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        146,
+        125,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "baseline",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6064934775",
+      "imageSha256": "c0ccf320f0788a951f1ec3ff673f8b1b72852acf816681d6d253a7011345abfc",
+      "repeat": 0,
+      "serialMs": 34.82445500048925,
+      "parallelMs": 22.872100000313367,
+      "mapsExactlyEqual": true,
+      "score": 0.9956194758415222,
+      "peakMargin": 0.5013748407363892,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        146,
+        125,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "baseline",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6065366986",
+      "imageSha256": "e77d84c2a66757159a45d2882ae353aa17a45fcdbbc39ef4ed26561e9b4568cb",
+      "repeat": 0,
+      "serialMs": 34.46085099858465,
+      "parallelMs": 20.1788199992734,
+      "mapsExactlyEqual": true,
+      "score": 0.99607253074646,
+      "peakMargin": 0.5011186003684998,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        146,
+        125,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "moved_large",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6207421997",
+      "imageSha256": "506dce88034012dcacfd1d75dc16aec50824434b5208a1747ee0b7adf29c42e0",
+      "repeat": 0,
+      "serialMs": 35.56764399945678,
+      "parallelMs": 31.187250000584754,
+      "mapsExactlyEqual": true,
+      "score": 0.8923903107643127,
+      "peakMargin": 0.378986656665802,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        89,
+        130,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "moved_large",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6207998225",
+      "imageSha256": "af71159850c61b61173871f2dd7b3a00a7d309fcee5dd51b61a4dfc501910cd3",
+      "repeat": 0,
+      "serialMs": 34.74658599952818,
+      "parallelMs": 30.36832099860476,
+      "mapsExactlyEqual": true,
+      "score": 0.8923812508583069,
+      "peakMargin": 0.3808094263076782,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        89,
+        130,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "moved_large",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6208934713",
+      "imageSha256": "d89218daf0a35f328766d966a8df0687b2185827c827d6eee26e425ec8cfb97f",
+      "repeat": 0,
+      "serialMs": 35.40427600091789,
+      "parallelMs": 30.415801998969982,
+      "mapsExactlyEqual": true,
+      "score": 0.893438458442688,
+      "peakMargin": 0.3800039291381836,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        89,
+        130,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "moved_large",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6209835147",
+      "imageSha256": "a0a285341ed68817e19e0f98728e4c423c2c5f7390c0b1e304a335fbe620d0e5",
+      "repeat": 0,
+      "serialMs": 44.269804000578006,
+      "parallelMs": 19.178562999513815,
+      "mapsExactlyEqual": true,
+      "score": 0.8928994536399841,
+      "peakMargin": 0.37630897760391235,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        89,
+        130,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "moved_large",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6210447453",
+      "imageSha256": "8a2737ed1ce11146abedde96609e1e1f6d0baffa34e2348226cf0e59f0bd2e25",
+      "repeat": 0,
+      "serialMs": 35.04946899920469,
+      "parallelMs": 25.94844600025681,
+      "mapsExactlyEqual": true,
+      "score": 0.8922420740127563,
+      "peakMargin": 0.37927377223968506,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        89,
+        130,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "moved_large",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6211131817",
+      "imageSha256": "c48c272fb92631e49fc2cc23fa8ce9ee6d8f32fd0a414c8fae7fe3f3228a040b",
+      "repeat": 0,
+      "serialMs": 32.940213999609114,
+      "parallelMs": 18.406318000415922,
+      "mapsExactlyEqual": true,
+      "score": 0.8911840319633484,
+      "peakMargin": 0.3799058198928833,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        89,
+        130,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "moved_small",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6332404408",
+      "imageSha256": "b1a3a1aa86112f2f0ad9ed49e5d6b7670924ae92f4dcff5680871db3c0aedd27",
+      "repeat": 0,
+      "serialMs": 31.86625499984075,
+      "parallelMs": 21.473351000167895,
+      "mapsExactlyEqual": true,
+      "score": 0.9385467767715454,
+      "peakMargin": 0.47804123163223267,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        118,
+        131,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "moved_small",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6333088807",
+      "imageSha256": "34f02f4abbe79afebf79d7f5982cefe28ee6647e5cb8d4f773485d2f6c79c06d",
+      "repeat": 0,
+      "serialMs": 47.364093999931356,
+      "parallelMs": 19.588333001593128,
+      "mapsExactlyEqual": true,
+      "score": 0.9379824995994568,
+      "peakMargin": 0.4774712920188904,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        118,
+        131,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "moved_small",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6333953167",
+      "imageSha256": "fa7ab070ab051151a3dc7f39a262ea86e701ed3fe727bdabca21390cfa770e2d",
+      "repeat": 0,
+      "serialMs": 33.85214099944278,
+      "parallelMs": 36.04381900004228,
+      "mapsExactlyEqual": true,
+      "score": 0.9404536485671997,
+      "peakMargin": 0.48988059163093567,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        118,
+        131,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "moved_small",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6334853630",
+      "imageSha256": "ff9062ead73846ba166b439d7d3900d959769616755264417e5c7e352c154f99",
+      "repeat": 0,
+      "serialMs": 31.05686299932131,
+      "parallelMs": 24.000948000320932,
+      "mapsExactlyEqual": true,
+      "score": 0.940597414970398,
+      "peakMargin": 0.48038724064826965,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        118,
+        131,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "moved_small",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6335501962",
+      "imageSha256": "7faed9fd7deecf57d7163fbdb2bbd67888a7395070db73b15fd5738737ab3177",
+      "repeat": 0,
+      "serialMs": 31.152935000136495,
+      "parallelMs": 23.555327999929432,
+      "mapsExactlyEqual": true,
+      "score": 0.9401812553405762,
+      "peakMargin": 0.48292455077171326,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        118,
+        131,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "moved_small",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6336186293",
+      "imageSha256": "10ae03f70f21180257e5a23a53a77d9705329000579455c411c793b3aecd7e60",
+      "repeat": 0,
+      "serialMs": 31.538852999801748,
+      "parallelMs": 25.586768999346532,
+      "mapsExactlyEqual": true,
+      "score": 0.9407950043678284,
+      "peakMargin": 0.48264259099960327,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        118,
+        131,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "partial_occlusion",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6438369351",
+      "imageSha256": "467c51e123d0e9940cac6f8f04203ff57cf1aea4ffb34acc06be6d7a432d84bc",
+      "repeat": 0,
+      "serialMs": 31.11078799884126,
+      "parallelMs": 17.33341500039387,
+      "mapsExactlyEqual": true,
+      "score": 0.7022048830986023,
+      "peakMargin": 0.21429473161697388,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        121,
+        131,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "partial_occlusion",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6439089723",
+      "imageSha256": "4161c3db9194519d604dd127e2c28a55dab8778b1ad33ab07c17eec6e3aa7222",
+      "repeat": 0,
+      "serialMs": 31.211026998789748,
+      "parallelMs": 17.397616000380367,
+      "mapsExactlyEqual": true,
+      "score": 0.696797788143158,
+      "peakMargin": 0.2115427553653717,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        121,
+        131,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "partial_occlusion",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6439918119",
+      "imageSha256": "779009efa830bbef9494fdb191a47559e7fb807ce93079575c5f988083ab8522",
+      "repeat": 0,
+      "serialMs": 31.0746030008886,
+      "parallelMs": 27.263771999059827,
+      "mapsExactlyEqual": true,
+      "score": 0.6948227286338806,
+      "peakMargin": 0.212323397397995,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        121,
+        131,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "partial_occlusion",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6440530432",
+      "imageSha256": "4a91dd8c802d69a6005874549d88fcbf8a62df4f559318e82b7de4f815d1a65a",
+      "repeat": 0,
+      "serialMs": 31.807236999156885,
+      "parallelMs": 23.639251001441153,
+      "mapsExactlyEqual": true,
+      "score": 0.6964106559753418,
+      "peakMargin": 0.2113451361656189,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        121,
+        131,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "partial_occlusion",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6441250796",
+      "imageSha256": "187b25b4a5cd195751761c8e1c4ab7fa90a607fef69af3ccb38f12038288a951",
+      "repeat": 0,
+      "serialMs": 30.530800000633462,
+      "parallelMs": 17.94218000031833,
+      "mapsExactlyEqual": true,
+      "score": 0.6960169672966003,
+      "peakMargin": 0.2124958336353302,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        121,
+        131,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "partial_occlusion",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6442079210",
+      "imageSha256": "6f67e87fca3696e3ba3ecd57e6612415204d72696c1b5e9b55e39268f57470e4",
+      "repeat": 0,
+      "serialMs": 31.65751699998509,
+      "parallelMs": 18.381652998868958,
+      "mapsExactlyEqual": true,
+      "score": 0.6945063471794128,
+      "peakMargin": 0.21222946047782898,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        121,
+        131,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "full_occlusion",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6555463888",
+      "imageSha256": "ba9834b34cfce5b709c58171c89ef75dfa4eb9779e63f10debc033ced2e19771",
+      "repeat": 0,
+      "serialMs": 30.617223999797716,
+      "parallelMs": 17.861977999928058,
+      "mapsExactlyEqual": true,
+      "score": 0.4112657606601715,
+      "peakMargin": 0.05726304650306702,
+      "scale": 1.2,
+      "diagnosticCandidateBox": [
+        173,
+        8,
+        124,
+        104
+      ]
+    },
+    {
+      "phase": "full_occlusion",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6556148220",
+      "imageSha256": "9d6559f1bb51d97daec92b8be13c93445b37ecc441d4707e15f16628a14c0c5f",
+      "repeat": 0,
+      "serialMs": 33.74980900116498,
+      "parallelMs": 17.500059000667534,
+      "mapsExactlyEqual": true,
+      "score": 0.4390137493610382,
+      "peakMargin": 0.06540516018867493,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        181,
+        8,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "full_occlusion",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6556976627",
+      "imageSha256": "783952d95cd5b94047f076d7277def407e84e1cca6844aa8bdac6fb39227c70c",
+      "repeat": 0,
+      "serialMs": 30.60142799949972,
+      "parallelMs": 17.514650999146397,
+      "mapsExactlyEqual": true,
+      "score": 0.4136911928653717,
+      "peakMargin": 0.007668673992156982,
+      "scale": 0.8,
+      "diagnosticCandidateBox": [
+        179,
+        136,
+        82,
+        70
+      ]
+    },
+    {
+      "phase": "full_occlusion",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6557877107",
+      "imageSha256": "1df61140fe8f07eddcc64d65d30c9c4d8f875244e0d2e66e9d4a393d73830009",
+      "repeat": 0,
+      "serialMs": 32.471463999172556,
+      "parallelMs": 18.178637999881175,
+      "mapsExactlyEqual": true,
+      "score": 0.40743568539619446,
+      "peakMargin": 0.005907207727432251,
+      "scale": 0.8,
+      "diagnosticCandidateBox": [
+        193,
+        16,
+        82,
+        70
+      ]
+    },
+    {
+      "phase": "full_occlusion",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6558525430",
+      "imageSha256": "39945c3f9a26eb980b75e0075d9a98214e66fb23f0bb58b038dcf7fd5c25b408",
+      "repeat": 0,
+      "serialMs": 30.91742200012959,
+      "parallelMs": 19.067305000135093,
+      "mapsExactlyEqual": true,
+      "score": 0.3985227346420288,
+      "peakMargin": 0.024516016244888306,
+      "scale": 1.2,
+      "diagnosticCandidateBox": [
+        180,
+        17,
+        124,
+        104
+      ]
+    },
+    {
+      "phase": "full_occlusion",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6559245786",
+      "imageSha256": "f0f356c0b4809f5177740f6e0205045a7aa0be99b916347370fb004c99793993",
+      "repeat": 0,
+      "serialMs": 32.96291800143081,
+      "parallelMs": 17.52205800039519,
+      "mapsExactlyEqual": true,
+      "score": 0.4076026380062103,
+      "peakMargin": 0.039476245641708374,
+      "scale": 1.2,
+      "diagnosticCandidateBox": [
+        180,
+        13,
+        124,
+        104
+      ]
+    },
+    {
+      "phase": "restored",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6646337348",
+      "imageSha256": "bed08dad6341e242eaf3f46ce2537e8e085eb896459a7a04d2190f9b4bd58f5f",
+      "repeat": 0,
+      "serialMs": 31.796219000170822,
+      "parallelMs": 18.933919000119204,
+      "mapsExactlyEqual": true,
+      "score": 0.9087638854980469,
+      "peakMargin": 0.40879619121551514,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        154,
+        130,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "restored",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6647057659",
+      "imageSha256": "d32e73de8f841635f60c7472cbac838c9219b5c8f6ced8e241013c4c31e32a5c",
+      "repeat": 0,
+      "serialMs": 30.68446400175162,
+      "parallelMs": 21.597552000457654,
+      "mapsExactlyEqual": true,
+      "score": 0.9099678993225098,
+      "peakMargin": 0.4123118221759796,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        154,
+        130,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "restored",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6647886075",
+      "imageSha256": "a95326ecf1dfd1ab842969a0ff97c4687d8d27cb63ed88c3183e2bb52dea1090",
+      "repeat": 0,
+      "serialMs": 30.761370000618626,
+      "parallelMs": 17.612667999856058,
+      "mapsExactlyEqual": true,
+      "score": 0.9078866839408875,
+      "peakMargin": 0.40918853878974915,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        154,
+        130,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "restored",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6648786539",
+      "imageSha256": "ee10f2ff0cef744546a3f9cd6a435f52a829ca316b615b9b4d9db2251ac68b00",
+      "repeat": 0,
+      "serialMs": 32.2490429989557,
+      "parallelMs": 18.52526099901297,
+      "mapsExactlyEqual": true,
+      "score": 0.9085623025894165,
+      "peakMargin": 0.4121508002281189,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        154,
+        130,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "restored",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6649434836",
+      "imageSha256": "6ff469fbd7912401c7a0ea50385811a42cf2bc995f763eecd2c895c0cd3a313f",
+      "repeat": 0,
+      "serialMs": 31.358968000859022,
+      "parallelMs": 17.074604000299587,
+      "mapsExactlyEqual": true,
+      "score": 0.9088388681411743,
+      "peakMargin": 0.41852498054504395,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        154,
+        130,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "restored",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6650119231",
+      "imageSha256": "2497ff30953936f8f4e299853ef8f6bfbaa2c8d9c8154d374218599aa9bfe0b6",
+      "repeat": 0,
+      "serialMs": 33.84469599950535,
+      "parallelMs": 17.64270400053647,
+      "mapsExactlyEqual": true,
+      "score": 0.9077732563018799,
+      "peakMargin": 0.41032397747039795,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        154,
+        130,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "baseline",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6062305681",
+      "imageSha256": "d04cac94ada202f246809d557be8c6603e0c79145c591f4b2c2971c2f25ee8d9",
+      "repeat": 1,
+      "serialMs": 30.92284700142045,
+      "parallelMs": 17.010587000186206,
+      "mapsExactlyEqual": true,
+      "score": 0.9967177510261536,
+      "peakMargin": 0.4998820126056671,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        146,
+        125,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "baseline",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6062917771",
+      "imageSha256": "29892a462793bdbef1df6de53481a199be86b84189ead724880cdaafa0d79cd0",
+      "repeat": 1,
+      "serialMs": 30.657426001198473,
+      "parallelMs": 18.008992999966722,
+      "mapsExactlyEqual": true,
+      "score": 0.9969396591186523,
+      "peakMargin": 0.5039500296115875,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        146,
+        125,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "baseline",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6063530067",
+      "imageSha256": "ee8ee7fe771fb0bc91824c6fb6ad83d276112bad316114dfdb68b2848734a944",
+      "repeat": 1,
+      "serialMs": 30.98304999912216,
+      "parallelMs": 17.634686000747024,
+      "mapsExactlyEqual": true,
+      "score": 0.9967522621154785,
+      "peakMargin": 0.5041703879833221,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        146,
+        125,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "baseline",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6064142375",
+      "imageSha256": "f966b5831f6caf52f2f81ee311a08fd1c53ab8eb56ea40f69f9c172329088de7",
+      "repeat": 1,
+      "serialMs": 30.961735999881057,
+      "parallelMs": 17.781201999241603,
+      "mapsExactlyEqual": true,
+      "score": 0.9963372945785522,
+      "peakMargin": 0.5032370686531067,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        146,
+        125,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "baseline",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6064934775",
+      "imageSha256": "c0ccf320f0788a951f1ec3ff673f8b1b72852acf816681d6d253a7011345abfc",
+      "repeat": 1,
+      "serialMs": 33.919251000043005,
+      "parallelMs": 17.780015999960597,
+      "mapsExactlyEqual": true,
+      "score": 0.9956194758415222,
+      "peakMargin": 0.5013748407363892,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        146,
+        125,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "baseline",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6065366986",
+      "imageSha256": "e77d84c2a66757159a45d2882ae353aa17a45fcdbbc39ef4ed26561e9b4568cb",
+      "repeat": 1,
+      "serialMs": 30.893365999872913,
+      "parallelMs": 17.24191600078484,
+      "mapsExactlyEqual": true,
+      "score": 0.99607253074646,
+      "peakMargin": 0.5011186003684998,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        146,
+        125,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "moved_large",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6207421997",
+      "imageSha256": "506dce88034012dcacfd1d75dc16aec50824434b5208a1747ee0b7adf29c42e0",
+      "repeat": 1,
+      "serialMs": 34.08420999949158,
+      "parallelMs": 19.121786001051078,
+      "mapsExactlyEqual": true,
+      "score": 0.8923903107643127,
+      "peakMargin": 0.378986656665802,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        89,
+        130,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "moved_large",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6207998225",
+      "imageSha256": "af71159850c61b61173871f2dd7b3a00a7d309fcee5dd51b61a4dfc501910cd3",
+      "repeat": 1,
+      "serialMs": 30.917181000404526,
+      "parallelMs": 18.077640001138207,
+      "mapsExactlyEqual": true,
+      "score": 0.8923812508583069,
+      "peakMargin": 0.3808094263076782,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        89,
+        130,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "moved_large",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6208934713",
+      "imageSha256": "d89218daf0a35f328766d966a8df0687b2185827c827d6eee26e425ec8cfb97f",
+      "repeat": 1,
+      "serialMs": 31.692091000877554,
+      "parallelMs": 18.20254499943985,
+      "mapsExactlyEqual": true,
+      "score": 0.893438458442688,
+      "peakMargin": 0.3800039291381836,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        89,
+        130,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "moved_large",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6209835147",
+      "imageSha256": "a0a285341ed68817e19e0f98728e4c423c2c5f7390c0b1e304a335fbe620d0e5",
+      "repeat": 1,
+      "serialMs": 30.710703000295325,
+      "parallelMs": 17.51987299940083,
+      "mapsExactlyEqual": true,
+      "score": 0.8928994536399841,
+      "peakMargin": 0.37630897760391235,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        89,
+        130,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "moved_large",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6210447453",
+      "imageSha256": "8a2737ed1ce11146abedde96609e1e1f6d0baffa34e2348226cf0e59f0bd2e25",
+      "repeat": 1,
+      "serialMs": 33.05019400067977,
+      "parallelMs": 18.549835000158055,
+      "mapsExactlyEqual": true,
+      "score": 0.8922420740127563,
+      "peakMargin": 0.37927377223968506,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        89,
+        130,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "moved_large",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6211131817",
+      "imageSha256": "c48c272fb92631e49fc2cc23fa8ce9ee6d8f32fd0a414c8fae7fe3f3228a040b",
+      "repeat": 1,
+      "serialMs": 31.26063600029738,
+      "parallelMs": 17.226267998921685,
+      "mapsExactlyEqual": true,
+      "score": 0.8911840319633484,
+      "peakMargin": 0.3799058198928833,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        89,
+        130,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "moved_small",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6332404408",
+      "imageSha256": "b1a3a1aa86112f2f0ad9ed49e5d6b7670924ae92f4dcff5680871db3c0aedd27",
+      "repeat": 1,
+      "serialMs": 32.42833500007691,
+      "parallelMs": 20.124061999013065,
+      "mapsExactlyEqual": true,
+      "score": 0.9385467767715454,
+      "peakMargin": 0.47804123163223267,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        118,
+        131,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "moved_small",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6333088807",
+      "imageSha256": "34f02f4abbe79afebf79d7f5982cefe28ee6647e5cb8d4f773485d2f6c79c06d",
+      "repeat": 1,
+      "serialMs": 30.664462999993702,
+      "parallelMs": 17.01256900014414,
+      "mapsExactlyEqual": true,
+      "score": 0.9379824995994568,
+      "peakMargin": 0.4774712920188904,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        118,
+        131,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "moved_small",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6333953167",
+      "imageSha256": "fa7ab070ab051151a3dc7f39a262ea86e701ed3fe727bdabca21390cfa770e2d",
+      "repeat": 1,
+      "serialMs": 32.73299600004975,
+      "parallelMs": 18.33548700051324,
+      "mapsExactlyEqual": true,
+      "score": 0.9404536485671997,
+      "peakMargin": 0.48988059163093567,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        118,
+        131,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "moved_small",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6334853630",
+      "imageSha256": "ff9062ead73846ba166b439d7d3900d959769616755264417e5c7e352c154f99",
+      "repeat": 1,
+      "serialMs": 31.142251000346732,
+      "parallelMs": 17.835774000559468,
+      "mapsExactlyEqual": true,
+      "score": 0.940597414970398,
+      "peakMargin": 0.48038724064826965,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        118,
+        131,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "moved_small",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6335501962",
+      "imageSha256": "7faed9fd7deecf57d7163fbdb2bbd67888a7395070db73b15fd5738737ab3177",
+      "repeat": 1,
+      "serialMs": 31.979753000996425,
+      "parallelMs": 19.172803000401473,
+      "mapsExactlyEqual": true,
+      "score": 0.9401812553405762,
+      "peakMargin": 0.48292455077171326,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        118,
+        131,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "moved_small",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6336186293",
+      "imageSha256": "10ae03f70f21180257e5a23a53a77d9705329000579455c411c793b3aecd7e60",
+      "repeat": 1,
+      "serialMs": 31.3523200002237,
+      "parallelMs": 18.0623630003538,
+      "mapsExactlyEqual": true,
+      "score": 0.9407950043678284,
+      "peakMargin": 0.48264259099960327,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        118,
+        131,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "partial_occlusion",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6438369351",
+      "imageSha256": "467c51e123d0e9940cac6f8f04203ff57cf1aea4ffb34acc06be6d7a432d84bc",
+      "repeat": 1,
+      "serialMs": 32.135100998857524,
+      "parallelMs": 17.939012999704573,
+      "mapsExactlyEqual": true,
+      "score": 0.7022048830986023,
+      "peakMargin": 0.21429473161697388,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        121,
+        131,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "partial_occlusion",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6439089723",
+      "imageSha256": "4161c3db9194519d604dd127e2c28a55dab8778b1ad33ab07c17eec6e3aa7222",
+      "repeat": 1,
+      "serialMs": 30.555984001694014,
+      "parallelMs": 20.39118600077927,
+      "mapsExactlyEqual": true,
+      "score": 0.696797788143158,
+      "peakMargin": 0.2115427553653717,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        121,
+        131,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "partial_occlusion",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6439918119",
+      "imageSha256": "779009efa830bbef9494fdb191a47559e7fb807ce93079575c5f988083ab8522",
+      "repeat": 1,
+      "serialMs": 32.400114001575275,
+      "parallelMs": 19.9020849995577,
+      "mapsExactlyEqual": true,
+      "score": 0.6948227286338806,
+      "peakMargin": 0.212323397397995,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        121,
+        131,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "partial_occlusion",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6440530432",
+      "imageSha256": "4a91dd8c802d69a6005874549d88fcbf8a62df4f559318e82b7de4f815d1a65a",
+      "repeat": 1,
+      "serialMs": 31.825366999328253,
+      "parallelMs": 17.544280000947765,
+      "mapsExactlyEqual": true,
+      "score": 0.6964106559753418,
+      "peakMargin": 0.2113451361656189,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        121,
+        131,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "partial_occlusion",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6441250796",
+      "imageSha256": "187b25b4a5cd195751761c8e1c4ab7fa90a607fef69af3ccb38f12038288a951",
+      "repeat": 1,
+      "serialMs": 34.57544100092491,
+      "parallelMs": 19.098360999123543,
+      "mapsExactlyEqual": true,
+      "score": 0.6960169672966003,
+      "peakMargin": 0.2124958336353302,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        121,
+        131,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "partial_occlusion",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6442079210",
+      "imageSha256": "6f67e87fca3696e3ba3ecd57e6612415204d72696c1b5e9b55e39268f57470e4",
+      "repeat": 1,
+      "serialMs": 30.546298999979626,
+      "parallelMs": 21.15930099898833,
+      "mapsExactlyEqual": true,
+      "score": 0.6945063471794128,
+      "peakMargin": 0.21222946047782898,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        121,
+        131,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "full_occlusion",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6555463888",
+      "imageSha256": "ba9834b34cfce5b709c58171c89ef75dfa4eb9779e63f10debc033ced2e19771",
+      "repeat": 1,
+      "serialMs": 31.82599600040703,
+      "parallelMs": 17.73805500124581,
+      "mapsExactlyEqual": true,
+      "score": 0.4112657606601715,
+      "peakMargin": 0.05726304650306702,
+      "scale": 1.2,
+      "diagnosticCandidateBox": [
+        173,
+        8,
+        124,
+        104
+      ]
+    },
+    {
+      "phase": "full_occlusion",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6556148220",
+      "imageSha256": "9d6559f1bb51d97daec92b8be13c93445b37ecc441d4707e15f16628a14c0c5f",
+      "repeat": 1,
+      "serialMs": 30.556261999663548,
+      "parallelMs": 18.6343700006546,
+      "mapsExactlyEqual": true,
+      "score": 0.4390137493610382,
+      "peakMargin": 0.06540516018867493,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        181,
+        8,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "full_occlusion",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6556976627",
+      "imageSha256": "783952d95cd5b94047f076d7277def407e84e1cca6844aa8bdac6fb39227c70c",
+      "repeat": 1,
+      "serialMs": 35.53257000021404,
+      "parallelMs": 25.126276999799302,
+      "mapsExactlyEqual": true,
+      "score": 0.4136911928653717,
+      "peakMargin": 0.007668673992156982,
+      "scale": 0.8,
+      "diagnosticCandidateBox": [
+        179,
+        136,
+        82,
+        70
+      ]
+    },
+    {
+      "phase": "full_occlusion",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6557877107",
+      "imageSha256": "1df61140fe8f07eddcc64d65d30c9c4d8f875244e0d2e66e9d4a393d73830009",
+      "repeat": 1,
+      "serialMs": 32.05863899893302,
+      "parallelMs": 21.23029900030815,
+      "mapsExactlyEqual": true,
+      "score": 0.40743568539619446,
+      "peakMargin": 0.005907207727432251,
+      "scale": 0.8,
+      "diagnosticCandidateBox": [
+        193,
+        16,
+        82,
+        70
+      ]
+    },
+    {
+      "phase": "full_occlusion",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6558525430",
+      "imageSha256": "39945c3f9a26eb980b75e0075d9a98214e66fb23f0bb58b038dcf7fd5c25b408",
+      "repeat": 1,
+      "serialMs": 35.264722999272635,
+      "parallelMs": 23.260887999640545,
+      "mapsExactlyEqual": true,
+      "score": 0.3985227346420288,
+      "peakMargin": 0.024516016244888306,
+      "scale": 1.2,
+      "diagnosticCandidateBox": [
+        180,
+        17,
+        124,
+        104
+      ]
+    },
+    {
+      "phase": "full_occlusion",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6559245786",
+      "imageSha256": "f0f356c0b4809f5177740f6e0205045a7aa0be99b916347370fb004c99793993",
+      "repeat": 1,
+      "serialMs": 38.993705000393675,
+      "parallelMs": 24.348662998818327,
+      "mapsExactlyEqual": true,
+      "score": 0.4076026380062103,
+      "peakMargin": 0.039476245641708374,
+      "scale": 1.2,
+      "diagnosticCandidateBox": [
+        180,
+        13,
+        124,
+        104
+      ]
+    },
+    {
+      "phase": "restored",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6646337348",
+      "imageSha256": "bed08dad6341e242eaf3f46ce2537e8e085eb896459a7a04d2190f9b4bd58f5f",
+      "repeat": 1,
+      "serialMs": 32.5437219999003,
+      "parallelMs": 18.476520999684,
+      "mapsExactlyEqual": true,
+      "score": 0.9087638854980469,
+      "peakMargin": 0.40879619121551514,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        154,
+        130,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "restored",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6647057659",
+      "imageSha256": "d32e73de8f841635f60c7472cbac838c9219b5c8f6ced8e241013c4c31e32a5c",
+      "repeat": 1,
+      "serialMs": 34.269021000000066,
+      "parallelMs": 23.320239000895526,
+      "mapsExactlyEqual": true,
+      "score": 0.9099678993225098,
+      "peakMargin": 0.4123118221759796,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        154,
+        130,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "restored",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6647886075",
+      "imageSha256": "a95326ecf1dfd1ab842969a0ff97c4687d8d27cb63ed88c3183e2bb52dea1090",
+      "repeat": 1,
+      "serialMs": 37.24968400092621,
+      "parallelMs": 29.38650800024334,
+      "mapsExactlyEqual": true,
+      "score": 0.9078866839408875,
+      "peakMargin": 0.40918853878974915,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        154,
+        130,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "restored",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6648786539",
+      "imageSha256": "ee10f2ff0cef744546a3f9cd6a435f52a829ca316b615b9b4d9db2251ac68b00",
+      "repeat": 1,
+      "serialMs": 37.424735999593395,
+      "parallelMs": 28.879202000098303,
+      "mapsExactlyEqual": true,
+      "score": 0.9085623025894165,
+      "peakMargin": 0.4121508002281189,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        154,
+        130,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "restored",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6649434836",
+      "imageSha256": "6ff469fbd7912401c7a0ea50385811a42cf2bc995f763eecd2c895c0cd3a313f",
+      "repeat": 1,
+      "serialMs": 42.1062540008279,
+      "parallelMs": 39.9259460009489,
+      "mapsExactlyEqual": true,
+      "score": 0.9088388681411743,
+      "peakMargin": 0.41852498054504395,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        154,
+        130,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "restored",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6650119231",
+      "imageSha256": "2497ff30953936f8f4e299853ef8f6bfbaa2c8d9c8154d374218599aa9bfe0b6",
+      "repeat": 1,
+      "serialMs": 39.73643099925539,
+      "parallelMs": 23.317498998949304,
+      "mapsExactlyEqual": true,
+      "score": 0.9077732563018799,
+      "peakMargin": 0.41032397747039795,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        154,
+        130,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "baseline",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6062305681",
+      "imageSha256": "d04cac94ada202f246809d557be8c6603e0c79145c591f4b2c2971c2f25ee8d9",
+      "repeat": 2,
+      "serialMs": 36.906006000208436,
+      "parallelMs": 25.938798000424867,
+      "mapsExactlyEqual": true,
+      "score": 0.9967177510261536,
+      "peakMargin": 0.4998820126056671,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        146,
+        125,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "baseline",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6062917771",
+      "imageSha256": "29892a462793bdbef1df6de53481a199be86b84189ead724880cdaafa0d79cd0",
+      "repeat": 2,
+      "serialMs": 32.67984900048759,
+      "parallelMs": 19.098175000181072,
+      "mapsExactlyEqual": true,
+      "score": 0.9969396591186523,
+      "peakMargin": 0.5039500296115875,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        146,
+        125,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "baseline",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6063530067",
+      "imageSha256": "ee8ee7fe771fb0bc91824c6fb6ad83d276112bad316114dfdb68b2848734a944",
+      "repeat": 2,
+      "serialMs": 33.426482001232216,
+      "parallelMs": 23.36194199961028,
+      "mapsExactlyEqual": true,
+      "score": 0.9967522621154785,
+      "peakMargin": 0.5041703879833221,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        146,
+        125,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "baseline",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6064142375",
+      "imageSha256": "f966b5831f6caf52f2f81ee311a08fd1c53ab8eb56ea40f69f9c172329088de7",
+      "repeat": 2,
+      "serialMs": 35.85272999953304,
+      "parallelMs": 24.814616999719874,
+      "mapsExactlyEqual": true,
+      "score": 0.9963372945785522,
+      "peakMargin": 0.5032370686531067,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        146,
+        125,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "baseline",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6064934775",
+      "imageSha256": "c0ccf320f0788a951f1ec3ff673f8b1b72852acf816681d6d253a7011345abfc",
+      "repeat": 2,
+      "serialMs": 39.9560379992181,
+      "parallelMs": 26.60024800024985,
+      "mapsExactlyEqual": true,
+      "score": 0.9956194758415222,
+      "peakMargin": 0.5013748407363892,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        146,
+        125,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "baseline",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6065366986",
+      "imageSha256": "e77d84c2a66757159a45d2882ae353aa17a45fcdbbc39ef4ed26561e9b4568cb",
+      "repeat": 2,
+      "serialMs": 37.958262999381986,
+      "parallelMs": 29.23454800111358,
+      "mapsExactlyEqual": true,
+      "score": 0.99607253074646,
+      "peakMargin": 0.5011186003684998,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        146,
+        125,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "moved_large",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6207421997",
+      "imageSha256": "506dce88034012dcacfd1d75dc16aec50824434b5208a1747ee0b7adf29c42e0",
+      "repeat": 2,
+      "serialMs": 34.66268000011041,
+      "parallelMs": 20.572813000399037,
+      "mapsExactlyEqual": true,
+      "score": 0.8923903107643127,
+      "peakMargin": 0.378986656665802,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        89,
+        130,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "moved_large",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6207998225",
+      "imageSha256": "af71159850c61b61173871f2dd7b3a00a7d309fcee5dd51b61a4dfc501910cd3",
+      "repeat": 2,
+      "serialMs": 33.91321299932315,
+      "parallelMs": 29.86733100078709,
+      "mapsExactlyEqual": true,
+      "score": 0.8923812508583069,
+      "peakMargin": 0.3808094263076782,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        89,
+        130,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "moved_large",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6208934713",
+      "imageSha256": "d89218daf0a35f328766d966a8df0687b2185827c827d6eee26e425ec8cfb97f",
+      "repeat": 2,
+      "serialMs": 33.40374300023541,
+      "parallelMs": 27.014850998966722,
+      "mapsExactlyEqual": true,
+      "score": 0.893438458442688,
+      "peakMargin": 0.3800039291381836,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        89,
+        130,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "moved_large",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6209835147",
+      "imageSha256": "a0a285341ed68817e19e0f98728e4c423c2c5f7390c0b1e304a335fbe620d0e5",
+      "repeat": 2,
+      "serialMs": 34.412445000270964,
+      "parallelMs": 30.00290299860353,
+      "mapsExactlyEqual": true,
+      "score": 0.8928994536399841,
+      "peakMargin": 0.37630897760391235,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        89,
+        130,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "moved_large",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6210447453",
+      "imageSha256": "8a2737ed1ce11146abedde96609e1e1f6d0baffa34e2348226cf0e59f0bd2e25",
+      "repeat": 2,
+      "serialMs": 40.69976400023734,
+      "parallelMs": 28.157439999631606,
+      "mapsExactlyEqual": true,
+      "score": 0.8922420740127563,
+      "peakMargin": 0.37927377223968506,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        89,
+        130,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "moved_large",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6211131817",
+      "imageSha256": "c48c272fb92631e49fc2cc23fa8ce9ee6d8f32fd0a414c8fae7fe3f3228a040b",
+      "repeat": 2,
+      "serialMs": 42.65090999979293,
+      "parallelMs": 25.670859000456403,
+      "mapsExactlyEqual": true,
+      "score": 0.8911840319633484,
+      "peakMargin": 0.3799058198928833,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        89,
+        130,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "moved_small",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6332404408",
+      "imageSha256": "b1a3a1aa86112f2f0ad9ed49e5d6b7670924ae92f4dcff5680871db3c0aedd27",
+      "repeat": 2,
+      "serialMs": 34.988155000974075,
+      "parallelMs": 24.906523000026937,
+      "mapsExactlyEqual": true,
+      "score": 0.9385467767715454,
+      "peakMargin": 0.47804123163223267,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        118,
+        131,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "moved_small",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6333088807",
+      "imageSha256": "34f02f4abbe79afebf79d7f5982cefe28ee6647e5cb8d4f773485d2f6c79c06d",
+      "repeat": 2,
+      "serialMs": 35.64940099931846,
+      "parallelMs": 29.91314499922737,
+      "mapsExactlyEqual": true,
+      "score": 0.9379824995994568,
+      "peakMargin": 0.4774712920188904,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        118,
+        131,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "moved_small",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6333953167",
+      "imageSha256": "fa7ab070ab051151a3dc7f39a262ea86e701ed3fe727bdabca21390cfa770e2d",
+      "repeat": 2,
+      "serialMs": 35.17668899985438,
+      "parallelMs": 21.272298999974737,
+      "mapsExactlyEqual": true,
+      "score": 0.9404536485671997,
+      "peakMargin": 0.48988059163093567,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        118,
+        131,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "moved_small",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6334853630",
+      "imageSha256": "ff9062ead73846ba166b439d7d3900d959769616755264417e5c7e352c154f99",
+      "repeat": 2,
+      "serialMs": 36.72673200162535,
+      "parallelMs": 22.95933899949887,
+      "mapsExactlyEqual": true,
+      "score": 0.940597414970398,
+      "peakMargin": 0.48038724064826965,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        118,
+        131,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "moved_small",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6335501962",
+      "imageSha256": "7faed9fd7deecf57d7163fbdb2bbd67888a7395070db73b15fd5738737ab3177",
+      "repeat": 2,
+      "serialMs": 41.64961500100617,
+      "parallelMs": 20.868436000455404,
+      "mapsExactlyEqual": true,
+      "score": 0.9401812553405762,
+      "peakMargin": 0.48292455077171326,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        118,
+        131,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "moved_small",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6336186293",
+      "imageSha256": "10ae03f70f21180257e5a23a53a77d9705329000579455c411c793b3aecd7e60",
+      "repeat": 2,
+      "serialMs": 32.818198000313714,
+      "parallelMs": 19.662516000607866,
+      "mapsExactlyEqual": true,
+      "score": 0.9407950043678284,
+      "peakMargin": 0.48264259099960327,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        118,
+        131,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "partial_occlusion",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6438369351",
+      "imageSha256": "467c51e123d0e9940cac6f8f04203ff57cf1aea4ffb34acc06be6d7a432d84bc",
+      "repeat": 2,
+      "serialMs": 33.08143400136032,
+      "parallelMs": 27.011091999156633,
+      "mapsExactlyEqual": true,
+      "score": 0.7022048830986023,
+      "peakMargin": 0.21429473161697388,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        121,
+        131,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "partial_occlusion",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6439089723",
+      "imageSha256": "4161c3db9194519d604dd127e2c28a55dab8778b1ad33ab07c17eec6e3aa7222",
+      "repeat": 2,
+      "serialMs": 34.70345699861355,
+      "parallelMs": 20.23309799915296,
+      "mapsExactlyEqual": true,
+      "score": 0.696797788143158,
+      "peakMargin": 0.2115427553653717,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        121,
+        131,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "partial_occlusion",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6439918119",
+      "imageSha256": "779009efa830bbef9494fdb191a47559e7fb807ce93079575c5f988083ab8522",
+      "repeat": 2,
+      "serialMs": 38.3968090009148,
+      "parallelMs": 28.96653499919921,
+      "mapsExactlyEqual": true,
+      "score": 0.6948227286338806,
+      "peakMargin": 0.212323397397995,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        121,
+        131,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "partial_occlusion",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6440530432",
+      "imageSha256": "4a91dd8c802d69a6005874549d88fcbf8a62df4f559318e82b7de4f815d1a65a",
+      "repeat": 2,
+      "serialMs": 33.53846199934196,
+      "parallelMs": 19.192859001122997,
+      "mapsExactlyEqual": true,
+      "score": 0.6964106559753418,
+      "peakMargin": 0.2113451361656189,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        121,
+        131,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "partial_occlusion",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6441250796",
+      "imageSha256": "187b25b4a5cd195751761c8e1c4ab7fa90a607fef69af3ccb38f12038288a951",
+      "repeat": 2,
+      "serialMs": 36.4101640006993,
+      "parallelMs": 26.582804001009208,
+      "mapsExactlyEqual": true,
+      "score": 0.6960169672966003,
+      "peakMargin": 0.2124958336353302,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        121,
+        131,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "partial_occlusion",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6442079210",
+      "imageSha256": "6f67e87fca3696e3ba3ecd57e6612415204d72696c1b5e9b55e39268f57470e4",
+      "repeat": 2,
+      "serialMs": 40.63669000061054,
+      "parallelMs": 29.685908999454114,
+      "mapsExactlyEqual": true,
+      "score": 0.6945063471794128,
+      "peakMargin": 0.21222946047782898,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        121,
+        131,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "full_occlusion",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6555463888",
+      "imageSha256": "ba9834b34cfce5b709c58171c89ef75dfa4eb9779e63f10debc033ced2e19771",
+      "repeat": 2,
+      "serialMs": 34.6967349996703,
+      "parallelMs": 25.294884999311762,
+      "mapsExactlyEqual": true,
+      "score": 0.4112657606601715,
+      "peakMargin": 0.05726304650306702,
+      "scale": 1.2,
+      "diagnosticCandidateBox": [
+        173,
+        8,
+        124,
+        104
+      ]
+    },
+    {
+      "phase": "full_occlusion",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6556148220",
+      "imageSha256": "9d6559f1bb51d97daec92b8be13c93445b37ecc441d4707e15f16628a14c0c5f",
+      "repeat": 2,
+      "serialMs": 36.880432000543806,
+      "parallelMs": 21.3434449997294,
+      "mapsExactlyEqual": true,
+      "score": 0.4390137493610382,
+      "peakMargin": 0.06540516018867493,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        181,
+        8,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "full_occlusion",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6556976627",
+      "imageSha256": "783952d95cd5b94047f076d7277def407e84e1cca6844aa8bdac6fb39227c70c",
+      "repeat": 2,
+      "serialMs": 39.245662999746855,
+      "parallelMs": 24.90304100138019,
+      "mapsExactlyEqual": true,
+      "score": 0.4136911928653717,
+      "peakMargin": 0.007668673992156982,
+      "scale": 0.8,
+      "diagnosticCandidateBox": [
+        179,
+        136,
+        82,
+        70
+      ]
+    },
+    {
+      "phase": "full_occlusion",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6557877107",
+      "imageSha256": "1df61140fe8f07eddcc64d65d30c9c4d8f875244e0d2e66e9d4a393d73830009",
+      "repeat": 2,
+      "serialMs": 43.149955999979284,
+      "parallelMs": 22.69893700031389,
+      "mapsExactlyEqual": true,
+      "score": 0.40743568539619446,
+      "peakMargin": 0.005907207727432251,
+      "scale": 0.8,
+      "diagnosticCandidateBox": [
+        193,
+        16,
+        82,
+        70
+      ]
+    },
+    {
+      "phase": "full_occlusion",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6558525430",
+      "imageSha256": "39945c3f9a26eb980b75e0075d9a98214e66fb23f0bb58b038dcf7fd5c25b408",
+      "repeat": 2,
+      "serialMs": 36.156225000013364,
+      "parallelMs": 24.6540649986855,
+      "mapsExactlyEqual": true,
+      "score": 0.3985227346420288,
+      "peakMargin": 0.024516016244888306,
+      "scale": 1.2,
+      "diagnosticCandidateBox": [
+        180,
+        17,
+        124,
+        104
+      ]
+    },
+    {
+      "phase": "full_occlusion",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6559245786",
+      "imageSha256": "f0f356c0b4809f5177740f6e0205045a7aa0be99b916347370fb004c99793993",
+      "repeat": 2,
+      "serialMs": 35.5541249991802,
+      "parallelMs": 21.928488999037654,
+      "mapsExactlyEqual": true,
+      "score": 0.4076026380062103,
+      "peakMargin": 0.039476245641708374,
+      "scale": 1.2,
+      "diagnosticCandidateBox": [
+        180,
+        13,
+        124,
+        104
+      ]
+    },
+    {
+      "phase": "restored",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6646337348",
+      "imageSha256": "bed08dad6341e242eaf3f46ce2537e8e085eb896459a7a04d2190f9b4bd58f5f",
+      "repeat": 2,
+      "serialMs": 35.3050190005888,
+      "parallelMs": 29.71462999994401,
+      "mapsExactlyEqual": true,
+      "score": 0.9087638854980469,
+      "peakMargin": 0.40879619121551514,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        154,
+        130,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "restored",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6647057659",
+      "imageSha256": "d32e73de8f841635f60c7472cbac838c9219b5c8f6ced8e241013c4c31e32a5c",
+      "repeat": 2,
+      "serialMs": 32.82010499970056,
+      "parallelMs": 32.351041001675185,
+      "mapsExactlyEqual": true,
+      "score": 0.9099678993225098,
+      "peakMargin": 0.4123118221759796,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        154,
+        130,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "restored",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6647886075",
+      "imageSha256": "a95326ecf1dfd1ab842969a0ff97c4687d8d27cb63ed88c3183e2bb52dea1090",
+      "repeat": 2,
+      "serialMs": 34.239743999933125,
+      "parallelMs": 24.378440000873525,
+      "mapsExactlyEqual": true,
+      "score": 0.9078866839408875,
+      "peakMargin": 0.40918853878974915,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        154,
+        130,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "restored",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6648786539",
+      "imageSha256": "ee10f2ff0cef744546a3f9cd6a435f52a829ca316b615b9b4d9db2251ac68b00",
+      "repeat": 2,
+      "serialMs": 31.593482000971562,
+      "parallelMs": 18.93354899948463,
+      "mapsExactlyEqual": true,
+      "score": 0.9085623025894165,
+      "peakMargin": 0.4121508002281189,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        154,
+        130,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "restored",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6649434836",
+      "imageSha256": "6ff469fbd7912401c7a0ea50385811a42cf2bc995f763eecd2c895c0cd3a313f",
+      "repeat": 2,
+      "serialMs": 34.77432600084285,
+      "parallelMs": 38.581102000534884,
+      "mapsExactlyEqual": true,
+      "score": 0.9088388681411743,
+      "peakMargin": 0.41852498054504395,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        154,
+        130,
+        103,
+        87
+      ]
+    },
+    {
+      "phase": "restored",
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6650119231",
+      "imageSha256": "2497ff30953936f8f4e299853ef8f6bfbaa2c8d9c8154d374218599aa9bfe0b6",
+      "repeat": 2,
+      "serialMs": 37.200517999735894,
+      "parallelMs": 24.978761000966188,
+      "mapsExactlyEqual": true,
+      "score": 0.9077732563018799,
+      "peakMargin": 0.41032397747039795,
+      "scale": 1.0,
+      "diagnosticCandidateBox": [
+        154,
+        130,
+        103,
+        87
+      ]
+    }
+  ],
+  "limits": [
+    "disk_io_and_anchor_initialization_excluded",
+    "not_live_freshness_or_optical_accuracy",
+    "same_scale_search_and_competitor_checks_no_model_change"
+  ]
+}
