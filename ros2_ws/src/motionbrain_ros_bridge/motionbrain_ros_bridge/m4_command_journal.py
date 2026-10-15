@@ -13,7 +13,7 @@ import sqlite3
 import threading
 from typing import Any
 
-from motionbrain_ros_bridge.m4_write_contract import M4ContractError
+from .m4_write_contract import M4ContractError
 
 
 class M4CommandJournal:
@@ -103,6 +103,11 @@ class M4CommandJournal:
             self.connection.execute(
                 "UPDATE commands SET phase = ?, result_json = ? WHERE command_id = ?",
                 (phase, json.dumps(result, sort_keys=True, allow_nan=False), command_id))
+
+    def records(self) -> list[dict]:
+        """Snapshot for an executor to reject a journal from another protocol."""
+        with self.lock:
+            return [self._decode(row) for row in self.connection.execute("SELECT * FROM commands").fetchall()]
 
     def interrupted(self) -> list[dict]:
         with self.lock:

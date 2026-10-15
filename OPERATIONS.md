@@ -57,7 +57,24 @@ new motion but never the existing emergency stop/disarm path. Do not reboot or
 clear records automatically to bypass unknown/full states.
 
 See the [API, verification and physical checklist](docs/evidence/2026-10-14-bounded-actions-software.md).
-No deployment or physical validation was performed; the robot and Pi are unavailable.
+Hardware activation and physical validation of this API remain pending.
+
+`learning.action_execution.BoundedActionExecutor` adds a separate persistent host
+journal for this API. Each proposal requires the exact confirmed request, explicit
+axis/output limits, and a final caller-supplied freshness/persistence guard after
+preflight and durable reservation. Keep one executor per controller and a journal
+separate from legacy M4. Repeated IDs never resend; interrupted dispatch or ambiguous
+results block subsequent commands. A single best-effort targeted cancel does not
+clear unknown outcomes. `request_stop()` signals cancellation but cannot interrupt
+blocking network I/O or replace the controller's emergency stop.
+
+`learning.action_port.BoundedActionHTTP` is disabled by default and has no live CLI.
+Credentials are prepared in memory before the final guard; receipts contain no
+credentials. Terminal receipts require matching controller records and contiguous
+output-off traces; they do not prove physical arrival or training eligibility.
+`JournaledSyntheticCaptureAdapter` exercises this path only with a synthetic port.
+Physical observation/settling integration remains unavailable; the 100 ms frame,
+15 s anchor and 250 ms persistence gates still apply.
 
 ## Source observations and transition records
 
@@ -80,7 +97,7 @@ The [dry-run collector](docs/evidence/2026-10-14-dry-run-collector-software.md) 
 JPEGs, hashes, raw observations, intent, and partial/error records under ignored
 `datasets/action_transitions/dry_run/`. Use `--audit-run PATH` for read-only integrity
 checks; this never resumes or retries actions. Synthetic records remain ineligible
-for physical training. There is no device adapter or physical execution switch.
+for physical training. This collector has no physical execution switch.
 Before dispatch, the runner checks source age plus calibrated clock uncertainty and
 elapsed monotonic time, both before and after durable intent. Exceeding the limit
 results in zero execute calls. If intent was already stored, the audit conservatively
