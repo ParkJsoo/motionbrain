@@ -12,7 +12,7 @@ import numpy as np
 from learning.artifacts import ArtifactStore, read_events, verify_artifacts
 from learning.dataset import build_manifest
 from learning.dry_run import VirtualClock
-from learning.fast_observation import AnchoredRoiMeasurement, MeasurementError
+from learning.fast_observation import AnchoredRoiMeasurement, MeasurementError, _distant_peak
 from learning.fast_probe import run_fast_probe
 from test_device_collection_probe import FakeDevice
 
@@ -150,6 +150,17 @@ class MeasurementTest(unittest.TestCase):
         body = cv2.imencode(".jpg", np.zeros((80, 80), np.uint8))[1].tobytes()
         self.rejected(self.measure(body), "frame_dimensions_changed")
 
+    def test_distant_peak_matches_full_grid_at_edges_and_odd_sizes(self):
+        rng = np.random.default_rng(17)
+        for _ in range(200):
+            scores = rng.uniform(-1, 1, (int(rng.integers(1, 70)), int(rng.integers(1, 90)))).astype(np.float32)
+            cx, cy = rng.integers(-20, 130, 2) / 2
+            cw, ch, w, h = [int(n) for n in rng.integers(1, 120, 4)]
+            yy, xx = np.indices(scores.shape)
+            mask = (abs(xx+cw/2-cx)>w/2) | (abs(yy+ch/2-cy)>h/2)
+            expected = float(scores[mask].max()) if mask.any() else -1.0
+            self.assertEqual(_distant_peak(scores,cx,cy,cw,ch,w,h), expected)
+
 
 class FastProbeTest(unittest.TestCase):
     def setUp(self):
@@ -259,3 +270,64 @@ class FastProbeTest(unittest.TestCase):
         self.assertEqual(report["status"], "failed")
         self.assertEqual(report["completedSamples"], 0)
         self.assertNotIn("measured", [event["kind"] for event in read_events(self.root)[0]])
+
+    def test_slow_persistence_not_counted_as_fresh_at_record_time(self):
+        original = ArtifactStore.save_image
+        def slow(store, index, phase, body, digest):
+            if index != "anchor":
+                self.transport.clock.advance(.12)
+            return original(store, index, phase, body, digest)
+        with patch.object(ArtifactStore, "save_image", slow):
+            report = self.run_probe()
+        self.assertEqual(report["acceptedMeasurements"], 2)
+        measured = [e for e in read_events(self.root)[0] if e["kind"] == "measured"]
+        for event in measured:
+            self.assertFalse(event["payload"]["withinAgePolicyAtPersistence"])
+            self.assertGreater(event["payload"]["reportedAgeAtPersistenceMs"], 100)
+            self.assertFalse(event["payload"]["controlEligible"])
+
+    def test_camera_receipt_io_deferred_and_flushed_before_next_capture(self):
+        original_write = ArtifactStore.write_json
+        original_fault = self.transport.fault
+        receipts_saved = []
+        def slow_receipt(store, path, data):
+            if data.get("device") == "camera" and data.get("path") == "/capture":
+                self.transport.clock.advance(.12)
+                receipts_saved.append(path)
+            return original_write(store, path, data)
+        def check_previous(device, path, receipt, body):
+            if path == "/capture":
+                self.assertEqual(len(receipts_saved), self.capture_count)
+                if self.capture_count:
+                    self.assertTrue((self.root / f"images/{self.capture_count-1}/source.jpg").is_file())
+            return original_fault(device,path,receipt,body)
+        self.transport.fault = check_previous
+        with patch.object(ArtifactStore, "write_json", slow_receipt):
+            report = self.run_probe()
+        self.assertEqual(report["status"], "completed")
+        self.assertEqual(report["acceptedMeasurements"], 2)
+        self.assertEqual(len(receipts_saved), 2)
+
+    def test_interrupt_during_compute_keeps_received_original_and_attempt(self):
+        with patch.object(AnchoredRoiMeasurement, "measure", side_effect=KeyboardInterrupt):
+            report = self.run_probe()
+        self.assertEqual(report["status"], "interrupted")
+        self.assertEqual(report["completedSamples"], 0)
+        self.assertEqual((self.root / "images/0/source.jpg").read_bytes(), self.body)
+        events, errors = read_events(self.root)
+        self.assertFalse(errors)
+        self.assertEqual(sum(e["kind"] == "capture_requested" for e in events), 1)
+        self.assertEqual(sum(e["kind"] == "measured" for e in events), 0)
+        self.assertFalse(verify_artifacts(self.root, report["artifacts"]))
+
+    def test_deferred_receipt_disk_failure_prevents_next_capture(self):
+        original = ArtifactStore.write_json
+        def fail(store, path, data):
+            if data.get("device") == "camera":
+                raise OSError("receipt disk full fixture")
+            return original(store, path, data)
+        with patch.object(ArtifactStore, "write_json", fail):
+            report = self.run_probe()
+        self.assertEqual(report["status"], "failed")
+        self.assertEqual(report["completedSamples"], 0)
+        self.assertEqual(self.capture_count, 1)

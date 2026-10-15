@@ -21,6 +21,7 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
     artifacts, results = [], []
     adapter = DeviceReadAdapter(transport)
     original_recorder, receipts = transport.recorder, 0
+    camera_receipts = None
 
     def save_json(path, value):
         ref = store.write_json(path, value)
@@ -34,6 +35,11 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
 
     def record(receipt):
         nonlocal receipts
+        if camera_receipts is not None:
+            # Only the single synchronous camera GET is deferred. No background
+            # queue, dropping, or next capture before its evidence is persisted.
+            camera_receipts.append(receipt)
+            return
         receipts += 1
         save_json(f"raw/{receipts:04d}.json", receipt)
         if original_recorder:
@@ -46,6 +52,7 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
     save_json("session.json", {"schemaVersion": "motionbrain.fast_probe_session.v1",
                               "policy": AnchoredRoiMeasurement.POLICY, "requestedSamples": samples,
                               "interval": interval, "hostClockId": transport.host_clock_id,
+                              "capturePersistence": "single_frame_after_measurement",
                               "opencvVersion": cv2.__version__, "numpyVersion": np.__version__,
                               "opencvThreads": cv2.getNumThreads(),
                               "sourceSha256": {p: hashlib.sha256((source_root / p).read_bytes()).hexdigest()
@@ -71,16 +78,38 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
         for index in range(samples):
             if not _idle(adapter.status()):
                 raise DeviceReadError("controller_not_idle")
-            receipt, body = transport.get("camera", "/capture")
-            if receipt.get("status") != 200:
-                raise DeviceReadError("camera_capture_failed")
-            ref = save_image(index, "source", body, receipt["sha256"])
-            source = {**parse_capture_headers(receipt["headers"]), "imageSha256": receipt["sha256"]}
-            result = tracker.measure(body, source, request_started=receipt["requestStartedMonotonic"],
-                                     received=receipt["receivedMonotonic"], host_clock_id=transport.host_clock_id)
+            store.append("capture_requested", str(index), {})
+            receipt, body = None, None
+            camera_receipts = []
+            try:
+                receipt, body = transport.get("camera", "/capture")
+                if receipt.get("status") != 200:
+                    raise DeviceReadError("camera_capture_failed")
+                source = {**parse_capture_headers(receipt["headers"]), "imageSha256": receipt["sha256"]}
+                result = tracker.measure(body, source, request_started=receipt["requestStartedMonotonic"],
+                                         received=receipt["receivedMonotonic"], host_clock_id=transport.host_clock_id)
+            finally:
+                pending, camera_receipts = camera_receipts, None
+                for pending_receipt in pending:
+                    record(pending_receipt)
+                if receipt is not None and receipt.get("status") == 200 and body is not None:
+                    ref = save_image(index, "source", body, receipt["sha256"])
             result.update(image=ref, source=source)
             result_ref = save_json(f"measurements/{index:04d}.json", result)
-            store.append("measured", str(index), {"measurement": result_ref})
+            persisted = transport.clock.monotonic()
+            reported_age = source.get("reportedSourceAgeMs")
+            age_at_persistence = (reported_age + (persisted-receipt["requestStartedMonotonic"])*1000
+                                  if reported_age is not None else None)
+            # Acceptance refers to calculation time, never to later consumption.
+            # Retain a separate conservative age after durable image/result I/O.
+            persistence = {"measurement": result_ref, "persistedMonotonic": persisted,
+                           "hostClockId": transport.host_clock_id,
+                           "reportedAgeAtPersistenceMs": age_at_persistence,
+                           "withinAgePolicyAtPersistence": age_at_persistence is not None
+                           and 0 <= age_at_persistence <= tracker.POLICY["maxSourceAgeMs"],
+                           "controlEligible": False}
+            save_json(f"persistence/{index:04d}.json", persistence)
+            store.append("measured", str(index), persistence)
             results.append(result)
             if index + 1 < samples:
                 sleep(interval)

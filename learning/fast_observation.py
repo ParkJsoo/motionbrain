@@ -48,6 +48,17 @@ def _decode(body, digest):
     return frame
 
 
+def _distant_peak(scores, center_x, center_y, candidate_width, candidate_height, width, height):
+    """Exact complement of the near-peak rectangle, without per-pixel grids."""
+    rows, cols = scores.shape
+    x0 = max(0, min(cols, math.ceil(center_x-candidate_width/2-width/2)))
+    x1 = max(0, min(cols, math.floor(center_x-candidate_width/2+width/2)+1))
+    y0 = max(0, min(rows, math.ceil(center_y-candidate_height/2-height/2)))
+    y1 = max(0, min(rows, math.floor(center_y-candidate_height/2+height/2)+1))
+    regions = (scores[:y0], scores[y1:], scores[y0:y1, :x0], scores[y0:y1, x1:])
+    return max((float(cv2.minMaxLoc(region)[1]) for region in regions if region.size), default=-1.0)
+
+
 class AnchoredRoiMeasurement:
     """Fixed anchor, bounded lifetime, no adaptation/reacquisition/coordinate hold.
 
@@ -85,6 +96,11 @@ class AnchoredRoiMeasurement:
                        "label": observation.get("label"), "classId": observation.get("classId")}
         self.shape, self.box, self.last_us, self.clock = frame.shape, (x, y, w, h), self.anchor_us, clock
         self.invalidated = False
+        self.templates = []
+        for scale in self.POLICY["scaleProbes"]:
+            tw, th = round(w*scale), round(h*scale)
+            if tw <= width and th <= height:
+                self.templates.append((scale, cv2.resize(self.template, (tw, th), interpolation=cv2.INTER_LINEAR)))
 
     def measure(self, body, source, *, request_started, received, host_clock_id):
         started = self.clock.monotonic()
@@ -120,11 +136,8 @@ class AnchoredRoiMeasurement:
                 raise MeasurementError("frame_dimensions_changed")
             x, y, w, h = self.box
             candidates = []
-            for scale in self.POLICY["scaleProbes"]:
-                tw, th = round(w * scale), round(h * scale)
-                if tw > frame.shape[1] or th > frame.shape[0]:
-                    continue
-                template = cv2.resize(self.template, (tw, th), interpolation=cv2.INTER_LINEAR)
+            for scale, template in self.templates:
+                th, tw = template.shape
                 scores = cv2.matchTemplate(frame, template, cv2.TM_CCOEFF_NORMED)
                 _, score, _, (px, py) = cv2.minMaxLoc(scores)
                 candidates.append((float(score), scale, px, py, tw, th, scores))
@@ -134,11 +147,7 @@ class AnchoredRoiMeasurement:
             # Nearby correlation peaks describe the same object, not another candidate.
             second = -1.0
             for _, _, _, _, cw, ch, scores in candidates:
-                yy, xx = np.indices(scores.shape)
-                distant = ((abs(xx + cw / 2 - (px + tw / 2)) > w / 2)
-                           | (abs(yy + ch / 2 - (py + th / 2)) > h / 2))
-                if distant.any():
-                    second = max(second, float(scores[distant].max()))
+                second = max(second, _distant_peak(scores, px+tw/2, py+th/2, cw, ch, w, h))
             result.update(score=score, peakMargin=score-second, bestScaleProbe=scale)
             if score < self.POLICY["minScore"]:
                 raise MeasurementError("appearance_mismatch_or_target_lost")
