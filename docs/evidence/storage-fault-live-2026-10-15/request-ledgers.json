@@ -1,0 +1,377 @@
+{
+  "image_delay": {
+    "hostClockId": "1541906d332d4f619fa73a55c141efc0",
+    "injections": [
+      {
+        "mode": "image_delay",
+        "returnedMonotonic": 24181.773922805,
+        "startedMonotonic": 24181.473748021
+      }
+    ],
+    "probeReturnedMonotonic": 24182.316717516,
+    "settledMonotonic": 24182.816853524,
+    "imageWorkersAlive": [],
+    "calls": [
+      {
+        "device": "controller",
+        "path": "/actions",
+        "query": null,
+        "attemptedMonotonic": 24180.343573603,
+        "returnedMonotonic": 24180.657226417,
+        "method": "GET"
+      },
+      {
+        "device": "controller",
+        "path": "/action_outputs",
+        "query": null,
+        "attemptedMonotonic": 24180.65763415,
+        "returnedMonotonic": 24180.735683967,
+        "method": "GET"
+      },
+      {
+        "device": "controller",
+        "path": "/status",
+        "query": null,
+        "attemptedMonotonic": 24180.735760206,
+        "returnedMonotonic": 24180.809226792,
+        "method": "GET"
+      },
+      {
+        "device": "camera",
+        "path": "/status",
+        "query": null,
+        "attemptedMonotonic": 24180.809280939,
+        "returnedMonotonic": 24180.850212266,
+        "method": "GET"
+      },
+      {
+        "device": "perception",
+        "path": "/api/detection",
+        "query": null,
+        "attemptedMonotonic": 24180.850236914,
+        "returnedMonotonic": 24180.869642319,
+        "method": "GET"
+      },
+      {
+        "device": "perception",
+        "path": "/api/observation",
+        "query": {
+          "frameId": "5bfe5283286bc8599cae44c1612b6869:4806140586"
+        },
+        "attemptedMonotonic": 24180.870294067,
+        "returnedMonotonic": 24180.888250554,
+        "method": "GET"
+      },
+      {
+        "device": "perception",
+        "path": "/api/vision_frame",
+        "query": {
+          "frameId": "5bfe5283286bc8599cae44c1612b6869:4806140586"
+        },
+        "attemptedMonotonic": 24180.888309238,
+        "returnedMonotonic": 24180.902734327,
+        "method": "GET"
+      },
+      {
+        "device": "controller",
+        "path": "/status",
+        "query": null,
+        "attemptedMonotonic": 24180.940738374,
+        "returnedMonotonic": 24181.2759165,
+        "method": "GET"
+      },
+      {
+        "device": "camera",
+        "path": "/status",
+        "query": null,
+        "attemptedMonotonic": 24181.275982666,
+        "returnedMonotonic": 24181.321682851,
+        "method": "GET"
+      },
+      {
+        "device": "camera",
+        "path": "/capture",
+        "query": {
+          "fresh": "1"
+        },
+        "attemptedMonotonic": 24181.344460565,
+        "returnedMonotonic": 24181.434821287,
+        "method": "GET"
+      },
+      {
+        "device": "controller",
+        "path": "/actions",
+        "query": null,
+        "attemptedMonotonic": 24181.854508779,
+        "returnedMonotonic": 24182.185157489,
+        "method": "GET"
+      },
+      {
+        "device": "controller",
+        "path": "/action_outputs",
+        "query": null,
+        "attemptedMonotonic": 24182.185208174,
+        "returnedMonotonic": 24182.228726547,
+        "method": "GET"
+      },
+      {
+        "device": "controller",
+        "path": "/status",
+        "query": null,
+        "attemptedMonotonic": 24182.228771953,
+        "returnedMonotonic": 24182.278319142,
+        "method": "GET"
+      }
+    ]
+  },
+  "image_failure": {
+    "hostClockId": "d837392e3bf040f28deeb938e01cc1d9",
+    "injections": [
+      {
+        "mode": "image_failure",
+        "raisedMonotonic": 24184.857219729,
+        "startedMonotonic": 24184.857214637
+      }
+    ],
+    "probeReturnedMonotonic": 24185.082591177,
+    "settledMonotonic": 24185.582720098,
+    "imageWorkersAlive": [],
+    "calls": [
+      {
+        "device": "controller",
+        "path": "/actions",
+        "query": null,
+        "attemptedMonotonic": 24183.769781684,
+        "returnedMonotonic": 24184.031664817,
+        "method": "GET"
+      },
+      {
+        "device": "controller",
+        "path": "/action_outputs",
+        "query": null,
+        "attemptedMonotonic": 24184.031698409,
+        "returnedMonotonic": 24184.079358633,
+        "method": "GET"
+      },
+      {
+        "device": "controller",
+        "path": "/status",
+        "query": null,
+        "attemptedMonotonic": 24184.079396576,
+        "returnedMonotonic": 24184.156237324,
+        "method": "GET"
+      },
+      {
+        "device": "camera",
+        "path": "/status",
+        "query": null,
+        "attemptedMonotonic": 24184.15638721,
+        "returnedMonotonic": 24184.203440204,
+        "method": "GET"
+      },
+      {
+        "device": "perception",
+        "path": "/api/detection",
+        "query": null,
+        "attemptedMonotonic": 24184.203460111,
+        "returnedMonotonic": 24184.222574188,
+        "method": "GET"
+      },
+      {
+        "device": "perception",
+        "path": "/api/observation",
+        "query": {
+          "frameId": "5bfe5283286bc8599cae44c1612b6869:4806140586"
+        },
+        "attemptedMonotonic": 24184.222615132,
+        "returnedMonotonic": 24184.246348903,
+        "method": "GET"
+      },
+      {
+        "device": "perception",
+        "path": "/api/vision_frame",
+        "query": {
+          "frameId": "5bfe5283286bc8599cae44c1612b6869:4806140586"
+        },
+        "attemptedMonotonic": 24184.24638855,
+        "returnedMonotonic": 24184.261967489,
+        "method": "GET"
+      },
+      {
+        "device": "controller",
+        "path": "/status",
+        "query": null,
+        "attemptedMonotonic": 24184.297486748,
+        "returnedMonotonic": 24184.651549442,
+        "method": "GET"
+      },
+      {
+        "device": "camera",
+        "path": "/status",
+        "query": null,
+        "attemptedMonotonic": 24184.651598996,
+        "returnedMonotonic": 24184.694637915,
+        "method": "GET"
+      },
+      {
+        "device": "camera",
+        "path": "/capture",
+        "query": {
+          "fresh": "1"
+        },
+        "attemptedMonotonic": 24184.718732606,
+        "returnedMonotonic": 24184.827183888,
+        "method": "GET"
+      },
+      {
+        "device": "controller",
+        "path": "/actions",
+        "query": null,
+        "attemptedMonotonic": 24184.868822129,
+        "returnedMonotonic": 24184.94960236,
+        "method": "GET"
+      },
+      {
+        "device": "controller",
+        "path": "/action_outputs",
+        "query": null,
+        "attemptedMonotonic": 24184.949652526,
+        "returnedMonotonic": 24184.994511967,
+        "method": "GET"
+      },
+      {
+        "device": "controller",
+        "path": "/status",
+        "query": null,
+        "attemptedMonotonic": 24184.994569318,
+        "returnedMonotonic": 24185.051520021,
+        "method": "GET"
+      }
+    ]
+  },
+  "receipt_failure": {
+    "hostClockId": "af55365081ee44b99cb983b4a4e18ac9",
+    "injections": [
+      {
+        "mode": "receipt_failure",
+        "raisedMonotonic": 24187.294602087,
+        "startedMonotonic": 24187.294595994
+      }
+    ],
+    "probeReturnedMonotonic": 24187.525239144,
+    "settledMonotonic": 24188.02537031,
+    "imageWorkersAlive": [],
+    "calls": [
+      {
+        "device": "controller",
+        "path": "/actions",
+        "query": null,
+        "attemptedMonotonic": 24186.222947022,
+        "returnedMonotonic": 24186.492849825,
+        "method": "GET"
+      },
+      {
+        "device": "controller",
+        "path": "/action_outputs",
+        "query": null,
+        "attemptedMonotonic": 24186.492900362,
+        "returnedMonotonic": 24186.53056886,
+        "method": "GET"
+      },
+      {
+        "device": "controller",
+        "path": "/status",
+        "query": null,
+        "attemptedMonotonic": 24186.530624341,
+        "returnedMonotonic": 24186.623664979,
+        "method": "GET"
+      },
+      {
+        "device": "camera",
+        "path": "/status",
+        "query": null,
+        "attemptedMonotonic": 24186.623718441,
+        "returnedMonotonic": 24186.680852751,
+        "method": "GET"
+      },
+      {
+        "device": "perception",
+        "path": "/api/detection",
+        "query": null,
+        "attemptedMonotonic": 24186.680868029,
+        "returnedMonotonic": 24186.695882996,
+        "method": "GET"
+      },
+      {
+        "device": "perception",
+        "path": "/api/observation",
+        "query": {
+          "frameId": "5bfe5283286bc8599cae44c1612b6869:4811003035"
+        },
+        "attemptedMonotonic": 24186.695917995,
+        "returnedMonotonic": 24186.71144399,
+        "method": "GET"
+      },
+      {
+        "device": "perception",
+        "path": "/api/vision_frame",
+        "query": {
+          "frameId": "5bfe5283286bc8599cae44c1612b6869:4811003035"
+        },
+        "attemptedMonotonic": 24186.711473341,
+        "returnedMonotonic": 24186.729340719,
+        "method": "GET"
+      },
+      {
+        "device": "controller",
+        "path": "/status",
+        "query": null,
+        "attemptedMonotonic": 24186.765198992,
+        "returnedMonotonic": 24187.117642089,
+        "method": "GET"
+      },
+      {
+        "device": "camera",
+        "path": "/status",
+        "query": null,
+        "attemptedMonotonic": 24187.117703569,
+        "returnedMonotonic": 24187.154656099,
+        "method": "GET"
+      },
+      {
+        "device": "camera",
+        "path": "/capture",
+        "query": {
+          "fresh": "1"
+        },
+        "attemptedMonotonic": 24187.179598923,
+        "returnedMonotonic": 24187.272196254,
+        "method": "GET"
+      },
+      {
+        "device": "controller",
+        "path": "/actions",
+        "query": null,
+        "attemptedMonotonic": 24187.305709347,
+        "returnedMonotonic": 24187.405069833,
+        "method": "GET"
+      },
+      {
+        "device": "controller",
+        "path": "/action_outputs",
+        "query": null,
+        "attemptedMonotonic": 24187.405128795,
+        "returnedMonotonic": 24187.446120863,
+        "method": "GET"
+      },
+      {
+        "device": "controller",
+        "path": "/status",
+        "query": null,
+        "attemptedMonotonic": 24187.446158029,
+        "returnedMonotonic": 24187.495589091,
+        "method": "GET"
+      }
+    ]
+  }
+}
