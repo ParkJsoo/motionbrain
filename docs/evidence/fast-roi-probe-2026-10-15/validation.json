@@ -1,0 +1,39 @@
+{
+  "runId": "933da6eb711548b4b2adaa8ec6118db9",
+  "artifactCount": 60,
+  "imageCount": 13,
+  "eventCount": 14,
+  "artifactErrors": [],
+  "terminalRecordVerified": true,
+  "sourceHashesMatchLocal": true,
+  "fullTestCount": 424,
+  "fullTestDurationSeconds": 12.319,
+  "testLogSha256": "c67d8da70b9f968288a8f99654ca4bd4ad0276b62e515bd8f6d5916f3fe452a6",
+  "statistics": {
+    "reportedSourceAgeMs": {
+      "min": 37.193,
+      "median": 48.2795,
+      "max": 72.77
+    },
+    "httpIntervalMs": {
+      "min": 29.766577999907895,
+      "median": 36.61213050054357,
+      "max": 62.88836400017317
+    },
+    "preProcessingElapsedMs": {
+      "min": 26.61443800025154,
+      "median": 31.09763549946365,
+      "max": 37.45626700037974
+    },
+    "processingMs": {
+      "min": 44.618395000725286,
+      "median": 45.61487850060075,
+      "max": 58.35146400022495
+    },
+    "reportedAgePlusElapsedMs": {
+      "min": 146.23868799930008,
+      "median": 169.09311700081378,
+      "max": 190.81404100017073
+    }
+  }
+}
