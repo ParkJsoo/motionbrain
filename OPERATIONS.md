@@ -5,20 +5,18 @@
 This is the operator-oriented view of MotionBrain on Raspberry Pi. It is useful
 for system-quality, Linux operations, and troubleshooting discussions.
 
-## Current software / physical boundary (2026-10-14)
+## Software and physical boundary
 
-Implementation baseline: `73132e9`. The last code verification passed **372 tests
-(10.949 s)**, followed by independent re-review; this is a recorded software result.
-The MCU and camera firmware compiled at their respective implementation stages,
-but no upload or new physical trial was performed. Full ROS Jazzy build/lifecycle
-validation and the physical collection adapter remain pending. The 10 saved dry-run
-sessions contain 11 synthetic attempts, all excluded from training/evaluation.
+The physical collection adapter is not connected. New MCU bounded-action APIs remain
+disabled by default; host journal acceptance does not establish motion completion.
+Pi ROS2 build/test and no-actuation checks are recorded in the
+[deployment evidence](docs/evidence/2026-10-15-deployment-no-drive.md).
 
-Next device-free work is a manifest loader with byte/hash revalidation, features,
-baseline models, train-only preprocessing, and evaluation code. Real-data learning
-requires the adapter, clock/output calibration, and small one-axis collection trials.
-Use the [current plan and physical preparation steps](docs/ai-manipulation-plan-2026-10-14.md)
-for the pending work; software passes do not establish physical stopping or grasping.
+The fixed-budget [observation trial](docs/evidence/2026-10-15-bounded-observation.md)
+failed its usability gate. The [NumPy training/evaluation pipeline](docs/evidence/2026-10-15-offline-visual-dynamics.md)
+is implemented, but all 11 saved synthetic attempts are excluded and no real training
+samples are eligible. Software tests and synthetic smoke do not establish physical
+stopping, grasping, or learned manipulation performance.
 
 ## M4 command journal
 
@@ -45,7 +43,7 @@ rejects new proposals without evicting old IDs. Pending requests are canceled on
 restart, and a reserved dispatch becomes unknown. Missing results do not prove
 non-execution. The legacy MCU endpoint still lacks command-ID deduplication and
 per-request deadline enforcement; this host change is not sufficient to start
-learning-driven physical trials. See the [implementation plan](docs/ai-manipulation-plan-2026-10-14.md)
+learning-driven physical trials. See the [bounded-action contract](docs/evidence/2026-10-14-bounded-actions-software.md)
 and [software evidence](docs/evidence/2026-10-14-command-journal-software.md).
 
 ## Experimental MCU bounded actions

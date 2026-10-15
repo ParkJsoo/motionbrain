@@ -1,10 +1,9 @@
-# Claim-to-Evidence Matrix 초안
+# Claim-to-Evidence Matrix
 
 [PORTFOLIO](../../PORTFOLIO.md) | [Portfolio](../../PORTFOLIO.en.md) | [로보틱스 시스템 준비도](../../ROBOTICS_SYSTEM_READINESS.md) | [Robotics readiness](../../ROBOTICS_SYSTEM_READINESS.en.md)
 
 이 문서는 MotionBrain을 외부에 설명할 때 쓸 수 있는 주장과 증거, 한계,
-주장하지 말아야 할 내용을 한곳에 묶은 초안이다. Pi 전원/계측 제약과 새 센서
-부재를 전제로, 이미 있는 문서와 repository evidence만 연결한다.
+주장하지 말아야 할 내용을 연결한다. 공개된 구현과 검증 기록을 근거로 한다.
 
 ## Matrix
 
@@ -19,6 +18,8 @@
 | Pi/systemd 운영 표면과 SSH/DNS recovery 절차가 있다 | [Pi health](2026-06-16-pi-system-health.md), [runtime measurement](2026-06-17-runtime-measurements.md), `deploy/systemd/`, `tools/raspi/`, `OPERATIONS.md` | Captured Pi runtime은 point-in-time이다. 과거 `vcgencmd get_throttled=0x50005`가 기록됐고, 전원 어댑터/케이블 교체 후 최신 로컬 확인은 `0x0`이었다. 성능/soak evidence 전후에는 `get_throttled`를 다시 확인해야 한다 | Production uptime, power-integrity closure, thermal/performance guarantee |
 | Embedded bring-up의 전원/GND/버튼/출력 sanity check 기록이 있다 | [embedded bench check](2026-06-16-embedded-bench-checks.md), `EMBEDDED_BRINGUP.md` | Digital multimeter 수준 기록이다. Pi에서 USB oscilloscope, logic analyzer, USB serial adapter, meter interface가 보이지 않았다는 runtime inventory도 있다 | PWM duty/frequency, UART bit timing, I2C signal integrity, motor transient sag |
 | M4 하중 조건에서 전원 강하와 STM32 MPU boot recovery 이슈를 관찰하고 firmware retry를 보강했다 | [M4 전원 계측과 STM32 MPU 부팅 복구](2026-06-28-m4-shoulder-closed-loop.md#전원-계측과-stm32-mpu-부팅-복구) | 휴대폰 촬영과 일반 멀티미터 기반 근사 계측이다. 배터리/XL4015/배선/부하 영향을 완전히 분리하지 못했다 | Root-cause closure for all power faults, wiring/pull-up/sensor-module defect exclusion |
+| 유한 관측 요청과 실패 중단을 구현하고 고정 기준으로 평가했다 | [관측 프로토콜·실측](2026-10-15-bounded-observation.md) | 20요청 중 7개 실행·1개 성공 후 저장 초과로 중단. 사용 가능성 관문 미통과 | Reliable continuous observation, control-ready capture |
+| 원본·행동 검증, 그룹 분할, NumPy 선형 dynamics 학습·평가를 구현했다 | [데이터셋 계약](2026-10-14-dataset-manifest-software.md), [특징·CLI·검증](2026-10-15-offline-visual-dynamics.md) | 합성 smoke만 확인. 적격 실물 데이터 0개, production 학습 거부 | Real-data model accuracy, learned manipulation improvement, PyTorch dynamics model |
 
 ## 절대 주장하지 않을 항목
 
@@ -27,11 +28,11 @@
   실물 검증했으며 trajectory tracking으로 주장하지 않는다.
 - Autonomous grasping: 미완료. 현재 공개 데모는 작업자 텔레오퍼레이션과 제한
   perception 확인이다.
-- 새 센서 없이 임의 객체 인식이나 visual servoing 범위를 확장했다는 주장:
-  하지 않는다.
+- 합성 fixture의 오차 감소를 실물 학습·조작 개선으로 제시하지 않는다.
+- 사전 학습 YOLO 추론을 자체 검출기 학습 성과로 제시하지 않는다.
 
 ## 사용 기준
 
 이 matrix는 portfolio 문구를 고를 때의 guardrail이다. 위 표의 Evidence에
 연결된 항목만 주장하고, Limitation과 Not claimed를 같은 문맥에서 함께 둔다.
-새 하드웨어 검증이나 새 센서가 생기기 전까지 자동화 범위를 넓혀 쓰지 않는다.
+새로운 범위는 해당 조건의 실물 검증을 확보한 뒤에만 주장한다.

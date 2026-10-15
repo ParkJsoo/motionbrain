@@ -24,9 +24,18 @@ MotionBrain은 ESP32 모션 제어기, STM32 센서/텔레오퍼레이션 계층
 - 주장 경계: M4 어깨 한 축의 제한 폐루프 검증과 로봇팔 전체의 위치 제어를
   구분하고, 임의 객체 인식이나 자율 집기를 과장하지 않는다.
 
+## AI 구현과 검증 범위
+
+- 원본 프레임·실제 출력 기록 검증과 세션별 데이터 분할을 구현했다.
+- Mac CPU에서 NumPy 선형 ridge 모델과 무변화 기준선을 학습·평가하는 CLI를 구현했다.
+- 합성 smoke는 통과했으나 실제 적격 행동 데이터는 0개다. 실물 학습·조작 개선은 아직 입증하지 않았다.
+- 고정 예산의 비구동 관측 시험은 7요청 중 1개 성공 후 저장 지연으로 중단돼 사용 가능성 기준에 미달했다.
+
+[학습 계약·재현](docs/evidence/2026-10-15-offline-visual-dynamics.md) · [관측 실측](docs/evidence/2026-10-15-bounded-observation.md)
+
 ## 빠른 증거 링크
 
-- [Claim-to-evidence matrix 초안](docs/evidence/claim-to-evidence-matrix.md):
+- [Claim-to-evidence matrix](docs/evidence/claim-to-evidence-matrix.md):
   주장, 증거, 한계, 주장하지 않는 항목을 한눈에 보는 검토용 guardrail
 - [물리 텔레오퍼레이션 GIF](https://raw.githubusercontent.com/ParkJsoo/motionbrain/demo-ready-20260608/docs/assets/demo/motionbrain-demo.gif)
   / [MP4](https://raw.githubusercontent.com/ParkJsoo/motionbrain/demo-ready-20260608/docs/assets/demo/motionbrain-demo.mp4)
@@ -55,7 +64,7 @@ MotionBrain은 ESP32 모션 제어기, STM32 센서/텔레오퍼레이션 계층
 - 저수준 모터 출력은 ESP32 안전 게이트 뒤에 둔다.
 - 센서와 텔레오퍼레이션 입력은 STM32에서 구조화된 UART 프레임으로 보낸다.
 - 시리얼, HTTP, 대시보드, ROS2 입력은 같은 명령 의미를 공유한다.
-- 비전과 AI는 Raspberry Pi 쪽에서 실행하되, 물리 동작은 작업자 확인과 안전 상태를 통과해야 한다.
+- 비전 추론은 Pi, 오프라인 dynamics 학습은 Mac CPU에서 실행한다. 물리 동작은 작업자 확인과 안전 상태를 통과해야 한다.
 - 검증되지 않은 호스트 계층이 직접 모터를 우회 제어하지 않게 한다.
 
 ## 담당 구현
@@ -143,6 +152,8 @@ ROS2는 ESP32 내부 제어를 대체하지 않는다. M4 physical 경로는 `Fo
 
 ## 검증 결과
 
+아래 하드웨어·ROS2 수치는 2026년 6–7월 검증 기록이다. 현재 학습 구현의 검증은 위 링크에서 구분한다.
+
 - ESP32 제어기와 ESP32-CAM PlatformIO 빌드 통과
 - `TB6612FNG x3`와 `M1~M5` 실제 모터 출력 확인
 - M4 어깨 AS5600 I2C 각도/자석 상태 확인, 제한 범위 폐루프 목표
@@ -179,6 +190,8 @@ ROS2는 ESP32 내부 제어를 대체하지 않는다. M4 physical 경로는 `Fo
 
 ## 객체 인식 현황
 
+검출기는 사전 학습된 YOLOv5s를 사용하며 이 프로젝트에서 자체 학습한 모델은 아니다.
+
 Pi에서 OpenCV DNN/ONNX 기반 constrained known-object detection 경로는 구현했다. `config/coco80.labels`와 명시적 모델 경로를 사용하고, 모델 weight는 repository에 넣지 않는다.
 
 현재 물리 bench에서 가장 신뢰할 수 있는 known-object 경로는 YOLOv5s/OpenCV DNN, `--object-target cup`, 설정된 confidence gate 기준의 제한된 `cup` 확인이다. 이 경로는 Pi 대시보드/인식 API에서 `cup`을 반환한 증거가 있고, 최신 안정 CAM 서비스 프로필은 ESP32-CAM `qvga` / JPEG quality `15`다. 수동 카메라 확인은 direct `/capture`, 인식 확인은 Pi tracked frame으로 분리했다.
@@ -206,13 +219,11 @@ Pi에서 OpenCV DNN/ONNX 기반 constrained known-object detection 경로는 구
 - 일반 텍스트 명령으로 임의 물체를 찾아 집는 수준은 아직 아니다.
 - README용 물리 텔레오퍼레이션 영상과 비동작 screenshot/evidence는 캡처됐다. 추가 search-light toggle 또는 bounded nudge evidence는 별도 목적이 있을 때만 새로 촬영한다.
 
-## 다음 단계
+## 남은 과제
 
-1. `demo-ready-20260608` 물리 텔레오퍼레이션 데모 미디어와 README GIF/MP4를 기준 공개 링크로 유지
-2. 설명 목적에 따라 embedded safety, multi-MCU teleop, Pi perception/dashboard, ROS2 bridge 중 강조점을 선택
-3. 마커 또는 고정 known-object 기반 제한 집기 계획을 별도 설계
-4. 더 좋은 카메라, 거리/접촉 센서, 검증된 edge runtime을 추가한 뒤 자율 동작 범위 재검토
-5. 새 하드웨어 검증 없이 임의 객체 인식이나 자율 집기 범위를 확장하지 않기
+실제 명령·출력 기록과 전후 관측을 수집기에 연결하고, 한 축의 제한 동작·취소·정착을
+검증해야 한다. 이후 세션을 분리한 실물 데이터로 기준선과 모델을 비교한다.
+예측 오차 감소와 실제 조작 성공률 개선은 별도로 평가한다.
 
 ## 관련 문서
 

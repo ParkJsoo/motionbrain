@@ -26,9 +26,18 @@ The physical teleoperation demo media snapshot is tagged as `demo-ready-20260608
   closed-loop result from full-arm position control and does not overclaim
   arbitrary-object recognition or autonomous grasping.
 
+## Machine Learning Scope
+
+- Implemented source-frame/action-output validation and session-grouped dataset splits.
+- Implemented Mac CPU training/evaluation CLIs for NumPy ridge and no-change baselines.
+- Synthetic smoke tests pass, but there are zero eligible real action samples. Real-data learning and improved manipulation remain unproven.
+- The fixed-budget observation trial stopped on persistence latency after 1 success in 7 requests, failing the usability gate.
+
+[Learning contract and reproduction](docs/evidence/2026-10-15-offline-visual-dynamics.md) · [Observation results](docs/evidence/2026-10-15-bounded-observation.md)
+
 ## Fast Evidence
 
-- [Claim-to-evidence matrix draft](docs/evidence/claim-to-evidence-matrix.md):
+- [Claim-to-evidence matrix](docs/evidence/claim-to-evidence-matrix.md):
   a review guardrail that maps claims to evidence, limitations, and non-claims
 - [Physical teleoperation GIF](https://raw.githubusercontent.com/ParkJsoo/motionbrain/demo-ready-20260608/docs/assets/demo/motionbrain-demo.gif)
   / [MP4](https://raw.githubusercontent.com/ParkJsoo/motionbrain/demo-ready-20260608/docs/assets/demo/motionbrain-demo.mp4)
@@ -58,7 +67,7 @@ MotionBrain therefore uses a constrained architecture:
 - The ESP32 owns motor output and the safety boundary.
 - The STM32 turns sensors and wired teleop inputs into structured UART frames.
 - Serial, HTTP, dashboard, and ROS2-facing commands share the same command semantics.
-- Camera and AI workloads run on the Raspberry Pi.
+- Perception runs on the Raspberry Pi; offline dynamics training runs on a Mac CPU.
 - Physical motion remains safety-gated and operator-confirmed.
 
 ## My Role
@@ -149,6 +158,9 @@ The public demo is physical teleoperation. Supporting evidence covers direct cap
 
 ## Validation
 
+The hardware and ROS2 results below are June–July 2026 records. The current
+learning implementation is documented separately above.
+
 - ESP32 controller and ESP32-CAM PlatformIO builds pass.
 - `TB6612FNG x3` and `M1~M5` motor outputs were physically tested.
 - M4 shoulder AS5600 angle/magnet status was validated over I2C; bounded targets
@@ -189,6 +201,7 @@ The public demo is physical teleoperation. Supporting evidence covers direct cap
 
 ## Object Detection Status
 
+The detector uses pretrained YOLOv5s, not a detector trained in this project.
 The Pi constrained known-object detection path exists: OpenCV DNN/ONNX backend loading, explicit model/label paths, selected-target JSON, dashboard overlay, and ROS2 typed detection publishing. Model weights are intentionally not committed.
 
 The current reliable known-object bench path is constrained `cup` recognition with YOLOv5s/OpenCV DNN, `--object-target cup`, and a configured confidence gate. This path has returned `cup` through the Pi dashboard/perception API, while the latest stable ESP32-CAM service profile is `qvga` / JPEG quality `15`. Manual camera operation uses direct `/capture`, while the recognition/confirmation view uses Pi tracked frames.
@@ -218,13 +231,12 @@ Current honest positioning:
 - No general text-prompt object search
 - The README physical teleop video and non-motion screenshots/evidence are captured; additional search-light toggle or bounded-nudge evidence should be captured only for a specific follow-up goal
 
-## Next Steps
+## Remaining Work
 
-1. Keep the `demo-ready-20260608` physical teleoperation demo media and README GIF/MP4 as the stable public reference links.
-2. Tune the emphasis by context: embedded safety, multi-MCU teleop, Pi perception/dashboard, or ROS2 bridge.
-3. Design marker- or fixed-known-object-assisted grasping as a separate plan.
-4. Revisit autonomy only after adding a better camera, range/contact sensing, or a validated edge runtime.
-5. Do not expand arbitrary-object recognition or autonomous grasping claims without new hardware validation.
+Connect physical commands/output records and before/after observations to the collector,
+then validate bounded single-axis motion, cancellation, and settling. Compare the baseline
+and model on real data from separate sessions. Evaluate prediction error and physical
+manipulation success independently.
 
 ## Related Documents
 

@@ -39,54 +39,24 @@ ROS2 Jazzy typed interface, C++ control guard, mission supervisor, RViz/TF
 시각화, `ros2_control` dry-run/read-only 모드와 M4 한정 physical write 경로를
 포함한다. proposal은 자동 전달되지 않으며 작업자가 확인한 20초 one-shot만
 ESP32의 인증된 `/shoulder`와 firmware `SafetyGate`로 전달된다. 248.20°에서
-250.00° 목표를 명령해 249.96°(`TARGET_REACHED`, -0.04°)로 수렴했고 proposal
+250.00° 목표를 명령해 249.96°(`TARGET_REACHED`, -0.04°)로 수렴했고
 같은 pending proposal의 연속 confirm도 거부됨을 확인했다. [상세 검증](docs/evidence/2026-07-13-m4-physical-ros2-control.md)
 
-2026-10-14 호스트 개선은 proposal 재접수·재시작·응답 유실을 영속 명령 기록으로
-처리한다. 결과 불명은 자동 재시도하지 않으며 MCU 수락과 물리 도달을 구분한다.
-이는 소프트웨어 검증이며 기존 호스트 실행 경로와 새 MCU API의 연결은 아직 후속 작업이다.
-추가 관절 센서 없이 시각 기반 조작 학습을 진행하는 [파일별 실행 계획](docs/ai-manipulation-plan-2026-10-14.md)과
-[호스트 소프트웨어 검증 범위](docs/evidence/2026-10-14-command-journal-software.md)를 참고한다.
-후속 [MCU 제한 행동·출력 기록](docs/evidence/2026-10-14-bounded-actions-software.md)은
-가상 시간/출력 시험과 ESP32 빌드를 통과했으며, 새 실행 API는 실물 검증 전 기본 비활성이다.
-원본 프레임 식별·신선도 전달과 행동 전후 데이터 검증도 구현했다.
-[관측·transition 계약과 소프트웨어 검증](docs/evidence/2026-10-14-source-observations-software.md)에
-장치 없이 확인한 범위와 시계 교정·실물 시험 등 남은 조건을 구분했다.
-후속 [dry-run 수집 runner](docs/evidence/2026-10-14-dry-run-collector-software.md)는
-원본 JPEG·hash·실행 의도·부분 기록을 저장하고 누락·중단을 감사한다. 합성 결과는
-실물 학습 데이터에서 제외하며, 장치 실행 adapter는 아직 연결하지 않았다.
-[데이터셋 manifest·분할 검증](docs/evidence/2026-10-14-dataset-manifest-software.md)은 원본 파일을 다시 검증하고
-세션/episode·동일 이미지/hash·프레임·명령의 교차 분할을 차단한다. 합성과 출처 미상은 제외하며,
-현재 dry-run 11개 시도는 모두 학습·평가 제외다. 모델 학습이나 실물 성능 개선 결과는 아직 없다.
-10월 14일 코드 수정 `73132e9` 후 전체 **372개 테스트 통과(10.949초)**와 독립 재리뷰를 기록했다.
-시계 교정 오차까지 포함해 신선도 한계를 넘으면 실행 0회인 회귀를 포함한다.
-다음은 장치 없이 manifest loader·특징/기준선·train-only 전처리·평가 코드를 준비하는 단계다.
-10월 15일에는 Pi 배포·ROS 7개 패키지 빌드/72개 테스트와 [실물 비구동 검증](docs/evidence/2026-10-15-deployment-no-drive.md)을 완료했다.
-CAM hostname 순서·timeout 단위 수정 후 [코드리뷰·372개 회귀 재검증 및 카메라 실물 결과](docs/evidence/2026-10-15-camera-boot-watchdog.md)를 기록했다.
-카메라 연결 조사는 사용자 요청으로 종료했으며 간헐 watchdog의 근본 원인은 미확정이다.
-실제 수집 adapter의 명령 송신, 활성 동작의 ROS 통합 검증, 장치 시계·출력 교정과 한 축 데이터 수집은 남아 있다.
-후속 [실제 장치 읽기 adapter·비구동 수집](docs/evidence/2026-10-15-device-collection-probe.md)은
-Pi GET 66회·관측 12개·원본 이미지 24개 저장/hash 검증과 전체 398개 테스트를 통과했다.
-리뷰에서 명령 조회 실패의 오판정을 수정했고 최종 전체 399개 테스트를 통과했다.
-명령 송신 경로는 아직 미연결이며, 관측 지연·시간 교정 조건 때문에 학습 적격 실물 행동 데이터는 여전히 0개다.
-후속 [최신 프레임 ROI 측정](docs/evidence/2026-10-15-fast-roi-observation.md)은 기준 이미지와 새 영상의 위치 측정을 분리했다.
-전체 **424개 테스트 통과**. Pi 정지 장면의 최종 12개는 전체 나이 지표 146~191ms로 모두 100ms 기준에 따라 거부했다.
-모터 명령 0회이며, 다음은 비구동 지연 개선과 실제 대상 이동·가림 검증이다. 아직 제어·학습용 관측으로 연결하지 않았다.
-이어진 [지연 개선](docs/evidence/2026-10-15-fast-roi-latency.md)은 전체 **429개 테스트·독립 리뷰를 통과**했다.
-Pi 계산 완료 기준 나이 중앙값은 171→138ms로 줄었지만 여전히 12/12 거부했다. 저장 후 나이는 별도로 기록하며,
-실제 소비까지 100ms를 만족한 결과는 아니다. 다음은 카메라 촬영·전송·시간 구간 분리 측정과 실물 대상 변화 검증이다.
-[카메라 시간 구간 진단](docs/evidence/2026-10-15-capture-timing.md)은 **443개 테스트·독립 리뷰**를 통과했다.
-실물 16개에서 프레임 취득 대기는 0~1ms, 헤더 생성 전 원본 나이는 37~69ms, HTTP 전체는 35~59ms였다.
-촬영과 버퍼 체류를 각각 확정하지 않았으며, 시계 구간은 교정값이 아니다. 16개 모두 100ms 기준으로 거부했고 모터 명령은 0회다.
-[현재 완료 범위와 다음 단계](docs/ai-manipulation-plan-2026-10-14.md)를 기준으로 진행한다.
-최신 [보수적 fresh 영상 나이 상한](docs/evidence/2026-10-15-conservative-fresh-age.md)은
-현재 프레임 계산에서 시계 속도·2µs 가정을 제거했고 **전체 538개 테스트**를 통과했다.
-Pi 비구동 비교에서 100ms 소비 통과는 기존 21/24·보수적 5/24, 저장 48개 모두 250ms 이내다.
-anchor 만료의 시계 가정과 실물 제어 검증은 남아 있으며, 모터 명령은 0회다.
-후속 [anchor 만료 상한](docs/evidence/2026-10-15-causal-anchor-age.md)은 선택형 경로에서
-anchor의 CAM 속도·2µs 가정도 제거했다. **553개 테스트**와 Pi 비구동 검증을 통과했고,
-영상 77.88ms·anchor 상한 15.30초에서 소비 0회·저장 후 추가 촬영 0회를 확인했다.
-정상 소비 통과는 1/12로 아직 낮으며 실제 제어·학습 데이터 수집은 남아 있다.
+## AI 학습 기반
+
+Pi의 객체 인식은 사전 학습된 YOLOv5s를 OpenCV DNN/ONNX로 실행한다.
+로봇 행동 결과 예측에는 **Mac CPU·NumPy 기반 선형 ridge 모델**과 무변화 기준선을 구현했다.
+원본·행동 기록 검증, 세션 단위 분할, train 전용 정규화, 학습·평가 CLI를 포함한다.
+현재 자체 dynamics 모델은 PyTorch를 사용하지 않는다.
+
+**실제 학습 적격 행동 데이터는 0개**이며, 합성 데이터로 수치 경로만 검증했다.
+실물 학습이나 조작 성능 개선을 입증한 단계는 아니다.
+[특징·데이터 계약·재현 방법](docs/evidence/2026-10-15-offline-visual-dynamics.md)
+
+비구동 관측 시험은 영상 100ms·anchor 15초·저장 250ms 기준을 유지했다.
+예정 20요청 중 7개를 실행해 1개가 성공했고, 저장 268.89ms 초과로 중단했다.
+사용 가능성 관문은 미통과이며 실제 행동 수집 연결은 남아 있다.
+[관측 기준과 실측 결과](docs/evidence/2026-10-15-bounded-observation.md)
 
 ## 데모 영상
 
@@ -165,6 +135,7 @@ ROS2 타입 지정 토픽, control guard, mission supervisor
 - `src/`: ESP32 모션 제어기 펌웨어
 - `firmware/esp32cam/`: ESP32-CAM 펌웨어
 - `firmware/stm32/MotionBrainSensor/`: STM32 센서/텔레오퍼레이션 펌웨어
+- `learning/`: 행동 데이터 검증·분할, 관측 계약, NumPy 학습·평가
 - `tools/`: 대시보드, 인식 서비스, 상태 감시기, STM32 보조 스크립트
 - `ros2_ws/src/`: ROS2 메시지, 브리지, 제어 guard, mission, URDF, `ros2_control` 패키지
 - `docs/assets/`: README/포트폴리오용 공개 데모 이미지와 영상

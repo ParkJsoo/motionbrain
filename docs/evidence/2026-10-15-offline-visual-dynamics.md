@@ -31,21 +31,18 @@ python3 tools/smoke_visual_dynamics.py --output-dir <new-smoke-dir>
 
 production 실패는 `refusal.json` 또는 `unavailable.json`과 종료코드2로 남는다. 합성을 허용하는 production flag는 없다. smoke는 고정 seed로 만든 **수학적 fixture 120개**이며 센서/카메라/물리 dynamics를 모사·입증하지 않는다. 별도 schema `motionbrain.synthetic_dynamics_smoke.v1`, `trainingEligible=false`, `controlEligible=false`를 사용한다. smoke의 `measured` 필드는 변환 함수의 계약 테스트 값이며 실측 주장으로 사용할 수 없다.
 
-## 검증과 결과
+## 검증과 한계
 
-실행 후 실제 측정치·거부 결과·테스트·독립 리뷰를 아래에 기록한다. 실물 학습과 물리 조작 성능 개선은 아직 없다.
+합성 fixture 120행을 train94/validation11/test15로 나눠 수치 경로를 검증했다.
+이는 의도적으로 만든 선형 관계이며 로봇의 물리 dynamics나 실물 성능을 입증하지 않는다.
+[합성 artifact](visual-dynamics-2026-10-15/synthetic-smoke.json)
 
-최종 합성 smoke는 **120행 → train94/validation11/test15**, Mac CPU wall0.17초(user0.07/sys0.02초)였다. 합성 test의 중심x MAE는 무변화0.001875/선형0.0000195592, 가상 M4 변화 MAE는1.2/0.0125179였다. 이는 의도적으로 선형 관계를 만든 fixture에서 수치 경로가 작동한 결과이며 **실물 예측 개선이나 조작 개선이 아니다**. 소수 단일 실행의 시간은 성능 benchmark로 일반화하지 않는다. 계수·정규화·전체 지표·source hash는 [합성 전용 artifact](visual-dynamics-2026-10-15/synthetic-smoke.json)에 저장했다.
+저장된 inventory의 11개 시도는 모두 합성이며 적격 실물 데이터는 0개다.
+production 학습은 [거부 결과](visual-dynamics-2026-10-15/production-refusal.json)를 남기고
+모델을 생성하지 않았다. 합성 모델의 production 평가도
+[unavailable](visual-dynamics-2026-10-15/production-evaluation-unavailable.json)로 거부한다.
+실제 적격 데이터의 성공 로딩→학습→평가 경로와 물리 조작 개선은 미검증이다.
 
-기존 실제 로컬 inventory manifest를 원본부터 다시 검증한 결과 적격0/제외11, train/validation/test 모두0이다. production 학습 CLI는 종료코드2·[refusal.json](visual-dynamics-2026-10-15/production-refusal.json)을 남기고 **model.json을 생성하지 않았다**. 합성 artifact를 production 평가 CLI에 넣는 시도도 trained receipt가 없어 [unavailable](visual-dynamics-2026-10-15/production-evaluation-unavailable.json)로 거부했다. 이는 평가 성공이 아니다.
-
-최종 통합 `python3 -m unittest discover -s tests -q`는 **589개 통과(20.753초)**다. 신규 B 테스트19개는 특징·M4 wrap·after/실제출력 입력 누수 방지·train 전용 정규화/fit·고정 재현성·빈 분모·NaN/형태 오류·합성 차단·원본/hash·manifest/split 변조·모델 receipt·CLI 실패 기록을 검증했다. 독립 리뷰에서 malformed JSON이 오류 결과 파일 없이 종료되던 P2를 수정했고 최종 재리뷰에서 미해결 P0/P1/P2 없음. 수치 routing 단위 테스트는 loader를 mock한 합성 배열을 사용하며 실물 corpus가 통과한 것으로 해석하지 않는다. 원본 실물 적격 데이터의 성공 로딩→학습→평가 경로는 데이터 부재로 미검증이다.
-
-[검증·실행환경 메타데이터](visual-dynamics-2026-10-15/validation.json). A의 실패 때문에 B 구현을 보류하지 않았으며, 기존 데이터 검증이나 기본 비활성 수집 adapter의 제한을 풀지 않았다.
-
-## 다음에 필요한 최소 작업
-
-1. A 관문 미통과 결과를 바탕으로 수집 방식을 선택한다. 요청 실패를 명시하는 정지/작업자 승인 단일 단계 흐름부터 검토하며, 같은 관측 미세 최적화를 자동 재개하지 않는다.
-2. host journal의 command identity와 실제 실행 결과 조회·driver trace를 `CaptureRunner`용 실물 adapter에 연결한다. exact before/after 원본·M4·정착/순서 증거를 현재 schema에 맞춰 보존하고 flag만 풀어 실물 동작을 허용하지 않는다.
-3. 별도 승인 후 M4 영점/기구 범위와 한 축 최소 제한 출력·취소·off·잔여 이동/정착을 검증한다. 장치 구동·업로드·서비스 재시작은 이번 실행에 포함하지 않았다.
-4. 별도 session으로 적격 실물 행동 데이터를 수집해 고정 manifest를 만들고 위 CLI로 무변화/선형 모델을 비교한다. 이후 실제 제한 조작에서 정책 비교를 해야 취업 포트폴리오의 학습 효과를 주장할 수 있다. 예측 MAE 개선과 조작 성공 개선은 별도 관문이다.
+구현 시 전체 589개 테스트와 독립 리뷰를 완료했다. 특징·각도 wrap·입력 누수·train 전용
+전처리·분할/원본 변조·합성 차단·모델 receipt·실패 결과 기록을 검사한다.
+[검증 메타데이터](visual-dynamics-2026-10-15/validation.json)

@@ -15,7 +15,7 @@
 
 `tools/probe_fast_observation.py --request-id <ID>`와 기존 causal fresh shadow 옵션을 함께 사용한다. 고정 20요청 평가/원본 검증은 `tools/evaluate_observation_attempts.py`를 사용한다. 기존 표본 probe의 기본 동작은 유지한다.
 
-실측 결과와 테스트·리뷰는 같은 문서 아래에 추가한다. raw JPEG는 Git 제외 datasets에 보관한다.
+원본 JPEG는 Git에서 제외하며 공개 집계에는 요청별 결과와 검증 메타데이터를 제공한다.
 
 ## 실측 결과 — 관문 미통과, 여기서 종료
 
@@ -40,18 +40,13 @@
 
 [집계·요청별 수치](bounded-observation-2026-10-15/live.json), [검증 메타데이터](bounded-observation-2026-10-15/validation.json), [최종 상태](bounded-observation-2026-10-15/final-status.json).
 
-원본 **45 JPEG·431 artifact·123 event**, camera GET 38회(checkpoint7+현재31)를 Pi와 Mac에서 검증했다. 각 terminal이 가리키는 report와 원본/receipt hash, 소스 hash, fresh first-send 나이, anchor 상한, 직전 barrier→다음 capture 순서를 대조했다. Mac `datasets/bounded_observation/2026-10-15/`에 원본·실행 소스 archive·로그를 보존했다. `--audit-only` 종료코드2는 감사 실패가 아니라 관문 미통과다.
+원본 **45 JPEG·431 artifact·123 event**, camera GET 38회(checkpoint7+현재31)를 Pi와 Mac에서 검증했다. 각 terminal이 가리키는 report와 원본/receipt hash, 소스 hash, fresh first-send 나이, anchor 상한, 직전 barrier→다음 capture 순서를 대조했다. 원본·실행 소스·로그는 별도로 보존한다. `--audit-only` 종료코드2는 감사 실패가 아니라 관문 미통과다.
 
-전후 및 각 요청 사이 IDLE·motorEnabled=false·출력0, 출력 로그·기존 disarm id9 불변이다. CAM boot 불변, captureFailures/recoveries0, 세 서비스 active/NRestarts0, throttled0x0, 운영 HEAD `559db54` 유지. **모터 명령0·펌웨어 업로드0·서비스 재시작0**. 물리 배터리 분리는 재확인하지 못했다.
+비구동 시험에서 모터 명령·펌웨어 업로드·서비스 재시작은 없었다.
+전체 570개 소프트웨어 테스트와 독립 리뷰를 완료했다.
 
-전체 소프트웨어 **570개 통과(20.658초)**, 신규17개 포함. 독립 리뷰에서 안전 상태 실패 후 배치 진행과 감사 실패 시 분모 누락 2건을 수정하고 재검토했다. 최종 미해결 P0/P1/P2 없음. 첫 샌드박스 실행의 localhost bind 오류26개는 통과로 집계하지 않았으며, 허용된 로컬 테스트 실행에서 전체 재검증했다.
+## 결론
 
-## 선택지와 다음 작업
-
-A는 이 결과 보고로 종료하며 시계/전송/ROI 미세 최적화를 자동 연장하지 않는다. 이번 병목은 현재 영상 신선도(30/31 거부), 매 요청 anchor 대기 약6.9초, 간헐적 저장 초과다.
-
-- **정지→관측→한 단계 승인 수집**: 현재 장비·기준을 유지하고 유효 관측이 없는 요청은 실행0으로 끝낸다. 별도 session의 exact before/after와 실제 출력 기록을 연결해야 하며, 관측 준비를 기다리는 운영 시간이 크다. 소프트웨어 adapter/journal 연결과 실물 off·정착 관문이 필요하다.
-- **수집 단위를 바꾸기**: 조작이 끝나 정착한 뒤 exact 검출 원본을 확보하는 오프라인 transition 수집 계약을 별도로 설계한다. 현재 100ms 제어 gate를 완화하는 것이 아니며, 행동 전후 순서·age 정책·실제 출력 provenance를 수집 전에 확정해야 한다. 현 schema와 collector 변경 범위는 다음 결정 대상이다.
-- 현재 카메라 전송/검출 경로 변경은 더 큰 실험 범위이므로 이번에 수행하지 않는다. 추가 장비 구매나 대형 학습을 선행조건으로 삼지 않는다.
-
-이 결정과 무관하게 B의 Mac CPU loader·무변화/선형 학습·평가 구현을 계속한다. 실제 조작 개선 주장은 적격 실물 데이터와 별도 세션 평가가 생긴 뒤에만 가능하다.
+고정 기준에 미달했다. 병목은 영상 신선도(30/31 거부), 요청별 anchor 대기,
+간헐적 저장 초과다. 기준 완화나 추가 미세 최적화 없이 이번 평가를 종료했다.
+자동 조작 또는 학습용 행동 수집이 준비됐다는 근거로 사용할 수 없다.

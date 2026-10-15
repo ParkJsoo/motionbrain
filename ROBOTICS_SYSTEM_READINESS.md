@@ -12,7 +12,7 @@ MotionBrain의 강점은 실제 하드웨어를 붙여 운영한 로보틱스 �
 - ESP32 펌웨어가 TB6612FNG 드라이버를 통해 5축 DC 모터 출력을 담당한다.
 - M4 어깨 한 축은 AS5600 절대각 I2C 피드백과 230-245° matrix 검증 목표
   범위의 제한 폐루프 제어를 실물에서 검증했다. 나머지 축에는 위치 피드백이
-  없고 `ros2_control` 물리 write 경로는 비활성화되어 있다.
+  없다. M4는 작업자 승인 단일 목표의 물리 경로가 있고 전체 팔 write는 비활성이다.
 - STM32F446 펌웨어가 구조화된 센서/텔레오퍼레이션 프레임을 보낸다.
 - Raspberry Pi가 dashboard, perception, ROS2 Jazzy bridge 프로세스를 운영한다.
 - ROS2 패키지는 typed status, event, detection, kinematics, guard, mission,
@@ -53,13 +53,14 @@ MotionBrain의 강점은 실제 하드웨어를 붙여 운영한 로보틱스 �
 
 ## ros2_control 경계
 
-`ros2_control` 표면은 세 가지로 분리되어 있다.
+`ros2_control` 표면은 네 가지로 분리되어 있다.
 
 | 표면 | 패키지 | 목적 | 물리 구동 |
 | --- | --- | --- | --- |
 | Mock controller | `motionbrain_ros2_control_mock` | `mock_components/GenericSystem`으로 controller-manager, joint-state, trajectory-controller bring-up 검증 | 없음 |
 | Hardware interface scaffold | `motionbrain_hardware_interface` | 표준 `hardware_interface::SystemInterface` 형태, joint command/state interface, timeout, finite-command guard, launch/config/URDF 표면 | 아직 직접 구동 없음 |
 | M4 measured state mode | `motionbrain_hardware_interface` | `/motionbrain/status_typed` cache에서 M4 `shoulder_pitch_joint` state만 노출하는 read-only `m4_state` mode | command interface 없음 |
+| M4 proposal + executor | `motionbrain_hardware_interface`, `motionbrain_ros_bridge` | typed proposal과 별도 작업자 승인 | M4 한정 20초 one-shot; [실물 검증](docs/evidence/2026-07-13-m4-physical-ros2-control.md) |
 
 Hardware interface scaffold와 M4 measured state mode는 의도적으로 안전하게
 막아둔 상태다. Physical mode `write()`는 ESP32 controller로 POST하지 않고,
@@ -140,7 +141,7 @@ Pi에서 open-loop hardware-interface evidence capture:
 tools/raspi/capture_ros2_control_hardware_evidence.sh
 ```
 
-## 최신 ros2_control 증거
+## 2026년 6월 ros2_control 증거
 
 초기 open-loop 증거는 2026-06-16에 Raspberry Pi 4 / ROS2 Jazzy에서 캡처했다. 캡처는
 `ROS_DOMAIN_ID=43`과 hardware-interface URDF parameter
@@ -161,7 +162,7 @@ trajectory controller 없이 `joint_state_broadcaster`만 사용하며, cached
 `/motionbrain/status_typed`에서 유효하고 fresh한 M4 measured state만
 `shoulder_pitch_joint` state로 노출한다.
 
-## 최신 runtime 측정 증거
+## 2026년 6월 runtime 측정 증거
 
 2026-06-17에 live Raspberry Pi host에서 read-only command로 캡처했다.
 HTTP controller, camera, dashboard, perception endpoint가 `200`을 반환했다.
@@ -194,12 +195,10 @@ I2C signal integrity, transient motor voltage, closed-loop joint-control
 - 한계를 문서화했다: 나머지 네 축과 전체 로봇팔 폐루프 없음, autonomous
   grasping 주장 없음, production smart-actuator backend 주장 없음.
 
-## 다음 작업
+## 학습 통합 경계
 
-1. DMM 수준을 넘는 embedded 계측 증거를 캡처한다: PWM duty/frequency, UART
-   timing, deadman release latency, I2C activity, bounded motor voltage drop.
-2. M4 read-only measured state evidence를 다음 안정적인 reconnect 이후 compact
-   public note로 갱신할지 결정한다.
-3. 새 actuator hardware가 생기면 작은 bench note만 추가한다: ping,
-   present-position read, bounded goal-position write. 종이 위 주장만 추가하지
-   않는다.
+Mac CPU의 NumPy dynamics 기준선과 검증된 데이터셋 경로를 구현했다.
+합성 검증은 실물 정확도를 입증하지 않으며 적격 실제 행동 데이터는 0개다.
+실물 수집에는 명령 journal 연결과 한 축 제한 동작·출력 off·정착 검증이 남아 있다.
+[학습 계약](docs/evidence/2026-10-15-offline-visual-dynamics.md)과
+[관측 사용 가능성 미통과 결과](docs/evidence/2026-10-15-bounded-observation.md)를 참고한다.

@@ -12,8 +12,8 @@ MotionBrain is strongest as a real-hardware robotics integration project:
 - ESP32 firmware drives five DC motor axes through TB6612FNG drivers.
 - The M4 shoulder alone has physically validated AS5600 absolute I2C feedback
   and bounded closed-loop targets in the matrix-proven 230-245 deg range. Other
-  axes have no position feedback, and physical `ros2_control` writes remain
-  disabled.
+  axes have no position feedback. M4 has an operator-confirmed physical
+  single-target path; full-arm writes remain disabled.
 - STM32F446 firmware publishes structured sensor and teleoperation frames.
 - Raspberry Pi hosts dashboard, perception, and ROS2 Jazzy bridge processes.
 - ROS2 packages expose typed status, event, detection, kinematics, guard,
@@ -54,13 +54,14 @@ hardware integration, ROS2 system software, and real-robot issue analysis.
 
 ## ros2_control Boundary
 
-There are three separate `ros2_control` surfaces:
+There are four separate `ros2_control` surfaces:
 
 | Surface | Package | Purpose | Physical actuation |
 | --- | --- | --- | --- |
 | Mock controller | `motionbrain_ros2_control_mock` | Controller-manager, joint-state, and trajectory-controller bring-up with `mock_components/GenericSystem` | No |
 | Hardware interface scaffold | `motionbrain_hardware_interface` | Standard `hardware_interface::SystemInterface` shape, joint command/state interfaces, timeout, finite-command guard, launch/config/URDF surface | No direct actuation yet |
 | M4 measured state mode | `motionbrain_hardware_interface` | Read-only `m4_state` mode exposing only M4 `shoulder_pitch_joint` state from cached `/motionbrain/status_typed` | No command interface |
+| M4 proposal + executor | `motionbrain_hardware_interface`, `motionbrain_ros_bridge` | Typed proposal and separate operator confirmation | M4-only 20-second one-shot; [physical validation](docs/evidence/2026-07-13-m4-physical-ros2-control.en.md) |
 
 The hardware interface scaffold and M4 measured state mode are intentionally
 safe. Physical-mode `write()` does not POST to the ESP32 controller, and
@@ -142,7 +143,7 @@ Open-loop hardware-interface evidence capture on the Pi:
 tools/raspi/capture_ros2_control_hardware_evidence.sh
 ```
 
-## Latest ros2_control Evidence
+## June 2026 ros2_control Evidence
 
 The initial open-loop evidence was captured on Raspberry Pi 4 / ROS2 Jazzy on
 2026-06-16. The capture used
@@ -164,7 +165,7 @@ M4 read-only measured state mode was added later. It uses only
 and publishes a finite `shoulder_pitch_joint` state only from valid, fresh cached
 `/motionbrain/status_typed` feedback.
 
-## Latest Runtime Measurement Evidence
+## June 2026 Runtime Measurement Evidence
 
 Captured on the live Raspberry Pi host on 2026-06-17 with read-only commands.
 HTTP controller, camera, dashboard, and perception endpoints returned `200`.
@@ -198,13 +199,10 @@ joint-control claims.
   axes, no full-arm closed loop, no autonomous grasping claim, and no
   production smart-actuator backend claim.
 
-## Next Work
+## Learning Integration Boundary
 
-1. Capture instrumented embedded evidence beyond DMM-level sanity checks: PWM
-   duty/frequency, UART timing, deadman release latency, I2C activity, and
-   bounded motor voltage drop.
-2. Decide whether the M4 read-only measured state evidence needs a compact public
-   refresh after the next stable reconnect.
-3. If new actuator hardware becomes available, add only a small bench note:
-   ping, present-position read, and bounded goal-position write. Do not add
-   paper-only actuator claims.
+A NumPy dynamics baseline and validated dataset pipeline are implemented on Mac CPU.
+Synthetic checks do not establish real-data accuracy; eligible real action samples remain
+zero. Physical collection still needs command-journal integration and bounded single-axis
+motion/off/settling validation. See the [learning contract](docs/evidence/2026-10-15-offline-visual-dynamics.md)
+and [failed observation usability trial](docs/evidence/2026-10-15-bounded-observation.md).

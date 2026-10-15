@@ -44,28 +44,23 @@ A 248.20 deg start reached 249.96 deg for a 250.00 deg target
 (`TARGET_REACHED`, -0.04 deg), and repeated confirmation of the same pending proposal
 was rejected. [Detailed evidence](docs/evidence/2026-07-13-m4-physical-ros2-control.en.md)
 
-The 2026-10-14 host changes use a persistent command journal for proposal redelivery,
-restart recovery, and lost responses. Unknown outcomes block further confirmation;
-controller acceptance is separate from physical attainment. These are software tests,
-not MCU-level exactly-once evidence. See the [implementation plan (Korean)](docs/ai-manipulation-plan-2026-10-14.md)
-and [software verification record](docs/evidence/2026-10-14-command-journal-software.md).
-The subsequent [MCU bounded-action and output-log implementation](docs/evidence/2026-10-14-bounded-actions-software.md)
-passes virtual time/output tests and the ESP32 build. Its new execution API remains
-disabled by default pending physical validation.
+## Machine Learning Foundation
 
-Source frame identity/freshness and the before/after transition schema are implemented,
-along with an [immutable dry-run collector](docs/evidence/2026-10-14-dry-run-collector-software.md)
-and [dataset manifest validation](docs/evidence/2026-10-14-dataset-manifest-software.md).
-These preserve original JPEGs, hashes, interrupted/missing records, and grouped splits
-that reject leakage and declared/known synthetic contamination. All 11 saved synthetic
-attempts are excluded; there are no real action-training data or learned manipulation results.
-After the last code fix (`73132e9`), **372 tests passed (10.949 s)** and independent
-re-review found no remaining confirmed blockers. Regression tests verify zero execution
-when source age plus clock uncertainty and elapsed time exceeds the freshness limit.
-Next is device-free preparation of the manifest loader, features, baseline models,
-train-only preprocessing, and evaluation. The physical collector adapter, full ROS
-integration, clock/output calibration, and small one-axis real-data trials remain pending.
-See the [current status and next steps (Korean)](docs/ai-manipulation-plan-2026-10-14.md).
+Perception runs pretrained YOLOv5s through OpenCV DNN/ONNX on the Pi.
+Action-outcome prediction uses a **NumPy ridge model on a Mac CPU**, compared with
+a no-change baseline. It includes source/action-record validation, session-grouped
+splits, train-only normalization, and training/evaluation CLIs. The current dynamics
+model does not use PyTorch.
+
+**There are zero eligible real action samples.** Synthetic fixtures validate the
+numerical pipeline only; real-data learning and improved manipulation are unproven.
+[Features, data contract, and reproduction](docs/evidence/2026-10-15-offline-visual-dynamics.md)
+
+The no-actuation observation trial retained the 100 ms frame, 15 s anchor, and
+250 ms persistence limits. Of 20 planned requests, 7 ran and 1 succeeded before
+268.89 ms persistence triggered a stop. The usability gate failed; physical action
+collection remains unconnected.
+[Observation protocol and results](docs/evidence/2026-10-15-bounded-observation.md)
 
 ## Demo Video
 
@@ -146,6 +141,7 @@ ROS2 typed topics, control guard, mission supervisor
 - `src/`: ESP32 motion-controller firmware
 - `firmware/esp32cam/`: ESP32-CAM firmware
 - `firmware/stm32/MotionBrainSensor/`: STM32 sensor/teleop firmware
+- `learning/`: action-data validation/splits, observation contracts, NumPy training/evaluation
 - `tools/`: dashboard, perception service, watcher, STM32 helper scripts
 - `ros2_ws/src/`: ROS2 messages, bridge, control guard, mission, URDF, and `ros2_control` packages
 - `docs/assets/`: public demo images and video used by the README and portfolio

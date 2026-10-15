@@ -58,7 +58,7 @@ Proposal IDs contain a random producer session and sequence. The executor uses a
 persistent host journal to preserve consumed IDs and unknown outcomes across restarts.
 This does not provide MCU-level deduplication or physical completion evidence.
 See the [command journal verification](../../../docs/evidence/2026-10-14-command-journal-software.md)
-and [execution plan](../../../docs/ai-manipulation-plan-2026-10-14.md).
+and [bounded-action contract](../../../docs/evidence/2026-10-14-bounded-actions-software.md).
 
 The dry-run URDF uses `transport_mode=dry_run`. The M4 measured URDF uses
 `transport_mode=m4_state`, subscribes only to typed status, and exposes no

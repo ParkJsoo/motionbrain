@@ -13,3 +13,6 @@ __pycache__/
 platformio.local.ini
 # Raw local vision captures; commit only curated fixtures elsewhere after review.
 datasets/
+
+# Local handoffs, work plans, and private development notes.
+/.local/
