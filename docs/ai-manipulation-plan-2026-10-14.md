@@ -14,6 +14,8 @@
 
 10월 15일 watchdog 후속: 30회 반복 부팅에서 watchdog은 재현되지 않아 근본 원인은 미확정이다. 별도로 확인한 CAM 호스트명 설정 순서와 750ms/750초 timeout 단위 오류를 수정·업로드했다. 수정 진단에서 실제 이름·소켓 설정값을 확인했고 최종 제품 5회 부팅, 2분 영상 통합 104/104 요청, 원본 계약 및 전체 소프트웨어 372개 회귀를 통과했다. 모터 명령은 보내지 않았다. 수정 전 이미지 요청 2건 실패와 미검증 전원 조건은 [watchdog 후속 기록](evidence/2026-10-15-camera-boot-watchdog.md)에 별도 보존했다. 사용자 요청으로 연결 문제 조사는 종료했으며 연결 원인으로 확정한 것은 아니다. 커밋 전 코드리뷰와 372개 회귀 재실행(8.727초), CAM 빌드도 통과했다.
 
+최신 비구동 수집 후속(10월 15일): 실제 장치 adapter의 **읽기 경로**를 추가했다. Pi에서 GET 66회·관측 12개·원본 JPEG 24개 저장/hash 검증, 시작/종료 출력 로그 동일, 모터 명령 0회를 확인했다. 비구동 구현 당시 398개, 커밋 전 명령 조회 실패 판정 수정 후 **399개 통과(13.754초)**다. 카메라 시간 표본은 단기 offset 가정과 일치하지만 물리 교정 완료는 아니며, 영상 나이 3.5~7.4초와 일부 M4 age>20ms가 수집 정책을 초과했다. 실제 명령 송신·host journal 연결·학습용 행동 수집은 여전히 미완료다. [구현·실물 결과·다음 순서](evidence/2026-10-15-device-collection-probe.md)를 우선 참고한다. 아래 단계별 372개 기록은 이전 기준이다.
+
 ### 작업 시작 당시 인계 대조 (과거 기준)
 
 - 시작 HEAD: `99ea0d6` (`Update portfolio with physical M4 ros2_control evidence`), 로컬 `main...origin/main`, tracked/untracked 변경 없음. 원격 fetch 및 현재 Pi/보드 상태 확인은 하지 않았다.
@@ -54,7 +56,7 @@
 | 2 | `learning/models.py`, `tools/train_visual_dynamics.py`: 무변화·선형 기준선부터, 필요 시 작은 MLP | 정규화는 train만 fit, validation/test 오염 회귀, seed·분할·설정·모델 저장과 재현, Mac CPU에서 분리된 합성 smoke |
 | 3 | `tools/evaluate_visual_dynamics.py`, `tools/evaluate_robot_trials.py`: 예측 및 실물 trial 평가 | 예측 MAE와 조작 성공률 구분, 실패/unknown 포함 분모, 모델 비교표; 합성 점수를 실물 성과로 발표하지 않음 |
 
-병행할 미완료 소프트웨어는 실제 수집 adapter(기존 host journal ↔ MCU capability/boot/결과·출력 조회 ↔ 원본 perception API), 결과 불명 reconciliation, 활성 UART seq/session 검증, 기존 숫자 입력 경로 통일, 제어 상태 polling 분리·deadline/queue 상한이다. 전체 펌웨어 재설계는 범위에 넣지 않는다. 새 `/actions`는 기본 비활성이며 기존 host `/shoulder`가 자동 전환되지는 않는다.
+실제 수집 adapter 중 capability/boot/결과·출력 및 exact perception 읽기·저장은 비구동 probe로 구현했다. 남은 연결은 host journal ↔ MCU 명령 송신과 transition 수집, 결과 불명 reconciliation, 활성 UART seq/session 검증, 기존 숫자 입력 경로 통일, 제어 상태 polling 분리·deadline/queue 상한이다. 연결된 장치에서는 먼저 시야·빠른 관측 경로·시계/M4 시간 구간을 정리한다. 전체 펌웨어 재설계는 범위에 넣지 않는다. 새 `/actions`는 기본 비활성이며 기존 host `/shoulder`가 자동 전환되지는 않는다.
 
 **실제 데이터로 학습하기 전**에는 아래 §7의 장치 준비·시계/출력 교정·한 축 수집 검증을 통과해야 한다. 실제 데이터로 기준 모델과 학습 모델을 평가한 뒤, 같은 조건의 접근·집기·배치 trial에서 개선 여부를 확인한다. 소프트웨어 기반 완료와 실물 학습·성능 입증 완료를 구분한다.
 
@@ -78,7 +80,7 @@
 
 ## 3. 파일별 실행 순서와 완료 기준
 
-아래의 구현 완료는 소프트웨어 범위다. 별도 실물 관문은 모두 남아 있다. S2a는 신규 API와 공통 M4 finite 검사만 완료했으며 기존 모든 파서 통일은 미완료다. S4b의 실제 장치 adapter는 미구현이다.
+아래의 구현 완료는 각 단계 당시 소프트웨어 범위다. 후속 비구동 실물 결과는 위 10월 15일 기록을 우선한다. S2a는 신규 API와 공통 M4 finite 검사만 완료했으며 기존 모든 파서 통일은 미완료다. S4b의 실제 장치 adapter는 읽기 경로만 구현했고 명령 송신·물리 transition 수집은 미완료다.
 
 | 순서 | 수정·추가 파일 | 구체 작업 | 소프트웨어 완료 기준 | 별도 실물 관문 |
 |---|---|---|---|---|

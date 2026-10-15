@@ -64,7 +64,11 @@ ESP32의 인증된 `/shoulder`와 firmware `SafetyGate`로 전달된다. 248.20�
 10월 15일에는 Pi 배포·ROS 7개 패키지 빌드/72개 테스트와 [실물 비구동 검증](docs/evidence/2026-10-15-deployment-no-drive.md)을 완료했다.
 CAM hostname 순서·timeout 단위 수정 후 [코드리뷰·372개 회귀 재검증 및 카메라 실물 결과](docs/evidence/2026-10-15-camera-boot-watchdog.md)를 기록했다.
 카메라 연결 조사는 사용자 요청으로 종료했으며 간헐 watchdog의 근본 원인은 미확정이다.
-실제 수집 adapter, 활성 동작의 ROS 통합 검증, 장치 시계·출력 교정과 한 축 데이터 수집은 남아 있다.
+실제 수집 adapter의 명령 송신, 활성 동작의 ROS 통합 검증, 장치 시계·출력 교정과 한 축 데이터 수집은 남아 있다.
+후속 [실제 장치 읽기 adapter·비구동 수집](docs/evidence/2026-10-15-device-collection-probe.md)은
+Pi GET 66회·관측 12개·원본 이미지 24개 저장/hash 검증과 전체 398개 테스트를 통과했다.
+리뷰에서 명령 조회 실패의 오판정을 수정했고 최종 전체 399개 테스트를 통과했다.
+명령 송신 경로는 아직 미연결이며, 관측 지연·시간 교정 조건 때문에 학습 적격 실물 행동 데이터는 여전히 0개다.
 [현재 완료 범위와 다음 단계](docs/ai-manipulation-plan-2026-10-14.md)를 기준으로 진행한다.
 
 ## 데모 영상

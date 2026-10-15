@@ -1,0 +1,62 @@
+{
+  "runDir": "/tmp/motionbrain-device-probe.pG9lsA/review-runs/31daf27cd03c4be2969fe6c41655b8b5",
+  "status": "completed",
+  "audit": {
+    "ok": true,
+    "issues": [],
+    "trainingEligible": false
+  },
+  "completedSamples": 2,
+  "clock": {
+    "schemaVersion": "motionbrain.clock_probe.v1",
+    "hostClockId": "925562cd9125495095955431bfa0eece",
+    "cameraBootId": "4a5ba0ac0adad7522700201e83767811",
+    "samples": 2,
+    "uniqueFrames": 2,
+    "constantOffsetConsistent": true,
+    "offsetIntersectionSeconds": [
+      6729.069267301999,
+      6729.102068671
+    ],
+    "physicalCalibration": false,
+    "captureHostBoundsCalibrated": false,
+    "usableForControl": false,
+    "limitations": [
+      "equal_clock_rate_assumption_not_calibrated",
+      "first_dma_timestamp_not_optically_verified",
+      "no_cross_host_monotonic_mapping",
+      "no_future_drift_bound"
+    ]
+  },
+  "outputLogUnchanged": true,
+  "motorCommandsSent": 0,
+  "trainingEligible": false,
+  "blockers": [
+    "bounded_actions_disabled",
+    "no_action_clock_or_m4_alignment",
+    "no_physical_action",
+    "physical_clock_calibration_pending",
+    "source_age_exceeds_collection_policy",
+    "source_clock_unverified"
+  ],
+  "errors": [],
+  "softwareTests": {
+    "count": 399,
+    "seconds": 13.754,
+    "result": "PASS"
+  },
+  "rawRunPath": "datasets/device_probes/31daf27cd03c4be2969fe6c41655b8b5",
+  "rawRunSha256": "4b5f9a611fe84b45b4ad49392669919abfdfa6469c28d8acce628ce83a517b8a",
+  "lookupResult": {
+    "automaticRetry": false,
+    "executionState": "outcome_unknown",
+    "lookupStatus": "not_found",
+    "physicalArrivalVerified": false
+  },
+  "getRequests": 16,
+  "sourceHashes": {
+    "learning/device_adapter.py": "41c9114885587b4b256ca4c8e383b9d793229c0dcea299198a858077466b4fa7",
+    "learning/device_probe.py": "17735fa8af21f0c45b30413ffbfcd4be60cc3367afefecc71c6383aa556b658f",
+    "tools/probe_action_collection.py": "46b9bc095ffa19a86dd3d27b047fa2b8d25284570e01f4168a9cad84a63a951c"
+  }
+}
