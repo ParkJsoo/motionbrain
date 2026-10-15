@@ -1,0 +1,773 @@
+{
+  "sourceAgeLimitMs": 100,
+  "motorCommandsSent": 0,
+  "runs": [
+    {
+      "runId": "1bdd4cb50cf5474ab1a123e822a4fe63",
+      "mode": "legacy",
+      "order": 0,
+      "artifactCount": 108,
+      "eventCount": 26,
+      "jpegCount": 13,
+      "samples": [
+        {
+          "measurementAgeMs": 99.23360999887343,
+          "persistenceAgeMs": 135.24943900115437,
+          "reportedSourceAgeMs": 43.705,
+          "httpMs": 44.202427998243365,
+          "processingMs": 27.817636997497175,
+          "accepted": true,
+          "persistenceWithin100ms": false,
+          "reason": null,
+          "serverAssociated": true,
+          "serverSelectionMs": 1,
+          "discarded": null
+        },
+        {
+          "measurementAgeMs": 117.20277900030906,
+          "persistenceAgeMs": 157.88646400187702,
+          "reportedSourceAgeMs": 43.408,
+          "httpMs": 59.364310996897984,
+          "processingMs": 29.30072600065614,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 1,
+          "discarded": null
+        },
+        {
+          "measurementAgeMs": 120.25648999758461,
+          "persistenceAgeMs": 157.16884200071263,
+          "reportedSourceAgeMs": 59.212,
+          "httpMs": 54.04781700053718,
+          "processingMs": 19.379912999283988,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 1,
+          "discarded": null
+        },
+        {
+          "measurementAgeMs": 118.37866199920956,
+          "persistenceAgeMs": 155.21499699816178,
+          "reportedSourceAgeMs": 42.983,
+          "httpMs": 65.08961399958935,
+          "processingMs": 23.28318700165255,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 1,
+          "discarded": null
+        },
+        {
+          "measurementAgeMs": 122.79305299920263,
+          "persistenceAgeMs": 157.51651300046245,
+          "reportedSourceAgeMs": 53.67,
+          "httpMs": 53.34691999814822,
+          "processingMs": 26.82981900215964,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 0,
+          "discarded": null
+        },
+        {
+          "measurementAgeMs": 141.18736999701594,
+          "persistenceAgeMs": 181.94834999924876,
+          "reportedSourceAgeMs": 63.61,
+          "httpMs": 55.37966699921526,
+          "processingMs": 28.404553999280324,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 1,
+          "discarded": null
+        },
+        {
+          "measurementAgeMs": 131.5730839997649,
+          "persistenceAgeMs": 167.03647699986493,
+          "reportedSourceAgeMs": 68.206,
+          "httpMs": 45.63801800031797,
+          "processingMs": 25.15988099912647,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 1,
+          "discarded": null
+        },
+        {
+          "measurementAgeMs": 99.41505499996268,
+          "persistenceAgeMs": 133.15760299924435,
+          "reportedSourceAgeMs": 37.761,
+          "httpMs": 56.087619999743765,
+          "processingMs": 31.986482001229888,
+          "accepted": true,
+          "persistenceWithin100ms": false,
+          "reason": null,
+          "serverAssociated": true,
+          "serverSelectionMs": 1,
+          "discarded": null
+        },
+        {
+          "measurementAgeMs": 133.57297299963818,
+          "persistenceAgeMs": 178.08335899982183,
+          "reportedSourceAgeMs": 71.447,
+          "httpMs": 44.4314989981649,
+          "processingMs": 25.489801999356132,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 0,
+          "discarded": null
+        },
+        {
+          "measurementAgeMs": 109.84489299750678,
+          "persistenceAgeMs": 149.4348539986906,
+          "reportedSourceAgeMs": 48.566,
+          "httpMs": 38.11089000009815,
+          "processingMs": 32.608045999950264,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 1,
+          "discarded": null
+        },
+        {
+          "measurementAgeMs": 137.8834730002298,
+          "persistenceAgeMs": 177.86044599951384,
+          "reportedSourceAgeMs": 70.791,
+          "httpMs": 57.019846000912366,
+          "processingMs": 25.571523001417518,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 0,
+          "discarded": null
+        },
+        {
+          "measurementAgeMs": 134.4399639983736,
+          "persistenceAgeMs": 171.1775969979486,
+          "reportedSourceAgeMs": 50.792,
+          "httpMs": 73.88818500112393,
+          "processingMs": 21.726692000811454,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 0,
+          "discarded": null
+        }
+      ]
+    },
+    {
+      "runId": "675bb1c66e724f638aa6657133b691b4",
+      "mode": "fresh",
+      "order": 1,
+      "artifactCount": 109,
+      "eventCount": 26,
+      "jpegCount": 13,
+      "samples": [
+        {
+          "measurementAgeMs": 158.5610750001818,
+          "persistenceAgeMs": 220.5390869997812,
+          "reportedSourceAgeMs": 36.829,
+          "httpMs": 105.75676000007661,
+          "processingMs": 20.915352000884013,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 68,
+          "discarded": 2
+        },
+        {
+          "measurementAgeMs": 168.0053090002027,
+          "persistenceAgeMs": 223.46712300152168,
+          "reportedSourceAgeMs": 37.22,
+          "httpMs": 118.33725699761999,
+          "processingMs": 23.549774999992223,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 72,
+          "discarded": 2
+        },
+        {
+          "measurementAgeMs": 221.6096649974042,
+          "persistenceAgeMs": 299.1272759974799,
+          "reportedSourceAgeMs": 36.902,
+          "httpMs": 172.77688199828845,
+          "processingMs": 23.868918997322908,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 72,
+          "discarded": 2
+        },
+        {
+          "measurementAgeMs": 182.9067090021111,
+          "persistenceAgeMs": 226.49134900171916,
+          "reportedSourceAgeMs": 36.811,
+          "httpMs": 131.15734099847032,
+          "processingMs": 23.900733001937624,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": false,
+          "serverSelectionMs": null,
+          "discarded": 2
+        },
+        {
+          "measurementAgeMs": 175.07014699939592,
+          "persistenceAgeMs": 226.98412500020768,
+          "reportedSourceAgeMs": 37.208,
+          "httpMs": 103.16318799959845,
+          "processingMs": 45.35626199867693,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 49,
+          "discarded": 2
+        },
+        {
+          "measurementAgeMs": 144.4678709981488,
+          "persistenceAgeMs": 195.76228399683512,
+          "reportedSourceAgeMs": 36.251,
+          "httpMs": 89.75224199821241,
+          "processingMs": 32.49182600120548,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 46,
+          "discarded": 2
+        },
+        {
+          "measurementAgeMs": 156.0244090011071,
+          "persistenceAgeMs": 204.42153300027317,
+          "reportedSourceAgeMs": 36.823,
+          "httpMs": 96.97783700175933,
+          "processingMs": 33.166908000566764,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 62,
+          "discarded": 2
+        },
+        {
+          "measurementAgeMs": 141.95382600028697,
+          "persistenceAgeMs": 174.0832870005821,
+          "reportedSourceAgeMs": 36.917,
+          "httpMs": 97.77256499728537,
+          "processingMs": 18.188023001130205,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 60,
+          "discarded": 2
+        },
+        {
+          "measurementAgeMs": 150.86808099642232,
+          "persistenceAgeMs": 186.32325099662714,
+          "reportedSourceAgeMs": 36.903,
+          "httpMs": 95.09016100128065,
+          "processingMs": 26.612358997226693,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 51,
+          "discarded": 2
+        },
+        {
+          "measurementAgeMs": 149.71059700331767,
+          "persistenceAgeMs": 183.428793001835,
+          "reportedSourceAgeMs": 36.81,
+          "httpMs": 95.18316000321647,
+          "processingMs": 24.44485400337726,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 45,
+          "discarded": 2
+        },
+        {
+          "measurementAgeMs": 146.71206699851922,
+          "persistenceAgeMs": 184.13152200075587,
+          "reportedSourceAgeMs": 36.806,
+          "httpMs": 96.23634699892136,
+          "processingMs": 24.192598997615278,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 41,
+          "discarded": 2
+        },
+        {
+          "measurementAgeMs": 145.68150899724873,
+          "persistenceAgeMs": null,
+          "reportedSourceAgeMs": 36.853,
+          "httpMs": 108.6007720005,
+          "processingMs": 0.0407029983762186,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "anchor_expired",
+          "serverAssociated": true,
+          "serverSelectionMs": 68,
+          "discarded": 2
+        }
+      ]
+    },
+    {
+      "runId": "cc0f7996d2f8476cbbe1c6bf70eb76e5",
+      "mode": "fresh",
+      "order": 2,
+      "artifactCount": 109,
+      "eventCount": 26,
+      "jpegCount": 13,
+      "samples": [
+        {
+          "measurementAgeMs": 145.34916300020996,
+          "persistenceAgeMs": 178.77482600146323,
+          "reportedSourceAgeMs": 36.875,
+          "httpMs": 101.1490689998027,
+          "processingMs": 21.373955998569727,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": false,
+          "serverSelectionMs": null,
+          "discarded": 1
+        },
+        {
+          "measurementAgeMs": 150.72711900033522,
+          "persistenceAgeMs": 189.012226999735,
+          "reportedSourceAgeMs": 36.94,
+          "httpMs": 111.8539810013317,
+          "processingMs": 20.451506999961566,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 55,
+          "discarded": 2
+        },
+        {
+          "measurementAgeMs": 154.04382699676415,
+          "persistenceAgeMs": 189.6017349991386,
+          "reportedSourceAgeMs": 36.854,
+          "httpMs": 105.85260899824789,
+          "processingMs": 23.8923809993139,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 56,
+          "discarded": 2
+        },
+        {
+          "measurementAgeMs": 131.56724000103563,
+          "persistenceAgeMs": 165.66569000090962,
+          "reportedSourceAgeMs": 36.936,
+          "httpMs": 81.35547800338827,
+          "processingMs": 20.944277002854506,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 40,
+          "discarded": 2
+        },
+        {
+          "measurementAgeMs": 164.73466699989325,
+          "persistenceAgeMs": 202.80540800030388,
+          "reportedSourceAgeMs": 36.902,
+          "httpMs": 106.75957599960384,
+          "processingMs": 27.614509999693837,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 64,
+          "discarded": 2
+        },
+        {
+          "measurementAgeMs": 143.64296499979497,
+          "persistenceAgeMs": 177.6704890012257,
+          "reportedSourceAgeMs": 36.877,
+          "httpMs": 94.51337199789123,
+          "processingMs": 23.540571000921773,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 56,
+          "discarded": 2
+        },
+        {
+          "measurementAgeMs": 139.88277999992647,
+          "persistenceAgeMs": 180.22098699980347,
+          "reportedSourceAgeMs": 36.807,
+          "httpMs": 99.24043099817936,
+          "processingMs": 21.103885999764316,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 38,
+          "discarded": 2
+        },
+        {
+          "measurementAgeMs": 174.9055489997985,
+          "persistenceAgeMs": 212.17044999850566,
+          "reportedSourceAgeMs": 36.86,
+          "httpMs": 124.71500899846433,
+          "processingMs": 24.48627900230349,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 67,
+          "discarded": 2
+        },
+        {
+          "measurementAgeMs": 162.9104719997747,
+          "persistenceAgeMs": 201.18782099801024,
+          "reportedSourceAgeMs": 36.961,
+          "httpMs": 113.52180799804046,
+          "processingMs": 21.459195002535125,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 67,
+          "discarded": 2
+        },
+        {
+          "measurementAgeMs": 140.16825699812128,
+          "persistenceAgeMs": 175.71123999962677,
+          "reportedSourceAgeMs": 36.799,
+          "httpMs": 104.1806520006503,
+          "processingMs": 21.082737999677192,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 50,
+          "discarded": 2
+        },
+        {
+          "measurementAgeMs": 143.20835999768855,
+          "persistenceAgeMs": 172.50808499756198,
+          "reportedSourceAgeMs": 36.902,
+          "httpMs": 87.10829800111242,
+          "processingMs": 26.089069000590825,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 46,
+          "discarded": 2
+        },
+        {
+          "measurementAgeMs": 168.97049099803252,
+          "persistenceAgeMs": 208.44935900036643,
+          "reportedSourceAgeMs": 36.872,
+          "httpMs": 113.3996800017485,
+          "processingMs": 27.436845997726778,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 61,
+          "discarded": 2
+        }
+      ]
+    },
+    {
+      "runId": "8db28e2255d543108735b768eee9afb2",
+      "mode": "legacy",
+      "order": 3,
+      "artifactCount": 108,
+      "eventCount": 26,
+      "jpegCount": 13,
+      "samples": [
+        {
+          "measurementAgeMs": 127.3350459990187,
+          "persistenceAgeMs": 162.51325599961353,
+          "reportedSourceAgeMs": 67.746,
+          "httpMs": 43.36401300315629,
+          "processingMs": 28.78784399945289,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 1,
+          "discarded": null
+        },
+        {
+          "measurementAgeMs": 122.35830400312086,
+          "persistenceAgeMs": 153.68935000004245,
+          "reportedSourceAgeMs": 66.33,
+          "httpMs": 41.77155499928631,
+          "processingMs": 20.99112799987779,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 1,
+          "discarded": null
+        },
+        {
+          "measurementAgeMs": 123.577991000609,
+          "persistenceAgeMs": 153.8051090013755,
+          "reportedSourceAgeMs": 71.413,
+          "httpMs": 36.83857400028501,
+          "processingMs": 21.95833600126207,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 0,
+          "discarded": null
+        },
+        {
+          "measurementAgeMs": 100.29255699929595,
+          "persistenceAgeMs": 136.23101499989676,
+          "reportedSourceAgeMs": 48.852,
+          "httpMs": 36.30554499977734,
+          "processingMs": 23.324648002017057,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 1,
+          "discarded": null
+        },
+        {
+          "measurementAgeMs": 137.96790299797314,
+          "persistenceAgeMs": 172.75048999921884,
+          "reportedSourceAgeMs": 60.345,
+          "httpMs": 68.30326599811087,
+          "processingMs": 29.09798699693056,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 0,
+          "discarded": null
+        },
+        {
+          "measurementAgeMs": 122.62582000184479,
+          "persistenceAgeMs": 158.49326099996244,
+          "reportedSourceAgeMs": 65.236,
+          "httpMs": 42.599617001542356,
+          "processingMs": 23.64456900249934,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 1,
+          "discarded": null
+        },
+        {
+          "measurementAgeMs": 123.98932600093237,
+          "persistenceAgeMs": 165.97391500011713,
+          "reportedSourceAgeMs": 68.222,
+          "httpMs": 41.90897900116397,
+          "processingMs": 25.55215200118255,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 1,
+          "discarded": null
+        },
+        {
+          "measurementAgeMs": 115.21610299776611,
+          "persistenceAgeMs": 157.6502589969833,
+          "reportedSourceAgeMs": 60.638,
+          "httpMs": 41.697111999383196,
+          "processingMs": 23.612828998011537,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 1,
+          "discarded": null
+        },
+        {
+          "measurementAgeMs": 104.37092100034025,
+          "persistenceAgeMs": 143.63325499795283,
+          "reportedSourceAgeMs": 51.266,
+          "httpMs": 40.2441149999504,
+          "processingMs": 20.188547001453117,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 0,
+          "discarded": null
+        },
+        {
+          "measurementAgeMs": 103.62862699911487,
+          "persistenceAgeMs": 140.16507600171167,
+          "reportedSourceAgeMs": 46.961,
+          "httpMs": 41.53609599961783,
+          "processingMs": 22.404568997444585,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 0,
+          "discarded": null
+        },
+        {
+          "measurementAgeMs": 115.16931500210403,
+          "persistenceAgeMs": 151.76383700219077,
+          "reportedSourceAgeMs": 66.079,
+          "httpMs": 41.21052600021358,
+          "processingMs": 18.20050300011644,
+          "accepted": false,
+          "persistenceWithin100ms": false,
+          "reason": "source_age_exceeds_policy",
+          "serverAssociated": true,
+          "serverSelectionMs": 1,
+          "discarded": null
+        },
+        {
+          "measurementAgeMs": 89.77422999764931,
+          "persistenceAgeMs": 126.6984689983041,
+          "reportedSourceAgeMs": 42.391,
+          "httpMs": 40.906641999754356,
+          "processingMs": 21.989075998135377,
+          "accepted": true,
+          "persistenceWithin100ms": false,
+          "reason": null,
+          "serverAssociated": true,
+          "serverSelectionMs": 0,
+          "discarded": null
+        }
+      ]
+    }
+  ],
+  "modes": {
+    "legacy": {
+      "samples": 24,
+      "accepted": 3,
+      "persistenceWithin100ms": 0,
+      "reasons": {
+        "null": 3,
+        "source_age_exceeds_policy": 21
+      },
+      "statistics": {
+        "measurementAgeMs": {
+          "n": 24,
+          "min": 89.77422999764931,
+          "median": 121.30739700035274,
+          "max": 141.18736999701594
+        },
+        "persistenceAgeMs": {
+          "n": 24,
+          "min": 126.6984689983041,
+          "median": 157.34267750058754,
+          "max": 181.94834999924876
+        },
+        "reportedSourceAgeMs": {
+          "n": 24,
+          "min": 37.761,
+          "median": 59.7785,
+          "max": 71.447
+        },
+        "httpMs": {
+          "n": 24,
+          "min": 36.30554499977734,
+          "median": 43.78322050069983,
+          "max": 73.88818500112393
+        },
+        "processingMs": {
+          "n": 24,
+          "min": 18.20050300011644,
+          "median": 24.402225000812905,
+          "max": 32.608045999950264
+        },
+        "serverSelectionMs": {
+          "n": 24,
+          "min": 0,
+          "median": 1.0,
+          "max": 1
+        },
+        "discarded": null
+      }
+    },
+    "fresh": {
+      "samples": 24,
+      "accepted": 0,
+      "persistenceWithin100ms": 0,
+      "reasons": {
+        "source_age_exceeds_policy": 23,
+        "anchor_expired": 1
+      },
+      "statistics": {
+        "measurementAgeMs": {
+          "n": 24,
+          "min": 131.56724000103563,
+          "median": 150.79759999837876,
+          "max": 221.6096649974042
+        },
+        "persistenceAgeMs": {
+          "n": 23,
+          "min": 165.66569000090962,
+          "median": 189.6017349991386,
+          "max": 299.1272759974799
+        },
+        "reportedSourceAgeMs": {
+          "n": 24,
+          "min": 36.251,
+          "median": 36.8735,
+          "max": 37.22
+        },
+        "httpMs": {
+          "n": 24,
+          "min": 81.35547800338827,
+          "median": 103.67192000012437,
+          "max": 172.77688199828845
+        },
+        "processingMs": {
+          "n": 24,
+          "min": 0.0407029983762186,
+          "median": 23.880649998318404,
+          "max": 45.35626199867693
+        },
+        "serverSelectionMs": {
+          "n": 22,
+          "min": 38,
+          "median": 56.0,
+          "max": 72
+        },
+        "discarded": {
+          "n": 24,
+          "min": 1,
+          "median": 2.0,
+          "max": 2
+        }
+      }
+    }
+  }
+}
