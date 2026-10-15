@@ -1,0 +1,9 @@
+........{"samples": 1, "requested": 91}
+{"status": "failed", "error": "AssertionError: ", "completedSamples": 1, "outputLogUnchanged": true, "integrityErrors": [], "motorCommandsSent": 0, "controlEligible": false, "trainingEligible": false}
+.{"status": "failed", "error": "ValueError: invalid_capture", "completedSamples": 0, "outputLogUnchanged": true, "integrityErrors": [], "motorCommandsSent": 0, "controlEligible": false, "trainingEligible": false}
+.{"status": "failed", "error": "ValueError: invalid_direct_send_trace", "completedSamples": 0, "outputLogUnchanged": true, "integrityErrors": [], "motorCommandsSent": 0, "controlEligible": false, "trainingEligible": false}
+.
+----------------------------------------------------------------------
+Ran 11 tests in 0.031s
+
+OK

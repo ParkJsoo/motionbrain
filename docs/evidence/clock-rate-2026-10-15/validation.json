@@ -1,0 +1,42 @@
+{
+  "testedProductionCommit": "2d59a81e92ac09ad361e9f74bb878dfcc7cae078",
+  "collectedSourceSha256": {
+    "clock_analysis.py": "b08b3da6c1285561d35deaa46159942acee189c4fc9413c2d8323eceb7ae1743",
+    "collect.py": "070f05a5460ad494e6d820b0f244ba079b2d963f6bc172bbc68aa9213ea508ec",
+    "learning/artifacts.py": "a9077eed9a5e2825f6c78fb9eca1ca03ac43693d91c95a0c109fb343707ba0b4",
+    "learning/device_adapter.py": "80b459fd910afc415f967ed0537dbe2774207d44fcf36b91b96b33bb4ff2871d",
+    "learning/fresh_capture.py": "0ee84691a3c86f21a20650286a329a567671bd7d9b457d106555ac8bbbbde8ae",
+    "learning/http_timing.py": "28ebe135f4064f93cd096c89fd68d0c3e6398400f02b6b610fc26a796a06815e",
+    "ros2_ws/src/motionbrain_ros_bridge/motionbrain_ros_bridge/observation.py": "8424f793a794cd6318a9a069a7d0dd86e2bf65e4f8de9b2a956fe39b84840316"
+  },
+  "experimentScriptSha256": {
+    "docs/evidence/clock-rate-2026-10-15/collect.py": "070f05a5460ad494e6d820b0f244ba079b2d963f6bc172bbc68aa9213ea508ec",
+    "docs/evidence/clock-rate-2026-10-15/test_clock_analysis.py": "989a736325238bfb52a54c6b2df05f44a12dff09cac67c91007618ee4dea47b1",
+    "docs/evidence/clock-rate-2026-10-15/test_collect.py": "d236de078d9a62b858c033d9a11661ed9c2828659935dfa55d1be4cc90e28f32",
+    "docs/evidence/clock-rate-2026-10-15/verify.py": "54cefa8ddff73e3cc1aa375e96c9c0ab73a2c30e4806f7f4ef7f875001d64846",
+    "docs/evidence/clock-rate-2026-10-15/clock_analysis.py": "b08b3da6c1285561d35deaa46159942acee189c4fc9413c2d8323eceb7ae1743"
+  },
+  "offlineTests": 11,
+  "fullSuiteReused": {
+    "tests": 528,
+    "evidence": "../consumption-2026-10-15/tests.log",
+    "productionCodeUnchanged": true
+  },
+  "liveSamples": 91,
+  "verifiedArtifactCount": 283,
+  "verifiedEventCount": 93,
+  "verifiedJpegCount": 91,
+  "sourceAgeLimitMs": 100,
+  "productionAssumedRatePpm": 1000,
+  "productionTimestampMarginMs": 0.002,
+  "productionGatesChanged": false,
+  "instantaneousRateBoundValidated": false,
+  "timestampMarginMeasured": false,
+  "physicalCalibration": false,
+  "usableForControl": false,
+  "motorCommandsSent": 0,
+  "firmwareUploaded": false,
+  "servicesRestarted": false,
+  "originalsCommitted": false,
+  "review": "independent pre-live and final reviews: actual raw replay byte-identical; 11 tests independently passed; no unresolved P0/P1/P2"
+}
