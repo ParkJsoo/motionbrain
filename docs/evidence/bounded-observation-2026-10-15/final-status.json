@@ -1,0 +1,29 @@
+{
+  "state": "IDLE",
+  "motorEnabled": false,
+  "motorSpeeds": {
+    "M1": 0,
+    "M2": 0,
+    "M3": 0,
+    "M4": 0,
+    "M5": 0
+  },
+  "lastCommandId": 9,
+  "lastCommandType": "disarm",
+  "controllerBootId": "ba13ffb8a0f9864ee7d7034ce6779b96",
+  "outputLogUnchangedAcrossAllRequests": true,
+  "cameraBootId": "5bfe5283286bc8599cae44c1612b6869",
+  "captureFailures": 0,
+  "cameraRecoveries": 0,
+  "services": [
+    "active/NRestarts=0",
+    "active/NRestarts=0",
+    "active/NRestarts=0"
+  ],
+  "throttled": "0x0",
+  "operatingHead": "559db54a8db5a9696e454e9e0a6068118a9657ca",
+  "motorCommandsSent": 0,
+  "firmwareUploaded": false,
+  "servicesRestarted": false,
+  "physicalBatteryDisconnectReconfirmed": false
+}

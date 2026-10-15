@@ -21,6 +21,7 @@ def main(argv=None):
     parser.add_argument("--camera-url", required=True)
     parser.add_argument("--perception-url", default="http://127.0.0.1:8766")
     parser.add_argument("--output-dir", type=Path, default=ROOT / "datasets/fast_probes")
+    parser.add_argument("--request-id", help="fixed single request: max 5 captures, 3s after anchor; requires causal fresh shadow options")
     parser.add_argument("--samples", type=int, default=8)
     parser.add_argument("--match-workers", type=int, choices=(1, 2, 3), default=3,
                         help="parallel scale matches within one frame; 1 reproduces serial matching")
@@ -63,7 +64,7 @@ def main(argv=None):
                                 capture_timing=args.capture_timing, match_workers=args.match_workers,
                                 parallel_persistence=not args.serial_persistence, fresh_capture=args.fresh_capture,
                                 shadow_consumption=args.shadow_consumption, max_persistence_ms=args.max_persistence_ms,
-                                fresh_age_mode=args.fresh_age_mode, causal_anchor=args.causal_anchor)
+                                fresh_age_mode=args.fresh_age_mode, causal_anchor=args.causal_anchor, request_id=args.request_id)
         print(json.dumps({"runDir": str(run_dir), **{k: v for k, v in report.items()
                           if k not in ("artifacts", "results")},
                           "measurements": [{k: v for k, v in r.items() if k not in ("image", "source")}

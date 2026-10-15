@@ -13,7 +13,8 @@ from learning.device_adapter import DeviceReadAdapter, DeviceReadError, _object
 from learning.device_probe import _idle
 from learning.fresh_capture import validate_fresh_capture
 from learning.fast_observation import AnchoredRoiMeasurement
-from learning.anchor_age import causal_anchor_basis
+from learning.anchor_age import causal_anchor_basis, anchor_age_upper_ms
+from learning.observation_attempt import ObservationAttempt, AttemptStopped, POLICY as ATTEMPT_POLICY
 from learning.source_age import source_age_basis, source_age_upper_ms, validate_fresh_age_mode
 from learning.observation_consumer import ShadowObservationConsumer
 from ros2_ws.src.motionbrain_ros_bridge.motionbrain_ros_bridge.observation import parse_capture_headers
@@ -78,7 +79,7 @@ def _persist_capture(store, index, receipt, body, pending, record, artifacts, *,
 
 def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.sleep, capture_timing=False,
                    match_workers=3, parallel_persistence=True, fresh_capture=False,
-                   shadow_consumption=False, max_persistence_ms=250, fresh_age_mode="clock_margin", causal_anchor=False):
+                   shadow_consumption=False, max_persistence_ms=250, fresh_age_mode="clock_margin", causal_anchor=False, request_id=None):
     if type(causal_anchor) is not bool or (causal_anchor and fresh_age_mode != "send_start"):
         raise ValueError("causal anchor requires send_start mode")
     validate_fresh_age_mode(fresh_age_mode)
@@ -99,6 +100,12 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
         raise ValueError("fresh_capture must be boolean")
     if type(shadow_consumption) is not bool:
         raise ValueError("shadow_consumption must be boolean")
+    attempt = None
+    if request_id is not None:
+        if not (causal_anchor and shadow_consumption and fresh_capture and max_persistence_ms == 250):
+            raise ValueError("bounded attempt requires causal fresh shadow mode and 250ms persistence")
+        samples, interval = ATTEMPT_POLICY["maxCaptures"], 0
+        attempt = ObservationAttempt(request_id, transport.clock)
     consumer = ShadowObservationConsumer(transport.clock, transport.host_clock_id,
                                          max_persistence_ms=max_persistence_ms, fresh_age_mode=fresh_age_mode) if shadow_consumption else None
     artifacts, results = [], []
@@ -132,10 +139,11 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
     source_root = Path(__file__).resolve().parents[1]
     sources = ["learning/fast_observation.py", "learning/fast_probe.py", "learning/device_adapter.py",
                "learning/capture_timing.py", "learning/http_timing.py", "learning/source_age.py", "learning/fresh_capture.py",
-               "learning/anchor_age.py", "learning/artifacts.py", "learning/observation_consumer.py", "tools/probe_fast_observation.py",
+               "learning/anchor_age.py", "learning/observation_attempt.py", "learning/artifacts.py", "learning/observation_consumer.py", "tools/probe_fast_observation.py", "tools/evaluate_observation_attempts.py",
                "ros2_ws/src/motionbrain_ros_bridge/motionbrain_ros_bridge/observation.py"]
     save_json("session.json", {"schemaVersion": "motionbrain.fast_probe_session.v1",
                               "policy": AnchoredRoiMeasurement.POLICY, "requestedSamples": samples,
+                              "observationAttempt": attempt.snapshot() if attempt else None,
                               "interval": interval, "hostClockId": transport.host_clock_id,
                               "capturePersistence": "single_frame_after_measurement",
                               "parallelPersistence": parallel_persistence,
@@ -186,19 +194,19 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
                 request_started=checkpoint_receipt["requestStartedMonotonic"],
                 received=checkpoint_receipt["receivedMonotonic"],
                 host_clock_id=transport.host_clock_id, fresh_age_mode="send_start")
-            for attempt in range(8):
+            for poll_index in range(8):
                 candidate = _object(transport.get("perception", "/api/detection")[0])
                 captured = candidate.get("capturedUs")
                 if (candidate.get("cameraBootId") != checkpoint_source["cameraBootId"]
                         or type(captured) is not int or not 0 < captured < 10**19
                         or candidate.get("sourceFrameId") != f"{checkpoint_source['cameraBootId']}:{captured}"):
                     raise DeviceReadError("anchor_wait_identity_mismatch")
-                store.append("anchor_wait_polled", str(attempt),
+                store.append("anchor_wait_polled", str(poll_index),
                              {"sourceFrameId": candidate["sourceFrameId"],
                               "afterCheckpoint": captured > checkpoint_source["capturedUs"]})
                 if captured > checkpoint_source["capturedUs"]:
                     break
-                if attempt == 7:
+                if poll_index == 7:
                     raise DeviceReadError("anchor_wait_exhausted")
                 sleep(1)
         anchor_bytes = []
@@ -223,7 +231,11 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
                     anchor_evidence=anchor_evidence)
         tracker = AnchoredRoiMeasurement(anchor["observation"], anchor_bytes[0], clock=transport.clock,
                                          match_workers=match_workers, fresh_age_mode=fresh_age_mode, anchor_evidence=anchor_evidence)
+        if attempt:
+            attempt.anchor_ready()
         for index in range(samples):
+            if attempt:
+                attempt.check()
             if consumer:
                 consumer.check_ready()
             if not _idle(adapter.status()):
@@ -235,6 +247,13 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
                 store.prepare_parent(f"measurements/{index:04d}.json")
             prepare_ms = (transport.clock.monotonic()-prepare_started)*1000
             store.append("capture_requested", str(index), {})
+            if attempt:
+                attempt.check()
+                if anchor_age_upper_ms(tracker.anchor_basis, transport.clock.monotonic(),
+                                       transport.host_clock_id, tracker.anchor_host) > 15000:
+                    raise AttemptStopped("anchor_expired_before_capture")
+            if attempt:
+                attempt.capture()
             receipt, body = None, None
             camera_receipts = []
             try:
@@ -249,7 +268,8 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
                 result = tracker.measure(body, source, request_started=receipt["requestStartedMonotonic"],
                                          received=receipt["receivedMonotonic"], host_clock_id=transport.host_clock_id,
                                          capture_receipt=receipt)
-                consumption = consumer.consume(result, source, receipt, body) if consumer else None
+                consumption = consumer.consume(result, source, receipt, body,
+                    deadline_monotonic=attempt.deadline if attempt else None) if consumer else None
             finally:
                 pending, camera_receipts = camera_receipts, None
                 ref, storage_timing = _persist_capture(store, index, receipt, body, pending, record, artifacts,
@@ -293,6 +313,8 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
             results.append(result)
             if consumer:
                 consumer.finish_persistence(source["sourceFrameId"], transport.host_clock_id)
+            if attempt and attempt.finish_frame(result, consumer.records[-1]):
+                break
             if capture_timing:
                 after_camera = _object(transport.get("camera", "/status")[0])
                 timing = analyze_capture_timing(receipt, before_camera, after_camera, fresh_age_mode=fresh_age_mode)
@@ -301,10 +323,14 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
             if index + 1 < samples:
                 sleep(interval)
     except KeyboardInterrupt:
+        if attempt:
+            attempt.fail("KeyboardInterrupt")
         state, error = "interrupted", "KeyboardInterrupt"
         if consumer:
             consumer.stop(error)
     except Exception as exc:
+        if attempt:
+            attempt.fail(f"{type(exc).__name__}: {exc}")
         state, error = "failed", f"{type(exc).__name__}: {exc}"
         if consumer:
             consumer.stop(error)
@@ -324,6 +350,8 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
     integrity_errors = verify_artifacts(store.root, artifacts)
     if integrity_errors:
         state, error = "failed", "artifact_integrity_error"
+    if attempt and state != "completed":
+        attempt.fail(error)
     if consumer and state != "completed":
         consumer.stop(error)
     summary = {"schemaVersion": "motionbrain.fast_probe.v1", "status": state, "error": error,
@@ -332,6 +360,12 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
                "results": results, "artifacts": artifacts, "integrityErrors": integrity_errors,
                "outputLogUnchanged": unchanged, "motorCommandsSent": 0,
                "trainingEligible": False, "controlEligible": False}
+    if attempt:
+        consumed_rows = [r for r in consumer.records if r["consumed"]]
+        if consumed_rows:
+            attempt.consumed = consumed_rows[0]["consumedMonotonic"]
+        summary["observationAttempt"] = attempt.snapshot()
+        summary["observationAttempt"]["requestToReportMs"] = (transport.clock.monotonic()-attempt.started)*1000
     if capture_timing:
         summary["captureTiming"] = summarize_capture_timing(timing_samples)
     if consumer:

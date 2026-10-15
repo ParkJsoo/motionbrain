@@ -1,0 +1,269 @@
+{
+  "policy": {
+    "maxCaptures": 5,
+    "operationBudgetMs": 3000,
+    "evaluationAttempts": 20,
+    "minimumSuccesses": 16,
+    "maxSourceAgeMs": 100,
+    "maxAnchorAgeMs": 15000,
+    "maxPersistenceMs": 250
+  },
+  "plannedRequests": 20,
+  "completedRequests": 7,
+  "unexecutedRequests": 13,
+  "successes": 1,
+  "successRateAllPlanned": 0.05,
+  "gatePassed": false,
+  "acquisitionFailures": 0,
+  "currentCaptures": 31,
+  "checkpointCaptures": 7,
+  "budgetOverruns": 2,
+  "storageLate": 1,
+  "failureReasons": {
+    "AttemptStopped: operation_budget_exceeded": 2,
+    "AttemptStopped: capture_budget_exhausted": 3,
+    "ConsumptionStopped: persistence_deadline_or_consumption_evidence": 1
+  },
+  "rejectionReasons": {
+    "source_age_exceeds_policy": 30
+  },
+  "timingsMs": {
+    "anchorAcquisitionMs": {
+      "n": 7,
+      "p50": 6889.120330000878,
+      "p95": 7664.792824597679,
+      "max": 7894.961823996709
+    },
+    "requestToConsumptionMs": {
+      "n": 1,
+      "p50": 7109.544398001162,
+      "p95": 7109.544398001162,
+      "max": 7109.544398001162
+    },
+    "requestToCoreEndMs": {
+      "n": 7,
+      "p50": 9480.764124000416,
+      "p95": 10632.339446998958,
+      "max": 10969.123841998226
+    },
+    "operationElapsedMs": {
+      "n": 7,
+      "p50": 2822.72163000016,
+      "p95": 3056.381242401403,
+      "max": 3074.162018001516
+    },
+    "requestToTerminalReturnMs": {
+      "n": 7,
+      "p50": 9874.527174000832,
+      "p95": 11074.723859601,
+      "max": 11442.863033000322
+    }
+  },
+  "requests": [
+    {
+      "requestId": "request-01",
+      "status": "failed",
+      "reason": "AttemptStopped: operation_budget_exceeded",
+      "policy": {
+        "maxCaptures": 5,
+        "operationBudgetMs": 3000,
+        "evaluationAttempts": 20,
+        "minimumSuccesses": 16,
+        "maxSourceAgeMs": 100,
+        "maxAnchorAgeMs": 15000,
+        "maxPersistenceMs": 250
+      },
+      "requestStartedMonotonic": 30565.052016729,
+      "anchorReadyMonotonic": 30572.946978553,
+      "deadlineMonotonic": 30575.946978553,
+      "coreEvidenceEndedMonotonic": 30576.021140571,
+      "currentCaptures": 5,
+      "anchorAcquisitionMs": 7894.961823996709,
+      "requestToConsumptionMs": null,
+      "requestToCoreEndMs": 10969.123841998226,
+      "operationElapsedMs": 3074.162018001516,
+      "operationBudgetExceeded": true,
+      "requestToReportMs": 11405.099752999377
+    },
+    {
+      "requestId": "request-02",
+      "status": "success",
+      "reason": null,
+      "policy": {
+        "maxCaptures": 5,
+        "operationBudgetMs": 3000,
+        "evaluationAttempts": 20,
+        "minimumSuccesses": 16,
+        "maxSourceAgeMs": 100,
+        "maxAnchorAgeMs": 15000,
+        "maxPersistenceMs": 250
+      },
+      "requestStartedMonotonic": 30576.765062012,
+      "anchorReadyMonotonic": 30582.586799699,
+      "deadlineMonotonic": 30585.586799699,
+      "coreEvidenceEndedMonotonic": 30583.944631732,
+      "currentCaptures": 2,
+      "anchorAcquisitionMs": 5821.737686997949,
+      "requestToConsumptionMs": 7109.544398001162,
+      "requestToCoreEndMs": 7179.569719999563,
+      "operationElapsedMs": 1357.832033001614,
+      "operationBudgetExceeded": false,
+      "requestToReportMs": 7668.908740000916
+    },
+    {
+      "requestId": "request-03",
+      "status": "failed",
+      "reason": "AttemptStopped: capture_budget_exhausted",
+      "policy": {
+        "maxCaptures": 5,
+        "operationBudgetMs": 3000,
+        "evaluationAttempts": 20,
+        "minimumSuccesses": 16,
+        "maxSourceAgeMs": 100,
+        "maxAnchorAgeMs": 15000,
+        "maxPersistenceMs": 250
+      },
+      "requestStartedMonotonic": 30584.722212269,
+      "anchorReadyMonotonic": 30591.611332599,
+      "deadlineMonotonic": 30594.611332599,
+      "coreEvidenceEndedMonotonic": 30594.202976393,
+      "currentCaptures": 5,
+      "anchorAcquisitionMs": 6889.120330000878,
+      "requestToConsumptionMs": null,
+      "requestToCoreEndMs": 9480.764124000416,
+      "operationElapsedMs": 2591.6437939995376,
+      "operationBudgetExceeded": false,
+      "requestToReportMs": 9839.474091000739
+    },
+    {
+      "requestId": "request-04",
+      "status": "failed",
+      "reason": "AttemptStopped: capture_budget_exhausted",
+      "policy": {
+        "maxCaptures": 5,
+        "operationBudgetMs": 3000,
+        "evaluationAttempts": 20,
+        "minimumSuccesses": 16,
+        "maxSourceAgeMs": 100,
+        "maxAnchorAgeMs": 15000,
+        "maxPersistenceMs": 250
+      },
+      "requestStartedMonotonic": 30594.895599237,
+      "anchorReadyMonotonic": 30601.786640142,
+      "deadlineMonotonic": 30604.786640142,
+      "coreEvidenceEndedMonotonic": 30604.609361772,
+      "currentCaptures": 5,
+      "anchorAcquisitionMs": 6891.040905000409,
+      "requestToConsumptionMs": null,
+      "requestToCoreEndMs": 9713.76253500057,
+      "operationElapsedMs": 2822.72163000016,
+      "operationBudgetExceeded": false,
+      "requestToReportMs": 9923.231126002065
+    },
+    {
+      "requestId": "request-05",
+      "status": "failed",
+      "reason": "AttemptStopped: operation_budget_exceeded",
+      "policy": {
+        "maxCaptures": 5,
+        "operationBudgetMs": 3000,
+        "evaluationAttempts": 20,
+        "minimumSuccesses": 16,
+        "maxSourceAgeMs": 100,
+        "maxAnchorAgeMs": 15000,
+        "maxPersistenceMs": 250
+      },
+      "requestStartedMonotonic": 30605.124260033,
+      "anchorReadyMonotonic": 30611.160284517,
+      "deadlineMonotonic": 30614.160284517,
+      "coreEvidenceEndedMonotonic": 30614.175177283,
+      "currentCaptures": 5,
+      "anchorAcquisitionMs": 6036.024483997608,
+      "requestToConsumptionMs": null,
+      "requestToCoreEndMs": 9050.917249998747,
+      "operationElapsedMs": 3014.8927660011395,
+      "operationBudgetExceeded": true,
+      "requestToReportMs": 9431.24723100118
+    },
+    {
+      "requestId": "request-06",
+      "status": "failed",
+      "reason": "AttemptStopped: capture_budget_exhausted",
+      "policy": {
+        "maxCaptures": 5,
+        "operationBudgetMs": 3000,
+        "evaluationAttempts": 20,
+        "minimumSuccesses": 16,
+        "maxSourceAgeMs": 100,
+        "maxAnchorAgeMs": 15000,
+        "maxPersistenceMs": 250
+      },
+      "requestStartedMonotonic": 30614.859140367,
+      "anchorReadyMonotonic": 30620.703133692,
+      "deadlineMonotonic": 30623.703133692,
+      "coreEvidenceEndedMonotonic": 30623.604670358,
+      "currentCaptures": 5,
+      "anchorAcquisitionMs": 5843.993325001065,
+      "requestToConsumptionMs": null,
+      "requestToCoreEndMs": 8745.529990999785,
+      "operationElapsedMs": 2901.5366659987194,
+      "operationBudgetExceeded": false,
+      "requestToReportMs": 8992.997441000625
+    },
+    {
+      "requestId": "request-07",
+      "status": "failed",
+      "reason": "ConsumptionStopped: persistence_deadline_or_consumption_evidence",
+      "policy": {
+        "maxCaptures": 5,
+        "operationBudgetMs": 3000,
+        "evaluationAttempts": 20,
+        "minimumSuccesses": 16,
+        "maxSourceAgeMs": 100,
+        "maxAnchorAgeMs": 15000,
+        "maxPersistenceMs": 250
+      },
+      "requestStartedMonotonic": 30624.160875242,
+      "anchorReadyMonotonic": 30631.288607068,
+      "deadlineMonotonic": 30634.288607068,
+      "coreEvidenceEndedMonotonic": 30634.007384434,
+      "currentCaptures": 4,
+      "anchorAcquisitionMs": 7127.731825999945,
+      "requestToConsumptionMs": null,
+      "requestToCoreEndMs": 9846.509192000667,
+      "operationElapsedMs": 2718.7773660007224,
+      "operationBudgetExceeded": false,
+      "requestToReportMs": 10105.480324000382
+    }
+  ],
+  "motorCommandsSent": 0,
+  "trainingEligible": false,
+  "controlEligible": false,
+  "terminalReturnMs": [
+    11442.863033000322,
+    7702.541075999761,
+    9874.527174000832,
+    9959.478805998515,
+    9467.192555999645,
+    9031.625707000785,
+    10215.73245500258
+  ],
+  "auditError": null,
+  "observedSuccessRate": 0.14285714285714285,
+  "sourceAgeMs": {
+    "n": 31,
+    "p50": 140.3078639996238,
+    "p95": 182.40809700000682,
+    "max": 183.95440300082555
+  },
+  "storageMs": {
+    "n": 31,
+    "p50": 73.54578800004674,
+    "p95": 86.33190000000468,
+    "max": 268.89401000153157
+  },
+  "artifactCount": 431,
+  "eventCount": 123,
+  "jpegCount": 45,
+  "cameraCaptureGetAttempts": 38
+}

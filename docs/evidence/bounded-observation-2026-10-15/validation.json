@@ -1,0 +1,28 @@
+{
+  "baseCommit": "f43a11a",
+  "fullSuiteTests": 570,
+  "fullSuiteSeconds": 20.658,
+  "newTests": 17,
+  "sourceSha256": {
+    "learning/anchor_age.py": "4a0230414693e18cc471f079570b75484ae74e30af957e4d4deed6dcd71698d0",
+    "learning/artifacts.py": "a9077eed9a5e2825f6c78fb9eca1ca03ac43693d91c95a0c109fb343707ba0b4",
+    "learning/capture_timing.py": "f70ddc3be5295b5114f204456d99b0acaf5c8922d0b8cb0d246c3e5e19153538",
+    "learning/device_adapter.py": "80b459fd910afc415f967ed0537dbe2774207d44fcf36b91b96b33bb4ff2871d",
+    "learning/fast_observation.py": "82973dd4442dfd9aa8f8527ee4b5b416064bf10dd46a205d9b975cdd62661b77",
+    "learning/fast_probe.py": "23adf20d4d8ce56c9eca3c3aa5e8cb8df1d367550adbc91264a21b8f5c6aff04",
+    "learning/fresh_capture.py": "0ee84691a3c86f21a20650286a329a567671bd7d9b457d106555ac8bbbbde8ae",
+    "learning/http_timing.py": "28ebe135f4064f93cd096c89fd68d0c3e6398400f02b6b610fc26a796a06815e",
+    "learning/observation_attempt.py": "e4eb2832cb1fad905184854223d9905d90120352642a5b238a0cefed603d9de8",
+    "learning/observation_consumer.py": "092143fa4fb59cea6991a361ad59f11938314b871cc96dbb0c1a90d083f42509",
+    "learning/source_age.py": "2a08bb66ba9b4d3cec4a65509a89c9a9d36a28a67f7a1072d9a271e92ac91352",
+    "ros2_ws/src/motionbrain_ros_bridge/motionbrain_ros_bridge/observation.py": "8424f793a794cd6318a9a069a7d0dd86e2bf65e4f8de9b2a956fe39b84840316",
+    "tools/evaluate_observation_attempts.py": "f9abe0fd8d082541b4626b018a666f12529d96a0414149946e3ce3955f619129",
+    "tools/probe_fast_observation.py": "e0c6f74e65f11991efc7571d9a834e5c771e032caa39e1440d53d0d3c137e454"
+  },
+  "artifacts": 431,
+  "events": 123,
+  "jpegs": 45,
+  "audit": "7 original runs verified on Pi and Mac; exit2 is fixed gate failure, not integrity failure",
+  "review": "independent A review: two P2 fixed and verified; no unresolved P0/P1/P2",
+  "rawPath": "/Users/jeongsoopark/develop/arduino/motionbrain/datasets/bounded_observation/2026-10-15/runs"
+}

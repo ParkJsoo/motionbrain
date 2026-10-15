@@ -50,7 +50,7 @@ class ShadowObservationConsumer:
         if self.halted or self.pending is not None:
             raise ConsumptionStopped("consumption_not_ready")
 
-    def consume(self, measurement, source, receipt, body):
+    def consume(self, measurement, source, receipt, body, *, deadline_monotonic=None):
         self.check_ready()
         frame_id = source.get("sourceFrameId")
         if frame_id in self.seen:
@@ -121,7 +121,10 @@ class ShadowObservationConsumer:
                            anchorClockMinRate=self.ANCHOR_CLOCK_MIN_RATE,
                            anchorTimestampErrorMs=self.ANCHOR_TIMESTAMP_ERROR_MS,
                            anchorClockErrorCalibrated=False)
-            if fatal:
+            if deadline_monotonic is not None and (not _number(deadline_monotonic) or now > deadline_monotonic):
+                fatal = True
+                row["reason"] = "operation_budget_exceeded_at_consumption"
+            elif fatal:
                 row["reason"] = "anchor_expired_at_consumption"
             elif measurement.get("accepted") is not True:
                 row["reason"] = "measurement_rejected"
