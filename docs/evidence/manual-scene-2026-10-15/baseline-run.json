@@ -1,0 +1,342 @@
+{
+  "runDir": "/tmp/motionbrain-manual-scene-20261015/baseline/f26becbdc20948209a2699369a00a7cb",
+  "schemaVersion": "motionbrain.fast_probe.v1",
+  "status": "completed",
+  "error": null,
+  "requestedSamples": 6,
+  "completedSamples": 6,
+  "acceptedMeasurements": 0,
+  "integrityErrors": [],
+  "outputLogUnchanged": true,
+  "motorCommandsSent": 0,
+  "trainingEligible": false,
+  "controlEligible": false,
+  "captureTiming": {
+    "schemaVersion": "motionbrain.capture_timing_summary.v1",
+    "samples": 6,
+    "physicalCalibration": false,
+    "controlEligible": false,
+    "validSeries": true,
+    "sensorFrameRateHz": null,
+    "limitations": [
+      "no_optical_timestamp_verification",
+      "equal_clock_rate_assumption",
+      "no_future_drift_bound",
+      "client_scheduling_included",
+      "source_frame_deltas_are_sampled_not_sensor_frame_periods"
+    ],
+    "hostClockId": "7be06ecbe04649f4bc7b29259c64e2e9",
+    "cameraBootId": "4a5ba0ac0adad7522700201e83767811",
+    "serverStatsAssociatedSamples": 5,
+    "constantOffsetConsistent": true,
+    "offsetIntersectionSeconds": [
+      6729.12444556,
+      6729.14444683
+    ],
+    "offsetIntersectionWidthMs": 20.001269999738724,
+    "statistics": {
+      "reportedSourceAgeMs": {
+        "n": 6,
+        "min": 39.391,
+        "median": 51.3335,
+        "max": 63.545
+      },
+      "requestToHeadersMs": {
+        "n": 6,
+        "min": 22.73859200067818,
+        "median": 29.658472000846814,
+        "max": 41.31450199929532
+      },
+      "headersToBodyReadCompleteMs": {
+        "n": 6,
+        "min": 5.553985000005923,
+        "median": 9.200604500620102,
+        "max": 15.377759998955298
+      },
+      "bodyReadToReceiptMs": {
+        "n": 6,
+        "min": 0.1383299986628117,
+        "median": 0.20543049959087512,
+        "max": 0.29603099937958177
+      },
+      "requestTotalMs": {
+        "n": 6,
+        "min": 30.387528000574093,
+        "median": 39.72900149983616,
+        "max": 49.30848600088211
+      },
+      "serverFrameAcquireWaitMs": {
+        "n": 5,
+        "min": 0,
+        "median": 0,
+        "max": 0
+      },
+      "serverBodyWriteMs": {
+        "n": 5,
+        "min": 9,
+        "median": 21,
+        "max": 28
+      },
+      "clientSetupMs": {
+        "n": 6,
+        "min": 0.4116020008950727,
+        "median": 0.5742275006923592,
+        "max": 0.8523689994035522
+      },
+      "addressResolutionMs": {
+        "n": 6,
+        "min": 0.07409099998767488,
+        "median": 0.08075799905782333,
+        "max": 0.15729300139355473
+      },
+      "tcpConnectMs": {
+        "n": 6,
+        "min": 5.382858000302804,
+        "median": 7.984216000295419,
+        "max": 11.845637000078568
+      },
+      "connectedToSendMs": {
+        "n": 6,
+        "min": 0.03811000169662293,
+        "median": 0.04517500019574072,
+        "max": 0.05033200068282895
+      },
+      "requestSendMs": {
+        "n": 6,
+        "min": 0.08510900079272687,
+        "median": 0.09625699931348208,
+        "max": 0.1423859994247323
+      },
+      "requestSentToHeadersMs": {
+        "n": 6,
+        "min": 13.286789999256143,
+        "median": 20.245103000888776,
+        "max": 32.16409999913594
+      }
+    }
+  },
+  "measurements": [
+    {
+      "schemaVersion": "motionbrain.roi_measurement.v1",
+      "method": "fixed_template_translation",
+      "semanticAnchor": {
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6054525541",
+        "imageSha256": "e25e6684a2812b0430749b85087e21437c27382a78d6e3cb1ede964b154b9704",
+        "targetBox": {
+          "height": 87,
+          "width": 103,
+          "x": 146,
+          "y": 125
+        },
+        "label": "cup",
+        "classId": 41
+      },
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6062305681",
+      "imageSha256": "d04cac94ada202f246809d557be8c6603e0c79145c591f4b2c2971c2f25ee8d9",
+      "hostClockId": "7be06ecbe04649f4bc7b29259c64e2e9",
+      "accepted": false,
+      "controlEligible": false,
+      "trainingEligible": false,
+      "captureHostBoundsCalibrated": false,
+      "anchorAgeMs": 7780.14,
+      "requestStartedMonotonic": 12791.491649263,
+      "receivedMonotonic": 12791.540788901,
+      "measurementStartedMonotonic": 12791.542081705,
+      "reportedSourceAgeMs": 63.545,
+      "httpIntervalMs": 49.13963800026977,
+      "preProcessingElapsedMs": 1.2928039996040752,
+      "score": 0.9967177510261536,
+      "peakMargin": 0.4998820126056671,
+      "bestScaleProbe": 1.0,
+      "reportedAgePlusElapsedMs": 153.80116299913965,
+      "processingMs": 39.82372099926579,
+      "reason": "source_age_exceeds_policy",
+      "measurementCompletedMonotonic": 12791.581905426
+    },
+    {
+      "schemaVersion": "motionbrain.roi_measurement.v1",
+      "method": "fixed_template_translation",
+      "semanticAnchor": {
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6054525541",
+        "imageSha256": "e25e6684a2812b0430749b85087e21437c27382a78d6e3cb1ede964b154b9704",
+        "targetBox": {
+          "height": 87,
+          "width": 103,
+          "x": 146,
+          "y": 125
+        },
+        "label": "cup",
+        "classId": 41
+      },
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6062917771",
+      "imageSha256": "29892a462793bdbef1df6de53481a199be86b84189ead724880cdaafa0d79cd0",
+      "hostClockId": "7be06ecbe04649f4bc7b29259c64e2e9",
+      "accepted": false,
+      "controlEligible": false,
+      "trainingEligible": false,
+      "captureHostBoundsCalibrated": false,
+      "anchorAgeMs": 8392.23,
+      "requestStartedMonotonic": 12792.08572856,
+      "receivedMonotonic": 12792.122372798,
+      "measurementStartedMonotonic": 12792.122576108,
+      "reportedSourceAgeMs": 43.512,
+      "httpIntervalMs": 36.644238000008045,
+      "preProcessingElapsedMs": 0.2033100008702604,
+      "score": 0.9969396591186523,
+      "peakMargin": 0.5039500296115875,
+      "bestScaleProbe": 1.0,
+      "reportedAgePlusElapsedMs": 119.4507300004164,
+      "processingMs": 39.091181999538094,
+      "reason": "source_age_exceeds_policy",
+      "measurementCompletedMonotonic": 12792.16166729
+    },
+    {
+      "schemaVersion": "motionbrain.roi_measurement.v1",
+      "method": "fixed_template_translation",
+      "semanticAnchor": {
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6054525541",
+        "imageSha256": "e25e6684a2812b0430749b85087e21437c27382a78d6e3cb1ede964b154b9704",
+        "targetBox": {
+          "height": 87,
+          "width": 103,
+          "x": 146,
+          "y": 125
+        },
+        "label": "cup",
+        "classId": 41
+      },
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6063530067",
+      "imageSha256": "ee8ee7fe771fb0bc91824c6fb6ad83d276112bad316114dfdb68b2848734a944",
+      "hostClockId": "7be06ecbe04649f4bc7b29259c64e2e9",
+      "accepted": false,
+      "controlEligible": false,
+      "trainingEligible": false,
+      "captureHostBoundsCalibrated": false,
+      "anchorAgeMs": 9004.526,
+      "requestStartedMonotonic": 12792.706812445,
+      "receivedMonotonic": 12792.756120931,
+      "measurementStartedMonotonic": 12792.756318427,
+      "reportedSourceAgeMs": 59.155,
+      "httpIntervalMs": 49.30848600088211,
+      "preProcessingElapsedMs": 0.19749599960050546,
+      "score": 0.9967522621154785,
+      "peakMargin": 0.5041703879833221,
+      "bestScaleProbe": 1.0,
+      "reportedAgePlusElapsedMs": 146.11172000067134,
+      "processingMs": 37.45073800018872,
+      "reason": "source_age_exceeds_policy",
+      "measurementCompletedMonotonic": 12792.793769165
+    },
+    {
+      "schemaVersion": "motionbrain.roi_measurement.v1",
+      "method": "fixed_template_translation",
+      "semanticAnchor": {
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6054525541",
+        "imageSha256": "e25e6684a2812b0430749b85087e21437c27382a78d6e3cb1ede964b154b9704",
+        "targetBox": {
+          "height": 87,
+          "width": 103,
+          "x": 146,
+          "y": 125
+        },
+        "label": "cup",
+        "classId": 41
+      },
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6064142375",
+      "imageSha256": "f966b5831f6caf52f2f81ee311a08fd1c53ab8eb56ea40f69f9c172329088de7",
+      "hostClockId": "7be06ecbe04649f4bc7b29259c64e2e9",
+      "accepted": false,
+      "controlEligible": false,
+      "trainingEligible": false,
+      "captureHostBoundsCalibrated": false,
+      "anchorAgeMs": 9616.834,
+      "requestStartedMonotonic": 12793.308548996,
+      "receivedMonotonic": 12793.338936524,
+      "measurementStartedMonotonic": 12793.339125631,
+      "reportedSourceAgeMs": 42.881,
+      "httpIntervalMs": 30.387528000574093,
+      "preProcessingElapsedMs": 0.18910700055130292,
+      "score": 0.9963372945785522,
+      "peakMargin": 0.5032370686531067,
+      "bestScaleProbe": 1.0,
+      "reportedAgePlusElapsedMs": 111.00981600126275,
+      "processingMs": 37.55218100013735,
+      "reason": "source_age_exceeds_policy",
+      "measurementCompletedMonotonic": 12793.376677812
+    },
+    {
+      "schemaVersion": "motionbrain.roi_measurement.v1",
+      "method": "fixed_template_translation",
+      "semanticAnchor": {
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6054525541",
+        "imageSha256": "e25e6684a2812b0430749b85087e21437c27382a78d6e3cb1ede964b154b9704",
+        "targetBox": {
+          "height": 87,
+          "width": 103,
+          "x": 146,
+          "y": 125
+        },
+        "label": "cup",
+        "classId": 41
+      },
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6064934775",
+      "imageSha256": "c0ccf320f0788a951f1ec3ff673f8b1b72852acf816681d6d253a7011345abfc",
+      "hostClockId": "7be06ecbe04649f4bc7b29259c64e2e9",
+      "accepted": false,
+      "controlEligible": false,
+      "trainingEligible": false,
+      "captureHostBoundsCalibrated": false,
+      "anchorAgeMs": 10409.234,
+      "requestStartedMonotonic": 12794.097749714,
+      "receivedMonotonic": 12794.138685003,
+      "measurementStartedMonotonic": 12794.138817574,
+      "reportedSourceAgeMs": 39.391,
+      "httpIntervalMs": 40.935289000117336,
+      "preProcessingElapsedMs": 0.13257099999464117,
+      "score": 0.9956194758415222,
+      "peakMargin": 0.5013748407363892,
+      "bestScaleProbe": 1.0,
+      "reportedAgePlusElapsedMs": 117.76689800146815,
+      "processingMs": 37.30803800135618,
+      "reason": "source_age_exceeds_policy",
+      "measurementCompletedMonotonic": 12794.176125612
+    },
+    {
+      "schemaVersion": "motionbrain.roi_measurement.v1",
+      "method": "fixed_template_translation",
+      "semanticAnchor": {
+        "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6054525541",
+        "imageSha256": "e25e6684a2812b0430749b85087e21437c27382a78d6e3cb1ede964b154b9704",
+        "targetBox": {
+          "height": 87,
+          "width": 103,
+          "x": 146,
+          "y": 125
+        },
+        "label": "cup",
+        "classId": 41
+      },
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:6065366986",
+      "imageSha256": "e77d84c2a66757159a45d2882ae353aa17a45fcdbbc39ef4ed26561e9b4568cb",
+      "hostClockId": "7be06ecbe04649f4bc7b29259c64e2e9",
+      "accepted": false,
+      "controlEligible": false,
+      "trainingEligible": false,
+      "captureHostBoundsCalibrated": false,
+      "anchorAgeMs": 10841.445,
+      "requestStartedMonotonic": 12794.546738047,
+      "receivedMonotonic": 12794.585260761,
+      "measurementStartedMonotonic": 12794.585532088,
+      "reportedSourceAgeMs": 60.236,
+      "httpIntervalMs": 38.52271399955498,
+      "preProcessingElapsedMs": 0.2713270005187951,
+      "score": 0.99607253074646,
+      "peakMargin": 0.5011186003684998,
+      "bestScaleProbe": 1.0,
+      "reportedAgePlusElapsedMs": 133.75930399953643,
+      "processingMs": 34.72926299946266,
+      "reason": "source_age_exceeds_policy",
+      "measurementCompletedMonotonic": 12794.620261351
+    }
+  ]
+}

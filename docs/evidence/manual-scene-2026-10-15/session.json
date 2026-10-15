@@ -1,0 +1,60 @@
+{
+  "schemaVersion": "motionbrain.manual_scene_session.v1",
+  "status": "capture_complete",
+  "mode": "device_read_only",
+  "controlEligible": false,
+  "trainingEligible": false,
+  "motorCommandsSent": 0,
+  "baselineRun": "datasets/fast_probes/f26becbdc20948209a2699369a00a7cb",
+  "baselineVerified": true,
+  "baselineSamples": 6,
+  "phases": [
+    {
+      "label": "moved_large",
+      "operatorConfirmed": true,
+      "run": "datasets/device_probes/74c2b9334d524bc6862c40c890d4ff54",
+      "auditOk": true,
+      "samples": 6
+    },
+    {
+      "label": "moved_small",
+      "operatorConfirmed": true,
+      "run": "datasets/device_probes/685a7b1649a240db8e1563812f03c188",
+      "samples": 6,
+      "auditOk": true
+    },
+    {
+      "label": "partial_occlusion",
+      "operatorConfirmed": true,
+      "run": "datasets/device_probes/8131dfecf11942439112bc9a9fd610cc",
+      "samples": 6,
+      "auditOk": true
+    },
+    {
+      "label": "full_occlusion",
+      "operatorConfirmed": true,
+      "run": "datasets/device_probes/6b9a29d38918462dbc60748db1422941",
+      "samples": 6,
+      "auditOk": true
+    },
+    {
+      "label": "restored",
+      "operatorConfirmed": true,
+      "run": "datasets/device_probes/6331233fbfa44c41b1d01bca84d1963d",
+      "samples": 6,
+      "auditOk": true
+    }
+  ],
+  "instructions": {
+    "moved": "screen left approx 1/4 cup-body width, same distance and handle orientation",
+    "partial": "paper covered left approximately one third of cup body, handle visible",
+    "full": "paper covered cup body and handle, cup not moved",
+    "restored": "paper removed, cup returned close to initial position, handle to right"
+  },
+  "limitations": [
+    "operator phases are not pixel ground truth",
+    "human-paced phases exceed anchor lifetime; do not relabel as live valid tracking"
+  ],
+  "cameraMountUnchangedReported": true,
+  "motorPowerDisconnectedReported": true
+}
