@@ -1,0 +1,272 @@
+{
+  "schemaVersion": "motionbrain.detector_settings_benchmark.v1",
+  "platform": "Linux-6.8.0-1060-raspi-aarch64-with-glibc2.39",
+  "opencvVersion": "4.12.0",
+  "python": "/home/motionbrain/.cache/motionbrain/opencv-venv/bin/python",
+  "benchmarkSha256": "2f6b06c4642e65adb255058ece1801aab15225c2e78f25bb6ad85cb0f2ba6566",
+  "modelSha256": "8bc25a47abdbe2fd23e30eb948746bf856b031ea3cc815166687f52db9f8c659",
+  "labelsSha256": "60e1f8d32bb673c5add80c98e228f1f8fbd2bd014e303f93378e5330426402b7",
+  "detectorSourceSha256": "37a7a0678a15fed80da397d436c3a6768b29c630dded5b143c8b378b4487888e",
+  "motorCommandsSent": 0,
+  "networkRequests": 0,
+  "trainingEligible": false,
+  "scope": "offline stored-image timing; concurrent production perception remains active",
+  "frames": [
+    {
+      "path": "/tmp/motionbrain-device-probe.pG9lsA/runs/8d3b680568f94d5284dd58791726a14c/images/0/camera.jpg",
+      "sha256": "1063f6ad63daef94323aadacc194bc2c160984ce030e9c3e1d51335fbba641b4"
+    },
+    {
+      "path": "/tmp/motionbrain-device-probe.pG9lsA/final-runs/dfe00922ec62447f9f245863b262ec92/images/11/camera.jpg",
+      "sha256": "f81c9bd4503b9ab8a62d13c20fee1d41580420cd8407834a1e9cbe8fbe4117cd"
+    }
+  ],
+  "decodeSamplesMs": [
+    2.5997290013037855,
+    1.5307009998650756,
+    0.9938080002029892,
+    1.0538239985180553,
+    1.102026999433292,
+    1.0208250005234731,
+    1.014677000057418,
+    0.8883289992809296,
+    0.8253680007328512,
+    0.8115709988487652
+  ],
+  "configurations": [
+    {
+      "inputSize": 640,
+      "requestedThreads": 1,
+      "samples": [
+        {
+          "frameSha256": "1063f6ad63daef94323aadacc194bc2c160984ce030e9c3e1d51335fbba641b4",
+          "repeat": 0,
+          "elapsedMs": 3047.846176999883,
+          "detected": true,
+          "label": "cup",
+          "classId": 41,
+          "confidence": 0.9153860645299119,
+          "targetBox": {
+            "x": 145,
+            "y": 123,
+            "width": 104,
+            "height": 85
+          }
+        },
+        {
+          "frameSha256": "f81c9bd4503b9ab8a62d13c20fee1d41580420cd8407834a1e9cbe8fbe4117cd",
+          "repeat": 0,
+          "elapsedMs": 2699.164631001622,
+          "detected": true,
+          "label": "cup",
+          "classId": 41,
+          "confidence": 0.8731479447746509,
+          "targetBox": {
+            "x": 145,
+            "y": 123,
+            "width": 103,
+            "height": 85
+          }
+        },
+        {
+          "frameSha256": "1063f6ad63daef94323aadacc194bc2c160984ce030e9c3e1d51335fbba641b4",
+          "repeat": 1,
+          "elapsedMs": 2969.7673310001846,
+          "detected": true,
+          "label": "cup",
+          "classId": 41,
+          "confidence": 0.9153860645299119,
+          "targetBox": {
+            "x": 145,
+            "y": 123,
+            "width": 104,
+            "height": 85
+          }
+        },
+        {
+          "frameSha256": "f81c9bd4503b9ab8a62d13c20fee1d41580420cd8407834a1e9cbe8fbe4117cd",
+          "repeat": 1,
+          "elapsedMs": 2764.8706679992756,
+          "detected": true,
+          "label": "cup",
+          "classId": 41,
+          "confidence": 0.8731479447746509,
+          "targetBox": {
+            "x": 145,
+            "y": 123,
+            "width": 103,
+            "height": 85
+          }
+        }
+      ],
+      "actualThreads": 1,
+      "config": {
+        "mode": "object",
+        "color": "red",
+        "align_deadband": 0.15,
+        "target_ratio_threshold": 0.02,
+        "object_target": "cup",
+        "object_min_confidence": 0.2,
+        "object_nms_threshold": 0.45,
+        "object_input_size": 640,
+        "object_backend": "opencv-dnn",
+        "object_model": "/home/motionbrain/.cache/motionbrain/models/yolov5s.onnx",
+        "object_labels": "/home/motionbrain/develop/arduino/motionbrain/config/coco80.labels",
+        "object_target_aliases": [
+          "chair",
+          "toilet"
+        ],
+        "target_policy": "largest"
+      },
+      "warmupMs": 3223.694071999489,
+      "status": "completed",
+      "medianMs": 2867.31899949973,
+      "maxMs": 3047.846176999883,
+      "cupDetections": 4
+    },
+    {
+      "inputSize": 320,
+      "requestedThreads": 1,
+      "samples": [],
+      "actualThreads": 1,
+      "config": {
+        "mode": "object",
+        "color": "red",
+        "align_deadband": 0.15,
+        "target_ratio_threshold": 0.02,
+        "object_target": "cup",
+        "object_min_confidence": 0.2,
+        "object_nms_threshold": 0.45,
+        "object_input_size": 320,
+        "object_backend": "opencv-dnn",
+        "object_model": "/home/motionbrain/.cache/motionbrain/models/yolov5s.onnx",
+        "object_labels": "/home/motionbrain/develop/arduino/motionbrain/config/coco80.labels",
+        "object_target_aliases": [
+          "chair",
+          "toilet"
+        ],
+        "target_policy": "largest"
+      },
+      "status": "failed",
+      "errorType": "error",
+      "error": "OpenCV(4.12.0) /io/opencv/modules/dnn/src/layers/reshape_layer.cpp:109: error: (-215:Assertion failed) total(srcShape, srcRange.start, srcRange.end) == maskTotal in function 'computeShapeByReshapeMask'\n"
+    },
+    {
+      "inputSize": 640,
+      "requestedThreads": 2,
+      "samples": [
+        {
+          "frameSha256": "1063f6ad63daef94323aadacc194bc2c160984ce030e9c3e1d51335fbba641b4",
+          "repeat": 0,
+          "elapsedMs": 1750.9937100003299,
+          "detected": true,
+          "label": "cup",
+          "classId": 41,
+          "confidence": 0.9153860645299119,
+          "targetBox": {
+            "x": 145,
+            "y": 123,
+            "width": 104,
+            "height": 85
+          }
+        },
+        {
+          "frameSha256": "f81c9bd4503b9ab8a62d13c20fee1d41580420cd8407834a1e9cbe8fbe4117cd",
+          "repeat": 0,
+          "elapsedMs": 2013.3850120000716,
+          "detected": true,
+          "label": "cup",
+          "classId": 41,
+          "confidence": 0.8731479447746509,
+          "targetBox": {
+            "x": 145,
+            "y": 123,
+            "width": 103,
+            "height": 85
+          }
+        },
+        {
+          "frameSha256": "1063f6ad63daef94323aadacc194bc2c160984ce030e9c3e1d51335fbba641b4",
+          "repeat": 1,
+          "elapsedMs": 2086.6253240001242,
+          "detected": true,
+          "label": "cup",
+          "classId": 41,
+          "confidence": 0.9153860645299119,
+          "targetBox": {
+            "x": 145,
+            "y": 123,
+            "width": 104,
+            "height": 85
+          }
+        },
+        {
+          "frameSha256": "f81c9bd4503b9ab8a62d13c20fee1d41580420cd8407834a1e9cbe8fbe4117cd",
+          "repeat": 1,
+          "elapsedMs": 1959.3322359996819,
+          "detected": true,
+          "label": "cup",
+          "classId": 41,
+          "confidence": 0.8731479447746509,
+          "targetBox": {
+            "x": 145,
+            "y": 123,
+            "width": 103,
+            "height": 85
+          }
+        }
+      ],
+      "actualThreads": 2,
+      "config": {
+        "mode": "object",
+        "color": "red",
+        "align_deadband": 0.15,
+        "target_ratio_threshold": 0.02,
+        "object_target": "cup",
+        "object_min_confidence": 0.2,
+        "object_nms_threshold": 0.45,
+        "object_input_size": 640,
+        "object_backend": "opencv-dnn",
+        "object_model": "/home/motionbrain/.cache/motionbrain/models/yolov5s.onnx",
+        "object_labels": "/home/motionbrain/develop/arduino/motionbrain/config/coco80.labels",
+        "object_target_aliases": [
+          "chair",
+          "toilet"
+        ],
+        "target_policy": "largest"
+      },
+      "warmupMs": 2138.4237709989975,
+      "status": "completed",
+      "medianMs": 1986.3586239998767,
+      "maxMs": 2086.6253240001242,
+      "cupDetections": 4
+    },
+    {
+      "inputSize": 320,
+      "requestedThreads": 2,
+      "samples": [],
+      "actualThreads": 2,
+      "config": {
+        "mode": "object",
+        "color": "red",
+        "align_deadband": 0.15,
+        "target_ratio_threshold": 0.02,
+        "object_target": "cup",
+        "object_min_confidence": 0.2,
+        "object_nms_threshold": 0.45,
+        "object_input_size": 320,
+        "object_backend": "opencv-dnn",
+        "object_model": "/home/motionbrain/.cache/motionbrain/models/yolov5s.onnx",
+        "object_labels": "/home/motionbrain/develop/arduino/motionbrain/config/coco80.labels",
+        "object_target_aliases": [
+          "chair",
+          "toilet"
+        ],
+        "target_policy": "largest"
+      },
+      "status": "failed",
+      "errorType": "error",
+      "error": "OpenCV(4.12.0) /io/opencv/modules/dnn/src/layers/reshape_layer.cpp:109: error: (-215:Assertion failed) total(srcShape, srcRange.start, srcRange.end) == maskTotal in function 'computeShapeByReshapeMask'\n"
+    }
+  ]
+}
