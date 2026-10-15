@@ -1,0 +1,202 @@
+[
+  {
+    "cycle": 1,
+    "window_seconds": 20.063,
+    "ready_times": [
+      5.17
+    ],
+    "reset_reasons": [
+      "Reset reason: poweron"
+    ],
+    "panic_count": 0,
+    "status": {
+      "cameraBootId": "a7e2f4f3033d362c92a58747394d85a9",
+      "uptimeMs": 19869,
+      "resetReason": "poweron",
+      "rssi": -37,
+      "heapFree": 193432,
+      "captureFailures": 0
+    },
+    "capture_ok": true
+  },
+  {
+    "cycle": 2,
+    "window_seconds": 20.041,
+    "ready_times": [
+      5.169
+    ],
+    "reset_reasons": [
+      "Reset reason: poweron"
+    ],
+    "panic_count": 0,
+    "status": {
+      "cameraBootId": "3e670f7ec3c987040d8735701f275698",
+      "uptimeMs": 19564,
+      "resetReason": "poweron",
+      "rssi": -37,
+      "heapFree": 193252,
+      "captureFailures": 0
+    },
+    "capture_ok": true
+  },
+  {
+    "cycle": 3,
+    "window_seconds": 20.053,
+    "ready_times": [
+      5.17
+    ],
+    "reset_reasons": [
+      "Reset reason: poweron"
+    ],
+    "panic_count": 0,
+    "status": {
+      "cameraBootId": "e7334f4372a13534af6716356559f3d2",
+      "uptimeMs": 19575,
+      "resetReason": "poweron",
+      "rssi": -38,
+      "heapFree": 193484,
+      "captureFailures": 0
+    },
+    "capture_ok": true
+  },
+  {
+    "cycle": 4,
+    "window_seconds": 20.049,
+    "ready_times": [
+      5.167
+    ],
+    "reset_reasons": [
+      "Reset reason: poweron"
+    ],
+    "panic_count": 0,
+    "status": {
+      "cameraBootId": "f3740a3028d7cb6528608885ffb3e059",
+      "uptimeMs": 19574,
+      "resetReason": "poweron",
+      "rssi": -36,
+      "heapFree": 193448,
+      "captureFailures": 0
+    },
+    "capture_ok": true
+  },
+  {
+    "cycle": 5,
+    "window_seconds": 20.065,
+    "ready_times": [
+      5.171
+    ],
+    "reset_reasons": [
+      "Reset reason: poweron"
+    ],
+    "panic_count": 0,
+    "status": {
+      "cameraBootId": "d449ad4be553e99a275a99f6f2858031",
+      "uptimeMs": 19591,
+      "resetReason": "poweron",
+      "rssi": -36,
+      "heapFree": 193428,
+      "captureFailures": 0
+    },
+    "error": "timed out"
+  },
+  {
+    "cycle": 6,
+    "window_seconds": 20.047,
+    "ready_times": [
+      5.168
+    ],
+    "reset_reasons": [
+      "Reset reason: poweron"
+    ],
+    "panic_count": 0,
+    "status": {
+      "cameraBootId": "f595e520ed31399c7f753908124537b2",
+      "uptimeMs": 19717,
+      "resetReason": "poweron",
+      "rssi": -36,
+      "heapFree": 193096,
+      "captureFailures": 0
+    },
+    "capture_ok": true
+  },
+  {
+    "cycle": 7,
+    "window_seconds": 20.101,
+    "ready_times": [
+      6.172
+    ],
+    "reset_reasons": [
+      "Reset reason: poweron"
+    ],
+    "panic_count": 0,
+    "status": {
+      "cameraBootId": "ce2d6af1996e10c24acc75206023652b",
+      "uptimeMs": 19624,
+      "resetReason": "poweron",
+      "rssi": -37,
+      "heapFree": 193476,
+      "captureFailures": 0
+    },
+    "capture_ok": true
+  },
+  {
+    "cycle": 8,
+    "window_seconds": 20.053,
+    "ready_times": [
+      6.172
+    ],
+    "reset_reasons": [
+      "Reset reason: poweron"
+    ],
+    "panic_count": 0,
+    "status": {
+      "cameraBootId": "50dde4299fb35ad264a70c6f32673db2",
+      "uptimeMs": 19581,
+      "resetReason": "poweron",
+      "rssi": -37,
+      "heapFree": 193660,
+      "captureFailures": 0
+    },
+    "capture_ok": true
+  },
+  {
+    "cycle": 9,
+    "window_seconds": 20.056,
+    "ready_times": [
+      5.169
+    ],
+    "reset_reasons": [
+      "Reset reason: poweron"
+    ],
+    "panic_count": 0,
+    "status": {
+      "cameraBootId": "88bb8c5a8f5145bfbfbe195cfc37e561",
+      "uptimeMs": 19583,
+      "resetReason": "poweron",
+      "rssi": -38,
+      "heapFree": 192892,
+      "captureFailures": 0
+    },
+    "capture_ok": true
+  },
+  {
+    "cycle": 10,
+    "window_seconds": 20.008,
+    "ready_times": [
+      5.166
+    ],
+    "reset_reasons": [
+      "Reset reason: poweron"
+    ],
+    "panic_count": 0,
+    "status": {
+      "cameraBootId": "c1c344e1f3bfbe8a95a9ea76d941aea3",
+      "uptimeMs": 19538,
+      "resetReason": "poweron",
+      "rssi": -38,
+      "heapFree": 193668,
+      "captureFailures": 0
+    },
+    "capture_ok": true
+  }
+]

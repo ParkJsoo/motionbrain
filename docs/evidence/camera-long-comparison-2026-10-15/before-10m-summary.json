@@ -1,0 +1,9 @@
+{
+  "label": "before-10m",
+  "duration": 600,
+  "requests": 520,
+  "success": 520,
+  "failures": 0,
+  "captures": 400,
+  "capture_success": 400
+}

@@ -1,0 +1,96 @@
+{
+  "baseline": {
+    "complete": true,
+    "uart_boot_count": 10,
+    "uart_panic_total": 0,
+    "cycles": 10,
+    "server_ready_cycles": 10,
+    "unexpected_restarts": 0,
+    "panic_count": 0,
+    "capture_success": 9,
+    "request_errors": [
+      {
+        "cycle": 5,
+        "error": "timed out"
+      }
+    ],
+    "ready_seconds_range": [
+      5.166,
+      6.172
+    ],
+    "heap_integrity_failures": 0,
+    "stack_min": null,
+    "actual_hostnames": [],
+    "socket_samples": 0,
+    "socket_timeout_failures": 0
+  },
+  "diag": {
+    "complete": true,
+    "uart_boot_count": 10,
+    "uart_panic_total": 0,
+    "cycles": 10,
+    "server_ready_cycles": 10,
+    "unexpected_restarts": 0,
+    "panic_count": 0,
+    "capture_success": 9,
+    "request_errors": [
+      {
+        "cycle": 2,
+        "error": "IncompleteRead(4096 bytes read, 1871 more expected)"
+      }
+    ],
+    "ready_seconds_range": [
+      5.301,
+      5.313
+    ],
+    "heap_integrity_failures": 0,
+    "stack_min": 6268,
+    "actual_hostnames": [
+      "esp32-E5EA60"
+    ],
+    "socket_samples": 0,
+    "socket_timeout_failures": 0
+  },
+  "fixed-diag": {
+    "complete": true,
+    "uart_boot_count": 5,
+    "uart_panic_total": 0,
+    "cycles": 5,
+    "server_ready_cycles": 5,
+    "unexpected_restarts": 0,
+    "panic_count": 0,
+    "capture_success": 5,
+    "request_errors": [],
+    "ready_seconds_range": [
+      5.301,
+      6.306
+    ],
+    "heap_integrity_failures": 0,
+    "stack_min": 6268,
+    "actual_hostnames": [
+      "motionbrain-cam"
+    ],
+    "socket_samples": 20,
+    "socket_timeout_failures": 0
+  },
+  "production-fixed": {
+    "complete": true,
+    "uart_boot_count": 5,
+    "uart_panic_total": 0,
+    "cycles": 5,
+    "server_ready_cycles": 5,
+    "unexpected_restarts": 0,
+    "panic_count": 0,
+    "capture_success": 5,
+    "request_errors": [],
+    "ready_seconds_range": [
+      5.171,
+      5.177
+    ],
+    "heap_integrity_failures": 0,
+    "stack_min": null,
+    "actual_hostnames": [],
+    "socket_samples": 0,
+    "socket_timeout_failures": 0
+  }
+}

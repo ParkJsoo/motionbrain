@@ -1,0 +1,8 @@
+PAUSED 772
+current-run exit=0
+old-upload exit=0
+before-run exit=0
+restore-current exit=0
+RESUMED 772
+
+DONE: current firmware restored and perception resumed

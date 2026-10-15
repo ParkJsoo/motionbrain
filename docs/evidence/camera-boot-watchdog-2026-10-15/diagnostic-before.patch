@@ -1,0 +1,87 @@
+--- a/firmware/esp32cam/src/main.cpp
++++ b/firmware/esp32cam/src/main.cpp
+@@ -6,6 +6,9 @@
+ #include "esp_camera.h"
+ #include "esp_system.h"
+ #include "esp_timer.h"
++#include "esp_heap_caps.h"
++#include "esp_netif.h"
++#include "rom/rtc.h"
+ #include "source_frame_metadata.h"
+ 
+ // AI Thinker ESP32-CAM pin map.
+@@ -818,6 +821,17 @@
+   server.client().stop();
+ }
+ 
++void traceBootStage(const char* stage) {
++  const bool integrity = heap_caps_check_integrity_all(true);
++  Serial.printf("BOOT_STAGE ms=%lu stage=%s core=%d heap=%lu largest=%lu minheap=%lu stack=%lu integrity=%d\n",
++                static_cast<unsigned long>(millis()), stage, xPortGetCoreID(),
++                static_cast<unsigned long>(ESP.getFreeHeap()),
++                static_cast<unsigned long>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL)),
++                static_cast<unsigned long>(ESP.getMinFreeHeap()),
++                static_cast<unsigned long>(uxTaskGetStackHighWaterMark(nullptr)), integrity);
++  Serial.flush();
++}
++
+ void connectWifi() {
+   WifiConfig config{};
+   if (!promptWifiConfig(config)) {
+@@ -826,10 +840,26 @@
+     ESP.restart();
+   }
+ 
+-  WiFi.mode(WIFI_STA);
+-  WiFi.setSleep(false);
+-  WiFi.setHostname(MOTIONBRAIN_CAMERA_HOSTNAME);
+-  WiFi.begin(config.ssid, config.password[0] != '\0' ? config.password : nullptr);
++  WiFi.onEvent([](WiFiEvent_t event, WiFiEventInfo_t info) {
++    Serial.printf("WIFI_EVENT ms=%lu event=%d reason=%d\n", static_cast<unsigned long>(millis()),
++                  static_cast<int>(event), event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED ? info.wifi_sta_disconnected.reason : 0);
++  });
++  traceBootStage("wifi_mode_begin");
++  const bool modeOk = WiFi.mode(WIFI_STA);
++  traceBootStage("wifi_mode_end");
++  Serial.printf("WIFI_MODE result=%d\n", modeOk);
++  traceBootStage("wifi_sleep_begin");
++  const bool sleepOk = WiFi.setSleep(false);
++  traceBootStage("wifi_sleep_end");
++  Serial.printf("WIFI_SLEEP result=%d\n", sleepOk);
++  traceBootStage("wifi_hostname_begin");
++  const bool hostOk = WiFi.setHostname(MOTIONBRAIN_CAMERA_HOSTNAME);
++  traceBootStage("wifi_hostname_end");
++  Serial.printf("WIFI_HOSTNAME result=%d\n", hostOk);
++  traceBootStage("wifi_begin_begin");
++  const auto beginResult = WiFi.begin(config.ssid, config.password[0] != '\0' ? config.password : nullptr);
++  traceBootStage("wifi_begin_end");
++  Serial.printf("WIFI_BEGIN result=%d\n", static_cast<int>(beginResult));
+   Serial.print("Connecting to configured Wi-Fi");
+ 
+   const uint32_t startedAt = millis();
+@@ -865,7 +895,9 @@
+                 currentFrameProfile->name,
+                 currentJpegQuality,
+                 psramFound() ? "yes" : "no");
++  Serial.printf("RAW_RESET cpu0=%d cpu1=%d\n", rtc_get_reset_reason(0), rtc_get_reset_reason(1));
+   clearRequestedOnBoot();
++  traceBootStage("camera_init_begin");
+ 
+   if (!initCamera()) {
+     Serial.println("Camera unavailable; reboot after checking power and camera ribbon.");
+@@ -873,7 +905,15 @@
+     ESP.restart();
+   }
+ 
++  traceBootStage("camera_init_end");
+   connectWifi();
++  traceBootStage("wifi_connected");
++  const char* netifHostname = nullptr;
++  esp_netif_t* staNetif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
++  const esp_err_t hostnameResult = staNetif ? esp_netif_get_hostname(staNetif, &netifHostname) : ESP_FAIL;
++  Serial.printf("WIFI_NETIF_HOSTNAME result=%d actual=%s requested=%s\n", static_cast<int>(hostnameResult),
++                netifHostname ? netifHostname : "unknown", MOTIONBRAIN_CAMERA_HOSTNAME);
++
+   // Generate once per MCU boot with the Wi-Fi hardware entropy source active.
+   snprintf(cameraBootId, sizeof(cameraBootId), "%08lx%08lx%08lx%08lx",
+            static_cast<unsigned long>(esp_random()), static_cast<unsigned long>(esp_random()),

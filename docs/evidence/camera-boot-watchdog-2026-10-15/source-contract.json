@@ -1,0 +1,36 @@
+{
+  "result": "PASS",
+  "checks": [
+    {
+      "check": "exact_raw_jpeg_hash",
+      "result": "PASS",
+      "detail": {
+        "frameId": "c0f0a2685283b9b995b2b227d94ed707:134967195",
+        "bytes": 5814,
+        "hash": "47ff5c59b5003b7f4e69b9da76a2142bb7861527e1d0823acaa3fe059135d606"
+      }
+    },
+    {
+      "check": "missing_source_returns_404",
+      "result": "PASS",
+      "detail": null
+    },
+    {
+      "check": "missing_source_returns_404",
+      "result": "PASS",
+      "detail": null
+    },
+    {
+      "check": "uncalibrated_clock_remains_unverified",
+      "result": "PASS",
+      "detail": null
+    },
+    {
+      "check": "aged_observation_blocks_control",
+      "result": "PASS",
+      "detail": {
+        "sourceAgeMs": 17720.360614999976
+      }
+    }
+  ]
+}

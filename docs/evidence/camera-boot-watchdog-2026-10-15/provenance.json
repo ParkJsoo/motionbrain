@@ -1,0 +1,44 @@
+{
+  "base_head": "559db54a8db5a9696e454e9e0a6068118a9657ca",
+  "baseline_source_sha256": "8a0d84100656f12b2aa12a5dee5fd9aa6ceee01ba7f8e06c47515c2bb72b9a8e",
+  "versions": {
+    "diag": {
+      "source_sha256": "cd9ba318d76a38c300364228276bcef880558df21a4f633262f042bdb581c2ac",
+      "elf_sha256": "5911f3afca07401cd787ec34f04cf40c095dea6474d95418055110aea11f5506",
+      "bin_sha256": "c11b8d52fead9fa4a9940aaa365e539b7796f98ed74cb6f109abe2757bc82c8b"
+    },
+    "fixed-diag": {
+      "source_sha256": "d295fad090559442da281a290016b9b015bf2452e0a01547efa8a8c7c6b75e49",
+      "elf_sha256": "b1fae64d33a771e8ae129bc1ff6bbaeefa4159c466e3030bc12faabc9b00c9a7",
+      "bin_sha256": "710597e771b755fa1b1a77495b046d8aa8be2d6d36065b7221aa90663c816186"
+    },
+    "production": {
+      "source_sha256": "6bd360bf0f3885919de36e89848af9d029440b058712e176e4837bf1702146ac",
+      "elf_sha256": "80bb5ea4b12ffc403197b68362262bd5697bc96e8538c425346f8d840fba762b",
+      "bin_sha256": "96217713ec2d963c8ea646649dd9a97ef73d66dcbd187d895d1c1224206a341b"
+    }
+  },
+  "sdk": {
+    "platformio_espressif32": "6.12.0",
+    "arduino": "2.0.17",
+    "esp_idf": "4.4.7"
+  },
+  "camera_mac": "30:76:f5:e5:ea:60",
+  "motor_commands_sent": false,
+  "reset_type": "RTS/EN, not power-cycle",
+  "perception": "running throughout",
+  "software_tests": {
+    "count": 372,
+    "result": "PASS",
+    "seconds": 8.913
+  },
+  "baseline_failures": {
+    "watchdog": 0,
+    "capture_requests": 1
+  },
+  "diag_failures": {
+    "watchdog": 0,
+    "capture_requests": 1
+  },
+  "watchdog_root_cause": "unconfirmed; not reproduced"
+}

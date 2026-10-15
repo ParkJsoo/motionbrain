@@ -1,0 +1,108 @@
+--- a/firmware/esp32cam/src/main.cpp
++++ b/firmware/esp32cam/src/main.cpp
+@@ -7,6 +7,9 @@
+ #include "esp_camera.h"
+ #include "esp_system.h"
+ #include "esp_timer.h"
++#include "esp_heap_caps.h"
++#include "esp_netif.h"
++#include "rom/rtc.h"
+ #include "source_frame_metadata.h"
+ 
+ // AI Thinker ESP32-CAM pin map.
+@@ -784,6 +787,14 @@
+       client.setSocketOption(SOL_SOCKET, SO_RCVTIMEO, &ioTimeout, sizeof(ioTimeout)) == 0 &&
+       client.setSocketOption(SOL_SOCKET, SO_SNDTIMEO, &ioTimeout, sizeof(ioTimeout)) == 0;
+   client.setNoDelay(true);
++  timeval rcv{}, snd{};
++  socklen_t rcvSize = sizeof(rcv), sndSize = sizeof(snd);
++  const int rcvResult = getsockopt(client.fd(), SOL_SOCKET, SO_RCVTIMEO, &rcv, &rcvSize);
++  const int sndResult = getsockopt(client.fd(), SOL_SOCKET, SO_SNDTIMEO, &snd, &sndSize);
++  Serial.printf("SOCKET_TIMEOUT configured=%d stream_ms=%lu rcv_result=%d rcv_s=%ld rcv_us=%ld snd_result=%d snd_s=%ld snd_us=%ld\n",
++                timeoutOk, client.Stream::getTimeout(), rcvResult, static_cast<long>(rcv.tv_sec), static_cast<long>(rcv.tv_usec),
++                sndResult, static_cast<long>(snd.tv_sec), static_cast<long>(snd.tv_usec));
++
+   const auto source = camera_source::identify(cameraBootId, fb->timestamp.tv_sec,
+                                                fb->timestamp.tv_usec, esp_timer_get_time());
+   char sourceHeaders[512];
+@@ -827,6 +838,17 @@
+   server.client().stop();
+ }
+ 
++void traceBootStage(const char* stage) {
++  const bool integrity = heap_caps_check_integrity_all(true);
++  Serial.printf("BOOT_STAGE ms=%lu stage=%s core=%d heap=%lu largest=%lu minheap=%lu stack=%lu integrity=%d\n",
++                static_cast<unsigned long>(millis()), stage, xPortGetCoreID(),
++                static_cast<unsigned long>(ESP.getFreeHeap()),
++                static_cast<unsigned long>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL)),
++                static_cast<unsigned long>(ESP.getMinFreeHeap()),
++                static_cast<unsigned long>(uxTaskGetStackHighWaterMark(nullptr)), integrity);
++  Serial.flush();
++}
++
+ void connectWifi() {
+   WifiConfig config{};
+   if (!promptWifiConfig(config)) {
+@@ -835,16 +857,26 @@
+     ESP.restart();
+   }
+ 
+-  // Arduino applies the cached hostname to the STA interface when mode starts.
+-  // Set it first so DHCP uses our name on the initial connection as well.
+-  Serial.printf("Wi-Fi init: hostname at %lu ms\n", static_cast<unsigned long>(millis()));
+-  WiFi.setHostname(MOTIONBRAIN_CAMERA_HOSTNAME);
+-  Serial.printf("Wi-Fi init: station mode at %lu ms\n", static_cast<unsigned long>(millis()));
+-  WiFi.mode(WIFI_STA);
+-  Serial.printf("Wi-Fi init: sleep setting at %lu ms\n", static_cast<unsigned long>(millis()));
+-  WiFi.setSleep(false);
+-  Serial.printf("Wi-Fi init: connection begin at %lu ms\n", static_cast<unsigned long>(millis()));
+-  WiFi.begin(config.ssid, config.password[0] != '\0' ? config.password : nullptr);
++  WiFi.onEvent([](WiFiEvent_t event, WiFiEventInfo_t info) {
++    Serial.printf("WIFI_EVENT ms=%lu event=%d reason=%d\n", static_cast<unsigned long>(millis()),
++                  static_cast<int>(event), event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED ? info.wifi_sta_disconnected.reason : 0);
++  });
++  traceBootStage("wifi_hostname_begin");
++  const bool hostOk = WiFi.setHostname(MOTIONBRAIN_CAMERA_HOSTNAME);
++  traceBootStage("wifi_hostname_end");
++  Serial.printf("WIFI_HOSTNAME result=%d\n", hostOk);
++  traceBootStage("wifi_mode_begin");
++  const bool modeOk = WiFi.mode(WIFI_STA);
++  traceBootStage("wifi_mode_end");
++  Serial.printf("WIFI_MODE result=%d\n", modeOk);
++  traceBootStage("wifi_sleep_begin");
++  const bool sleepOk = WiFi.setSleep(false);
++  traceBootStage("wifi_sleep_end");
++  Serial.printf("WIFI_SLEEP result=%d\n", sleepOk);
++  traceBootStage("wifi_begin_begin");
++  const auto beginResult = WiFi.begin(config.ssid, config.password[0] != '\0' ? config.password : nullptr);
++  traceBootStage("wifi_begin_end");
++  Serial.printf("WIFI_BEGIN result=%d\n", static_cast<int>(beginResult));
+   Serial.print("Connecting to configured Wi-Fi");
+ 
+   const uint32_t startedAt = millis();
+@@ -880,7 +912,9 @@
+                 currentFrameProfile->name,
+                 currentJpegQuality,
+                 psramFound() ? "yes" : "no");
++  Serial.printf("RAW_RESET cpu0=%d cpu1=%d\n", rtc_get_reset_reason(0), rtc_get_reset_reason(1));
+   clearRequestedOnBoot();
++  traceBootStage("camera_init_begin");
+ 
+   if (!initCamera()) {
+     Serial.println("Camera unavailable; reboot after checking power and camera ribbon.");
+@@ -888,7 +922,15 @@
+     ESP.restart();
+   }
+ 
++  traceBootStage("camera_init_end");
+   connectWifi();
++  traceBootStage("wifi_connected");
++  const char* netifHostname = nullptr;
++  esp_netif_t* staNetif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
++  const esp_err_t hostnameResult = staNetif ? esp_netif_get_hostname(staNetif, &netifHostname) : ESP_FAIL;
++  Serial.printf("WIFI_NETIF_HOSTNAME result=%d actual=%s requested=%s\n", static_cast<int>(hostnameResult),
++                netifHostname ? netifHostname : "unknown", MOTIONBRAIN_CAMERA_HOSTNAME);
++
+   // Generate once per MCU boot with the Wi-Fi hardware entropy source active.
+   snprintf(cameraBootId, sizeof(cameraBootId), "%08lx%08lx%08lx%08lx",
+            static_cast<unsigned long>(esp_random()), static_cast<unsigned long>(esp_random()),

@@ -1,0 +1,1306 @@
+{
+  "current_battery_connected_1": [
+    {
+      "client": 2,
+      "request": 0,
+      "elapsed": 0.01,
+      "code": 200,
+      "bytes": 3274,
+      "jpeg": true,
+      "seconds": 0.04
+    },
+    {
+      "client": 1,
+      "request": 0,
+      "elapsed": 0.01,
+      "code": 200,
+      "bytes": 3360,
+      "jpeg": true,
+      "seconds": 0.059
+    },
+    {
+      "client": 1,
+      "request": 1,
+      "elapsed": 3.01,
+      "code": 200,
+      "bytes": 3940,
+      "jpeg": true,
+      "seconds": 0.029
+    },
+    {
+      "client": 2,
+      "request": 1,
+      "elapsed": 3.01,
+      "code": 200,
+      "bytes": 3944,
+      "jpeg": true,
+      "seconds": 0.067
+    },
+    {
+      "client": 2,
+      "request": 2,
+      "elapsed": 6.01,
+      "code": 200,
+      "bytes": 2982,
+      "jpeg": true,
+      "seconds": 0.038
+    },
+    {
+      "client": 1,
+      "request": 2,
+      "elapsed": 6.02,
+      "code": 200,
+      "bytes": 2963,
+      "jpeg": true,
+      "seconds": 0.051
+    },
+    {
+      "client": 2,
+      "request": 3,
+      "elapsed": 9.02,
+      "code": 200,
+      "bytes": 4231,
+      "jpeg": true,
+      "seconds": 0.042
+    },
+    {
+      "client": 1,
+      "request": 3,
+      "elapsed": 9.02,
+      "code": 200,
+      "bytes": 4171,
+      "jpeg": true,
+      "seconds": 0.067
+    },
+    {
+      "client": 2,
+      "request": 4,
+      "elapsed": 12.02,
+      "code": 200,
+      "bytes": 4369,
+      "jpeg": true,
+      "seconds": 0.056
+    },
+    {
+      "client": 1,
+      "request": 4,
+      "elapsed": 12.02,
+      "code": 200,
+      "bytes": 4413,
+      "jpeg": true,
+      "seconds": 0.078
+    },
+    {
+      "client": 2,
+      "request": 5,
+      "elapsed": 15.02,
+      "code": 200,
+      "bytes": 3243,
+      "jpeg": true,
+      "seconds": 0.041
+    },
+    {
+      "client": 1,
+      "request": 5,
+      "elapsed": 15.02,
+      "code": 200,
+      "bytes": 3225,
+      "jpeg": true,
+      "seconds": 0.065
+    },
+    {
+      "client": 2,
+      "request": 6,
+      "elapsed": 18.03,
+      "code": 200,
+      "bytes": 4095,
+      "jpeg": true,
+      "seconds": 0.043
+    },
+    {
+      "client": 1,
+      "request": 6,
+      "elapsed": 18.03,
+      "code": 200,
+      "bytes": 4098,
+      "jpeg": true,
+      "seconds": 0.078
+    },
+    {
+      "client": 2,
+      "request": 7,
+      "elapsed": 21.03,
+      "code": 200,
+      "bytes": 3820,
+      "jpeg": true,
+      "seconds": 0.04
+    },
+    {
+      "client": 1,
+      "request": 7,
+      "elapsed": 21.03,
+      "error": "timed out",
+      "seconds": 4.066
+    },
+    {
+      "client": 2,
+      "request": 8,
+      "elapsed": 24.03,
+      "code": 200,
+      "bytes": 3413,
+      "jpeg": true,
+      "seconds": 3.049
+    },
+    {
+      "client": 2,
+      "request": 9,
+      "elapsed": 27.08,
+      "code": 200,
+      "bytes": 3413,
+      "jpeg": true,
+      "seconds": 0.065
+    },
+    {
+      "client": 1,
+      "request": 8,
+      "elapsed": 25.1,
+      "code": 200,
+      "bytes": 3406,
+      "jpeg": true,
+      "seconds": 2.081
+    },
+    {
+      "client": 1,
+      "request": 9,
+      "elapsed": 28.1,
+      "code": 200,
+      "bytes": 3342,
+      "jpeg": true,
+      "seconds": 0.053
+    },
+    {
+      "client": 2,
+      "request": 10,
+      "elapsed": 30.09,
+      "code": 200,
+      "bytes": 3714,
+      "jpeg": true,
+      "seconds": 0.047
+    },
+    {
+      "client": 1,
+      "request": 10,
+      "elapsed": 31.11,
+      "code": 200,
+      "bytes": 5187,
+      "jpeg": true,
+      "seconds": 0.094
+    },
+    {
+      "client": 2,
+      "request": 11,
+      "elapsed": 33.09,
+      "code": 200,
+      "bytes": 5174,
+      "jpeg": true,
+      "seconds": 0.051
+    },
+    {
+      "client": 1,
+      "request": 11,
+      "elapsed": 34.11,
+      "code": 200,
+      "bytes": 4669,
+      "jpeg": true,
+      "seconds": 0.038
+    },
+    {
+      "summary": true,
+      "requests": 24,
+      "passed": 23,
+      "seconds": 37.1,
+      "maxResponseSeconds": 4.066
+    }
+  ],
+  "current_battery_connected_2": [
+    {
+      "client": 1,
+      "request": 0,
+      "elapsed": 0.01,
+      "code": 200,
+      "bytes": 7671,
+      "jpeg": true,
+      "seconds": 0.074
+    },
+    {
+      "client": 2,
+      "request": 0,
+      "elapsed": 0.01,
+      "code": 200,
+      "bytes": 7219,
+      "jpeg": true,
+      "seconds": 0.131
+    },
+    {
+      "client": 1,
+      "request": 1,
+      "elapsed": 3.01,
+      "code": 200,
+      "bytes": 4793,
+      "jpeg": true,
+      "seconds": 0.048
+    },
+    {
+      "client": 2,
+      "request": 1,
+      "elapsed": 3.01,
+      "code": 200,
+      "bytes": 4813,
+      "jpeg": true,
+      "seconds": 0.094
+    },
+    {
+      "client": 1,
+      "request": 2,
+      "elapsed": 6.01,
+      "code": 200,
+      "bytes": 4510,
+      "jpeg": true,
+      "seconds": 0.042
+    },
+    {
+      "client": 2,
+      "request": 2,
+      "elapsed": 6.02,
+      "code": 200,
+      "bytes": 4609,
+      "jpeg": true,
+      "seconds": 0.069
+    },
+    {
+      "client": 1,
+      "request": 3,
+      "elapsed": 9.02,
+      "code": 200,
+      "bytes": 4474,
+      "jpeg": true,
+      "seconds": 0.063
+    },
+    {
+      "client": 2,
+      "request": 3,
+      "elapsed": 9.02,
+      "code": 200,
+      "bytes": 4696,
+      "jpeg": true,
+      "seconds": 0.096
+    },
+    {
+      "client": 2,
+      "request": 4,
+      "elapsed": 12.02,
+      "code": 200,
+      "bytes": 4209,
+      "jpeg": true,
+      "seconds": 0.045
+    },
+    {
+      "client": 1,
+      "request": 4,
+      "elapsed": 12.02,
+      "code": 200,
+      "bytes": 4192,
+      "jpeg": true,
+      "seconds": 0.079
+    },
+    {
+      "client": 2,
+      "request": 5,
+      "elapsed": 15.02,
+      "code": 200,
+      "bytes": 6253,
+      "jpeg": true,
+      "seconds": 0.041
+    },
+    {
+      "client": 1,
+      "request": 5,
+      "elapsed": 15.03,
+      "code": 200,
+      "bytes": 6319,
+      "jpeg": true,
+      "seconds": 0.075
+    },
+    {
+      "client": 2,
+      "request": 6,
+      "elapsed": 18.03,
+      "code": 200,
+      "bytes": 3163,
+      "jpeg": true,
+      "seconds": 0.039
+    },
+    {
+      "client": 1,
+      "request": 6,
+      "elapsed": 18.03,
+      "code": 200,
+      "bytes": 3249,
+      "jpeg": true,
+      "seconds": 0.059
+    },
+    {
+      "client": 1,
+      "request": 7,
+      "elapsed": 21.03,
+      "code": 200,
+      "bytes": 4927,
+      "jpeg": true,
+      "seconds": 0.051
+    },
+    {
+      "client": 2,
+      "request": 7,
+      "elapsed": 21.04,
+      "code": 200,
+      "bytes": 4846,
+      "jpeg": true,
+      "seconds": 0.075
+    },
+    {
+      "client": 2,
+      "request": 8,
+      "elapsed": 24.04,
+      "code": 200,
+      "bytes": 3626,
+      "jpeg": true,
+      "seconds": 0.089
+    },
+    {
+      "client": 1,
+      "request": 8,
+      "elapsed": 24.04,
+      "code": 200,
+      "bytes": 3373,
+      "jpeg": true,
+      "seconds": 0.141
+    },
+    {
+      "client": 1,
+      "request": 9,
+      "elapsed": 27.04,
+      "code": 200,
+      "bytes": 4673,
+      "jpeg": true,
+      "seconds": 0.066
+    },
+    {
+      "client": 2,
+      "request": 9,
+      "elapsed": 27.04,
+      "code": 200,
+      "bytes": 4768,
+      "jpeg": true,
+      "seconds": 0.104
+    },
+    {
+      "client": 1,
+      "request": 10,
+      "elapsed": 30.05,
+      "code": 200,
+      "bytes": 3803,
+      "jpeg": true,
+      "seconds": 0.039
+    },
+    {
+      "client": 2,
+      "request": 10,
+      "elapsed": 30.05,
+      "code": 200,
+      "bytes": 3801,
+      "jpeg": true,
+      "seconds": 0.057
+    },
+    {
+      "client": 1,
+      "request": 11,
+      "elapsed": 33.05,
+      "code": 200,
+      "bytes": 3754,
+      "jpeg": true,
+      "seconds": 0.039
+    },
+    {
+      "client": 2,
+      "request": 11,
+      "elapsed": 33.06,
+      "code": 200,
+      "bytes": 3751,
+      "jpeg": true,
+      "seconds": 0.054
+    },
+    {
+      "summary": true,
+      "requests": 24,
+      "passed": 24,
+      "seconds": 36.1,
+      "maxResponseSeconds": 0.141
+    }
+  ],
+  "current_battery_disconnected": [
+    {
+      "client": 1,
+      "request": 0,
+      "elapsed": 0.01,
+      "code": 200,
+      "bytes": 3972,
+      "jpeg": true,
+      "seconds": 0.037
+    },
+    {
+      "client": 2,
+      "request": 0,
+      "elapsed": 0.01,
+      "code": 200,
+      "bytes": 3967,
+      "jpeg": true,
+      "seconds": 0.075
+    },
+    {
+      "client": 1,
+      "request": 1,
+      "elapsed": 3.01,
+      "code": 200,
+      "bytes": 3696,
+      "jpeg": true,
+      "seconds": 0.043
+    },
+    {
+      "client": 2,
+      "request": 1,
+      "elapsed": 3.01,
+      "code": 200,
+      "bytes": 3736,
+      "jpeg": true,
+      "seconds": 0.075
+    },
+    {
+      "client": 2,
+      "request": 2,
+      "elapsed": 6.01,
+      "error": "timed out",
+      "seconds": 4.03
+    },
+    {
+      "client": 1,
+      "request": 2,
+      "elapsed": 6.01,
+      "error": "timed out",
+      "seconds": 4.057
+    },
+    {
+      "client": 2,
+      "request": 3,
+      "elapsed": 10.04,
+      "error": "<urlopen error timed out>",
+      "seconds": 4.002
+    },
+    {
+      "client": 1,
+      "request": 3,
+      "elapsed": 10.07,
+      "error": "<urlopen error timed out>",
+      "seconds": 4.002
+    },
+    {
+      "client": 2,
+      "request": 4,
+      "elapsed": 14.05,
+      "error": "<urlopen error timed out>",
+      "seconds": 4.003
+    },
+    {
+      "client": 1,
+      "request": 4,
+      "elapsed": 14.07,
+      "error": "<urlopen error timed out>",
+      "seconds": 4.002
+    },
+    {
+      "client": 2,
+      "request": 5,
+      "elapsed": 18.05,
+      "error": "<urlopen error timed out>",
+      "seconds": 4.003
+    },
+    {
+      "client": 1,
+      "request": 5,
+      "elapsed": 18.08,
+      "error": "<urlopen error timed out>",
+      "seconds": 4.002
+    },
+    {
+      "client": 2,
+      "request": 6,
+      "elapsed": 22.05,
+      "error": "<urlopen error timed out>",
+      "seconds": 4.002
+    },
+    {
+      "client": 1,
+      "request": 6,
+      "elapsed": 22.08,
+      "error": "<urlopen error timed out>",
+      "seconds": 4.002
+    },
+    {
+      "client": 2,
+      "request": 7,
+      "elapsed": 26.05,
+      "error": "<urlopen error timed out>",
+      "seconds": 4.002
+    },
+    {
+      "client": 1,
+      "request": 7,
+      "elapsed": 26.08,
+      "error": "<urlopen error timed out>",
+      "seconds": 4.002
+    },
+    {
+      "client": 2,
+      "request": 8,
+      "elapsed": 30.06,
+      "error": "<urlopen error timed out>",
+      "seconds": 4.002
+    },
+    {
+      "client": 1,
+      "request": 8,
+      "elapsed": 30.08,
+      "error": "<urlopen error timed out>",
+      "seconds": 4.001
+    },
+    {
+      "client": 2,
+      "request": 9,
+      "elapsed": 34.06,
+      "error": "<urlopen error timed out>",
+      "seconds": 4.002
+    },
+    {
+      "client": 1,
+      "request": 9,
+      "elapsed": 34.08,
+      "error": "<urlopen error timed out>",
+      "seconds": 4.002
+    },
+    {
+      "client": 2,
+      "request": 10,
+      "elapsed": 38.06,
+      "error": "<urlopen error timed out>",
+      "seconds": 4.001
+    },
+    {
+      "client": 1,
+      "request": 10,
+      "elapsed": 38.09,
+      "error": "<urlopen error timed out>",
+      "seconds": 4.001
+    },
+    {
+      "client": 2,
+      "request": 11,
+      "elapsed": 42.06,
+      "error": "<urlopen error timed out>",
+      "seconds": 4.002
+    },
+    {
+      "client": 1,
+      "request": 11,
+      "elapsed": 42.09,
+      "error": "<urlopen error timed out>",
+      "seconds": 4.002
+    },
+    {
+      "summary": true,
+      "requests": 24,
+      "passed": 4,
+      "seconds": 46.1,
+      "maxResponseSeconds": 4.057
+    }
+  ],
+  "pre_metadata_1": [
+    {
+      "client": 2,
+      "request": 0,
+      "elapsed": 0.01,
+      "error": "<urlopen error timed out>",
+      "seconds": 4.004
+    },
+    {
+      "client": 1,
+      "request": 0,
+      "elapsed": 0.01,
+      "error": "<urlopen error timed out>",
+      "seconds": 4.004
+    },
+    {
+      "client": 1,
+      "request": 1,
+      "elapsed": 4.02,
+      "code": 200,
+      "bytes": 3493,
+      "jpeg": true,
+      "seconds": 1.392
+    },
+    {
+      "client": 1,
+      "request": 2,
+      "elapsed": 7.02,
+      "code": 200,
+      "bytes": 3208,
+      "jpeg": true,
+      "seconds": 0.05
+    },
+    {
+      "client": 2,
+      "request": 1,
+      "elapsed": 4.02,
+      "code": 200,
+      "bytes": 3530,
+      "jpeg": true,
+      "seconds": 3.612
+    },
+    {
+      "client": 2,
+      "request": 2,
+      "elapsed": 7.63,
+      "code": 200,
+      "bytes": 3069,
+      "jpeg": true,
+      "seconds": 0.035
+    },
+    {
+      "client": 1,
+      "request": 3,
+      "elapsed": 10.03,
+      "code": 200,
+      "bytes": 3011,
+      "jpeg": true,
+      "seconds": 0.046
+    },
+    {
+      "client": 2,
+      "request": 3,
+      "elapsed": 10.63,
+      "code": 200,
+      "bytes": 3055,
+      "jpeg": true,
+      "seconds": 0.052
+    },
+    {
+      "client": 1,
+      "request": 4,
+      "elapsed": 13.03,
+      "code": 200,
+      "bytes": 5866,
+      "jpeg": true,
+      "seconds": 0.048
+    },
+    {
+      "client": 2,
+      "request": 4,
+      "elapsed": 13.64,
+      "code": 200,
+      "bytes": 5138,
+      "jpeg": true,
+      "seconds": 0.055
+    },
+    {
+      "client": 1,
+      "request": 5,
+      "elapsed": 16.03,
+      "code": 200,
+      "bytes": 5296,
+      "jpeg": true,
+      "seconds": 0.036
+    },
+    {
+      "client": 2,
+      "request": 5,
+      "elapsed": 16.64,
+      "code": 200,
+      "bytes": 5455,
+      "jpeg": true,
+      "seconds": 0.04
+    },
+    {
+      "client": 1,
+      "request": 6,
+      "elapsed": 19.04,
+      "code": 200,
+      "bytes": 5930,
+      "jpeg": true,
+      "seconds": 0.05
+    },
+    {
+      "client": 2,
+      "request": 6,
+      "elapsed": 19.65,
+      "code": 200,
+      "bytes": 5272,
+      "jpeg": true,
+      "seconds": 0.04
+    },
+    {
+      "client": 1,
+      "request": 7,
+      "elapsed": 22.04,
+      "code": 200,
+      "bytes": 5825,
+      "jpeg": true,
+      "seconds": 0.044
+    },
+    {
+      "client": 2,
+      "request": 7,
+      "elapsed": 22.65,
+      "code": 200,
+      "bytes": 5601,
+      "jpeg": true,
+      "seconds": 0.041
+    },
+    {
+      "client": 1,
+      "request": 8,
+      "elapsed": 25.04,
+      "code": 200,
+      "bytes": 5802,
+      "jpeg": true,
+      "seconds": 0.043
+    },
+    {
+      "client": 2,
+      "request": 8,
+      "elapsed": 25.66,
+      "code": 200,
+      "bytes": 5743,
+      "jpeg": true,
+      "seconds": 0.037
+    },
+    {
+      "client": 1,
+      "request": 9,
+      "elapsed": 28.05,
+      "code": 200,
+      "bytes": 5790,
+      "jpeg": true,
+      "seconds": 0.049
+    },
+    {
+      "client": 2,
+      "request": 9,
+      "elapsed": 28.66,
+      "code": 200,
+      "bytes": 5895,
+      "jpeg": true,
+      "seconds": 0.041
+    },
+    {
+      "client": 1,
+      "request": 10,
+      "elapsed": 31.05,
+      "code": 200,
+      "bytes": 5724,
+      "jpeg": true,
+      "seconds": 0.047
+    },
+    {
+      "client": 2,
+      "request": 10,
+      "elapsed": 31.66,
+      "code": 200,
+      "bytes": 5745,
+      "jpeg": true,
+      "seconds": 0.052
+    },
+    {
+      "client": 1,
+      "request": 11,
+      "elapsed": 34.06,
+      "code": 200,
+      "bytes": 5453,
+      "jpeg": true,
+      "seconds": 0.041
+    },
+    {
+      "client": 2,
+      "request": 11,
+      "elapsed": 34.67,
+      "code": 200,
+      "bytes": 5601,
+      "jpeg": true,
+      "seconds": 0.038
+    },
+    {
+      "summary": true,
+      "requests": 24,
+      "passed": 22,
+      "seconds": 37.7,
+      "maxResponseSeconds": 4.004
+    }
+  ],
+  "pre_metadata_2": [
+    {
+      "client": 1,
+      "request": 0,
+      "elapsed": 0.01,
+      "code": 200,
+      "bytes": 4213,
+      "jpeg": true,
+      "seconds": 0.037
+    },
+    {
+      "client": 2,
+      "request": 0,
+      "elapsed": 0.01,
+      "code": 200,
+      "bytes": 4315,
+      "jpeg": true,
+      "seconds": 0.072
+    },
+    {
+      "client": 2,
+      "request": 1,
+      "elapsed": 3.01,
+      "code": 200,
+      "bytes": 4629,
+      "jpeg": true,
+      "seconds": 0.045
+    },
+    {
+      "client": 1,
+      "request": 1,
+      "elapsed": 3.01,
+      "code": 200,
+      "bytes": 4896,
+      "jpeg": true,
+      "seconds": 0.079
+    },
+    {
+      "client": 1,
+      "request": 2,
+      "elapsed": 6.02,
+      "code": 200,
+      "bytes": 5059,
+      "jpeg": true,
+      "seconds": 0.04
+    },
+    {
+      "client": 2,
+      "request": 2,
+      "elapsed": 6.02,
+      "code": 200,
+      "bytes": 5024,
+      "jpeg": true,
+      "seconds": 0.078
+    },
+    {
+      "client": 2,
+      "request": 3,
+      "elapsed": 9.02,
+      "code": 200,
+      "bytes": 4477,
+      "jpeg": true,
+      "seconds": 0.037
+    },
+    {
+      "client": 1,
+      "request": 3,
+      "elapsed": 9.02,
+      "code": 200,
+      "bytes": 4468,
+      "jpeg": true,
+      "seconds": 0.122
+    },
+    {
+      "client": 1,
+      "request": 4,
+      "elapsed": 12.02,
+      "code": 200,
+      "bytes": 4610,
+      "jpeg": true,
+      "seconds": 0.045
+    },
+    {
+      "client": 2,
+      "request": 4,
+      "elapsed": 12.03,
+      "code": 200,
+      "bytes": 4561,
+      "jpeg": true,
+      "seconds": 0.066
+    },
+    {
+      "client": 1,
+      "request": 5,
+      "elapsed": 15.03,
+      "code": 200,
+      "bytes": 5137,
+      "jpeg": true,
+      "seconds": 0.042
+    },
+    {
+      "client": 2,
+      "request": 5,
+      "elapsed": 15.03,
+      "code": 200,
+      "bytes": 5196,
+      "jpeg": true,
+      "seconds": 0.07
+    },
+    {
+      "client": 2,
+      "request": 6,
+      "elapsed": 18.03,
+      "code": 200,
+      "bytes": 5432,
+      "jpeg": true,
+      "seconds": 0.041
+    },
+    {
+      "client": 1,
+      "request": 6,
+      "elapsed": 18.03,
+      "code": 200,
+      "bytes": 5375,
+      "jpeg": true,
+      "seconds": 0.075
+    },
+    {
+      "client": 1,
+      "request": 7,
+      "elapsed": 21.03,
+      "code": 200,
+      "bytes": 4658,
+      "jpeg": true,
+      "seconds": 0.044
+    },
+    {
+      "client": 2,
+      "request": 7,
+      "elapsed": 21.03,
+      "code": 200,
+      "bytes": 4520,
+      "jpeg": true,
+      "seconds": 0.064
+    },
+    {
+      "client": 1,
+      "request": 8,
+      "elapsed": 24.04,
+      "code": 200,
+      "bytes": 4117,
+      "jpeg": true,
+      "seconds": 0.038
+    },
+    {
+      "client": 2,
+      "request": 8,
+      "elapsed": 24.04,
+      "code": 200,
+      "bytes": 4035,
+      "jpeg": true,
+      "seconds": 0.063
+    },
+    {
+      "client": 1,
+      "request": 9,
+      "elapsed": 27.04,
+      "code": 200,
+      "bytes": 10263,
+      "jpeg": true,
+      "seconds": 0.06
+    },
+    {
+      "client": 2,
+      "request": 9,
+      "elapsed": 27.04,
+      "code": 200,
+      "bytes": 4213,
+      "jpeg": true,
+      "seconds": 0.088
+    },
+    {
+      "client": 1,
+      "request": 10,
+      "elapsed": 30.04,
+      "code": 200,
+      "bytes": 4877,
+      "jpeg": true,
+      "seconds": 0.042
+    },
+    {
+      "client": 2,
+      "request": 10,
+      "elapsed": 30.04,
+      "code": 200,
+      "bytes": 4871,
+      "jpeg": true,
+      "seconds": 0.076
+    },
+    {
+      "client": 1,
+      "request": 11,
+      "elapsed": 33.05,
+      "code": 200,
+      "bytes": 4998,
+      "jpeg": true,
+      "seconds": 0.049
+    },
+    {
+      "client": 2,
+      "request": 11,
+      "elapsed": 33.05,
+      "code": 200,
+      "bytes": 4946,
+      "jpeg": true,
+      "seconds": 0.08
+    },
+    {
+      "summary": true,
+      "requests": 24,
+      "passed": 24,
+      "seconds": 36.0,
+      "maxResponseSeconds": 0.122
+    }
+  ],
+  "pre_metadata_3": [
+    {
+      "client": 2,
+      "request": 0,
+      "elapsed": 0.01,
+      "code": 200,
+      "bytes": 5286,
+      "jpeg": true,
+      "seconds": 0.064
+    },
+    {
+      "client": 1,
+      "request": 0,
+      "elapsed": 0.01,
+      "code": 200,
+      "bytes": 5357,
+      "jpeg": true,
+      "seconds": 0.085
+    },
+    {
+      "client": 2,
+      "request": 1,
+      "elapsed": 3.02,
+      "code": 200,
+      "bytes": 6306,
+      "jpeg": true,
+      "seconds": 0.054
+    },
+    {
+      "client": 1,
+      "request": 1,
+      "elapsed": 3.02,
+      "code": 200,
+      "bytes": 6326,
+      "jpeg": true,
+      "seconds": 0.087
+    },
+    {
+      "client": 2,
+      "request": 2,
+      "elapsed": 6.02,
+      "code": 200,
+      "bytes": 4784,
+      "jpeg": true,
+      "seconds": 0.051
+    },
+    {
+      "client": 1,
+      "request": 2,
+      "elapsed": 6.03,
+      "code": 200,
+      "bytes": 4855,
+      "jpeg": true,
+      "seconds": 0.08
+    },
+    {
+      "client": 1,
+      "request": 3,
+      "elapsed": 9.03,
+      "code": 200,
+      "bytes": 5915,
+      "jpeg": true,
+      "seconds": 0.044
+    },
+    {
+      "client": 2,
+      "request": 3,
+      "elapsed": 9.03,
+      "code": 200,
+      "bytes": 5955,
+      "jpeg": true,
+      "seconds": 0.085
+    },
+    {
+      "client": 1,
+      "request": 4,
+      "elapsed": 12.04,
+      "code": 200,
+      "bytes": 6342,
+      "jpeg": true,
+      "seconds": 0.052
+    },
+    {
+      "client": 2,
+      "request": 4,
+      "elapsed": 12.04,
+      "code": 200,
+      "bytes": 6360,
+      "jpeg": true,
+      "seconds": 0.09
+    },
+    {
+      "client": 2,
+      "request": 5,
+      "elapsed": 15.05,
+      "code": 200,
+      "bytes": 4603,
+      "jpeg": true,
+      "seconds": 0.04
+    },
+    {
+      "client": 1,
+      "request": 5,
+      "elapsed": 15.05,
+      "code": 200,
+      "bytes": 4676,
+      "jpeg": true,
+      "seconds": 0.071
+    },
+    {
+      "client": 2,
+      "request": 6,
+      "elapsed": 18.05,
+      "code": 200,
+      "bytes": 5474,
+      "jpeg": true,
+      "seconds": 0.045
+    },
+    {
+      "client": 1,
+      "request": 6,
+      "elapsed": 18.06,
+      "code": 200,
+      "bytes": 5463,
+      "jpeg": true,
+      "seconds": 0.067
+    },
+    {
+      "client": 2,
+      "request": 7,
+      "elapsed": 21.06,
+      "code": 200,
+      "bytes": 6554,
+      "jpeg": true,
+      "seconds": 0.053
+    },
+    {
+      "client": 1,
+      "request": 7,
+      "elapsed": 21.07,
+      "code": 200,
+      "bytes": 6559,
+      "jpeg": true,
+      "seconds": 0.082
+    },
+    {
+      "client": 2,
+      "request": 8,
+      "elapsed": 24.07,
+      "code": 200,
+      "bytes": 6308,
+      "jpeg": true,
+      "seconds": 0.049
+    },
+    {
+      "client": 1,
+      "request": 8,
+      "elapsed": 24.07,
+      "code": 200,
+      "bytes": 6290,
+      "jpeg": true,
+      "seconds": 0.079
+    },
+    {
+      "client": 2,
+      "request": 9,
+      "elapsed": 27.08,
+      "code": 200,
+      "bytes": 5655,
+      "jpeg": true,
+      "seconds": 0.05
+    },
+    {
+      "client": 1,
+      "request": 9,
+      "elapsed": 27.08,
+      "code": 200,
+      "bytes": 5721,
+      "jpeg": true,
+      "seconds": 0.084
+    },
+    {
+      "client": 2,
+      "request": 10,
+      "elapsed": 30.08,
+      "code": 200,
+      "bytes": 5538,
+      "jpeg": true,
+      "seconds": 0.053
+    },
+    {
+      "client": 1,
+      "request": 10,
+      "elapsed": 30.09,
+      "code": 200,
+      "bytes": 5512,
+      "jpeg": true,
+      "seconds": 0.071
+    },
+    {
+      "client": 2,
+      "request": 11,
+      "elapsed": 33.09,
+      "code": 200,
+      "bytes": 5308,
+      "jpeg": true,
+      "seconds": 0.042
+    },
+    {
+      "client": 1,
+      "request": 11,
+      "elapsed": 33.1,
+      "code": 200,
+      "bytes": 5358,
+      "jpeg": true,
+      "seconds": 0.051
+    },
+    {
+      "summary": true,
+      "requests": 24,
+      "passed": 24,
+      "seconds": 36.1,
+      "maxResponseSeconds": 0.09
+    }
+  ]
+}

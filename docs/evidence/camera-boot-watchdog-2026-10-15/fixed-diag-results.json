@@ -1,0 +1,102 @@
+[
+  {
+    "cycle": 1,
+    "window_seconds": 20.095,
+    "ready_times": [
+      5.312
+    ],
+    "reset_reasons": [
+      "Reset reason: poweron"
+    ],
+    "panic_count": 0,
+    "status": {
+      "cameraBootId": "ac21e57db8eef0cdab2bac86b9e29c24",
+      "uptimeMs": 19938,
+      "resetReason": "poweron",
+      "rssi": -39,
+      "heapFree": 193756,
+      "captureFailures": 0
+    },
+    "capture_ok": true
+  },
+  {
+    "cycle": 2,
+    "window_seconds": 20.056,
+    "ready_times": [
+      6.306
+    ],
+    "reset_reasons": [
+      "Reset reason: poweron"
+    ],
+    "panic_count": 0,
+    "status": {
+      "cameraBootId": "6b92ecb93f133dce94947e59cdac02e5",
+      "uptimeMs": 22293,
+      "resetReason": "poweron",
+      "rssi": -39,
+      "heapFree": 184716,
+      "captureFailures": 0
+    },
+    "capture_ok": true
+  },
+  {
+    "cycle": 3,
+    "window_seconds": 20.067,
+    "ready_times": [
+      5.806
+    ],
+    "reset_reasons": [
+      "Reset reason: poweron"
+    ],
+    "panic_count": 0,
+    "status": {
+      "cameraBootId": "2d9344b919ae4282b5e446552203ac4a",
+      "uptimeMs": 19597,
+      "resetReason": "poweron",
+      "rssi": -38,
+      "heapFree": 192960,
+      "captureFailures": 0
+    },
+    "capture_ok": true
+  },
+  {
+    "cycle": 4,
+    "window_seconds": 20.101,
+    "ready_times": [
+      5.301
+    ],
+    "reset_reasons": [
+      "Reset reason: poweron"
+    ],
+    "panic_count": 0,
+    "status": {
+      "cameraBootId": "d4cc67066ece6db3a2a15659b6163fbc",
+      "uptimeMs": 19629,
+      "resetReason": "poweron",
+      "rssi": -38,
+      "heapFree": 193520,
+      "captureFailures": 0
+    },
+    "capture_ok": true
+  },
+  {
+    "cycle": 5,
+    "window_seconds": 20.108,
+    "ready_times": [
+      6.306
+    ],
+    "reset_reasons": [
+      "Reset reason: poweron"
+    ],
+    "panic_count": 0,
+    "status": {
+      "cameraBootId": "a635ed0fce7de30bea29424ef3e02c75",
+      "uptimeMs": 19630,
+      "resetReason": "poweron",
+      "rssi": -40,
+      "heapFree": 193516,
+      "captureFailures": 0
+    },
+    "capture_ok": true
+  }
+]

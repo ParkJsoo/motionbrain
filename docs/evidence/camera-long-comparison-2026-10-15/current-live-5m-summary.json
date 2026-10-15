@@ -1,0 +1,9 @@
+{
+  "label": "current-live-5m",
+  "duration": 300,
+  "requests": 260,
+  "success": 260,
+  "failures": 0,
+  "captures": 200,
+  "capture_success": 200
+}

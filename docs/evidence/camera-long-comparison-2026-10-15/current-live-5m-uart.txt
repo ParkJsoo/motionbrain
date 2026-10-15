@@ -1,0 +1,22 @@
+0.138s ad:0x�ets Jul 29 2019 12:21:46
+0.144s rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+0.147s configsip: 0, SPIWP:0xee
+0.152s clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+0.155s mode:DIO, clock div:2
+0.158s load:0x3fff0030,len:1184
+0.160s load:0x40078000,len:13232
+0.160s load:0x40080400,len:3028
+0.164s entry 0x400805e4
+1.027s MotionBrain ESP32-CAM boot
+1.029s Reset reason: poweron
+1.034s Camera profile: qvga JPEG quality=15 psram=yes
+1.042s Type CLEAR within 3000 ms to erase stored ESP32-CAM Wi-Fi config, or wait to continue.
+4.573s Loaded stored ESP32-CAM Wi-Fi config.
+4.879s Connecting to configured Wi-Fi
+5.382s .
+5.878s .
+6.177s .
+6.179s ESP32-CAM IP: 192.168.219.116
+6.193s ESP32-CAM mDNS: http://motionbrain-cam.local
+6.195s HTTP supervisor restart disabled
+6.198s Camera HTTP server ready

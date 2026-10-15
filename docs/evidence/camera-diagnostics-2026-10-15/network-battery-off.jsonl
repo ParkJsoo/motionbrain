@@ -1,0 +1,10 @@
+{"elapsed": 0.0, "cameraBootId": "093616de8e0f5acc832f919a05b16226", "uptimeMs": 220413, "rssi": -63, "heapFree": 191100, "resetReason": "panic", "captures": 80, "captureFailures": 0, "slowCaptures": 0, "clientWriteFailures": 0, "maxCaptureMs": 10, "maxWriteMs": 67, "httpStallRestartEnabled": false, "lastError": ""}
+{"elapsed": 5.0, "error": "<urlopen error timed out>", "pingOk": false}
+{"elapsed": 14.1, "error": "<urlopen error timed out>", "pingOk": false}
+{"elapsed": 23.1, "error": "<urlopen error timed out>", "pingOk": false}
+{"elapsed": 32.1, "error": "<urlopen error timed out>", "pingOk": false}
+{"elapsed": 41.1, "error": "<urlopen error timed out>", "pingOk": false}
+{"elapsed": 50.1, "error": "<urlopen error timed out>", "pingOk": false}
+{"elapsed": 58.2, "error": "<urlopen error [Errno 113] No route to host>", "pingOk": false}
+{"elapsed": 66.8, "error": "<urlopen error timed out>", "pingOk": false}
+{"elapsed": 74.9, "error": "<urlopen error [Errno 113] No route to host>", "pingOk": false}

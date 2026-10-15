@@ -3,6 +3,7 @@
 #include <WiFi.h>
 #include <ESPmDNS.h>
 #include <Preferences.h>
+#include <lwip/sockets.h>
 #include "esp_camera.h"
 #include "esp_system.h"
 #include "esp_timer.h"
@@ -773,13 +774,21 @@ void handleCapture() {
   cameraStats.lastFrameBytes = fb->len;
 
   WiFiClient client = server.client();
-  client.setTimeout(CLIENT_IO_TIMEOUT_MS);
+  // WiFiClient::setTimeout takes seconds in Arduino-ESP32 2.x, unlike Stream.
+  // Configure both the Stream and socket timeouts explicitly in milliseconds.
+  client.Stream::setTimeout(CLIENT_IO_TIMEOUT_MS);
+  const timeval ioTimeout{
+      static_cast<time_t>(CLIENT_IO_TIMEOUT_MS / 1000),
+      static_cast<suseconds_t>((CLIENT_IO_TIMEOUT_MS % 1000) * 1000)};
+  const bool timeoutOk =
+      client.setSocketOption(SOL_SOCKET, SO_RCVTIMEO, &ioTimeout, sizeof(ioTimeout)) == 0 &&
+      client.setSocketOption(SOL_SOCKET, SO_SNDTIMEO, &ioTimeout, sizeof(ioTimeout)) == 0;
   client.setNoDelay(true);
   const auto source = camera_source::identify(cameraBootId, fb->timestamp.tv_sec,
                                                fb->timestamp.tv_usec, esp_timer_get_time());
   char sourceHeaders[512];
   camera_source::headers(source, sourceHeaders, sizeof(sourceHeaders));
-  const bool headerOk = client.connected() &&
+  const bool headerOk = timeoutOk && client.connected() &&
                         client.printf("HTTP/1.1 200 OK\r\n"
                                       "Content-Type: image/jpeg\r\n"
                                       "Content-Length: %u\r\n"
@@ -826,9 +835,15 @@ void connectWifi() {
     ESP.restart();
   }
 
-  WiFi.mode(WIFI_STA);
-  WiFi.setSleep(false);
+  // Arduino applies the cached hostname to the STA interface when mode starts.
+  // Set it first so DHCP uses our name on the initial connection as well.
+  Serial.printf("Wi-Fi init: hostname at %lu ms\n", static_cast<unsigned long>(millis()));
   WiFi.setHostname(MOTIONBRAIN_CAMERA_HOSTNAME);
+  Serial.printf("Wi-Fi init: station mode at %lu ms\n", static_cast<unsigned long>(millis()));
+  WiFi.mode(WIFI_STA);
+  Serial.printf("Wi-Fi init: sleep setting at %lu ms\n", static_cast<unsigned long>(millis()));
+  WiFi.setSleep(false);
+  Serial.printf("Wi-Fi init: connection begin at %lu ms\n", static_cast<unsigned long>(millis()));
   WiFi.begin(config.ssid, config.password[0] != '\0' ? config.password : nullptr);
   Serial.print("Connecting to configured Wi-Fi");
 

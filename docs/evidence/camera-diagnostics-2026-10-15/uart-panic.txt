@@ -1,0 +1,52 @@
+CAMERA_ONLY_RESET_SENT
+0.0s ck �ets Jul 29 2019 12:21:46
+0.0s rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+0.0s configsip: 0, SPIWP:0xee
+0.0s clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+0.0s mode:DIO, clock div:2
+0.0s load:0x3fff0030,len:1184
+0.0s load:0x40078000,len:13232
+0.0s load:0x40080400,len:3028
+0.0s entry 0x400805e4
+0.9s MotionBrain ESP32-CAM boot
+0.9s Reset reason: poweron
+0.9s Camera profile: qvga JPEG quality=15 psram=yes
+0.9s Type CLEAR within 3000 ms to erase stored ESP32-CAM Wi-Fi config, or wait to continue.
+4.4s Loaded stored ESP32-CAM Wi-Fi config.
+4.8s Connecting to configured Wi-Fi
+5.0s .
+5.0s ESP32-CAM IP: 192.168.219.116
+5.1s ESP32-CAM mDNS: http://motionbrain-cam.local
+5.1s HTTP supervisor restart disabled
+5.1s Camera HTTP server ready
+129.2s Guru Meditation Error: Core  0 panic'ed (LoadProhibited). Exception was unhandled.
+129.2s Core  0 register dump:
+129.2s PC      : 0x4016995f  PS      : 0x00060c30  A0      : 0x80169abf  A1      : 0x3ffd4220
+129.2s A2      : 0x3ffdb714  A3      : 0x00000000  A4      : 0x3ffd73b4  A5      : 0x0000000f
+129.2s A6      : 0x60eae5f5  A7      : 0x00000000  A8      : 0x00000b00  A9      : 0x3ffdb744
+129.2s A10     : 0x3ffd7b18  A11     : 0x00000309  A12     : 0x00000001  A13     : 0xc031e327
+129.2s A14     : 0x000000d9  A15     : 0x00000002  SAR     : 0x00000000  EXCCAUSE: 0x0000001c
+129.2s EXCVADDR: 0x80169ad7  LBEG    : 0x4008b59c  LEND    : 0x4008b5b2  LCOUNT  : 0xffffffff
+129.3s Backtrace: 0x4016995c:0x3ffd4220 0x40169abc:0x3ffd4240 0x40169c2d:0x3ffd4260 0x40168ca6:0x3ffd4280 0x4016a4a9:0x3ffd42d0
+129.3s ELF file SHA256: 501c263d72221fa9
+129.4s Rebooting...
+129.4s ets Jul 29 2019 12:21:46
+129.4s rst:0xc (SW_CPU_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+129.4s configsip: 0, SPIWP:0xee
+129.4s clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+129.4s mode:DIO, clock div:2
+129.4s load:0x3fff0030,len:1184
+129.4s load:0x40078000,len:13232
+129.4s load:0x40080400,len:3028
+129.4s entry 0x400805e4
+130.3s MotionBrain ESP32-CAM boot
+130.3s Reset reason: panic
+130.3s Camera profile: qvga JPEG quality=15 psram=yes
+130.3s Type CLEAR within 3000 ms to erase stored ESP32-CAM Wi-Fi config, or wait to continue.
+133.8s Loaded stored ESP32-CAM Wi-Fi config.
+134.2s Connecting to configured Wi-Fi
+134.4s .
+134.4s ESP32-CAM IP: 192.168.219.116
+134.4s ESP32-CAM mDNS: http://motionbrain-cam.local
+134.4s HTTP supervisor restart disabled
+134.4s Camera HTTP server ready

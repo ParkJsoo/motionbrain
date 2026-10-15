@@ -100,7 +100,6 @@ class Esp32CamFirmwareContractTest(unittest.TestCase):
             "const uint32_t CAPTURE_WRITE_DEADLINE_MS = 2000;",
             "const size_t CLIENT_WRITE_CHUNK_BYTES = 1024;",
             "bool writeClientBuffer(",
-            "client.setTimeout(CLIENT_IO_TIMEOUT_MS);",
             "writeClientBuffer(client, fb->buf, fb->len, CAPTURE_WRITE_DEADLINE_MS, written)",
             "stream disabled; use /capture",
             "cameraStats.clientWriteFailures++;",
