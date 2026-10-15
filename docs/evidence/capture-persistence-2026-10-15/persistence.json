@@ -1,0 +1,278 @@
+[
+  {
+    "controlEligible": false,
+    "fullRequestAgeAtPersistenceMs": 156.4030449974828,
+    "hostClockId": "371b16357d9c4f90b02a7fd4c33edf01",
+    "measurement": {
+      "artifactRef": "measurements/0000.json",
+      "bytes": 1924,
+      "sha256": "3d8f6d32fc562666a58525d65ff829503233c70c6b672a50295fac55d24f4a20"
+    },
+    "persistedMonotonic": 16911.223889766,
+    "reportedAgeAtPersistenceMs": 148.66169500083313,
+    "sourceAgeBoundBasis": "first_get_send_start",
+    "sourceAgeBoundStartedMonotonic": 16911.122258071,
+    "storageTiming": {
+      "imageWriteMs": 20.165194000583142,
+      "measurementToPersistenceMs": 31.758089000504697,
+      "measurementWriteMs": 10.537505000684178,
+      "prepareBeforeCaptureMs": 10.683447999326745,
+      "receiptImageWallMs": 21.11832599985064,
+      "receiptWriteMs": 17.44866599983652
+    },
+    "withinAgePolicyAtPersistence": false
+  },
+  {
+    "controlEligible": false,
+    "fullRequestAgeAtPersistenceMs": 151.9336679987565,
+    "hostClockId": "371b16357d9c4f90b02a7fd4c33edf01",
+    "measurement": {
+      "artifactRef": "measurements/0001.json",
+      "bytes": 1928,
+      "sha256": "3ef505bf62ecdda488293ea5778679b7810c72115f7c9488663e0875d66d54eb"
+    },
+    "persistedMonotonic": 16911.793943449,
+    "reportedAgeAtPersistenceMs": 141.48538299859058,
+    "sourceAgeBoundBasis": "first_get_send_start",
+    "sourceAgeBoundStartedMonotonic": 16911.701194066,
+    "storageTiming": {
+      "imageWriteMs": 17.78323400139925,
+      "measurementToPersistenceMs": 33.54068800035748,
+      "measurementWriteMs": 13.649082000483759,
+      "prepareBeforeCaptureMs": 5.661959999997634,
+      "receiptImageWallMs": 18.760570001177257,
+      "receiptWriteMs": 15.192538001429057
+    },
+    "withinAgePolicyAtPersistence": false
+  },
+  {
+    "controlEligible": false,
+    "fullRequestAgeAtPersistenceMs": 156.4256419997972,
+    "hostClockId": "371b16357d9c4f90b02a7fd4c33edf01",
+    "measurement": {
+      "artifactRef": "measurements/0002.json",
+      "bytes": 1928,
+      "sha256": "fb3658339687c9392138ab119aedfa426f2fb14c77c41e96aef9ca55f18999f5"
+    },
+    "persistedMonotonic": 16912.445794646,
+    "reportedAgeAtPersistenceMs": 145.43168099872022,
+    "sourceAgeBoundBasis": "first_get_send_start",
+    "sourceAgeBoundStartedMonotonic": 16912.348760965,
+    "storageTiming": {
+      "imageWriteMs": 17.479886999353766,
+      "measurementToPersistenceMs": 35.20784499778529,
+      "measurementWriteMs": 13.74135899823159,
+      "prepareBeforeCaptureMs": 5.625496996799484,
+      "receiptImageWallMs": 20.689221997599816,
+      "receiptWriteMs": 19.689869001012994
+    },
+    "withinAgePolicyAtPersistence": false
+  },
+  {
+    "controlEligible": false,
+    "fullRequestAgeAtPersistenceMs": 144.77522299978207,
+    "hostClockId": "371b16357d9c4f90b02a7fd4c33edf01",
+    "measurement": {
+      "artifactRef": "measurements/0003.json",
+      "bytes": 1994,
+      "sha256": "5ead151da53b40700c951700a28f689970622cdb246e1145b6fb28d49104afd9"
+    },
+    "persistedMonotonic": 16913.011945393,
+    "reportedAgeAtPersistenceMs": 134.7822449989724,
+    "sourceAgeBoundBasis": "first_get_send_start",
+    "sourceAgeBoundStartedMonotonic": 16912.926289148,
+    "storageTiming": {
+      "imageWriteMs": 24.007610001717694,
+      "measurementToPersistenceMs": 37.05599799650372,
+      "measurementWriteMs": 11.668708997603972,
+      "prepareBeforeCaptureMs": 5.245039999863366,
+      "receiptImageWallMs": 24.85091000198736,
+      "receiptWriteMs": 21.69788999890443
+    },
+    "withinAgePolicyAtPersistence": false
+  },
+  {
+    "controlEligible": false,
+    "fullRequestAgeAtPersistenceMs": 153.3343729967058,
+    "hostClockId": "371b16357d9c4f90b02a7fd4c33edf01",
+    "measurement": {
+      "artifactRef": "measurements/0004.json",
+      "bytes": 1929,
+      "sha256": "9d81942ba1f755d5b45197dee6b2fac5fd358e5b659738ecbb2ddd29bcba386b"
+    },
+    "persistedMonotonic": 16913.631908612,
+    "reportedAgeAtPersistenceMs": 142.76086799838626,
+    "sourceAgeBoundBasis": "first_get_send_start",
+    "sourceAgeBoundStartedMonotonic": 16913.533949744,
+    "storageTiming": {
+      "imageWriteMs": 19.009972998901503,
+      "measurementToPersistenceMs": 33.15911999743548,
+      "measurementWriteMs": 10.51767199896858,
+      "prepareBeforeCaptureMs": 5.31963200046448,
+      "receiptImageWallMs": 21.791128998302156,
+      "receiptWriteMs": 20.830756999203004
+    },
+    "withinAgePolicyAtPersistence": false
+  },
+  {
+    "controlEligible": false,
+    "fullRequestAgeAtPersistenceMs": 156.88412700032816,
+    "hostClockId": "371b16357d9c4f90b02a7fd4c33edf01",
+    "measurement": {
+      "artifactRef": "measurements/0005.json",
+      "bytes": 1925,
+      "sha256": "137bf855d641a7948bb487368518fd72d072856a50331b4a16c13201f50b700c"
+    },
+    "persistedMonotonic": 16914.244232646,
+    "reportedAgeAtPersistenceMs": 142.79494100114565,
+    "sourceAgeBoundBasis": "first_get_send_start",
+    "sourceAgeBoundStartedMonotonic": 16914.155957705,
+    "storageTiming": {
+      "imageWriteMs": 22.675225001876242,
+      "measurementToPersistenceMs": 36.685505001514684,
+      "measurementWriteMs": 12.002536001091357,
+      "prepareBeforeCaptureMs": 5.02667399996426,
+      "receiptImageWallMs": 23.744688001897885,
+      "receiptWriteMs": 19.843976999254664
+    },
+    "withinAgePolicyAtPersistence": false
+  },
+  {
+    "controlEligible": false,
+    "fullRequestAgeAtPersistenceMs": 205.7056979989272,
+    "hostClockId": "371b16357d9c4f90b02a7fd4c33edf01",
+    "measurement": {
+      "artifactRef": "measurements/0006.json",
+      "bytes": 1926,
+      "sha256": "698ac630b1f531e7a6a5f2ce98ebe219074cb750b38d77d8da19b2100aba9dd1"
+    },
+    "persistedMonotonic": 16914.893099334,
+    "reportedAgeAtPersistenceMs": 179.82373100094148,
+    "sourceAgeBoundBasis": "first_get_send_start",
+    "sourceAgeBoundStartedMonotonic": 16914.782745603,
+    "storageTiming": {
+      "imageWriteMs": 25.17036800054484,
+      "measurementToPersistenceMs": 36.88759400029085,
+      "measurementWriteMs": 10.157289998460328,
+      "prepareBeforeCaptureMs": 5.588423999142833,
+      "receiptImageWallMs": 25.990427999204258,
+      "receiptWriteMs": 23.08979200097383
+    },
+    "withinAgePolicyAtPersistence": false
+  },
+  {
+    "controlEligible": false,
+    "fullRequestAgeAtPersistenceMs": 147.95715899936647,
+    "hostClockId": "371b16357d9c4f90b02a7fd4c33edf01",
+    "measurement": {
+      "artifactRef": "measurements/0007.json",
+      "bytes": 1929,
+      "sha256": "2f98ad8ba9fadf2ca2f4949a204b6380806b018ced6124ad8a243d1a8e7e1599"
+    },
+    "persistedMonotonic": 16915.287955663,
+    "reportedAgeAtPersistenceMs": 142.11351799941065,
+    "sourceAgeBoundBasis": "first_get_send_start",
+    "sourceAgeBoundStartedMonotonic": 16915.198798145,
+    "storageTiming": {
+      "imageWriteMs": 22.629836999840336,
+      "measurementToPersistenceMs": 35.25936200094293,
+      "measurementWriteMs": 11.19058699987363,
+      "prepareBeforeCaptureMs": 4.860362001636531,
+      "receiptImageWallMs": 23.319381001783768,
+      "receiptWriteMs": 20.474892000493128
+    },
+    "withinAgePolicyAtPersistence": false
+  },
+  {
+    "controlEligible": false,
+    "fullRequestAgeAtPersistenceMs": 146.81668100297708,
+    "hostClockId": "371b16357d9c4f90b02a7fd4c33edf01",
+    "measurement": {
+      "artifactRef": "measurements/0008.json",
+      "bytes": 1998,
+      "sha256": "b39c8d08f6c0668843689557119eb056b77b8920a929408d1b53ea0ed701b399"
+    },
+    "persistedMonotonic": 16915.783889604,
+    "reportedAgeAtPersistenceMs": 133.69373700175225,
+    "sourceAgeBoundBasis": "first_get_send_start",
+    "sourceAgeBoundStartedMonotonic": 16915.689101867,
+    "storageTiming": {
+      "imageWriteMs": 20.239024997863453,
+      "measurementToPersistenceMs": 35.00097800133517,
+      "measurementWriteMs": 12.717765002889792,
+      "prepareBeforeCaptureMs": 6.839271998615004,
+      "receiptImageWallMs": 21.33052499993937,
+      "receiptWriteMs": 17.937139000423485
+    },
+    "withinAgePolicyAtPersistence": false
+  },
+  {
+    "controlEligible": false,
+    "fullRequestAgeAtPersistenceMs": 157.50212299787694,
+    "hostClockId": "371b16357d9c4f90b02a7fd4c33edf01",
+    "measurement": {
+      "artifactRef": "measurements/0009.json",
+      "bytes": 1928,
+      "sha256": "1ce411ffc8e1b93f48233aa9960fe319e413be628af7a02b5983afd804146d87"
+    },
+    "persistedMonotonic": 16916.445336612,
+    "reportedAgeAtPersistenceMs": 147.55742199810942,
+    "sourceAgeBoundBasis": "first_get_send_start",
+    "sourceAgeBoundStartedMonotonic": 16916.34508519,
+    "storageTiming": {
+      "imageWriteMs": 18.86056800140068,
+      "measurementToPersistenceMs": 37.673024999094196,
+      "measurementWriteMs": 13.524825000786223,
+      "prepareBeforeCaptureMs": 6.695460000628373,
+      "receiptImageWallMs": 23.49276599852601,
+      "receiptWriteMs": 22.495467997941887
+    },
+    "withinAgePolicyAtPersistence": false
+  },
+  {
+    "controlEligible": false,
+    "fullRequestAgeAtPersistenceMs": 150.22232499855338,
+    "hostClockId": "371b16357d9c4f90b02a7fd4c33edf01",
+    "measurement": {
+      "artifactRef": "measurements/0010.json",
+      "bytes": 1931,
+      "sha256": "62e54803c507181bf51ae0465966a1fc2af28ab48e6a39275e10273f4a727d3c"
+    },
+    "persistedMonotonic": 16917.052169846,
+    "reportedAgeAtPersistenceMs": 140.48941700043972,
+    "sourceAgeBoundBasis": "first_get_send_start",
+    "sourceAgeBoundStartedMonotonic": 16916.952775429,
+    "storageTiming": {
+      "imageWriteMs": 19.22539500083076,
+      "measurementToPersistenceMs": 35.19004799818504,
+      "measurementWriteMs": 14.261071999499109,
+      "prepareBeforeCaptureMs": 7.886662002420053,
+      "receiptImageWallMs": 20.178210997983115,
+      "receiptWriteMs": 16.777528999227798
+    },
+    "withinAgePolicyAtPersistence": false
+  },
+  {
+    "controlEligible": false,
+    "fullRequestAgeAtPersistenceMs": 154.31695100109863,
+    "hostClockId": "371b16357d9c4f90b02a7fd4c33edf01",
+    "measurement": {
+      "artifactRef": "measurements/0011.json",
+      "bytes": 1929,
+      "sha256": "611909c4edd889ec9d446ce2acb220cd43076965de99f650fb4f939fbaede6ae"
+    },
+    "persistedMonotonic": 16917.624116545,
+    "reportedAgeAtPersistenceMs": 136.35049800054475,
+    "sourceAgeBoundBasis": "first_get_send_start",
+    "sourceAgeBoundStartedMonotonic": 16917.542484047,
+    "storageTiming": {
+      "imageWriteMs": 16.950877998169744,
+      "measurementToPersistenceMs": 28.725677002512384,
+      "measurementWriteMs": 10.425434000353562,
+      "prepareBeforeCaptureMs": 5.60153399783303,
+      "receiptImageWallMs": 17.679716998827644,
+      "receiptWriteMs": 14.884487001836533
+    },
+    "withinAgePolicyAtPersistence": false
+  }
+]

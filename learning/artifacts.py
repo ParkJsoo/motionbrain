@@ -119,6 +119,21 @@ class ArtifactStore:
         self._sequence = 0
         self._event_lock = threading.Lock()
 
+    def prepare_parent(self, relative: str):
+        """Durably prepare directories before capture, without creating evidence.
+
+        The normal writer still fsyncs each file and its parent and verifies
+        readback. Empty prepared directories never prove a completed capture.
+        """
+        parent = None
+        try:
+            parent, _ = _parent_fd(self.root, relative, create=True)
+        except (OSError, ValueError) as exc:
+            raise StorageError(f"cannot prepare {relative}: {exc}") from exc
+        finally:
+            if parent is not None:
+                os.close(parent)
+
     def _write(self, relative, content):
         _parts(relative)
         parent = fd = None

@@ -1,4 +1,5 @@
 """Read-only shadow measurements with original JPEGs and durable failure records."""
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 from pathlib import Path
 import time
@@ -14,8 +15,65 @@ from learning.fast_observation import AnchoredRoiMeasurement
 from ros2_ws.src.motionbrain_ros_bridge.motionbrain_ros_bridge.observation import parse_capture_headers
 
 
+def _persist_capture(store, index, receipt, body, pending, record, artifacts, *, clock, parallel):
+    # One current JPEG only. Recorder callbacks stay on the calling thread.
+    # Always join and collect the image even if receipt recording fails.
+    started = clock.monotonic()
+    valid_image = receipt is not None and receipt.get("status") == 200 and body is not None
+    image_results = []
+    def write_image():
+        began = clock.monotonic()
+        ref = store.save_image(str(index), "source", body, receipt["sha256"])
+        saved = (ref, (clock.monotonic()-began)*1000)
+        image_results.append(saved)
+        return saved
+    def write_receipts():
+        began = clock.monotonic()
+        for item in pending:
+            record(item)
+        return (clock.monotonic()-began)*1000
+    ref, image_ms = None, None
+    if parallel and valid_image:
+        try:
+            with ThreadPoolExecutor(max_workers=1, thread_name_prefix="capture-image") as pool:
+                future = pool.submit(write_image)
+                pending_error = None
+                try:
+                    receipt_ms = write_receipts()
+                except BaseException as exc:
+                    pending_error = exc
+                # Defer caller interruption until the current durable write is
+                # finished. Also covers a signal after a receipt write failure.
+                while True:
+                    try:
+                        ref, image_ms = future.result()
+                        break
+                    except KeyboardInterrupt as exc:
+                        pending_error = pending_error or exc
+                        if future.done():  # worker failure or completed concurrently
+                            break
+                    except BaseException as exc:
+                        pending_error = pending_error or exc
+                        break
+                if pending_error is not None:
+                    raise pending_error
+        finally:
+            # Context exit joins the worker even when the main thread's wait
+            # was interrupted. Collect from the worker-owned completion slot,
+            # not from an assignment that a signal may have skipped.
+            if image_results:
+                artifacts.append(image_results[0][0])
+    else:
+        receipt_ms = write_receipts()
+        if valid_image:
+            ref, image_ms = write_image()
+            artifacts.append(ref)
+    return ref, {"receiptWriteMs": receipt_ms, "imageWriteMs": image_ms,
+                 "receiptImageWallMs": (clock.monotonic()-started)*1000}
+
+
 def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.sleep, capture_timing=False,
-                   match_workers=3):
+                   match_workers=3, parallel_persistence=True):
     if type(samples) is not int or not 1 <= samples <= 100:
         raise ValueError("samples must be 1..100")
     if type(interval) not in (int, float) or not 0 <= interval <= 1:
@@ -24,6 +82,8 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
         raise ValueError("capture_timing must be boolean")
     if type(match_workers) is not int or not 1 <= match_workers <= 3:
         raise ValueError("match_workers must be 1..3")
+    if type(parallel_persistence) is not bool:
+        raise ValueError("parallel_persistence must be boolean")
     artifacts, results = [], []
     timing_samples = []
     adapter = DeviceReadAdapter(transport)
@@ -61,6 +121,7 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
                               "policy": AnchoredRoiMeasurement.POLICY, "requestedSamples": samples,
                               "interval": interval, "hostClockId": transport.host_clock_id,
                               "capturePersistence": "single_frame_after_measurement",
+                              "parallelPersistence": parallel_persistence,
                               "captureTimingEnabled": capture_timing,
                               "connectionTimingEnabled": getattr(transport, "connection_timing", False),
                               "opencvVersion": cv2.__version__, "numpyVersion": np.__version__,
@@ -91,6 +152,11 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
             if not _idle(adapter.status()):
                 raise DeviceReadError("controller_not_idle")
             before_camera = _object(transport.get("camera", "/status")[0]) if capture_timing else None
+            prepare_started = transport.clock.monotonic()
+            if parallel_persistence:
+                store.prepare_parent(f"images/{index}/source.jpg")
+                store.prepare_parent(f"measurements/{index:04d}.json")
+            prepare_ms = (transport.clock.monotonic()-prepare_started)*1000
             store.append("capture_requested", str(index), {})
             receipt, body = None, None
             camera_receipts = []
@@ -104,13 +170,16 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
                                          capture_receipt=receipt)
             finally:
                 pending, camera_receipts = camera_receipts, None
-                for pending_receipt in pending:
-                    record(pending_receipt)
-                if receipt is not None and receipt.get("status") == 200 and body is not None:
-                    ref = save_image(index, "source", body, receipt["sha256"])
+                ref, storage_timing = _persist_capture(store, index, receipt, body, pending, record, artifacts,
+                                                     clock=transport.clock, parallel=parallel_persistence)
             result.update(image=ref, source=source)
+            measurement_write_started = transport.clock.monotonic()
             result_ref = save_json(f"measurements/{index:04d}.json", result)
             persisted = transport.clock.monotonic()
+            storage_timing.update(prepareBeforeCaptureMs=prepare_ms,
+                                 measurementWriteMs=(persisted-measurement_write_started)*1000,
+                                 measurementToPersistenceMs=(persisted-result["measurementCompletedMonotonic"])*1000
+                                 if "measurementCompletedMonotonic" in result else None)
             reported_age = source.get("reportedSourceAgeMs")
             bound_start = result.get("sourceAgeBoundStartedMonotonic")
             age_at_persistence = (reported_age + (persisted-bound_start)*1000
@@ -119,6 +188,7 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
             # Acceptance refers to calculation time, never to later consumption.
             # Retain a separate conservative age after durable image/result I/O.
             persistence = {"measurement": result_ref, "persistedMonotonic": persisted,
+                           "storageTiming": storage_timing,
                            "hostClockId": transport.host_clock_id,
                            "reportedAgeAtPersistenceMs": age_at_persistence,
                            "sourceAgeBoundBasis": result.get("sourceAgeBoundBasis"),

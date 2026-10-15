@@ -1,0 +1,274 @@
+{
+  "runDir": "/tmp/motionbrain-storage-20261015/benchmarks/6bdb6463fe9c4868b11ca7c80fefc9fb",
+  "rows": [
+    {
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:8903585409",
+      "imageSha256": "cd18abd6f9eb85e577caae6445873fee4e98cd8badf9b32837c28b99bc79bdbd",
+      "mode": "serial",
+      "prepareMs": 0.0015549994714092463,
+      "storageMs": 40.20800299986149,
+      "measurementWriteMs": 10.865168002055725,
+      "receiptWriteMs": 12.275605997274397,
+      "imageWriteMs": 17.011063002428273,
+      "receiptImageWallMs": 29.328854001505533
+    },
+    {
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:8903585409",
+      "imageSha256": "cd18abd6f9eb85e577caae6445873fee4e98cd8badf9b32837c28b99bc79bdbd",
+      "mode": "parallel",
+      "prepareMs": 4.565626000839984,
+      "storageMs": 37.29695999936666,
+      "measurementWriteMs": 13.754970001173206,
+      "receiptWriteMs": 21.045771998615237,
+      "imageWriteMs": 18.57683299749624,
+      "receiptImageWallMs": 23.38686199800577
+    },
+    {
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:8903981618",
+      "imageSha256": "4073bf735934222931f2e9a329a8c3e768575876f97766ddb72344a29eb081db",
+      "mode": "parallel",
+      "prepareMs": 4.451720000361092,
+      "storageMs": 33.87474099872634,
+      "measurementWriteMs": 11.088163999374956,
+      "receiptWriteMs": 21.628280999721028,
+      "imageWriteMs": 19.737831000384176,
+      "receiptImageWallMs": 22.73531799801276
+    },
+    {
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:8903981618",
+      "imageSha256": "4073bf735934222931f2e9a329a8c3e768575876f97766ddb72344a29eb081db",
+      "mode": "serial",
+      "prepareMs": 0.004370001988718286,
+      "storageMs": 38.97285700077191,
+      "measurementWriteMs": 12.227310999151086,
+      "receiptWriteMs": 12.697247999312822,
+      "imageWriteMs": 13.989483999466756,
+      "receiptImageWallMs": 26.721380003436934
+    },
+    {
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:8904521861",
+      "imageSha256": "04d3ba675684e34d2546a83019723f8b0d5019b92423f2c20ec8d22cd8a79ec9",
+      "mode": "serial",
+      "prepareMs": 0.0014259967429097742,
+      "storageMs": 39.24029699919629,
+      "measurementWriteMs": 11.160902999108657,
+      "receiptWriteMs": 10.33710200135829,
+      "imageWriteMs": 17.662848000327358,
+      "receiptImageWallMs": 28.019173001666786
+    },
+    {
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:8904521861",
+      "imageSha256": "04d3ba675684e34d2546a83019723f8b0d5019b92423f2c20ec8d22cd8a79ec9",
+      "mode": "parallel",
+      "prepareMs": 6.309782002063002,
+      "storageMs": 37.851894998311764,
+      "measurementWriteMs": 10.729150999395642,
+      "receiptWriteMs": 23.898872001154814,
+      "imageWriteMs": 26.173760001256596,
+      "receiptImageWallMs": 27.07959599865717
+    },
+    {
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:8905134161",
+      "imageSha256": "7d881660369ae45976b8f59c34968e5a560c48a3c5667cc02b54ce64fbfbae13",
+      "mode": "parallel",
+      "prepareMs": 4.790251998201711,
+      "storageMs": 33.39015500023379,
+      "measurementWriteMs": 9.90575800096849,
+      "receiptWriteMs": 20.439949999854434,
+      "imageWriteMs": 22.71291099896189,
+      "receiptImageWallMs": 23.42443599991384
+    },
+    {
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:8905134161",
+      "imageSha256": "7d881660369ae45976b8f59c34968e5a560c48a3c5667cc02b54ce64fbfbae13",
+      "mode": "serial",
+      "prepareMs": 0.0014260003808885813,
+      "storageMs": 37.50875300102052,
+      "measurementWriteMs": 11.71593100298196,
+      "receiptWriteMs": 11.239382998610381,
+      "imageWriteMs": 14.523697998811258,
+      "receiptImageWallMs": 25.779210001928732
+    },
+    {
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:8905746469",
+      "imageSha256": "2379af73e4be9504cb3635126bb724177aaf20d0125dd8ae35e69138ffab4ebd",
+      "mode": "serial",
+      "prepareMs": 0.0022029998945072293,
+      "storageMs": 41.80275399994571,
+      "measurementWriteMs": 11.963889999606181,
+      "receiptWriteMs": 11.414158001571195,
+      "imageWriteMs": 18.343133000598755,
+      "receiptImageWallMs": 29.81592000287492
+    },
+    {
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:8905746469",
+      "imageSha256": "2379af73e4be9504cb3635126bb724177aaf20d0125dd8ae35e69138ffab4ebd",
+      "mode": "parallel",
+      "prepareMs": 4.939526999805821,
+      "storageMs": 35.04846099895076,
+      "measurementWriteMs": 13.138333000824787,
+      "receiptWriteMs": 18.12865600004443,
+      "imageWriteMs": 20.674963998317253,
+      "receiptImageWallMs": 21.853461999853607
+    },
+    {
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:8906358781",
+      "imageSha256": "6dccdcdd32c64f780bc0e325c8465ecfe49c059b2f5bb380e251722eebe81fb1",
+      "mode": "parallel",
+      "prepareMs": 4.8915099978330545,
+      "storageMs": 37.432772001920966,
+      "measurementWriteMs": 12.542732001747936,
+      "receiptWriteMs": 19.56998300011037,
+      "imageWriteMs": 23.49982300074771,
+      "receiptImageWallMs": 24.82524500010186
+    },
+    {
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:8906358781",
+      "imageSha256": "6dccdcdd32c64f780bc0e325c8465ecfe49c059b2f5bb380e251722eebe81fb1",
+      "mode": "serial",
+      "prepareMs": 0.0025560002541169524,
+      "storageMs": 44.49570799988578,
+      "measurementWriteMs": 13.460363999911351,
+      "receiptWriteMs": 15.25111199953244,
+      "imageWriteMs": 15.735232998849824,
+      "receiptImageWallMs": 31.012491999717895
+    },
+    {
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:8906971077",
+      "imageSha256": "9f32893ff1d333fcb7f8d50c26ca4d277f83cc674c357f878f709b7b24c0ca00",
+      "mode": "serial",
+      "prepareMs": 0.0027410023903939873,
+      "storageMs": 43.636165999487275,
+      "measurementWriteMs": 11.35049200092908,
+      "receiptWriteMs": 11.5841190017818,
+      "imageWriteMs": 20.657445998949697,
+      "receiptImageWallMs": 32.26671200172859
+    },
+    {
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:8906971077",
+      "imageSha256": "9f32893ff1d333fcb7f8d50c26ca4d277f83cc674c357f878f709b7b24c0ca00",
+      "mode": "parallel",
+      "prepareMs": 6.012194000504678,
+      "storageMs": 31.519391002802877,
+      "measurementWriteMs": 12.388140999973984,
+      "receiptWriteMs": 17.720569998346036,
+      "imageWriteMs": 15.605142998538213,
+      "receiptImageWallMs": 19.06593500098097
+    },
+    {
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:8907583405",
+      "imageSha256": "0c2b3120d6c50f00cdea097f672cb582c0fa95cdca6c1ba731f7b22eb6d53965",
+      "mode": "parallel",
+      "prepareMs": 5.7306250018882565,
+      "storageMs": 34.88942600233713,
+      "measurementWriteMs": 14.505994000501232,
+      "receiptWriteMs": 16.71662399894558,
+      "imageWriteMs": 19.246692001615884,
+      "receiptImageWallMs": 20.33570999992662
+    },
+    {
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:8907583405",
+      "imageSha256": "0c2b3120d6c50f00cdea097f672cb582c0fa95cdca6c1ba731f7b22eb6d53965",
+      "mode": "serial",
+      "prepareMs": 0.0025370027287863195,
+      "storageMs": 40.42305500115617,
+      "measurementWriteMs": 10.759632001281716,
+      "receiptWriteMs": 13.265589997899951,
+      "imageWriteMs": 16.351389000192285,
+      "receiptImageWallMs": 29.641830999025842
+    },
+    {
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:8907979609",
+      "imageSha256": "2a500bf147c1b29998f4c03acbfd4a38f4b3eeb3b012dce2f8cddb69e5766233",
+      "mode": "serial",
+      "prepareMs": 0.0024080000002868474,
+      "storageMs": 45.534450000559445,
+      "measurementWriteMs": 15.259759999025846,
+      "receiptWriteMs": 11.90248300190433,
+      "imageWriteMs": 18.327854999370174,
+      "receiptImageWallMs": 30.254967998189386
+    },
+    {
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:8907979609",
+      "imageSha256": "2a500bf147c1b29998f4c03acbfd4a38f4b3eeb3b012dce2f8cddb69e5766233",
+      "mode": "parallel",
+      "prepareMs": 6.5745550018618815,
+      "storageMs": 32.201676000113366,
+      "measurementWriteMs": 11.15882900194265,
+      "receiptWriteMs": 17.378444998030318,
+      "imageWriteMs": 19.845923001412302,
+      "receiptImageWallMs": 20.98499599742354
+    },
+    {
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:8908519850",
+      "imageSha256": "0be166132d0db34c0de2297b1b8915863c31e9fc5ccc895a66e5cdd55647539d",
+      "mode": "parallel",
+      "prepareMs": 5.111190999741666,
+      "storageMs": 34.97236899784184,
+      "measurementWriteMs": 12.9752799984999,
+      "receiptWriteMs": 18.090896999638062,
+      "imageWriteMs": 20.925090000673663,
+      "receiptImageWallMs": 21.935478998784674
+    },
+    {
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:8908519850",
+      "imageSha256": "0be166132d0db34c0de2297b1b8915863c31e9fc5ccc895a66e5cdd55647539d",
+      "mode": "serial",
+      "prepareMs": 0.002944001607829705,
+      "storageMs": 44.04269700171426,
+      "measurementWriteMs": 10.548191999987466,
+      "receiptWriteMs": 13.200386998505564,
+      "imageWriteMs": 20.217342000250937,
+      "receiptImageWallMs": 33.471432001533685
+    },
+    {
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:8908916587",
+      "imageSha256": "54ab60127e5a090ce9721c14087434a879ede7aa59e76c12c557cfd268bbc931",
+      "mode": "serial",
+      "prepareMs": 0.0021849991753697395,
+      "storageMs": 45.24808399946778,
+      "measurementWriteMs": 12.87566999963019,
+      "receiptWriteMs": 12.485677001677686,
+      "imageWriteMs": 19.84221900056582,
+      "receiptImageWallMs": 32.35180200135801
+    },
+    {
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:8908916587",
+      "imageSha256": "54ab60127e5a090ce9721c14087434a879ede7aa59e76c12c557cfd268bbc931",
+      "mode": "parallel",
+      "prepareMs": 6.575109997356776,
+      "storageMs": 33.19428900067578,
+      "measurementWriteMs": 10.298418001184473,
+      "receiptWriteMs": 18.98882600289653,
+      "imageWriteMs": 21.678946999600157,
+      "receiptImageWallMs": 22.83133499804535
+    },
+    {
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:8909420317",
+      "imageSha256": "c5eb8f20136e1d61c344e8f9a7ec3e0b1f6c1200ef5222da4c4b2bc14f20b97d",
+      "mode": "parallel",
+      "prepareMs": 5.119728000863688,
+      "storageMs": 36.73258100025123,
+      "measurementWriteMs": 14.215778002835577,
+      "receiptWriteMs": 18.31828200010932,
+      "imageWriteMs": 21.249102002911968,
+      "receiptImageWallMs": 22.451340999396052
+    },
+    {
+      "sourceFrameId": "4a5ba0ac0adad7522700201e83767811:8909420317",
+      "imageSha256": "c5eb8f20136e1d61c344e8f9a7ec3e0b1f6c1200ef5222da4c4b2bc14f20b97d",
+      "mode": "serial",
+      "prepareMs": 0.0023139982658904046,
+      "storageMs": 48.957039001834346,
+      "measurementWriteMs": 12.580972001160262,
+      "receiptWriteMs": 18.550091997894924,
+      "imageWriteMs": 17.778864999854704,
+      "receiptImageWallMs": 36.35543800191954
+    }
+  ],
+  "sourceSha256": {
+    "learning/artifacts.py": "a9077eed9a5e2825f6c78fb9eca1ca03ac43693d91c95a0c109fb343707ba0b4",
+    "learning/fast_probe.py": "68bd5fdbc3bec1ad7cb53397f2d5382a8a12a230c8c8ead3935dcc4625183c11",
+    "docs/evidence/capture-persistence-2026-10-15/benchmark.py": "c75fa320ca71230da9092e87d45eaead2564ea64db0b44bcc024c2fe678e0d71"
+  }
+}

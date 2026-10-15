@@ -24,6 +24,8 @@ def main(argv=None):
     parser.add_argument("--samples", type=int, default=8)
     parser.add_argument("--match-workers", type=int, choices=(1, 2, 3), default=3,
                         help="parallel scale matches within one frame; 1 reproduces serial matching")
+    parser.add_argument("--serial-persistence", action="store_true",
+                        help="baseline: sequential receipt/JPEG storage, no directory preparation")
     parser.add_argument("--capture-timing", action="store_true",
                         help="record header/body timing and guarded camera status association (GET only)")
     parser.add_argument("--connection-timing", action="store_true",
@@ -44,7 +46,8 @@ def main(argv=None):
     signal.signal(signal.SIGTERM, terminate)
     try:
         report = run_fast_probe(ArtifactStore(run_dir), transport, samples=args.samples,
-                                capture_timing=args.capture_timing, match_workers=args.match_workers)
+                                capture_timing=args.capture_timing, match_workers=args.match_workers,
+                                parallel_persistence=not args.serial_persistence)
         print(json.dumps({"runDir": str(run_dir), **{k: v for k, v in report.items()
                           if k not in ("artifacts", "results")},
                           "measurements": [{k: v for k, v in r.items() if k not in ("image", "source")}
