@@ -13,7 +13,7 @@ from learning.artifacts import ArtifactStore, StorageError
 from learning.dataset import build_manifest
 from learning.device_adapter import DeviceReadAdapter, DeviceReadError, ReadOnlyHTTP
 from learning.device_probe import audit_device_probe, observation_blockers, run_device_probe
-from learning.http_timing import TRACE_STAMPS, connection_metrics
+from learning.http_timing import TRACE_STAMPS, connection_metrics, SEND_START_SEMANTICS
 from learning.dry_run import JPEG_BYTES, VirtualClock
 from learning.runner import CaptureRunner
 
@@ -401,6 +401,7 @@ class ReadOnlyTransportTest(unittest.TestCase):
         self.assertEqual(traced["sha256"], plain["sha256"])
         self.assertEqual(traced["status"], 404)
         t = traced["connectionTiming"]
+        self.assertEqual(t["sendStartSemantics"], SEND_START_SEMANTICS)
         stamps = [traced["requestStartedMonotonic"], *(t[k] for k in TRACE_STAMPS),
                   traced["headersAvailableMonotonic"]]
         self.assertEqual(stamps, sorted(stamps))

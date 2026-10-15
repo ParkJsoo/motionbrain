@@ -16,6 +16,7 @@ import cv2
 import numpy as np
 
 from learning.artifacts import MAX_IMAGE_BYTES
+from learning.source_age import source_age_basis
 
 
 class MeasurementError(ValueError):
@@ -128,13 +129,15 @@ class AnchoredRoiMeasurement:
             if tw <= width and th <= height:
                 self.templates.append((scale, cv2.resize(self.template, (tw, th), interpolation=cv2.INTER_LINEAR)))
 
-    def measure(self, body, source, *, request_started, received, host_clock_id):
+    def measure(self, body, source, *, request_started, received, host_clock_id, capture_receipt=None):
         started = self.clock.monotonic()
         result = {"schemaVersion": "motionbrain.roi_measurement.v1", "method": "fixed_template_translation",
                   "semanticAnchor": self.anchor, "sourceFrameId": source.get("sourceFrameId"),
                   "imageSha256": source.get("imageSha256"), "hostClockId": host_clock_id,
                   "accepted": False, "controlEligible": False, "trainingEligible": False,
                   "captureHostBoundsCalibrated": False}
+        age_start = request_started
+        last_checked = started
         try:
             if self.invalidated:
                 raise MeasurementError("new_anchor_required")
@@ -153,6 +156,13 @@ class AnchoredRoiMeasurement:
                     or not request_started <= received <= started or reported_age < 0
                     or not isinstance(host_clock_id, str) or not host_clock_id):
                 raise MeasurementError("invalid_local_timing")
+            try:
+                basis = source_age_basis(capture_receipt, source, request_started=request_started,
+                                         received=received, host_clock_id=host_clock_id)
+            except ValueError as exc:
+                raise MeasurementError(str(exc)) from exc
+            result.update(basis)
+            age_start = basis["sourceAgeBoundStartedMonotonic"]
             result.update(requestStartedMonotonic=request_started, receivedMonotonic=received,
                           measurementStartedMonotonic=started, reportedSourceAgeMs=reported_age,
                           httpIntervalMs=(received-request_started)*1000,
@@ -181,9 +191,9 @@ class AnchoredRoiMeasurement:
             completed = self.clock.monotonic()
             if not _number(completed) or completed < started:
                 raise MeasurementError("invalid_local_timing")
-            # Entire HTTP interval + compute age conservatively; no subtraction
-            # between Pi and camera clocks and no physical calibration claim.
-            age = reported_age + (completed - request_started) * 1000
+            last_checked = completed
+            # Causal pre-server bound + all compute time; no cross-clock subtraction.
+            age = reported_age + (completed - age_start) * 1000
             result.update(reportedAgePlusElapsedMs=age, processingMs=(completed-started)*1000)
             if age > self.POLICY["maxSourceAgeMs"]:
                 raise MeasurementError("source_age_exceeds_policy")
@@ -197,14 +207,19 @@ class AnchoredRoiMeasurement:
             if str(exc) not in ("source_age_exceeds_policy", "frame_repeated_or_regressed"):
                 self.invalidated = True
         completed = self.clock.monotonic()
-        if _number(completed) and completed >= started:
+        if _number(completed) and completed >= last_checked:
             result["measurementCompletedMonotonic"] = completed
             result["processingMs"] = (completed-started)*1000
             if (all(_number(v) for v in (request_started, received, source.get("reportedSourceAgeMs")))
                     and request_started <= received <= started and source["reportedSourceAgeMs"] >= 0):
-                result["reportedAgePlusElapsedMs"] = source["reportedSourceAgeMs"] + (completed-request_started)*1000
+                result["fullRequestAgePlusElapsedMs"] = source["reportedSourceAgeMs"] + (completed-request_started)*1000
+                result["reportedAgePlusElapsedMs"] = source["reportedSourceAgeMs"] + (completed-age_start)*1000
                 if result["accepted"] and result["reportedAgePlusElapsedMs"] > self.POLICY["maxSourceAgeMs"]:
                     result.update(accepted=False, reason="source_age_exceeds_policy")
                     for key in ("targetBox", "centerX", "centerY", "deltaX", "deltaY"):
                         result.pop(key, None)
+        else:
+            result.update(accepted=False, reason="invalid_local_timing")
+            for key in ("targetBox", "centerX", "centerY", "deltaX", "deltaY"):
+                result.pop(key, None)
         return result

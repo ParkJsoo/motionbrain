@@ -54,7 +54,7 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
 
     source_root = Path(__file__).resolve().parents[1]
     sources = ["learning/fast_observation.py", "learning/fast_probe.py", "learning/device_adapter.py",
-               "learning/capture_timing.py", "learning/http_timing.py",
+               "learning/capture_timing.py", "learning/http_timing.py", "learning/source_age.py",
                "learning/artifacts.py", "tools/probe_fast_observation.py",
                "ros2_ws/src/motionbrain_ros_bridge/motionbrain_ros_bridge/observation.py"]
     save_json("session.json", {"schemaVersion": "motionbrain.fast_probe_session.v1",
@@ -100,7 +100,8 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
                     raise DeviceReadError("camera_capture_failed")
                 source = {**parse_capture_headers(receipt["headers"]), "imageSha256": receipt["sha256"]}
                 result = tracker.measure(body, source, request_started=receipt["requestStartedMonotonic"],
-                                         received=receipt["receivedMonotonic"], host_clock_id=transport.host_clock_id)
+                                         received=receipt["receivedMonotonic"], host_clock_id=transport.host_clock_id,
+                                         capture_receipt=receipt)
             finally:
                 pending, camera_receipts = camera_receipts, None
                 for pending_receipt in pending:
@@ -111,13 +112,19 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
             result_ref = save_json(f"measurements/{index:04d}.json", result)
             persisted = transport.clock.monotonic()
             reported_age = source.get("reportedSourceAgeMs")
-            age_at_persistence = (reported_age + (persisted-receipt["requestStartedMonotonic"])*1000
-                                  if reported_age is not None else None)
+            bound_start = result.get("sourceAgeBoundStartedMonotonic")
+            age_at_persistence = (reported_age + (persisted-bound_start)*1000
+                                  if reported_age is not None and bound_start is not None
+                                  and persisted >= result.get("measurementCompletedMonotonic", float("inf")) else None)
             # Acceptance refers to calculation time, never to later consumption.
             # Retain a separate conservative age after durable image/result I/O.
             persistence = {"measurement": result_ref, "persistedMonotonic": persisted,
                            "hostClockId": transport.host_clock_id,
                            "reportedAgeAtPersistenceMs": age_at_persistence,
+                           "sourceAgeBoundBasis": result.get("sourceAgeBoundBasis"),
+                           "sourceAgeBoundStartedMonotonic": bound_start,
+                           "fullRequestAgeAtPersistenceMs": (reported_age + (persisted-receipt["requestStartedMonotonic"])*1000
+                                                             if reported_age is not None else None),
                            "withinAgePolicyAtPersistence": age_at_persistence is not None
                            and 0 <= age_at_persistence <= tracker.POLICY["maxSourceAgeMs"],
                            "controlEligible": False}

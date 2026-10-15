@@ -1,0 +1,182 @@
+[
+  {
+    "controlEligible": false,
+    "fullRequestAgeAtPersistenceMs": 138.42649800128106,
+    "hostClockId": "58dc6b2a79aa41d2b5b54586314900ec",
+    "measurement": {
+      "artifactRef": "measurements/0000.json",
+      "bytes": 1991,
+      "sha256": "b15891278cb2320c7331795cc0f8d448b6182de001ab319f72fdd79c394ac130"
+    },
+    "persistedMonotonic": 15632.872739529,
+    "reportedAgeAtPersistenceMs": 130.92441200089502,
+    "sourceAgeBoundBasis": "first_get_send_start",
+    "sourceAgeBoundStartedMonotonic": 15632.780709117,
+    "withinAgePolicyAtPersistence": false
+  },
+  {
+    "controlEligible": false,
+    "fullRequestAgeAtPersistenceMs": 157.59662200039102,
+    "hostClockId": "58dc6b2a79aa41d2b5b54586314900ec",
+    "measurement": {
+      "artifactRef": "measurements/0001.json",
+      "bytes": 1926,
+      "sha256": "d7ddbb91f4c39e8d624a67b938700f5050217e097768ac11c852640bfa815c7c"
+    },
+    "persistedMonotonic": 15633.289501304,
+    "reportedAgeAtPersistenceMs": 151.68770700042742,
+    "sourceAgeBoundBasis": "first_get_send_start",
+    "sourceAgeBoundStartedMonotonic": 15633.188434597,
+    "withinAgePolicyAtPersistence": false
+  },
+  {
+    "controlEligible": false,
+    "fullRequestAgeAtPersistenceMs": 153.5465699998067,
+    "hostClockId": "58dc6b2a79aa41d2b5b54586314900ec",
+    "measurement": {
+      "artifactRef": "measurements/0002.json",
+      "bytes": 1990,
+      "sha256": "9f0e704c4a99b1aa6a7d5bf9d73181470fde0945640f6fcfb097b13f77c68b8d"
+    },
+    "persistedMonotonic": 15633.82036572,
+    "reportedAgeAtPersistenceMs": 142.7776999989046,
+    "sourceAgeBoundBasis": "first_get_send_start",
+    "sourceAgeBoundStartedMonotonic": 15633.71628002,
+    "withinAgePolicyAtPersistence": false
+  },
+  {
+    "controlEligible": false,
+    "fullRequestAgeAtPersistenceMs": 142.52739600151534,
+    "hostClockId": "58dc6b2a79aa41d2b5b54586314900ec",
+    "measurement": {
+      "artifactRef": "measurements/0003.json",
+      "bytes": 1993,
+      "sha256": "0d1e4b2496df39a66c3ee769ce6ecce637dafb1e39784aecb0be0291c70ba3de"
+    },
+    "persistedMonotonic": 15634.41781002,
+    "reportedAgeAtPersistenceMs": 126.87307100013702,
+    "sourceAgeBoundBasis": "first_get_send_start",
+    "sourceAgeBoundStartedMonotonic": 15634.328058949,
+    "withinAgePolicyAtPersistence": false
+  },
+  {
+    "controlEligible": false,
+    "fullRequestAgeAtPersistenceMs": 152.7885520002056,
+    "hostClockId": "58dc6b2a79aa41d2b5b54586314900ec",
+    "measurement": {
+      "artifactRef": "measurements/0004.json",
+      "bytes": 1993,
+      "sha256": "6f04152f5a7276830b1752b0e93dba99fd83bcb4acfca02a8e9c0c289d74dc0d"
+    },
+    "persistedMonotonic": 15635.041439555,
+    "reportedAgeAtPersistenceMs": 142.4443030003059,
+    "sourceAgeBoundBasis": "first_get_send_start",
+    "sourceAgeBoundStartedMonotonic": 15634.936066252,
+    "withinAgePolicyAtPersistence": false
+  },
+  {
+    "controlEligible": false,
+    "fullRequestAgeAtPersistenceMs": 155.48946200056747,
+    "hostClockId": "58dc6b2a79aa41d2b5b54586314900ec",
+    "measurement": {
+      "artifactRef": "measurements/0005.json",
+      "bytes": 1924,
+      "sha256": "d1bdbcfbb60aa1d1fd1c9d6b65e6a3912c5a0176245cf1a7bace5d3f59f7c589"
+    },
+    "persistedMonotonic": 15635.656963388,
+    "reportedAgeAtPersistenceMs": 143.00581300108973,
+    "sourceAgeBoundBasis": "first_get_send_start",
+    "sourceAgeBoundStartedMonotonic": 15635.559214575,
+    "withinAgePolicyAtPersistence": false
+  },
+  {
+    "controlEligible": false,
+    "fullRequestAgeAtPersistenceMs": 164.20164299994067,
+    "hostClockId": "58dc6b2a79aa41d2b5b54586314900ec",
+    "measurement": {
+      "artifactRef": "measurements/0006.json",
+      "bytes": 1914,
+      "sha256": "ba614fa8c1bef9f92e6b81d03f73d04a6f6ebc11fc7df6f124c2e8293f57d0d7"
+    },
+    "persistedMonotonic": 15636.284577323,
+    "reportedAgeAtPersistenceMs": 156.31765800058784,
+    "sourceAgeBoundBasis": "first_get_send_start",
+    "sourceAgeBoundStartedMonotonic": 15636.176659665,
+    "withinAgePolicyAtPersistence": false
+  },
+  {
+    "controlEligible": false,
+    "fullRequestAgeAtPersistenceMs": 151.40822700030066,
+    "hostClockId": "58dc6b2a79aa41d2b5b54586314900ec",
+    "measurement": {
+      "artifactRef": "measurements/0007.json",
+      "bytes": 1994,
+      "sha256": "246dbcfb16782f7be4278d524f6a67161540705f2178c714d6295a0c4d154a7b"
+    },
+    "persistedMonotonic": 15636.877385755,
+    "reportedAgeAtPersistenceMs": 136.96715499989176,
+    "sourceAgeBoundBasis": "first_get_send_start",
+    "sourceAgeBoundStartedMonotonic": 15636.7836566,
+    "withinAgePolicyAtPersistence": false
+  },
+  {
+    "controlEligible": false,
+    "fullRequestAgeAtPersistenceMs": 162.45801000135927,
+    "hostClockId": "58dc6b2a79aa41d2b5b54586314900ec",
+    "measurement": {
+      "artifactRef": "measurements/0008.json",
+      "bytes": 1927,
+      "sha256": "43d868916d31f2595978d77c5f8b7442f1753917b9f66524396c8736e24b7e21"
+    },
+    "persistedMonotonic": 15637.289506736,
+    "reportedAgeAtPersistenceMs": 152.8533750004901,
+    "sourceAgeBoundBasis": "first_get_send_start",
+    "sourceAgeBoundStartedMonotonic": 15637.199277361,
+    "withinAgePolicyAtPersistence": false
+  },
+  {
+    "controlEligible": false,
+    "fullRequestAgeAtPersistenceMs": 146.29026199976542,
+    "hostClockId": "58dc6b2a79aa41d2b5b54586314900ec",
+    "measurement": {
+      "artifactRef": "measurements/0009.json",
+      "bytes": 1994,
+      "sha256": "e530c9488781499a8858d28ab79faaff9abc56742616cf6b6a31e975ddc36cab"
+    },
+    "persistedMonotonic": 15637.807731136,
+    "reportedAgeAtPersistenceMs": 132.31308800017322,
+    "sourceAgeBoundBasis": "first_get_send_start",
+    "sourceAgeBoundStartedMonotonic": 15637.712527048,
+    "withinAgePolicyAtPersistence": false
+  },
+  {
+    "controlEligible": false,
+    "fullRequestAgeAtPersistenceMs": 180.6810339997171,
+    "hostClockId": "58dc6b2a79aa41d2b5b54586314900ec",
+    "measurement": {
+      "artifactRef": "measurements/0010.json",
+      "bytes": 1923,
+      "sha256": "88e93513374f51823d773079a8338dd65b4e4875fc2864957b7cf364599d6f04"
+    },
+    "persistedMonotonic": 15638.244980431,
+    "reportedAgeAtPersistenceMs": 171.0859360003085,
+    "sourceAgeBoundBasis": "first_get_send_start",
+    "sourceAgeBoundStartedMonotonic": 15638.141538495,
+    "withinAgePolicyAtPersistence": false
+  },
+  {
+    "controlEligible": false,
+    "fullRequestAgeAtPersistenceMs": 176.44494799900707,
+    "hostClockId": "58dc6b2a79aa41d2b5b54586314900ec",
+    "measurement": {
+      "artifactRef": "measurements/0011.json",
+      "bytes": 1927,
+      "sha256": "bf61230aab23805f8223e424ba614f71abd06a92aa6368ad2236d482ac285b58"
+    },
+    "persistedMonotonic": 15638.737150406,
+    "reportedAgeAtPersistenceMs": 159.86079099933698,
+    "sourceAgeBoundBasis": "first_get_send_start",
+    "sourceAgeBoundStartedMonotonic": 15638.639200615,
+    "withinAgePolicyAtPersistence": false
+  }
+]

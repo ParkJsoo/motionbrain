@@ -8,6 +8,7 @@ import math
 import statistics
 
 from learning.http_timing import TRACE_STAMPS, connection_metrics
+from learning.source_age import source_age_basis
 
 from ros2_ws.src.motionbrain_ros_bridge.motionbrain_ros_bridge.observation import parse_capture_headers
 
@@ -58,6 +59,17 @@ def capture_timing(receipt, before, after):
                   reportedAgeAtReceiptIntervalMs=[age+(end-headers)*1000, age+(end-start)*1000],
                   cameraToHostOffsetIntervalSeconds=[start-camera_now_us/1e6, headers-camera_now_us/1e6],
                   intervalAssumption="equal_clock_rate_within_request_and_firmware_age_sample_before_headers")
+    try:
+        basis = source_age_basis(receipt, {**source, "imageSha256": receipt.get("sha256")},
+                                 request_started=start, received=end, host_clock_id=receipt["hostClockId"])
+    except ValueError:
+        result.update(valid=False, reason="invalid_age_bound")
+        return result
+    bound_start = basis["sourceAgeBoundStartedMonotonic"]
+    result.update(basis)
+    # Keep legacy full-request intervals for direct, same-frame comparison.
+    result.update(causalAgeAtReceiptUpperMs=age+(end-bound_start)*1000,
+                  causalBoundReductionMs=(bound_start-start)*1000)
     counters = ("captureRequests", "captures", "captureFailures", "cameraRecoveries")
     if not all(isinstance(s, dict) and all(type(s.get(k)) is int and s[k] >= 0 for k in counters)
                for s in (before, after)):
@@ -108,7 +120,7 @@ def summarize_capture_timing(rows):
     metrics = ("reportedSourceAgeMs", "requestToHeadersMs", "headersToBodyReadCompleteMs",
                "bodyReadToReceiptMs", "requestTotalMs", "serverFrameAcquireWaitMs", "serverBodyWriteMs",
                "clientSetupMs", "addressResolutionMs", "tcpConnectMs", "connectedToSendMs",
-               "requestSendMs", "requestSentToHeadersMs")
+               "requestSendMs", "requestSentToHeadersMs", "causalBoundReductionMs", "causalAgeAtReceiptUpperMs")
     report["statistics"] = {}
     for key in metrics:
         values = [r[key] for r in rows if key in r]

@@ -1,0 +1,55 @@
+{
+  "runId": "95c43314228b470c9770fc1106ac348b",
+  "status": "completed",
+  "completedSamples": 12,
+  "newMeasurementPass": 6,
+  "fullRequestAgePass": 3,
+  "persistencePass": 0,
+  "motorCommandsSent": 0,
+  "outputLogUnchanged": true,
+  "ageBoundReductionMs": {
+    "n": 12,
+    "min": 5.908914999963599,
+    "median": 10.556559500400908,
+    "max": 16.584156999670085
+  },
+  "newAgeMs": {
+    "n": 12,
+    "min": 82.85609200020251,
+    "median": 100.02664249994606,
+    "max": 129.8291030009566
+  },
+  "oldAgeMs": {
+    "n": 12,
+    "min": 98.08657300047321,
+    "median": 111.87346300058725,
+    "max": 139.4242010003652
+  },
+  "processingMs": {
+    "n": 12,
+    "min": 18.57293100147217,
+    "median": 23.79766549984197,
+    "max": 28.977085999940755
+  },
+  "persistenceAgeMs": {
+    "n": 12,
+    "min": 126.87307100013702,
+    "median": 142.89175649999717,
+    "max": 171.0859360003085
+  },
+  "anchorAgeMs": {
+    "n": 12,
+    "min": 7599.832,
+    "median": 10679.351999999999,
+    "max": 13434.74
+  },
+  "originalJpegs": 13,
+  "artifacts": 108,
+  "events": 26,
+  "originalAndArtifactHashesVerified": true,
+  "terminalVerified": true,
+  "currentSourceHashesVerified": true,
+  "physicalCalibration": false,
+  "controlEligible": false,
+  "trainingEligible": false
+}

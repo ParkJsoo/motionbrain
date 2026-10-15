@@ -9,6 +9,9 @@ import socket
 import urllib.request
 
 
+SEND_START_SEMANTICS = "direct_http_first_send_before_socket_send_v1"
+
+
 class TimedHTTPHandler(urllib.request.HTTPHandler):
     def http_open(self, req):
         # Request-local state keeps the reusable opener free of shared traces.
@@ -51,6 +54,7 @@ class TimedHTTPHandler(urllib.request.HTTPHandler):
                     self.connect()
                 if "requestSendStartedMonotonic" not in trace:
                     trace["requestSendStartedMonotonic"] = clock.monotonic()
+                    trace["sendStartSemantics"] = SEND_START_SEMANTICS
                 super().send(data)
                 trace["requestSendCompletedMonotonic"] = clock.monotonic()
 
