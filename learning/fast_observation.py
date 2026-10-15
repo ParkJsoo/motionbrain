@@ -16,7 +16,7 @@ import cv2
 import numpy as np
 
 from learning.artifacts import MAX_IMAGE_BYTES
-from learning.source_age import source_age_basis, source_age_upper_ms
+from learning.source_age import source_age_basis, source_age_upper_ms, validate_fresh_age_mode
 
 
 class MeasurementError(ValueError):
@@ -95,7 +95,9 @@ class AnchoredRoiMeasurement:
               "maxTranslationPx": 40.0, "minTextureStd": 8.0,
               "scaleProbes": [0.8, 1.0, 1.2]}
 
-    def __init__(self, observation, body, *, clock=time, match_workers=3):
+    def __init__(self, observation, body, *, clock=time, match_workers=3, fresh_age_mode="clock_margin"):
+        validate_fresh_age_mode(fresh_age_mode)
+        self.fresh_age_mode = fresh_age_mode
         if type(match_workers) is not int or not 1 <= match_workers <= 3:
             raise ValueError("match_workers must be 1..3")
         self.match_workers = match_workers
@@ -135,7 +137,7 @@ class AnchoredRoiMeasurement:
                   "semanticAnchor": self.anchor, "sourceFrameId": source.get("sourceFrameId"),
                   "imageSha256": source.get("imageSha256"), "hostClockId": host_clock_id,
                   "accepted": False, "controlEligible": False, "trainingEligible": False,
-                  "captureHostBoundsCalibrated": False}
+                  "captureHostBoundsCalibrated": False, "freshAgeMode": self.fresh_age_mode}
         age_basis = {"sourceAgeBoundStartedMonotonic": request_started}
         last_checked = started
         try:
@@ -158,7 +160,7 @@ class AnchoredRoiMeasurement:
                 raise MeasurementError("invalid_local_timing")
             try:
                 basis = source_age_basis(capture_receipt, source, request_started=request_started,
-                                         received=received, host_clock_id=host_clock_id)
+                                         received=received, host_clock_id=host_clock_id, fresh_age_mode=self.fresh_age_mode)
             except ValueError as exc:
                 raise MeasurementError(str(exc)) from exc
             result.update(basis)

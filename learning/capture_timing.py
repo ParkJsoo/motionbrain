@@ -17,11 +17,11 @@ def _number(value):
     return type(value) in (int, float) and math.isfinite(value)
 
 
-def capture_timing(receipt, before, after):
+def capture_timing(receipt, before, after, *, fresh_age_mode="clock_margin"):
     result = {"schemaVersion": "motionbrain.capture_timing.v1", "valid": False,
               "hostClockId": receipt.get("hostClockId"), "controlEligible": False,
               "physicalCalibration": False, "exposureReadoutMs": None, "bufferResidenceMs": None,
-              "serverStatsAssociated": False}
+              "serverStatsAssociated": False, "freshAgeMode": fresh_age_mode}
     source = parse_capture_headers(receipt.get("headers", {}))
     result.update(sourceFrameId=source["sourceFrameId"], cameraBootId=source["cameraBootId"],
                   capturedUs=source["capturedUs"], imageSha256=receipt.get("sha256"))
@@ -61,7 +61,7 @@ def capture_timing(receipt, before, after):
                   intervalAssumption="equal_clock_rate_within_request_and_firmware_age_sample_before_headers")
     try:
         basis = source_age_basis(receipt, {**source, "imageSha256": receipt.get("sha256")},
-                                 request_started=start, received=end, host_clock_id=receipt["hostClockId"])
+                                 request_started=start, received=end, host_clock_id=receipt["hostClockId"], fresh_age_mode=fresh_age_mode)
     except ValueError:
         result.update(valid=False, reason="invalid_age_bound")
         return result

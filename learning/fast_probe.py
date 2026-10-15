@@ -13,7 +13,7 @@ from learning.device_adapter import DeviceReadAdapter, DeviceReadError, _object
 from learning.device_probe import _idle
 from learning.fresh_capture import validate_fresh_capture
 from learning.fast_observation import AnchoredRoiMeasurement
-from learning.source_age import source_age_upper_ms
+from learning.source_age import source_age_upper_ms, validate_fresh_age_mode
 from learning.observation_consumer import ShadowObservationConsumer
 from ros2_ws.src.motionbrain_ros_bridge.motionbrain_ros_bridge.observation import parse_capture_headers
 
@@ -77,7 +77,11 @@ def _persist_capture(store, index, receipt, body, pending, record, artifacts, *,
 
 def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.sleep, capture_timing=False,
                    match_workers=3, parallel_persistence=True, fresh_capture=False,
-                   shadow_consumption=False, max_persistence_ms=250):
+                   shadow_consumption=False, max_persistence_ms=250, fresh_age_mode="clock_margin"):
+    validate_fresh_age_mode(fresh_age_mode)
+    if fresh_age_mode == "send_start" and (fresh_capture is not True or
+            getattr(transport, "connection_timing", False) is not True):
+        raise ValueError("send_start requires fresh capture and connection timing")
     if type(samples) is not int or not 1 <= samples <= 100:
         raise ValueError("samples must be 1..100")
     if type(interval) not in (int, float) or not 0 <= interval <= 1:
@@ -93,7 +97,7 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
     if type(shadow_consumption) is not bool:
         raise ValueError("shadow_consumption must be boolean")
     consumer = ShadowObservationConsumer(transport.clock, transport.host_clock_id,
-                                         max_persistence_ms=max_persistence_ms) if shadow_consumption else None
+                                         max_persistence_ms=max_persistence_ms, fresh_age_mode=fresh_age_mode) if shadow_consumption else None
     artifacts, results = [], []
     timing_samples = []
     adapter = DeviceReadAdapter(transport)
@@ -133,6 +137,7 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
                               "capturePersistence": "single_frame_after_measurement",
                               "parallelPersistence": parallel_persistence,
                               "freshCaptureRequested": fresh_capture,
+                              "freshAgeMode": fresh_age_mode,
                               "shadowConsumptionEnabled": shadow_consumption,
                               "maxPersistenceMs": max_persistence_ms if consumer else None,
                               "captureTimingEnabled": capture_timing,
@@ -164,7 +169,7 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
         anchor = adapter.observe(save_anchor)
         save_json("anchor.json", anchor)
         tracker = AnchoredRoiMeasurement(anchor["observation"], anchor_bytes[0], clock=transport.clock,
-                                         match_workers=match_workers)
+                                         match_workers=match_workers, fresh_age_mode=fresh_age_mode)
         for index in range(samples):
             if consumer:
                 consumer.check_ready()
@@ -216,11 +221,13 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
                            "hostClockId": transport.host_clock_id,
                            "reportedAgeAtPersistenceMs": age_at_persistence,
                            "sourceAgeBoundBasis": result.get("sourceAgeBoundBasis"),
+                           "freshAgeMode": fresh_age_mode,
                            "sourceAgeBoundStartedMonotonic": bound_start,
                            **{key: result[key] for key in (
                                "sourceCaptureLowerBoundMonotonic", "sourceAgeBoundReductionMs",
                                "freshCaptureDelayMs", "freshCaptureDelayLowerMs", "freshClockRateErrorPpm",
-                               "freshTimestampErrorMs", "freshClockErrorCalibrated") if key in result},
+                               "freshTimestampErrorMs", "freshClockErrorCalibrated",
+                               "sourceAgeClockRateAssumptionUsed", "sourceAgeTimestampMarginUsed") if key in result},
                            "fullRequestAgeAtPersistenceMs": (reported_age + (persisted-receipt["requestStartedMonotonic"])*1000
                                                              if reported_age is not None else None),
                            "withinAgePolicyAtPersistence": age_at_persistence is not None
@@ -235,7 +242,7 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
                 consumer.finish_persistence(source["sourceFrameId"], transport.host_clock_id)
             if capture_timing:
                 after_camera = _object(transport.get("camera", "/status")[0])
-                timing = analyze_capture_timing(receipt, before_camera, after_camera)
+                timing = analyze_capture_timing(receipt, before_camera, after_camera, fresh_age_mode=fresh_age_mode)
                 save_json(f"timing/{index:04d}.json", timing)
                 timing_samples.append(timing)
             if index + 1 < samples:

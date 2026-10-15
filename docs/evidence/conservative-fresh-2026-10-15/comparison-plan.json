@@ -1,0 +1,12 @@
+{
+  "freshAgeModeOrder": [
+    "clock_margin",
+    "send_start",
+    "send_start",
+    "clock_margin"
+  ],
+  "samplesPerRun": 12,
+  "sourceAgeLimitMs": 100,
+  "maxPersistenceMs": 250,
+  "retryFailedRuns": false
+}

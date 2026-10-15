@@ -7,7 +7,7 @@ import copy
 import hashlib
 import math
 
-from learning.source_age import source_age_basis, source_age_upper_ms
+from learning.source_age import source_age_basis, source_age_upper_ms, validate_fresh_age_mode
 
 
 def _number(value):
@@ -27,7 +27,9 @@ class ShadowObservationConsumer:
     ANCHOR_CLOCK_MIN_RATE = 0.999
     ANCHOR_TIMESTAMP_ERROR_MS = 0.002
 
-    def __init__(self, clock, host_clock_id, *, max_persistence_ms=250):
+    def __init__(self, clock, host_clock_id, *, max_persistence_ms=250, fresh_age_mode="clock_margin"):
+        validate_fresh_age_mode(fresh_age_mode)
+        self.fresh_age_mode = fresh_age_mode
         if not _number(max_persistence_ms) or not 0 < max_persistence_ms <= 30000:
             raise ValueError("max_persistence_ms must be in (0, 30000]")
         self.clock, self.host_clock_id = clock, host_clock_id
@@ -50,7 +52,7 @@ class ShadowObservationConsumer:
         row = {"schemaVersion": "motionbrain.shadow_consumption.v1",
                "sourceFrameId": frame_id, "imageSha256": source.get("imageSha256"),
                "hostClockId": self.host_clock_id, "consumed": False, "reason": None,
-               "storageStatus": "pending", "controlEligible": False, "trainingEligible": False}
+               "storageStatus": "pending", "freshAgeMode": self.fresh_age_mode, "controlEligible": False, "trainingEligible": False}
         self.pending = row
         self.records.append(row)
         fatal = False
@@ -60,9 +62,11 @@ class ShadowObservationConsumer:
                     or hashlib.sha256(body).hexdigest() != source.get("imageSha256")
                     or measurement.get("hostClockId") != self.host_clock_id):
                 raise ValueError("consumption_measurement_mismatch")
+            if measurement.get("freshAgeMode", "clock_margin") != self.fresh_age_mode:
+                raise ValueError("consumption_age_mode_mismatch")
             basis = source_age_basis(receipt, source,
                 request_started=receipt["requestStartedMonotonic"], received=receipt["receivedMonotonic"],
-                host_clock_id=self.host_clock_id)
+                host_clock_id=self.host_clock_id, fresh_age_mode=self.fresh_age_mode)
             completed = measurement.get("measurementCompletedMonotonic")
             anchor_age = measurement.get("anchorAgeMs")
             decision = None

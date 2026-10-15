@@ -26,6 +26,8 @@ def main(argv=None):
                         help="parallel scale matches within one frame; 1 reproduces serial matching")
     parser.add_argument("--fresh-capture", action="store_true",
                         help="opt-in post-request first-DMA capture; requires supported camera firmware")
+    parser.add_argument("--fresh-age-mode", choices=("clock_margin", "send_start"), default="clock_margin",
+                        help="send_start: conservative fresh bound without camera rate/delta margin assumptions")
     parser.add_argument("--serial-persistence", action="store_true",
                         help="baseline: sequential receipt/JPEG storage, no directory preparation")
     parser.add_argument("--shadow-consumption", action="store_true",
@@ -41,6 +43,8 @@ def main(argv=None):
         parser.error("samples must be 1..100")
     if args.connection_timing and not args.capture_timing:
         parser.error("--connection-timing requires --capture-timing")
+    if args.fresh_age_mode == "send_start" and not (args.fresh_capture and args.connection_timing):
+        parser.error("send_start requires --fresh-capture and --connection-timing")
     transport = ReadOnlyHTTP(controller_url=args.controller_url, camera_url=args.camera_url,
                              perception_url=args.perception_url, connection_timing=args.connection_timing)
     run_dir = args.output_dir / uuid.uuid4().hex
@@ -54,7 +58,8 @@ def main(argv=None):
         report = run_fast_probe(ArtifactStore(run_dir), transport, samples=args.samples,
                                 capture_timing=args.capture_timing, match_workers=args.match_workers,
                                 parallel_persistence=not args.serial_persistence, fresh_capture=args.fresh_capture,
-                                shadow_consumption=args.shadow_consumption, max_persistence_ms=args.max_persistence_ms)
+                                shadow_consumption=args.shadow_consumption, max_persistence_ms=args.max_persistence_ms,
+                                fresh_age_mode=args.fresh_age_mode)
         print(json.dumps({"runDir": str(run_dir), **{k: v for k, v in report.items()
                           if k not in ("artifacts", "results")},
                           "measurements": [{k: v for k, v in r.items() if k not in ("image", "source")}

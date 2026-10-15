@@ -19,6 +19,11 @@ FRESH_CLOCK_RATE_ERROR_PPM = 1000
 FRESH_TIMESTAMP_ERROR_MS = 0.002
 
 
+def validate_fresh_age_mode(mode):
+    if type(mode) is not str or mode not in ("clock_margin", "send_start"):
+        raise ValueError("invalid_fresh_age_mode")
+
+
 def source_age_upper_ms(basis, reported_age, now):
     """Re-evaluate the same bound at calculation, persistence or consumption."""
     if "sourceCaptureLowerBoundMonotonic" in basis:
@@ -26,15 +31,20 @@ def source_age_upper_ms(basis, reported_age, now):
     return reported_age + (now - basis["sourceAgeBoundStartedMonotonic"]) * 1000
 
 
-def source_age_basis(receipt, source, *, request_started, received, host_clock_id):
+def source_age_basis(receipt, source, *, request_started, received, host_clock_id,
+                     fresh_age_mode="clock_margin"):
     """Bind an optional receipt to the exact measurement; fail closed if malformed.
 
     Old callers/receipts without certified send semantics retain the full request
     bound. The semantics tag is local producer provenance, not authentication.
     """
+    validate_fresh_age_mode(fresh_age_mode)
+    conservative = fresh_age_mode == "send_start"
     fallback = {"sourceAgeBoundBasis": "request_start",
                 "sourceAgeBoundStartedMonotonic": request_started}
     if receipt is None:
+        if conservative:
+            raise ValueError("fresh_send_start_requires_receipt")
         return fallback
     if not isinstance(receipt, dict):
         raise ValueError("invalid_capture_receipt")
@@ -55,8 +65,12 @@ def source_age_basis(receipt, source, *, request_started, received, host_clock_i
             "sourceClockDomain", "sourceTimestampSemantics", "sourceMetadataValid")):
         raise ValueError("capture_receipt_mismatch")
     proof = validate_fresh_capture(receipt, parsed)
+    if conservative and proof is None:
+        raise ValueError("fresh_send_start_requires_fresh_proof")
     trace = receipt.get("connectionTiming")
     if trace is None and "connectionTiming" not in receipt:
+        if conservative:
+            raise ValueError("fresh_send_start_requires_trace")
         return fallback
     if not isinstance(trace, dict):
         raise ValueError("invalid_connection_timing")
@@ -67,6 +81,8 @@ def source_age_basis(receipt, source, *, request_started, received, host_clock_i
             or trace["addressAttempts"] < 1):
         raise ValueError("invalid_connection_timing")
     if trace.get("sendStartSemantics") != SEND_START_SEMANTICS:
+        if conservative:
+            raise ValueError("fresh_send_start_requires_certified_send")
         return fallback
     send = trace["requestSendStartedMonotonic"]
     result = {"sourceAgeBoundBasis": "first_get_send_start",
@@ -75,6 +91,15 @@ def source_age_basis(receipt, source, *, request_started, received, host_clock_i
         return result
     if receipt.get("query") != {"fresh": "1"}:
         raise ValueError("fresh_capture_contract_mismatch")
+    if conservative:
+        # Same-clock ordering C > R proves capture happened after request
+        # handling, itself after send. No cross-clock duration conversion,
+        # delta budget filter, rate assumption or timestamp subtraction.
+        result.update(sourceAgeBoundBasis="fresh_send_start",
+                      sourceCaptureLowerBoundMonotonic=send,
+                      sourceAgeClockRateAssumptionUsed=False,
+                      sourceAgeTimestampMarginUsed=False)
+        return result
     rate_error, timestamp_error = FRESH_CLOCK_RATE_ERROR_PPM, FRESH_TIMESTAMP_ERROR_MS
     if (type(rate_error) not in (int, float) or not math.isfinite(rate_error) or rate_error < 0
             or type(timestamp_error) not in (int, float) or not math.isfinite(timestamp_error)

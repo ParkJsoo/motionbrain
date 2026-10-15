@@ -1,0 +1,12 @@
+{"order": 0, "fresh": true, "freshAgeMode": "clock_margin", "exitCode": 0, "runDir": "/unused", "status": "completed", "error": null, "completedSamples": 12, "acceptedMeasurements": 4, "consumedObservations": 4, "consumptionHalted": false, "outputLogUnchanged": true, "motorCommandsSent": 0}
+{"order": 1, "fresh": true, "freshAgeMode": "send_start", "exitCode": 0, "runDir": "/unused", "status": "completed", "error": null, "completedSamples": 12, "acceptedMeasurements": 4, "consumedObservations": 4, "consumptionHalted": false, "outputLogUnchanged": true, "motorCommandsSent": 0}
+{"order": 2, "fresh": true, "freshAgeMode": "send_start", "exitCode": 0, "runDir": "/unused", "status": "completed", "error": null, "completedSamples": 12, "acceptedMeasurements": 4, "consumedObservations": 4, "consumptionHalted": false, "outputLogUnchanged": true, "motorCommandsSent": 0}
+{"order": 3, "fresh": true, "freshAgeMode": "clock_margin", "exitCode": 0, "runDir": "/unused", "status": "completed", "error": null, "completedSamples": 12, "acceptedMeasurements": 4, "consumedObservations": 4, "consumptionHalted": false, "outputLogUnchanged": true, "motorCommandsSent": 0}
+.{"order": 0, "fresh": true, "freshAgeMode": "clock_margin", "exitCode": 2, "runDir": "/unused", "status": "failed", "error": "persistence_deadline_or_consumption_evidence", "completedSamples": 12, "acceptedMeasurements": 4, "consumedObservations": 4, "consumptionHalted": true, "outputLogUnchanged": true, "motorCommandsSent": 0}
+{"order": 0, "fresh": true, "freshAgeMode": "clock_margin", "exitCode": 0, "runDir": "/unused", "status": "completed", "error": "persistence_deadline_or_consumption_evidence", "completedSamples": 12, "acceptedMeasurements": 4, "consumedObservations": 4, "consumptionHalted": true, "outputLogUnchanged": true, "motorCommandsSent": 0}
+{"order": 0, "fresh": true, "freshAgeMode": "clock_margin", "exitCode": 2, "runDir": "/unused", "status": "completed", "error": "persistence_deadline_or_consumption_evidence", "completedSamples": 12, "acceptedMeasurements": 4, "consumedObservations": 4, "consumptionHalted": false, "outputLogUnchanged": true, "motorCommandsSent": 0}
+...
+----------------------------------------------------------------------
+Ran 4 tests in 0.008s
+
+OK

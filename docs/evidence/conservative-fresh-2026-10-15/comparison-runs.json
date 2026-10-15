@@ -1,0 +1,62 @@
+[
+  {
+    "order": 0,
+    "fresh": true,
+    "freshAgeMode": "clock_margin",
+    "exitCode": 0,
+    "runDir": "/tmp/motionbrain-conservative-fresh-20261015/runs/c93cdcd4357e493eb0f8ace25cfac427",
+    "status": "completed",
+    "error": null,
+    "completedSamples": 12,
+    "acceptedMeasurements": 11,
+    "consumedObservations": 9,
+    "consumptionHalted": false,
+    "outputLogUnchanged": true,
+    "motorCommandsSent": 0
+  },
+  {
+    "order": 1,
+    "fresh": true,
+    "freshAgeMode": "send_start",
+    "exitCode": 0,
+    "runDir": "/tmp/motionbrain-conservative-fresh-20261015/runs/2ac55743c4024afb8aeea86b51ee87ff",
+    "status": "completed",
+    "error": null,
+    "completedSamples": 12,
+    "acceptedMeasurements": 2,
+    "consumedObservations": 2,
+    "consumptionHalted": false,
+    "outputLogUnchanged": true,
+    "motorCommandsSent": 0
+  },
+  {
+    "order": 2,
+    "fresh": true,
+    "freshAgeMode": "send_start",
+    "exitCode": 0,
+    "runDir": "/tmp/motionbrain-conservative-fresh-20261015/runs/edc384eac84d46ada350929880f2ce60",
+    "status": "completed",
+    "error": null,
+    "completedSamples": 12,
+    "acceptedMeasurements": 4,
+    "consumedObservations": 3,
+    "consumptionHalted": false,
+    "outputLogUnchanged": true,
+    "motorCommandsSent": 0
+  },
+  {
+    "order": 3,
+    "fresh": true,
+    "freshAgeMode": "clock_margin",
+    "exitCode": 0,
+    "runDir": "/tmp/motionbrain-conservative-fresh-20261015/runs/ea0e68051ac24106ba61eccde0ed0ccd",
+    "status": "completed",
+    "error": null,
+    "completedSamples": 12,
+    "acceptedMeasurements": 12,
+    "consumedObservations": 12,
+    "consumptionHalted": false,
+    "outputLogUnchanged": true,
+    "motorCommandsSent": 0
+  }
+]
