@@ -1,0 +1,33 @@
+[
+  {
+    "case": "normal",
+    "injection": null,
+    "cameraGetCount": 13,
+    "status": "completed",
+    "error": null,
+    "completedSamples": 12,
+    "acceptedMeasurements": 1,
+    "consumedObservations": 1,
+    "consumptionHalted": false,
+    "outputLogUnchanged": true,
+    "motorCommandsSent": 0
+  },
+  {
+    "case": "expiry",
+    "injection": {
+      "startedMonotonic": 28618.296304814,
+      "requestedSleepSeconds": 9.633362376996956,
+      "completedMonotonic": 28627.929800992,
+      "checkpointSendMonotonic": 28612.879667191
+    },
+    "cameraGetCount": 2,
+    "status": "failed",
+    "error": "ConsumptionStopped: persistence_deadline_or_consumption_evidence",
+    "completedSamples": 1,
+    "acceptedMeasurements": 0,
+    "consumedObservations": 0,
+    "consumptionHalted": true,
+    "outputLogUnchanged": true,
+    "motorCommandsSent": 0
+  }
+]

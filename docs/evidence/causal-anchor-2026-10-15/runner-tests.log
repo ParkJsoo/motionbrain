@@ -1,0 +1,5 @@
+{"case": "normal", "injection": null, "cameraGetCount": 0, "status": "failed", "error": "fixture storage error", "completedSamples": 0, "acceptedMeasurements": 0, "consumedObservations": 0, "consumptionHalted": true, "outputLogUnchanged": true, "motorCommandsSent": 0}
+----------------------------------------------------------------------
+Ran 3 tests in 0.183s
+
+OK

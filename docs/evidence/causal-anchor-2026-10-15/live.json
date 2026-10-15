@@ -1,0 +1,207 @@
+{
+  "sourceAgeLimitMs": 100,
+  "anchorAgeLimitMs": 15000,
+  "maxPersistenceMs": 250,
+  "runs": [
+    {
+      "case": "normal",
+      "status": "completed",
+      "error": null,
+      "artifactCount": 131,
+      "eventCount": 32,
+      "jpegCount": 14,
+      "captures": 13,
+      "samples": 12,
+      "consumed": 1,
+      "anchorMetadataPolls": 6,
+      "acquisitionUpperMs": 5374.379943001259,
+      "anchorCheckpointCameraOrderOnly": true,
+      "statistics": {
+        "sourceAgeAtConsumptionMs": {
+          "min": 99.63141200205428,
+          "median": 114.43879949911206,
+          "max": 129.65506800173898
+        },
+        "anchorAgeUpperMs": {
+          "min": 5662.400627999887,
+          "median": 9560.810549501184,
+          "max": 12874.391400000604
+        },
+        "persistenceElapsedMs": {
+          "min": 62.0168300010846,
+          "median": 74.98140999996394,
+          "max": 237.65781500333105
+        }
+      },
+      "rows": [
+        {
+          "frameId": "5bfe5283286bc8599cae44c1612b6869:9233221121",
+          "measurementAccepted": false,
+          "consumed": false,
+          "reason": "measurement_rejected",
+          "measurementReason": "source_age_exceeds_policy",
+          "sourceAgeAtConsumptionMs": 104.69599699717946,
+          "anchorAgeUpperMs": 5662.400627999887,
+          "persistenceElapsedMs": 82.03414300078293
+        },
+        {
+          "frameId": "5bfe5283286bc8599cae44c1612b6869:9233977439",
+          "measurementAccepted": false,
+          "consumed": false,
+          "reason": "measurement_rejected",
+          "measurementReason": "source_age_exceeds_policy",
+          "sourceAgeAtConsumptionMs": 124.71823699888773,
+          "anchorAgeUpperMs": 6419.71146799915,
+          "persistenceElapsedMs": 237.65781500333105
+        },
+        {
+          "frameId": "5bfe5283286bc8599cae44c1612b6869:9234985995",
+          "measurementAccepted": true,
+          "consumed": true,
+          "reason": null,
+          "measurementReason": null,
+          "sourceAgeAtConsumptionMs": 99.63141200205428,
+          "anchorAgeUpperMs": 7435.707660002663,
+          "persistenceElapsedMs": 88.54810799675761
+        },
+        {
+          "frameId": "5bfe5283286bc8599cae44c1612b6869:9235526128",
+          "measurementAccepted": false,
+          "consumed": false,
+          "reason": "measurement_rejected",
+          "measurementReason": "source_age_exceeds_policy",
+          "sourceAgeAtConsumptionMs": 129.2166500024905,
+          "anchorAgeUpperMs": 7974.019249002595,
+          "persistenceElapsedMs": 79.89316599923768
+        },
+        {
+          "frameId": "5bfe5283286bc8599cae44c1612b6869:9236174605",
+          "measurementAccepted": false,
+          "consumed": false,
+          "reason": "measurement_rejected",
+          "measurementReason": "source_age_exceeds_policy",
+          "sourceAgeAtConsumptionMs": 115.40264199720696,
+          "anchorAgeUpperMs": 8631.72269899951,
+          "persistenceElapsedMs": 77.00377800210845
+        },
+        {
+          "frameId": "5bfe5283286bc8599cae44c1612b6869:9236858941",
+          "measurementAccepted": false,
+          "consumed": false,
+          "reason": "measurement_rejected",
+          "measurementReason": "source_age_exceeds_policy",
+          "sourceAgeAtConsumptionMs": 110.40651700022863,
+          "anchorAgeUpperMs": 9305.042123000021,
+          "persistenceElapsedMs": 66.1053610019735
+        },
+        {
+          "frameId": "5bfe5283286bc8599cae44c1612b6869:9237363184",
+          "measurementAccepted": false,
+          "consumed": false,
+          "reason": "measurement_rejected",
+          "measurementReason": "source_age_exceeds_policy",
+          "sourceAgeAtConsumptionMs": 129.65506800173898,
+          "anchorAgeUpperMs": 9816.578976002347,
+          "persistenceElapsedMs": 72.95904199781944
+        },
+        {
+          "frameId": "5bfe5283286bc8599cae44c1612b6869:9237975501",
+          "measurementAccepted": false,
+          "consumed": false,
+          "reason": "measurement_rejected",
+          "measurementReason": "source_age_exceeds_policy",
+          "sourceAgeAtConsumptionMs": 102.44618999786326,
+          "anchorAgeUpperMs": 10419.552196999575,
+          "persistenceElapsedMs": 62.0168300010846
+        },
+        {
+          "frameId": "5bfe5283286bc8599cae44c1612b6869:9238587812",
+          "measurementAccepted": false,
+          "consumed": false,
+          "reason": "measurement_rejected",
+          "measurementReason": "source_age_exceeds_policy",
+          "sourceAgeAtConsumptionMs": 101.02014400035841,
+          "anchorAgeUpperMs": 11028.098162001697,
+          "persistenceElapsedMs": 68.67107099969871
+        },
+        {
+          "frameId": "5bfe5283286bc8599cae44c1612b6869:9239092060",
+          "measurementAccepted": false,
+          "consumed": false,
+          "reason": "measurement_rejected",
+          "measurementReason": "source_age_exceeds_policy",
+          "sourceAgeAtConsumptionMs": 129.1206339992641,
+          "anchorAgeUpperMs": 11547.930947999703,
+          "persistenceElapsedMs": 69.70936500147218
+        },
+        {
+          "frameId": "5bfe5283286bc8599cae44c1612b6869:9239812421",
+          "measurementAccepted": false,
+          "consumed": false,
+          "reason": "measurement_rejected",
+          "measurementReason": "source_age_exceeds_policy",
+          "sourceAgeAtConsumptionMs": 119.39241599975503,
+          "anchorAgeUpperMs": 12260.45042700207,
+          "persistenceElapsedMs": 77.52587999857496
+        },
+        {
+          "frameId": "5bfe5283286bc8599cae44c1612b6869:9240424727",
+          "measurementAccepted": false,
+          "consumed": false,
+          "reason": "measurement_rejected",
+          "measurementReason": "source_age_exceeds_policy",
+          "sourceAgeAtConsumptionMs": 113.47495700101717,
+          "anchorAgeUpperMs": 12874.391400000604,
+          "persistenceElapsedMs": 68.81171599889058
+        }
+      ]
+    },
+    {
+      "case": "expiry",
+      "status": "failed",
+      "error": "ConsumptionStopped: persistence_deadline_or_consumption_evidence",
+      "artifactCount": 30,
+      "eventCount": 10,
+      "jpegCount": 3,
+      "captures": 2,
+      "samples": 1,
+      "consumed": 0,
+      "anchorMetadataPolls": 6,
+      "acquisitionUpperMs": 5362.569860000804,
+      "anchorCheckpointCameraOrderOnly": true,
+      "statistics": {
+        "sourceAgeAtConsumptionMs": {
+          "min": 77.8835409983003,
+          "median": 77.8835409983003,
+          "max": 77.8835409983003
+        },
+        "anchorAgeUpperMs": {
+          "min": 15296.8973370007,
+          "median": 15296.8973370007,
+          "max": 15296.8973370007
+        },
+        "persistenceElapsedMs": {
+          "min": 78.8038200007577,
+          "median": 78.8038200007577,
+          "max": 78.8038200007577
+        }
+      },
+      "rows": [
+        {
+          "frameId": "5bfe5283286bc8599cae44c1612b6869:9257317167",
+          "measurementAccepted": false,
+          "consumed": false,
+          "reason": "anchor_expired_at_consumption",
+          "measurementReason": "anchor_expired",
+          "sourceAgeAtConsumptionMs": 77.8835409983003,
+          "anchorAgeUpperMs": 15296.8973370007,
+          "persistenceElapsedMs": 78.8038200007577
+        }
+      ]
+    }
+  ],
+  "motorCommandsSent": 0,
+  "physicalCalibration": false,
+  "controlEligible": false,
+  "trainingEligible": false
+}

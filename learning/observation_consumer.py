@@ -7,6 +7,7 @@ import copy
 import hashlib
 import math
 
+from learning.anchor_age import causal_anchor_basis, anchor_age_upper_ms, semantic_anchor
 from learning.source_age import source_age_basis, source_age_upper_ms, validate_fresh_age_mode
 
 
@@ -27,9 +28,16 @@ class ShadowObservationConsumer:
     ANCHOR_CLOCK_MIN_RATE = 0.999
     ANCHOR_TIMESTAMP_ERROR_MS = 0.002
 
-    def __init__(self, clock, host_clock_id, *, max_persistence_ms=250, fresh_age_mode="clock_margin"):
+    def __init__(self, clock, host_clock_id, *, max_persistence_ms=250, fresh_age_mode="clock_margin", anchor_evidence=None):
         validate_fresh_age_mode(fresh_age_mode)
         self.fresh_age_mode = fresh_age_mode
+        self.anchor_basis = (causal_anchor_basis(anchor_evidence, host_clock_id)
+                             if anchor_evidence is not None else None)
+        self.anchor_identity = (copy.deepcopy(semantic_anchor(anchor_evidence["anchorObservation"]))
+                                if anchor_evidence is not None else None)
+        self.anchor_source = ((anchor_evidence["anchorObservation"]["cameraBootId"],
+                               anchor_evidence["anchorObservation"]["capturedUs"])
+                              if anchor_evidence is not None else None)
         if not _number(max_persistence_ms) or not 0 < max_persistence_ms <= 30000:
             raise ValueError("max_persistence_ms must be in (0, 30000]")
         self.clock, self.host_clock_id = clock, host_clock_id
@@ -64,6 +72,16 @@ class ShadowObservationConsumer:
                 raise ValueError("consumption_measurement_mismatch")
             if measurement.get("freshAgeMode", "clock_margin") != self.fresh_age_mode:
                 raise ValueError("consumption_age_mode_mismatch")
+            if self.anchor_basis is not None:
+                if (measurement.get("anchorAgeMode") != "causal_send_start"
+                        or measurement.get("semanticAnchor") != self.anchor_identity
+                        or source.get("cameraBootId") != self.anchor_source[0]
+                        or type(source.get("capturedUs")) is not int
+                        or source["capturedUs"] <= self.anchor_source[1]):
+                    raise ValueError("consumption_anchor_mismatch")
+                row.update(self.anchor_basis)
+            elif measurement.get("anchorAgeMode") is not None:
+                raise ValueError("consumption_anchor_mode_mismatch")
             basis = source_age_basis(receipt, source,
                 request_started=receipt["requestStartedMonotonic"], received=receipt["receivedMonotonic"],
                 host_clock_id=self.host_clock_id, fresh_age_mode=self.fresh_age_mode)
@@ -92,13 +110,20 @@ class ShadowObservationConsumer:
             row["sourceAgeAtConsumptionMs"] = age
             if not _number(age) or age < 0:
                 raise ValueError("invalid_consumption_clock")
-            anchor_upper = (anchor_age / self.ANCHOR_CLOCK_MIN_RATE + age + self.ANCHOR_TIMESTAMP_ERROR_MS
-                            if _number(anchor_age) and anchor_age >= 0 else None)
-            row.update(anchorAgeAtConsumptionUpperMs=anchor_upper,
-                       anchorClockMinRate=self.ANCHOR_CLOCK_MIN_RATE,
-                       anchorTimestampErrorMs=self.ANCHOR_TIMESTAMP_ERROR_MS,
-                       anchorClockErrorCalibrated=False)
-            if measurement.get("accepted") is not True:
+            if self.anchor_basis is not None:
+                anchor_upper = anchor_age_upper_ms(self.anchor_basis, now, self.host_clock_id, self.host_clock_id)
+                row["anchorAgeAtConsumptionUpperMs"] = anchor_upper
+                fatal = anchor_upper > self.MAX_ANCHOR_AGE_MS
+            else:
+                anchor_upper = (anchor_age / self.ANCHOR_CLOCK_MIN_RATE + age + self.ANCHOR_TIMESTAMP_ERROR_MS
+                                if _number(anchor_age) and anchor_age >= 0 else None)
+                row.update(anchorAgeAtConsumptionUpperMs=anchor_upper,
+                           anchorClockMinRate=self.ANCHOR_CLOCK_MIN_RATE,
+                           anchorTimestampErrorMs=self.ANCHOR_TIMESTAMP_ERROR_MS,
+                           anchorClockErrorCalibrated=False)
+            if fatal:
+                row["reason"] = "anchor_expired_at_consumption"
+            elif measurement.get("accepted") is not True:
                 row["reason"] = "measurement_rejected"
             elif age > self.MAX_SOURCE_AGE_MS:
                 row["reason"] = "source_age_at_consumption_exceeds_policy"

@@ -1,0 +1,14 @@
+{
+  "cases": [
+    "normal",
+    "expiry"
+  ],
+  "requestedSamples": [
+    12,
+    3
+  ],
+  "sourceAgeLimitMs": 100,
+  "anchorAgeLimitMs": 15000,
+  "maxPersistenceMs": 250,
+  "scriptSha256": "0ac46e78f64e5dc4b48c408c27eaeb4f83f857a98bc5386545e672ec861ba293"
+}

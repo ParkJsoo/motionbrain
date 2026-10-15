@@ -28,6 +28,8 @@ def main(argv=None):
                         help="opt-in post-request first-DMA capture; requires supported camera firmware")
     parser.add_argument("--fresh-age-mode", choices=("clock_margin", "send_start"), default="clock_margin",
                         help="send_start: conservative fresh bound without camera rate/delta margin assumptions")
+    parser.add_argument("--causal-anchor", action="store_true",
+                        help="bound anchor lifetime by a preceding fresh checkpoint; requires send_start mode")
     parser.add_argument("--serial-persistence", action="store_true",
                         help="baseline: sequential receipt/JPEG storage, no directory preparation")
     parser.add_argument("--shadow-consumption", action="store_true",
@@ -45,6 +47,8 @@ def main(argv=None):
         parser.error("--connection-timing requires --capture-timing")
     if args.fresh_age_mode == "send_start" and not (args.fresh_capture and args.connection_timing):
         parser.error("send_start requires --fresh-capture and --connection-timing")
+    if args.causal_anchor and args.fresh_age_mode != "send_start":
+        parser.error("--causal-anchor requires --fresh-age-mode send_start")
     transport = ReadOnlyHTTP(controller_url=args.controller_url, camera_url=args.camera_url,
                              perception_url=args.perception_url, connection_timing=args.connection_timing)
     run_dir = args.output_dir / uuid.uuid4().hex
@@ -59,7 +63,7 @@ def main(argv=None):
                                 capture_timing=args.capture_timing, match_workers=args.match_workers,
                                 parallel_persistence=not args.serial_persistence, fresh_capture=args.fresh_capture,
                                 shadow_consumption=args.shadow_consumption, max_persistence_ms=args.max_persistence_ms,
-                                fresh_age_mode=args.fresh_age_mode)
+                                fresh_age_mode=args.fresh_age_mode, causal_anchor=args.causal_anchor)
         print(json.dumps({"runDir": str(run_dir), **{k: v for k, v in report.items()
                           if k not in ("artifacts", "results")},
                           "measurements": [{k: v for k, v in r.items() if k not in ("image", "source")}

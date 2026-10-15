@@ -5,6 +5,7 @@ or control observation. The original semantic anchor is never updated by trackin
 """
 from __future__ import annotations
 
+import copy
 import hashlib
 import math
 import re
@@ -15,6 +16,7 @@ from functools import partial
 import cv2
 import numpy as np
 
+from learning.anchor_age import causal_anchor_basis, anchor_age_upper_ms, semantic_anchor
 from learning.artifacts import MAX_IMAGE_BYTES
 from learning.source_age import source_age_basis, source_age_upper_ms, validate_fresh_age_mode
 
@@ -95,9 +97,21 @@ class AnchoredRoiMeasurement:
               "maxTranslationPx": 40.0, "minTextureStd": 8.0,
               "scaleProbes": [0.8, 1.0, 1.2]}
 
-    def __init__(self, observation, body, *, clock=time, match_workers=3, fresh_age_mode="clock_margin"):
+    def __init__(self, observation, body, *, clock=time, match_workers=3, fresh_age_mode="clock_margin", anchor_evidence=None):
         validate_fresh_age_mode(fresh_age_mode)
         self.fresh_age_mode = fresh_age_mode
+        self.anchor_basis = None
+        self.anchor_host = None
+        if anchor_evidence is not None:
+            if not isinstance(anchor_evidence, dict):
+                raise MeasurementError("invalid_anchor_evidence")
+            self.anchor_host = anchor_evidence.get("hostClockId")
+            self.anchor_basis = causal_anchor_basis(anchor_evidence, self.anchor_host)
+            if observation != anchor_evidence["anchorObservation"]:
+                raise MeasurementError("anchor_evidence_mismatch")
+            if anchor_age_upper_ms(self.anchor_basis, clock.monotonic(), self.anchor_host,
+                                   self.anchor_host) > self.POLICY["maxAnchorAgeMs"]:
+                raise MeasurementError("anchor_expired")
         if type(match_workers) is not int or not 1 <= match_workers <= 3:
             raise ValueError("match_workers must be 1..3")
         self.match_workers = match_workers
@@ -120,9 +134,7 @@ class AnchoredRoiMeasurement:
         self.template = frame[y:y+h, x:x+w].copy()
         if float(self.template.std()) < self.POLICY["minTextureStd"]:
             raise MeasurementError("anchor_texture_insufficient")
-        self.anchor = {"sourceFrameId": observation["sourceFrameId"],
-                       "imageSha256": observation["imageSha256"], "targetBox": dict(box),
-                       "label": observation.get("label"), "classId": observation.get("classId")}
+        self.anchor = copy.deepcopy(semantic_anchor(observation))
         self.shape, self.box, self.last_us, self.clock = frame.shape, (x, y, w, h), self.anchor_us, clock
         self.invalidated = False
         self.templates = []
@@ -138,6 +150,8 @@ class AnchoredRoiMeasurement:
                   "imageSha256": source.get("imageSha256"), "hostClockId": host_clock_id,
                   "accepted": False, "controlEligible": False, "trainingEligible": False,
                   "captureHostBoundsCalibrated": False, "freshAgeMode": self.fresh_age_mode}
+        if self.anchor_basis is not None:
+            result.update(self.anchor_basis)
         age_basis = {"sourceAgeBoundStartedMonotonic": request_started}
         last_checked = started
         try:
@@ -151,8 +165,14 @@ class AnchoredRoiMeasurement:
             self.last_us = captured  # A rejected frame cannot later be relabelled as a new measurement.
             anchor_age = (captured - self.anchor_us) / 1000
             result["anchorAgeMs"] = anchor_age
-            if anchor_age > self.POLICY["maxAnchorAgeMs"]:
-                raise MeasurementError("anchor_expired")
+            if self.anchor_basis is not None:
+                try:
+                    anchor_upper = anchor_age_upper_ms(self.anchor_basis, started, host_clock_id, self.anchor_host)
+                except ValueError as exc:
+                    raise MeasurementError(str(exc)) from exc
+                result["anchorAgeAtMeasurementUpperMs"] = anchor_upper
+            else:
+                anchor_upper = anchor_age
             reported_age = source.get("reportedSourceAgeMs")
             if (not all(_number(v) for v in (request_started, received, started, reported_age))
                     or not request_started <= received <= started or reported_age < 0
@@ -169,6 +189,8 @@ class AnchoredRoiMeasurement:
                           measurementStartedMonotonic=started, reportedSourceAgeMs=reported_age,
                           httpIntervalMs=(received-request_started)*1000,
                           preProcessingElapsedMs=(started-received)*1000)
+            if anchor_upper > self.POLICY["maxAnchorAgeMs"]:
+                raise MeasurementError("anchor_expired")
             frame = _decode(body, source.get("imageSha256"))
             if frame.shape != self.shape:
                 raise MeasurementError("frame_dimensions_changed")
@@ -224,4 +246,15 @@ class AnchoredRoiMeasurement:
             result.update(accepted=False, reason="invalid_local_timing")
             for key in ("targetBox", "centerX", "centerY", "deltaX", "deltaY"):
                 result.pop(key, None)
+        if self.anchor_basis is not None:
+            try:
+                upper = anchor_age_upper_ms(self.anchor_basis, completed, host_clock_id, self.anchor_host)
+                result["anchorAgeAtMeasurementUpperMs"] = upper
+                if upper > self.POLICY["maxAnchorAgeMs"]:
+                    raise ValueError("anchor_expired")
+            except ValueError as exc:
+                result.update(accepted=False, reason=str(exc))
+                self.invalidated = True
+                for key in ("targetBox", "centerX", "centerY", "deltaX", "deltaY"):
+                    result.pop(key, None)
         return result

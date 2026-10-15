@@ -13,7 +13,8 @@ from learning.device_adapter import DeviceReadAdapter, DeviceReadError, _object
 from learning.device_probe import _idle
 from learning.fresh_capture import validate_fresh_capture
 from learning.fast_observation import AnchoredRoiMeasurement
-from learning.source_age import source_age_upper_ms, validate_fresh_age_mode
+from learning.anchor_age import causal_anchor_basis
+from learning.source_age import source_age_basis, source_age_upper_ms, validate_fresh_age_mode
 from learning.observation_consumer import ShadowObservationConsumer
 from ros2_ws.src.motionbrain_ros_bridge.motionbrain_ros_bridge.observation import parse_capture_headers
 
@@ -77,7 +78,9 @@ def _persist_capture(store, index, receipt, body, pending, record, artifacts, *,
 
 def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.sleep, capture_timing=False,
                    match_workers=3, parallel_persistence=True, fresh_capture=False,
-                   shadow_consumption=False, max_persistence_ms=250, fresh_age_mode="clock_margin"):
+                   shadow_consumption=False, max_persistence_ms=250, fresh_age_mode="clock_margin", causal_anchor=False):
+    if type(causal_anchor) is not bool or (causal_anchor and fresh_age_mode != "send_start"):
+        raise ValueError("causal anchor requires send_start mode")
     validate_fresh_age_mode(fresh_age_mode)
     if fresh_age_mode == "send_start" and (fresh_capture is not True or
             getattr(transport, "connection_timing", False) is not True):
@@ -129,7 +132,7 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
     source_root = Path(__file__).resolve().parents[1]
     sources = ["learning/fast_observation.py", "learning/fast_probe.py", "learning/device_adapter.py",
                "learning/capture_timing.py", "learning/http_timing.py", "learning/source_age.py", "learning/fresh_capture.py",
-               "learning/artifacts.py", "learning/observation_consumer.py", "tools/probe_fast_observation.py",
+               "learning/anchor_age.py", "learning/artifacts.py", "learning/observation_consumer.py", "tools/probe_fast_observation.py",
                "ros2_ws/src/motionbrain_ros_bridge/motionbrain_ros_bridge/observation.py"]
     save_json("session.json", {"schemaVersion": "motionbrain.fast_probe_session.v1",
                               "policy": AnchoredRoiMeasurement.POLICY, "requestedSamples": samples,
@@ -138,6 +141,9 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
                               "parallelPersistence": parallel_persistence,
                               "freshCaptureRequested": fresh_capture,
                               "freshAgeMode": fresh_age_mode,
+                              "causalAnchorEnabled": causal_anchor,
+                              "anchorWaitMaxPolls": 8 if causal_anchor else None,
+                              "anchorWaitIntervalSeconds": 1 if causal_anchor else None,
                               "shadowConsumptionEnabled": shadow_consumption,
                               "maxPersistenceMs": max_persistence_ms if consumer else None,
                               "captureTimingEnabled": capture_timing,
@@ -160,6 +166,41 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
             capability = _object(transport.get("camera", "/status")[0])
             if capability.get("freshCaptureSupported") is not True:
                 raise DeviceReadError("fresh_capture_unsupported")
+        checkpoint_receipt, checkpoint_source = None, None
+        if causal_anchor:
+            checkpoint_receipt, checkpoint_body = transport.get("camera", "/capture", {"fresh": "1"})
+            if checkpoint_receipt.get("status") != 200:
+                raise DeviceReadError("anchor_checkpoint_capture_failed")
+            checkpoint_source = {**parse_capture_headers(checkpoint_receipt["headers"]),
+                                 "imageSha256": checkpoint_receipt["sha256"]}
+            checkpoint_image = save_image("checkpoint", "source", checkpoint_body, checkpoint_receipt["sha256"])
+            if not checkpoint_image["hashMatches"]:
+                raise DeviceReadError("anchor_checkpoint_hash_mismatch")
+            save_json("anchor_checkpoint.json", {"receipt": checkpoint_receipt,
+                "source": checkpoint_source, "image": checkpoint_image})
+            # Wait for a later detector frame, without another camera capture.
+            # Transport/identity failures abort; only an older valid frame is
+            # polled again, with a fixed finite budget. Never copy an old box
+            # onto the checkpoint image.
+            source_age_basis(checkpoint_receipt, checkpoint_source,
+                request_started=checkpoint_receipt["requestStartedMonotonic"],
+                received=checkpoint_receipt["receivedMonotonic"],
+                host_clock_id=transport.host_clock_id, fresh_age_mode="send_start")
+            for attempt in range(8):
+                candidate = _object(transport.get("perception", "/api/detection")[0])
+                captured = candidate.get("capturedUs")
+                if (candidate.get("cameraBootId") != checkpoint_source["cameraBootId"]
+                        or type(captured) is not int or not 0 < captured < 10**19
+                        or candidate.get("sourceFrameId") != f"{checkpoint_source['cameraBootId']}:{captured}"):
+                    raise DeviceReadError("anchor_wait_identity_mismatch")
+                store.append("anchor_wait_polled", str(attempt),
+                             {"sourceFrameId": candidate["sourceFrameId"],
+                              "afterCheckpoint": captured > checkpoint_source["capturedUs"]})
+                if captured > checkpoint_source["capturedUs"]:
+                    break
+                if attempt == 7:
+                    raise DeviceReadError("anchor_wait_exhausted")
+                sleep(1)
         anchor_bytes = []
 
         def save_anchor(body, digest):
@@ -168,8 +209,20 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
 
         anchor = adapter.observe(save_anchor)
         save_json("anchor.json", anchor)
+        anchor_evidence = None
+        if causal_anchor:
+            anchor_evidence = {"hostClockId": transport.host_clock_id,
+                "checkpointReceipt": checkpoint_receipt, "checkpointSource": checkpoint_source,
+                "anchorObservation": anchor["observation"],
+                "anchorRetrievedMonotonic": anchor["retrievedMonotonic"]}
+            save_json("anchor_evidence.json", anchor_evidence)
+            causal_anchor_basis(anchor_evidence, transport.host_clock_id)
+            if consumer:
+                consumer = ShadowObservationConsumer(transport.clock, transport.host_clock_id,
+                    max_persistence_ms=max_persistence_ms, fresh_age_mode=fresh_age_mode,
+                    anchor_evidence=anchor_evidence)
         tracker = AnchoredRoiMeasurement(anchor["observation"], anchor_bytes[0], clock=transport.clock,
-                                         match_workers=match_workers, fresh_age_mode=fresh_age_mode)
+                                         match_workers=match_workers, fresh_age_mode=fresh_age_mode, anchor_evidence=anchor_evidence)
         for index in range(samples):
             if consumer:
                 consumer.check_ready()
