@@ -57,11 +57,9 @@
 
 원본은 로컬 `datasets/fast_probes/<run ID>` 및 Pi 임시 경로의 `runs/<run ID>`에 보존했고 Git에 넣지 않았다. 공유 기록은 [집계와 표본별 시간](consumption-live-2026-10-15/live.json), [전후 상태](consumption-live-2026-10-15/comparison-before.json), [최종 상태](consumption-live-2026-10-15/final-status.json), [분석기](consumption-live-2026-10-15/analyze.py), [runner](consumption-live-2026-10-15/compare.py), [검증 메타데이터](consumption-live-2026-10-15/validation.json)다.
 
-## 다음 단계
+## 해석과 후속 검증
 
-1. 배터리 분리·비구동 상태로 Pi의 **시험용 저장 경로에만** 의도적인 지연/실패를 주입해, 실제 영상 소비 후 `late/unconfirmed`, 다음 capture 0회, 원본 보존/terminal 기록을 확인한다. 운영 서비스나 실제 디스크를 손상시키는 방식은 사용하지 않는다. 100ms/250ms 기준은 유지한다.
-2. CAM/host 시간 오차의 물리 근거와 실제 동작 전 안전 조건을 확인한 뒤 제한 동작 commissioning을 준비한다. 이번 shadow 성공만으로 실제 모터 출력이나 학습용 행동 데이터를 허용하지 않는다.
-3. 제한 동작의 실제 출력·행동 전후 원본 수집을 검증하고 데이터셋/오프라인 학습·평가로 연결한다. 물체 집기·배치와 학습에 따른 성능 개선은 아직 남아 있다.
+shadow 소비 성공은 실제 모터 출력이나 학습용 행동 데이터의 적격성을 입증하지 않는다. [후속 저장 장애 시험](2026-10-15-pi-storage-faults.md)에서 지연·실패 중단을 검증했다. 최종 [유한 관측 사용 가능성 평가](2026-10-15-bounded-observation.md)는 미통과다.
 
 ## 후속 저장 장애 주입 결과
 

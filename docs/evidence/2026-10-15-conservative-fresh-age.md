@@ -57,8 +57,6 @@ python3 docs/evidence/conservative-fresh-2026-10-15/replay.py . /tmp/motionbrain
 
 [실측 집계](conservative-fresh-2026-10-15/live.json), [이전 원본 재생](conservative-fresh-2026-10-15/historical-replay.json), [이번 원본 재생](conservative-fresh-2026-10-15/live-replay.json), [시험 순서](conservative-fresh-2026-10-15/comparison-runs.json), [최종 상태](conservative-fresh-2026-10-15/final-status.json). 전체 원본과 receipt는 Mac `datasets/fast_probes/<runId>` 및 Pi 임시 시험 디렉터리에 보존했다. Git에 원본 이미지를 넣지 않았다.
 
-## 다음 작업과 남은 실물 관문
+## 해석과 후속 검증
 
-1. **anchor 만료 판정도 CAM 속도/2µs 가정 없이 만들 수 있는 경로를 구현·비구동 검증한다.** 기준 이미지의 exact fresh 획득 증거를 확보하고 이후 Pi 단조 시각만으로 만료를 판단해야 한다. 기존 검출 결과와 새 anchor 원본의 동일성/대상 연결을 유지하며 단순히 수신 시각을 촬영 시각으로 치환하지 않는다.
-2. 현재 보수적 소비는 5/24라 안정적으로 사용할 준비가 됐다고 볼 수 없다. 100ms를 유지하며 거부 시 동작 0회·유한 대기/중단 규칙을 정하고, 기존 원본으로 줄일 수 있는 전송/계산 비용을 우선 검토한다. 무한 재촬영으로 좋은 표본만 골라 성공률을 높이지 않는다.
-3. 비구동 관측 계약이 정리된 뒤 M4 영점·기구 안전 범위·출력 종료/정착을 실제로 확인하고 제한 동작 수집으로 연결한다. 배터리 연결·모터 출력 시험은 별도 단계다. 실제 학습 적격 행동 데이터 수집, 기준선/작은 모델 학습과 조작 성능 비교는 아직 남아 있다.
+이 단계에서는 anchor 만료의 시계 가정이 남았다. [후속 anchor 상한](2026-10-15-causal-anchor-age.md)에서 이를 제거했고, [유한 관측 평가](2026-10-15-bounded-observation.md)는 사용 가능성 기준에 미달했다. 실물 제어를 검증한 결과는 아니다.

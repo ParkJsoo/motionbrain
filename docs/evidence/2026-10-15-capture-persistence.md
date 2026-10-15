@@ -60,10 +60,8 @@ Pi 별도 `/tmp/motionbrain-storage-20261015`, 배터리함 분리·USB/Pi 연�
 
 [실제 결과](capture-persistence-2026-10-15/live-results.json), [저장 구간 전체 표본](capture-persistence-2026-10-15/persistence.json), [환경·소스 hash](capture-persistence-2026-10-15/live-session.json), [무결성·통계](capture-persistence-2026-10-15/validation.json), [시작 상태](capture-persistence-2026-10-15/before-status.json), [종료 상태](capture-persistence-2026-10-15/final-status.json).
 
-## 테스트·리뷰와 다음 단계
+## 검증과 한계
 
 신규 10개 테스트는 사전 생성/경로/fsync 실패, 병렬 겹침·호출 스레드 유지, receipt 실패·중단 시 원본 수거, image 중단 시 receipt 보존, 다음 촬영 차단, 실제 SIGINT 및 receipt 실패 복합 경로, 직렬/병렬 측정·이미지 동일성을 검사한다. 최종 [전체 481개 테스트](capture-persistence-2026-10-15/tests.log)가 통과했다. 독립 리뷰에서 발견한 P2는 수정·재검토했다. 리뷰 에이전트가 최종 helper 벤치마크를 원본 12개로 독립 재실행하고, 실측 통계·원본/종료/실행 소스 hash·문서를 검증했다. 최종 미해결 P0/P1/P2 없음.
 
-저장 최적화만으로 100ms 문제는 해결되지 않았다. **다음은 카메라에서 더 최근에 생성된 프레임을 받는 선택형 캡처 경로의 가능성을 검토·가상 테스트하는 단계**다. 기존 `/capture` 기본 동작과 원본 ID/시각 의미를 보존하고, 새 프레임 대기·timeout·중복 timestamp·boot 변경을 검증해야 한다. 현재 자료만으로 노출/readout와 버퍼 체류 시간을 분리하거나 버퍼가 원인이라고 확정하지 않는다. 새 카메라 드라이버나 추가 센서를 선행조건으로 삼지 않는다.
-
-이후 펌웨어 변경·실물 업로드가 필요하면 최소 변경과 비구동 비교 절차를 먼저 준비해 별도 승인을 받는다. 컵/카메라 위치·배터리 분리·USB/Pi 연결은 유지하면 된다. 실제 소비 시각 재검사, 광학/clock/M4 정합성, 제한 동작 실물 검증과 학습용 행동 수집은 여전히 남아 있다. main 병합·운영 배포·모터 구동은 이번 범위 밖이다.
+저장 최적화만으로 100ms 기준을 충족하지 못했다. [후속 선택형 캡처 구현](2026-10-15-fresh-capture.md)을 참고한다. 노출/readout와 버퍼 체류를 분리하거나 병목 원인을 확정한 결과는 아니다.

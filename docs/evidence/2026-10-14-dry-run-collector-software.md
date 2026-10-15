@@ -1,6 +1,6 @@
 # 행동 전후 수집 runner dry-run — 2026-10-14
 
-> 현재 상태 (2026-10-14): 이 단계는 `9ad4935`에 커밋되었다. 최신 코드 수정은 `73132e9`이며, 수정 후 전체 **372개 테스트 통과(10.949초)**와 독립 재리뷰를 기록했다. 아래 단계별 테스트 수는 당시 결과로 보존한다. 마지막 회귀는 [시계 오차 수정 기록](2026-10-14-dry-run-collector-software.md#중간-리뷰-후-실행-전-시계-오차-검사-수정)을 기준으로 한다. 오늘 새 실물 검증이나 실제 데이터 학습은 하지 않았다.
+> 2026-10-14 검증 기록: 이 단계는 `9ad4935`에 커밋되었다. 당시 코드 수정은 `73132e9`이며, 수정 후 전체 **372개 테스트 통과(10.949초)**와 독립 재리뷰를 기록했다. 아래 단계별 테스트 수는 당시 결과로 보존한다. 마지막 회귀는 [시계 오차 수정 기록](2026-10-14-dry-run-collector-software.md#중간-리뷰-후-실행-전-시계-오차-검사-수정)을 기준으로 한다. 오늘 새 실물 검증이나 실제 데이터 학습은 하지 않았다.
 
 기준 커밋: `ca48f04` (`feat: preserve source observations and validate action transitions`).
 관측·schema 변경은 독립 리뷰에서 조기 완료 pulse/종료 상태 모순을 수정하고
@@ -162,10 +162,10 @@ M4 age 계산과 저장된 intent 이후의 보수적 `outcome_unknown` 구분�
 이번 완료는 **장치 없는 데이터 계약·수집 실패 처리**다. 합성 adapter의 clock 교정·M4 실측·
 driver write 필드는 형태를 시험하기 위한 값이며 실제 측정 증거가 아니다. 모든 runner 결과는
 `mode=dry_run`, `evidence=synthetic`, `trainingEligible=false`다. 학습 개선·물리 정지·집기
-성공을 입증하지 않는다. 기존 ROS 전체 빌드와 새 firmware 실물 검증도 여전히 남아 있다.
+성공을 입증하지 않는다. ROS 빌드와 비구동 firmware 통합은 [후속 배포 검증](2026-10-15-deployment-no-drive.md)에서 다뤘다.
 
 저장 artifact 기반 manifest·hash/episode 및 연결 그룹 분할 검사는 `2bda97e`에서 완료했다.
-다음 학습 준비는 manifest loader·특징/기준선·train-only 전처리·평가 코드다.
+후속 [오프라인 학습·평가](2026-10-15-offline-visual-dynamics.md)에 loader·특징·기준선·train-only 전처리를 구현했다.
 실물 adapter는 기존 journal, MCU capability/boot/결과 조회,
 원본 perception API와 명시적으로 연결해야 한다. 이 dry-run adapter를 physical로 표시만
 바꾸어 사용하지 않는다. collector checkpoint/cancel은 현재 물리 stop 호출이 아니다.

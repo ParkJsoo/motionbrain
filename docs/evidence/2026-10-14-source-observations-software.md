@@ -1,6 +1,6 @@
 # 원본 프레임·신선도·행동 전후 schema — 2026-10-14
 
-> 현재 상태 (2026-10-14): 이 단계는 `ca48f04`에 커밋되었다. 최신 코드 수정은 `73132e9`이며, 수정 후 전체 **372개 테스트 통과(10.949초)**와 독립 재리뷰를 기록했다. 아래 단계별 테스트 수는 당시 결과로 보존한다. 마지막 회귀는 [시계 오차 수정 기록](2026-10-14-dry-run-collector-software.md#중간-리뷰-후-실행-전-시계-오차-검사-수정)을 기준으로 한다. 오늘 새 실물 검증이나 실제 데이터 학습은 하지 않았다.
+> 2026-10-14 검증 기록: 이 단계는 `ca48f04`에 커밋되었다. 당시 코드 수정은 `73132e9`이며, 수정 후 전체 **372개 테스트 통과(10.949초)**와 독립 재리뷰를 기록했다. 아래 단계별 테스트 수는 당시 결과로 보존한다. 마지막 회귀는 [시계 오차 수정 기록](2026-10-14-dry-run-collector-software.md#중간-리뷰-후-실행-전-시계-오차-검사-수정)을 기준으로 한다. 오늘 새 실물 검증이나 실제 데이터 학습은 하지 않았다.
 
 MCU 기반 커밋: `1bcd59e` (`feat: add bounded MCU actions and applied output records`).
 MCU 변경은 독립 리뷰에서 확정된 P1/P2 문제 없이 커밋했다. 이 문서는 그 이후의
@@ -140,19 +140,10 @@ git diff --check
   ROS Jazzy 전체 빌드와 lifecycle runtime 시험은 이 Mac 환경에서 실행하지 않았다.
 - 합성 시각·출력·JPEG로 계약을 검증했으며 실제 데이터 수집 또는 조작 성능 개선 증거가 아니다.
 
-## 다음 장치 세션과 구현 순서
+## 후속 검증과 한계
 
-1. 장치 없이 구현한 S4b dry-run 수집·원본 저장/hash·중단/누락 기록과 S5a manifest를 바탕으로
-   S5b loader·특징/기준선·train-only 전처리·평가 코드를 준비한다. 실제 수집 adapter는 별도 구현한다. 기존 policy episode 로그를 전이로 재해석하지 않는다.
-2. 장비 연결 가능 시: 모터 전원을 분리하고 ESP32-CAM 보드·현재 firmware·포트를 확인한 뒤
-   camera firmware를 업로드한다. `/capture` 반복에서 ID/age, 재부팅 boot 변경, Wi-Fi 지연,
-   오래된 buffer와 같은 ID의 bytes 일치, exact API의 JPEG hash를 확인한다.
-3. Pi에서 ROS 전체 빌드 후 원본 필드 전파, 지연·재발행·held 때 guard 차단을 확인한다.
-   먼저 모터 전원 분리 상태에서 수행한다.
-4. MCU/카메라/host clock mapping의 불확실성과 M4 sample age를 기록할 방법을 교정한다.
-   원시 로그를 남기고 timing 구간이 겹치는 전이는 제외한다. 교정값은 실제 관측 근거와 함께 버전 관리한다.
-5. 이후 한 축의 제한된 작은 동작으로 output-off·영상 정착·새 촬영·M4 sample 연결을 검증한다.
-   STM32 heartbeat, M4 AS5600 freshness, 팔 고정 자세, 즉시 전원 차단 수단과 카메라 시야가 필요하다.
-   기존 [MCU 실물 관문](2026-10-14-bounded-actions-software.md)을 먼저 충족해야 한다.
-
-추가 센서나 클라우드 GPU는 이 단계의 선행조건이 아니다.
+[Pi 배포·비구동 통합](2026-10-15-deployment-no-drive.md),
+[읽기 전용 수집 adapter](2026-10-15-device-collection-probe.md),
+[오프라인 학습·평가](2026-10-15-offline-visual-dynamics.md)는 후속 구현이다.
+실제 행동 수집 adapter와 출력 종료→정착→새 촬영·M4 sample의 정합성은 미검증이다.
+기존 policy episode 로그나 합성 fixture를 실물 transition으로 재해석하지 않는다.

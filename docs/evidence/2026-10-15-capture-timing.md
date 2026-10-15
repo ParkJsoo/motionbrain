@@ -71,8 +71,6 @@ source timestamp + 보고 age로 CAM 이벤트 시각을 구하고, 요청 시�
 - [실행 코드·환경](capture-timing-2026-10-15/session.json), [원본 검증·통계](capture-timing-2026-10-15/validation.json), [전체 테스트](capture-timing-2026-10-15/tests.log), [종료 상태](capture-timing-2026-10-15/final-status.json).
 - Git 제외 원본: `datasets/fast_probes/b513aab86fed421f9fc96c23c939115a`. Pi에도 `/tmp/motionbrain-capture-timing-20261015/runs/` 아래 같은 ID로 보존했다.
 
-## 다음 단계
+## 해석과 후속 검증
 
-1. 장치 변경 없이 먼저 HTTP 연결·응답 처리 비용을 추가 분리하고, 같은 원본·동일 요청 조건에서 비교할 수 있는 방법을 마련한다. 시간 구간 추정은 광학 timestamp·drift 검증 전까지 진단용으로만 유지한다.
-2. 프레임 생성과 큐 체류를 정확히 나누려면 JPEG 준비/큐 진입·프레임 취득·age 샘플 시각을 **해당 frame ID와 함께** 내보내는 계측이 필요하다. 드라이버에서 확보 가능한 시각과 구현 범위를 먼저 확인해야 하며, 지금 계측이나 펌웨어 업로드를 수행한 것은 아니다. 이 단계가 필요해지면 배터리함 분리·USB 안정 연결, 비구동 업로드 승인과 비교 실험 내용을 구체적으로 제시한다.
-3. 별도로 컵 수동 이동·가림·유사 물체에서 실물 측정 정확도/거부를 검증한다. 카메라 장착 위치는 유지하고 모터는 구동하지 않는다. 이후 실제 소비 시점의 신선도·M4 시각·제한 명령 실행 검증을 갖춰 행동 수집으로 진행한다.
+촬영과 버퍼 체류를 분리하거나 광학 timestamp·drift를 교정한 결과는 아니다. [HTTP 구간 측정](2026-10-15-http-connection-timing.md)과 [수동 장면 변화 검증](2026-10-15-manual-cup-scenes.md)을 후속 기록으로 제공한다.
