@@ -14,6 +14,7 @@ from learning.device_probe import _idle
 from learning.fresh_capture import validate_fresh_capture
 from learning.fast_observation import AnchoredRoiMeasurement
 from learning.source_age import source_age_upper_ms
+from learning.observation_consumer import ShadowObservationConsumer
 from ros2_ws.src.motionbrain_ros_bridge.motionbrain_ros_bridge.observation import parse_capture_headers
 
 
@@ -75,7 +76,8 @@ def _persist_capture(store, index, receipt, body, pending, record, artifacts, *,
 
 
 def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.sleep, capture_timing=False,
-                   match_workers=3, parallel_persistence=True, fresh_capture=False):
+                   match_workers=3, parallel_persistence=True, fresh_capture=False,
+                   shadow_consumption=False, max_persistence_ms=250):
     if type(samples) is not int or not 1 <= samples <= 100:
         raise ValueError("samples must be 1..100")
     if type(interval) not in (int, float) or not 0 <= interval <= 1:
@@ -88,6 +90,10 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
         raise ValueError("parallel_persistence must be boolean")
     if type(fresh_capture) is not bool:
         raise ValueError("fresh_capture must be boolean")
+    if type(shadow_consumption) is not bool:
+        raise ValueError("shadow_consumption must be boolean")
+    consumer = ShadowObservationConsumer(transport.clock, transport.host_clock_id,
+                                         max_persistence_ms=max_persistence_ms) if shadow_consumption else None
     artifacts, results = [], []
     timing_samples = []
     adapter = DeviceReadAdapter(transport)
@@ -119,7 +125,7 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
     source_root = Path(__file__).resolve().parents[1]
     sources = ["learning/fast_observation.py", "learning/fast_probe.py", "learning/device_adapter.py",
                "learning/capture_timing.py", "learning/http_timing.py", "learning/source_age.py", "learning/fresh_capture.py",
-               "learning/artifacts.py", "tools/probe_fast_observation.py",
+               "learning/artifacts.py", "learning/observation_consumer.py", "tools/probe_fast_observation.py",
                "ros2_ws/src/motionbrain_ros_bridge/motionbrain_ros_bridge/observation.py"]
     save_json("session.json", {"schemaVersion": "motionbrain.fast_probe_session.v1",
                               "policy": AnchoredRoiMeasurement.POLICY, "requestedSamples": samples,
@@ -127,6 +133,8 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
                               "capturePersistence": "single_frame_after_measurement",
                               "parallelPersistence": parallel_persistence,
                               "freshCaptureRequested": fresh_capture,
+                              "shadowConsumptionEnabled": shadow_consumption,
+                              "maxPersistenceMs": max_persistence_ms if consumer else None,
                               "captureTimingEnabled": capture_timing,
                               "connectionTimingEnabled": getattr(transport, "connection_timing", False),
                               "opencvVersion": cv2.__version__, "numpyVersion": np.__version__,
@@ -158,6 +166,8 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
         tracker = AnchoredRoiMeasurement(anchor["observation"], anchor_bytes[0], clock=transport.clock,
                                          match_workers=match_workers)
         for index in range(samples):
+            if consumer:
+                consumer.check_ready()
             if not _idle(adapter.status()):
                 raise DeviceReadError("controller_not_idle")
             before_camera = _object(transport.get("camera", "/status")[0]) if capture_timing else None
@@ -181,6 +191,7 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
                 result = tracker.measure(body, source, request_started=receipt["requestStartedMonotonic"],
                                          received=receipt["receivedMonotonic"], host_clock_id=transport.host_clock_id,
                                          capture_receipt=receipt)
+                consumption = consumer.consume(result, source, receipt, body) if consumer else None
             finally:
                 pending, camera_receipts = camera_receipts, None
                 ref, storage_timing = _persist_capture(store, index, receipt, body, pending, record, artifacts,
@@ -216,8 +227,12 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
                            and 0 <= age_at_persistence <= tracker.POLICY["maxSourceAgeMs"],
                            "controlEligible": False}
             save_json(f"persistence/{index:04d}.json", persistence)
+            if consumer:
+                save_json(f"consumption/{index:04d}.json", consumption)
             store.append("measured", str(index), persistence)
             results.append(result)
+            if consumer:
+                consumer.finish_persistence(source["sourceFrameId"], transport.host_clock_id)
             if capture_timing:
                 after_camera = _object(transport.get("camera", "/status")[0])
                 timing = analyze_capture_timing(receipt, before_camera, after_camera)
@@ -227,8 +242,12 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
                 sleep(interval)
     except KeyboardInterrupt:
         state, error = "interrupted", "KeyboardInterrupt"
+        if consumer:
+            consumer.stop(error)
     except Exception as exc:
         state, error = "failed", f"{type(exc).__name__}: {exc}"
+        if consumer:
+            consumer.stop(error)
     finally:
         try:
             adapter.capability()  # Detect controller reboot even if output log happens to match.
@@ -245,6 +264,8 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
     integrity_errors = verify_artifacts(store.root, artifacts)
     if integrity_errors:
         state, error = "failed", "artifact_integrity_error"
+    if consumer and state != "completed":
+        consumer.stop(error)
     summary = {"schemaVersion": "motionbrain.fast_probe.v1", "status": state, "error": error,
                "requestedSamples": samples, "completedSamples": len(results),
                "acceptedMeasurements": sum(r["accepted"] for r in results),
@@ -253,6 +274,9 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
                "trainingEligible": False, "controlEligible": False}
     if capture_timing:
         summary["captureTiming"] = summarize_capture_timing(timing_samples)
+    if consumer:
+        summary.update(consumptions=consumer.snapshot(), consumptionHalted=consumer.halted,
+                       consumedObservations=sum(row["consumed"] for row in consumer.records))
     ref = store.write_json("run.json", summary)
     store.append("finished", "probe", {"report": ref, "status": state})
     return summary

@@ -1,0 +1,23 @@
+{
+  "sourceSha256": {
+    "learning/observation_consumer.py": "0a9ff4cafcb791c50a5b487cb514e56d7e3413117748c398ec9a64cb203ab8c4",
+    "learning/fast_probe.py": "7c18729baeef36e5f8f7e65299c0d24e4b07e870a35249cad1c59baa0f6e606c",
+    "tools/probe_fast_observation.py": "885fd93e482f0397d3f360b23c6956c9cd20403dee821ad122a12958f0a93adf",
+    "tests/test_observation_consumer.py": "2527db20dfa2e4aa4981b70aef87d6cf2e806a2e012a5482ff8e2c28cae8070b",
+    "learning/source_age.py": "3e12eb464472805addd8d4674ee21102e741d54ab976743df05919a18ca6495f",
+    "learning/artifacts.py": "a9077eed9a5e2825f6c78fb9eca1ca03ac43693d91c95a0c109fb343707ba0b4"
+  },
+  "softwareTests": 528,
+  "newTests": 22,
+  "testSeconds": 20.057,
+  "sourceAgeLimitMs": 100,
+  "defaultPersistenceBudgetMs": 250,
+  "cameraClockMinRateAssumption": 0.999,
+  "clockPhysicallyCalibrated": false,
+  "deviceRequests": 0,
+  "motorCommandsSent": 0,
+  "firmwareUploaded": false,
+  "servicesRestarted": false,
+  "physicalValidation": "not_performed",
+  "reviewP2": "anchor capture-to-consumption gap fixed; regression added"
+}

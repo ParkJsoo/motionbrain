@@ -28,6 +28,10 @@ def main(argv=None):
                         help="opt-in post-request first-DMA capture; requires supported camera firmware")
     parser.add_argument("--serial-persistence", action="store_true",
                         help="baseline: sequential receipt/JPEG storage, no directory preparation")
+    parser.add_argument("--shadow-consumption", action="store_true",
+                        help="recheck 100ms at in-memory shadow consumption; never actuates")
+    parser.add_argument("--max-persistence-ms", type=float, default=250,
+                        help="shadow mode: stop after a frame evidence write exceeds this budget")
     parser.add_argument("--capture-timing", action="store_true",
                         help="record header/body timing and guarded camera status association (GET only)")
     parser.add_argument("--connection-timing", action="store_true",
@@ -49,7 +53,8 @@ def main(argv=None):
     try:
         report = run_fast_probe(ArtifactStore(run_dir), transport, samples=args.samples,
                                 capture_timing=args.capture_timing, match_workers=args.match_workers,
-                                parallel_persistence=not args.serial_persistence, fresh_capture=args.fresh_capture)
+                                parallel_persistence=not args.serial_persistence, fresh_capture=args.fresh_capture,
+                                shadow_consumption=args.shadow_consumption, max_persistence_ms=args.max_persistence_ms)
         print(json.dumps({"runDir": str(run_dir), **{k: v for k, v in report.items()
                           if k not in ("artifacts", "results")},
                           "measurements": [{k: v for k, v in r.items() if k not in ("image", "source")}
