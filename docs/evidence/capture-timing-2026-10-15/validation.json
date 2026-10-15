@@ -1,0 +1,36 @@
+{
+  "runId": "b513aab86fed421f9fc96c23c939115a",
+  "fullTests": 443,
+  "fullTestSeconds": 15.494,
+  "artifactCount": 140,
+  "imageCount": 17,
+  "eventCount": 34,
+  "artifactErrors": [],
+  "terminalVerified": true,
+  "sourceHashesMatchLocal": true,
+  "acceptedMeasurements": 0,
+  "motorCommandsSent": 0,
+  "outputLogUnchanged": true,
+  "statistics": {
+    "processingMs": {
+      "min": 31.194254001093213,
+      "median": 36.47590200034756,
+      "max": 45.16245400009211
+    },
+    "reportedAgePlusElapsedMs": {
+      "min": 113.15724299973994,
+      "median": 126.3010144990671,
+      "max": 161.6091989993695
+    },
+    "ageAtReceiptLowerMs": {
+      "min": 47.232472000527196,
+      "median": 63.42155799928657,
+      "max": 88.9013159988938
+    },
+    "ageAtReceiptUpperMs": {
+      "min": 74.38760999974329,
+      "median": 92.43660199933359,
+      "max": 125.7582119991387
+    }
+  }
+}

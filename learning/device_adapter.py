@@ -73,7 +73,9 @@ class ReadOnlyHTTP:
             except urllib.error.HTTPError as exc:
                 response = exc  # 404/409 are evidence, never a reason to retry.
             with response:
+                receipt["headersAvailableMonotonic"] = self.clock.monotonic()
                 body = response.read(MAX_IMAGE_BYTES + 1)
+                receipt["bodyReadCompletedMonotonic"] = self.clock.monotonic()
                 receipt.update(status=response.code, headers={k.lower(): v for k, v in response.headers.items()
                     if k.lower().startswith("x-motionbrain-") or k.lower() in ("content-type", "content-length")})
             if len(body) > MAX_IMAGE_BYTES:
@@ -83,7 +85,8 @@ class ReadOnlyHTTP:
                 receipt["json"] = _decode_json(body)
             ended = self.clock.monotonic()
             receipt["receivedMonotonic"] = ended
-            if ended < started or ended - started > self.timeout:
+            if (not started <= receipt["headersAvailableMonotonic"]
+                    <= receipt["bodyReadCompletedMonotonic"] <= ended or ended - started > self.timeout):
                 # Socket timeout is per blocking operation, not an end-to-end
                 # guarantee. Reject overruns even if a slow peer completed.
                 raise DeviceReadError("request_interval_invalid_or_over_budget")

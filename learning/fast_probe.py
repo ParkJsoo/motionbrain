@@ -7,18 +7,22 @@ import cv2
 import numpy as np
 
 from learning.artifacts import verify_artifacts
-from learning.device_adapter import DeviceReadAdapter, DeviceReadError
+from learning.capture_timing import capture_timing as analyze_capture_timing, summarize_capture_timing
+from learning.device_adapter import DeviceReadAdapter, DeviceReadError, _object
 from learning.device_probe import _idle
 from learning.fast_observation import AnchoredRoiMeasurement
 from ros2_ws.src.motionbrain_ros_bridge.motionbrain_ros_bridge.observation import parse_capture_headers
 
 
-def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.sleep):
+def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.sleep, capture_timing=False):
     if type(samples) is not int or not 1 <= samples <= 100:
         raise ValueError("samples must be 1..100")
     if type(interval) not in (int, float) or not 0 <= interval <= 1:
         raise ValueError("interval must be 0..1 seconds")
+    if type(capture_timing) is not bool:
+        raise ValueError("capture_timing must be boolean")
     artifacts, results = [], []
+    timing_samples = []
     adapter = DeviceReadAdapter(transport)
     original_recorder, receipts = transport.recorder, 0
     camera_receipts = None
@@ -47,12 +51,14 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
 
     source_root = Path(__file__).resolve().parents[1]
     sources = ["learning/fast_observation.py", "learning/fast_probe.py", "learning/device_adapter.py",
+               "learning/capture_timing.py",
                "learning/artifacts.py", "tools/probe_fast_observation.py",
                "ros2_ws/src/motionbrain_ros_bridge/motionbrain_ros_bridge/observation.py"]
     save_json("session.json", {"schemaVersion": "motionbrain.fast_probe_session.v1",
                               "policy": AnchoredRoiMeasurement.POLICY, "requestedSamples": samples,
                               "interval": interval, "hostClockId": transport.host_clock_id,
                               "capturePersistence": "single_frame_after_measurement",
+                              "captureTimingEnabled": capture_timing,
                               "opencvVersion": cv2.__version__, "numpyVersion": np.__version__,
                               "opencvThreads": cv2.getNumThreads(),
                               "sourceSha256": {p: hashlib.sha256((source_root / p).read_bytes()).hexdigest()
@@ -78,6 +84,7 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
         for index in range(samples):
             if not _idle(adapter.status()):
                 raise DeviceReadError("controller_not_idle")
+            before_camera = _object(transport.get("camera", "/status")[0]) if capture_timing else None
             store.append("capture_requested", str(index), {})
             receipt, body = None, None
             camera_receipts = []
@@ -111,6 +118,11 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
             save_json(f"persistence/{index:04d}.json", persistence)
             store.append("measured", str(index), persistence)
             results.append(result)
+            if capture_timing:
+                after_camera = _object(transport.get("camera", "/status")[0])
+                timing = analyze_capture_timing(receipt, before_camera, after_camera)
+                save_json(f"timing/{index:04d}.json", timing)
+                timing_samples.append(timing)
             if index + 1 < samples:
                 sleep(interval)
     except KeyboardInterrupt:
@@ -139,6 +151,8 @@ def run_fast_probe(store, transport, *, samples=8, interval=0.1, sleep=time.slee
                "results": results, "artifacts": artifacts, "integrityErrors": integrity_errors,
                "outputLogUnchanged": unchanged, "motorCommandsSent": 0,
                "trainingEligible": False, "controlEligible": False}
+    if capture_timing:
+        summary["captureTiming"] = summarize_capture_timing(timing_samples)
     ref = store.write_json("run.json", summary)
     store.append("finished", "probe", {"report": ref, "status": state})
     return summary

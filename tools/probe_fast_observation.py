@@ -22,6 +22,8 @@ def main(argv=None):
     parser.add_argument("--perception-url", default="http://127.0.0.1:8766")
     parser.add_argument("--output-dir", type=Path, default=ROOT / "datasets/fast_probes")
     parser.add_argument("--samples", type=int, default=8)
+    parser.add_argument("--capture-timing", action="store_true",
+                        help="record header/body timing and guarded camera status association (GET only)")
     args = parser.parse_args(argv)
     if not 1 <= args.samples <= 100:
         parser.error("samples must be 1..100")
@@ -35,7 +37,8 @@ def main(argv=None):
 
     signal.signal(signal.SIGTERM, terminate)
     try:
-        report = run_fast_probe(ArtifactStore(run_dir), transport, samples=args.samples)
+        report = run_fast_probe(ArtifactStore(run_dir), transport, samples=args.samples,
+                                capture_timing=args.capture_timing)
         print(json.dumps({"runDir": str(run_dir), **{k: v for k, v in report.items()
                           if k not in ("artifacts", "results")},
                           "measurements": [{k: v for k, v in r.items() if k not in ("image", "source")}

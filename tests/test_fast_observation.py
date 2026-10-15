@@ -331,3 +331,36 @@ class FastProbeTest(unittest.TestCase):
         self.assertEqual(report["status"], "failed")
         self.assertEqual(report["completedSamples"], 0)
         self.assertEqual(self.capture_count, 1)
+
+    def configure_camera_timing(self, interleaved=False):
+        original = self.transport.fault
+        def timed(device,path,r,body):
+            body = original(device,path,r,body)
+            if device == "camera" and path == "/status":
+                count = self.capture_count*(2 if interleaved else 1)
+                r["json"] = {"cameraBootId":BOOT, "captureRequests":count, "captures":count,
+                             "captureFailures":0, "cameraRecoveries":0, "lastFrameBytes":len(self.body),
+                             "lastCaptureMs":0, "lastWriteMs":1}
+            if path == "/capture":
+                r.update(headersAvailableMonotonic=r["requestStartedMonotonic"]+.005,
+                         bodyReadCompletedMonotonic=r["requestStartedMonotonic"]+.015, bytes=len(body))
+            return body
+        self.transport.fault = timed
+
+    def test_optional_camera_timing_reuses_probe_and_saves_evidence(self):
+        self.configure_camera_timing()
+        report = self.run_probe(capture_timing=True)
+        self.assertEqual(report["status"],"completed",report)
+        self.assertEqual(report["captureTiming"]["serverStatsAssociatedSamples"],2)
+        self.assertTrue(report["captureTiming"]["validSeries"])
+        self.assertFalse(report["captureTiming"]["controlEligible"])
+        self.assertEqual(len(list((self.root/'timing').glob('*.json'))),2)
+        self.assertEqual(verify_artifacts(self.root,report["artifacts"]),[])
+
+    def test_interleaved_camera_client_preserves_timing_without_false_association(self):
+        self.configure_camera_timing(interleaved=True)
+        report = self.run_probe(capture_timing=True)
+        self.assertEqual(report["status"],"completed")
+        self.assertTrue(report["captureTiming"]["validSeries"])
+        self.assertEqual(report["captureTiming"]["serverStatsAssociatedSamples"],0)
+        self.assertNotIn("serverFrameAcquireWaitMs",report["captureTiming"]["statistics"])

@@ -368,10 +368,24 @@ class ReadOnlyTransportTest(unittest.TestCase):
 
     def test_interval_overrun_is_rejected_even_when_http_completes(self):
         with patch.object(self.http, "clock") as clock:
-            clock.monotonic.side_effect = [100, 110, 110]
+            clock.monotonic.side_effect = [100, 110, 110, 110, 110]
             with self.assertRaisesRegex(DeviceReadError, "over_budget"):
                 self.http.get("controller", "/actions")
         self.assertEqual(len(self.paths), 1)
+
+    def test_header_body_and_receipt_times_are_separate_local_stamps(self):
+        with patch.object(self.http, "clock") as clock:
+            clock.monotonic.side_effect = [100, 100.02, 100.05, 100.055, 100.055]
+            receipt, _ = self.http.get("controller", "/actions")
+        self.assertEqual(receipt["headersAvailableMonotonic"], 100.02)
+        self.assertEqual(receipt["bodyReadCompletedMonotonic"], 100.05)
+        self.assertEqual(receipt["receivedMonotonic"], 100.055)
+
+    def test_regressed_intermediate_stamp_is_rejected(self):
+        with patch.object(self.http, "clock") as clock:
+            clock.monotonic.side_effect = [100, 100.05, 100.02, 100.06, 100.06]
+            with self.assertRaisesRegex(DeviceReadError, "interval_invalid"):
+                self.http.get("controller", "/actions")
 
 
 if __name__ == "__main__":
