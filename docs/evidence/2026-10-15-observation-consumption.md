@@ -49,3 +49,7 @@ fresh 상한에 clock-rate/timestamp 여유를 포함하면 소비 시점에 100
 Pi 임시 소스에서 이 옵션을 켜고 기본/fresh 캡처를 **비구동으로** 비교한다. 측정 수락·소비 수락·소비 나이·기록 장벽 시간·late/unknown을 함께 확인하고, 첫 저장 오류/기한 초과 시 실험을 멈춘다. 이번에는 실물 GET·배포를 수행하지 않았으므로 실제 100ms 소비 통과율과 250ms 저장 기한의 적절성은 미검증이다. 배터리함 분리 상태를 유지하며 진행할 단계다. 모터 연결, 물리 clock/M4 교정, 실제 행동 수집·학습 효과 검증은 별도다.
 
 [테스트 로그](consumption-2026-10-15/tests.log), [가상 시나리오 코드](consumption-2026-10-15/virtual_scenarios.py), [시나리오 결과](consumption-2026-10-15/virtual-scenarios.json), [검증 소스 hash](consumption-2026-10-15/validation.json).
+
+## 후속 실물 비구동 확인
+
+[Pi 실제 영상 shadow 소비 비교](2026-10-15-shadow-consumption-live.md)에서 48개 관측을 검사했다. fresh 소비 21/24, 기본 8/24이며 측정 통과 후 100ms 초과한 2개를 소비 시 차단했다. 저장 장벽은 모두 250ms 이내다. 실제 저장 실패·지연 중단의 발생 증거와 물리 시계 교정은 아직 없다.

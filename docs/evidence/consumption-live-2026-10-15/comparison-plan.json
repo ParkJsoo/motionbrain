@@ -1,0 +1,12 @@
+{
+  "freshOrder": [
+    true,
+    false,
+    false,
+    true
+  ],
+  "samplesPerRun": 12,
+  "sourceAgeLimitMs": 100,
+  "maxPersistenceMs": 250,
+  "retryFailedRuns": false
+}
