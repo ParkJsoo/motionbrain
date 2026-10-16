@@ -138,3 +138,44 @@ missed; `overallPassed=false` additionally retains the unverified optical timing
 limits. Controller outputs remained off and no action record was created. Actual
 learning-eligible action data remains **zero**. Raw scene images stay outside Git.
 The run ended at the original sample limit; there was no further capture or tuning.
+
+## Optional callback and format diagnostics
+
+New wrapper runs require instrumentation version 1; immutable legacy captures remain
+readable without those diagnostics. The helper's `--describe-capabilities` is a
+non-capturing compatibility check. Session metadata records the pre-start preset,
+output settings and active format. Each frame binds the actual settings, active and
+sample formats, delivered pixel format, orientation and device-reported frame-duration
+values with a SHA-256 hash; a configuration change aborts the run. Unset device
+CMTime duration values remain raw diagnostics and never establish an observed FPS.
+
+Up to 30 warmup callbacks and 64 dropped-sample records are retained, with an explicit
+truncation count. Missing warmup timing or dropped-sample reasons remain unknown.
+Terminal receipts record callback return-preparation timestamps after persistence
+and output flushing, and lifecycle timestamps through delegate-queue draining.
+A return-preparation timestamp is sampled **before** callback return; it cannot prove
+actual dispatch readiness or isolate camera ISP, transport and upstream queue delay.
+These diagnostics do not change the fixed acceptance criteria or establish exposure time.
+
+## Frozen offline object-detector replay
+
+```sh
+python3 tools/evaluate_mac_camera_detection.py \
+  --capture-dir datasets/mac_camera/<existing-complete-run> \
+  --model .local/models/yolov5s.onnx --labels config/coco80.labels \
+  --output .local/detector-evaluation/<new-run>
+```
+
+The replay validates all original evidence before freezing model, label, implementation
+and input hashes. A timing-only failure is allowed for offline analysis and remains
+recorded. It executes one CPU worker with a 60-second deadline and 2-second termination
+grace, one warmup on frame zero and exactly 21 evaluations. Settings are fixed to
+YOLOv5s ONNX, input 640, cup only, confidence 0.20, NMS 0.45, largest target, no aliases.
+OpenCV parallel regions are disabled and its effective thread setting must report one.
+BGRA is converted to BGR and lossless PNG for the existing detector entry point.
+No capture, action, training, retry or parameter search is performed.
+
+Outputs distinguish input preparation, detector-call time and total offline processing.
+Detection presence, confidence and boxes are not accuracy: there are no manually
+annotated ground-truth boxes or independent test scenes. Replay timing is not live
+capture-to-detection latency. All learning/control eligibility fields remain false.

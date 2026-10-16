@@ -16,6 +16,8 @@ import subprocess
 import time
 import uuid
 
+from learning import mac_camera_instrumentation as instrumentation
+
 POLICY = {
     'maxSourceAgeMs': 100, 'maxAnchorAgeMs': 15000, 'maxPersistenceMs': 250,
     'referenceFrames': 1, 'evaluationFrames': 20, 'expectedFrames': 21,
@@ -77,10 +79,10 @@ def _read_json(root, name):
     return value
 
 
-def create_plan(device_id, view_id, session_id=None, *, helper_sha256=None):
+def create_plan(device_id, view_id, session_id=None, *, helper_sha256=None, required_instrumentation_version=None):
     if not isinstance(device_id, str) or not device_id.strip():
         raise ValueError('explicit_device_unique_id_required')
-    return {
+    plan = {
         'schemaVersion': 'motionbrain.mac_camera_plan.v1',
         'sessionId': _identifier(session_id or uuid.uuid4().hex),
         'viewConfigurationId': _identifier(view_id), 'deviceUniqueId': device_id,
@@ -95,6 +97,11 @@ def create_plan(device_id, view_id, session_id=None, *, helper_sha256=None):
         'captureHostBoundsCalibrated': False, 'controlEligible': False,
         'trainingEligible': False, 'physicalLearningEligibleRows': 0,
     }
+    if required_instrumentation_version is not None:
+        if type(required_instrumentation_version) is not int or required_instrumentation_version != 1:
+            raise ValueError('unsupported_instrumentation_version')
+        plan['requiredInstrumentationVersion'] = required_instrumentation_version
+    return plan
 
 
 def _identity(record, plan):
@@ -173,6 +180,7 @@ def evaluate_capture(directory):
                 or any(not isinstance(r, dict) or type(r.get('frameIndex')) is not int
                        or r['frameIndex'] != i for i, r in enumerate(receipts))):
             raise ValueError('terminal_receipt_index_invalid')
+        instrument_state = instrumentation.begin(plan, session, terminal)
         original_files = {p.name for p in root.glob('frame-*')}
         expected_files = {f'frame-{i:04d}.{extension}' for i in range(count) for extension in ('json', 'bgra')}
         if original_files != expected_files:
@@ -258,6 +266,7 @@ def evaluate_capture(directory):
                     or (last_converted is not None and converted <= last_converted)):
                 raise ValueError(f'converted_pts_invalid:{i}')
             last_converted = converted
+            instrumentation.check_frame(instrument_state, frame, receipt)
             if i == 0:
                 reference_pts = converted
             row = {'frameIndex': i, 'imageSha256': digest,
@@ -277,6 +286,7 @@ def evaluate_capture(directory):
         if result['diagnosticPassingEvaluationFrames'] < POLICY['minimumDiagnosticPassingEvaluationFrames']:
             issues.append('insufficient_pts_diagnostic_timing_passes')
         result['captureProcessingPassed'] = not issues and count == POLICY['expectedFrames']
+        result['instrumentation'] = instrumentation.summary(instrument_state)
         result['nativeStatus'] = terminal.get('status')
         result['droppedFrames'] = terminal.get('droppedFrames')
         result['warmupFrames'] = terminal.get('warmupFrames')
@@ -291,7 +301,8 @@ def run_probe(helper, output, device_id, view_id, *, session_id=None):
     if not helper.is_file() or not os.access(helper, os.X_OK):
         raise ValueError('executable_capture_helper_required')
     plan = create_plan(device_id, view_id, session_id,
-                       helper_sha256=hashlib.sha256(helper.read_bytes()).hexdigest())
+                       helper_sha256=hashlib.sha256(helper.read_bytes()).hexdigest(),
+                       required_instrumentation_version=1)
     output = Path(output).absolute()
     output.mkdir(parents=True, exist_ok=False)
     _write_new(output / 'plan.json', _json_bytes(plan))
