@@ -41,8 +41,14 @@ class OfflineDetectionTest(unittest.TestCase):
         self.labels = Path(self.tmp.name)/'labels.txt'
         self.labels.write_text('person\ncup\n')
         self.output = Path(self.tmp.name)/'evaluation'
-        threads = cv2.getNumThreads()
-        self.addCleanup(cv2.setNumThreads, threads)
+        # These are fake-detector contract tests, not measurements of the host's
+        # OpenCV parallel backend. The frozen Mac runtime guard is tested below.
+        set_threads = patch('cv2.setNumThreads')
+        get_threads = patch('cv2.getNumThreads', return_value=1)
+        self.set_threads = set_threads.start()
+        self.get_threads = get_threads.start()
+        self.addCleanup(set_threads.stop)
+        self.addCleanup(get_threads.stop)
 
     save_frame = camera_fixture.CameraProbeTest.save_frame
     save_terminal = camera_fixture.CameraProbeTest.save_terminal
@@ -100,6 +106,7 @@ class OfflineDetectionTest(unittest.TestCase):
         self.setup_worker()
         report, fake = self.evaluate_worker()
         self.assertEqual(len(fake.calls), 22)
+        self.set_threads.assert_called_once_with(0)
         self.assertEqual(report['evaluationFrames'], 21)
         self.assertEqual(report['warmupFrames'], 1)
         self.assertEqual(report['detectedFrames'], 21)
@@ -129,6 +136,20 @@ class OfflineDetectionTest(unittest.TestCase):
         self.assertTrue(all(row['target'] is None for row in report['frames']))
         self.assertEqual(report['status'], 'completed')
         self.assertFalse(report['accuracyAvailable'])
+
+    def test_unsupported_thread_report_is_rejected_before_model_load(self):
+        self.setup_worker()
+        for reported_threads in (0, 2):
+            with self.subTest(reported_threads=reported_threads):
+                self.get_threads.return_value = reported_threads
+                self.set_threads.reset_mock()
+                with patch('learning.mac_camera_detection.OpenCvDnnObjectDetector.from_model') as load:
+                    with self.assertRaisesRegex(ValueError, 'opencv_sequential_processing_unavailable'):
+                        worker(self.output)
+                self.set_threads.assert_called_once_with(0)
+                load.assert_not_called()
+                self.assertFalse((self.output/'worker-result.json').exists())
+                self.assertFalse(list(self.output.glob('detection-*.json')))
 
     def test_wrong_or_ambiguous_labels_are_rejected(self):
         self.setup_worker()
