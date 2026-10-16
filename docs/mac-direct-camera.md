@@ -1,0 +1,112 @@
+# Mac direct-camera commissioning
+
+`tools/probe_mac_camera.py` runs one finite AVFoundation acquisition and audits the
+exact delivered image pixels and native processing results. It does not call a
+controller, start a service, generate action transitions, or train a model.
+The macOS helper requires macOS 14 or later and an explicitly selected Continuity
+Camera; it never falls back to another camera. Python audit is platform independent.
+
+## Build and run
+
+Build with a matching Xcode compiler and SDK. The embedded Info.plist declares the
+camera permission purpose and opts into Continuity Camera discovery. Output binaries
+and camera data belong in Git-excluded paths.
+
+```sh
+mkdir -p .local/bin
+bash tools/macos/build_camera_probe.sh .local/bin/mac-camera-probe
+python3 tools/probe_mac_camera.py list --helper .local/bin/mac-camera-probe
+python3 tools/probe_mac_camera.py capture \
+  --helper .local/bin/mac-camera-probe \
+  --device-id '<explicit Continuity Camera unique ID>' \
+  --view-id '<new stable mount and scene configuration ID>' \
+  --output datasets/mac_camera/<new-run>
+python3 tools/probe_mac_camera.py audit datasets/mac_camera/<new-run>
+```
+
+Run capture through the Python wrapper: native AVFoundation and filesystem calls
+can block, so the wrapper supplies the independent process deadline. A fresh output
+directory is mandatory; there is no resume, overwrite, automatic retry, or camera
+fallback. A new command is a new experiment and requires a separately justified
+budget; a failed run must not be silently replaced.
+
+The iPhone must be locked, stably mounted and trusted by the Mac for USB use.
+A cable connection alone is not evidence of the actual video transport: raw
+AVFoundation `transportType` is recorded, and `transportVerifiedUSB` stays false.
+See [Apple's Continuity Camera requirements](https://support.apple.com/en-us/102546).
+
+## Fixed acquisition contract
+
+- One process, startup at most 30 seconds; fixed warmup ends after 1 second or
+  30 callbacks, whichever occurs first.
+- One reference frame and 20 evaluation frames; measurement at most 10 seconds,
+  process at most 45 seconds, followed by at most 2 seconds termination grace.
+- Serial callbacks, late video frames discarded and counted. Requested output is
+  640×480 BGRA; actual dimensions, row layout, rotation and mirroring are recorded.
+- Raw tightly packed BGRA pixels are copied without row padding. This is the
+  delivered AVFoundation image, not a sensor RAW or pre-transport image.
+- Native processing computes the exact weighted mean luma
+  `(77*R + 150*G + 29*B)/256`. Audit recomputes it from the preserved bytes.
+  This is image processing, not semantic detection, tracking or learned inference.
+- Raw image and frame metadata are exclusively created, fsynced, read back, and
+  the directory is fsynced. A separate terminal receipt binds both SHA-256 hashes
+  and records the complete transaction time. The 250 ms bound applies to this
+  transaction, not to the later terminal receipt, execution log or offline audit.
+- Storage failure or duration over 250 ms, invalid/duplicate/regressing PTS,
+  device loss, changed dimensions/rotation/mirroring, or deadline ends the run.
+  Partial files remain available for audit.
+
+The frame-zero reference is a temporal diagnostic reference. It is **not** the
+semantic object anchor required by the existing ESP32 observation pipeline.
+Physical mount stability and scene changes cannot be proved by these metadata.
+A moved camera or changed scene needs a new view ID and session; old calibration,
+anchors and action-training groups must not be reused.
+
+## Timestamp and result meaning
+
+Every image has a unique session/sequence identity, original rational CMTime PTS
+(value, timescale, flags and epoch), converted host PTS, callback arrival, processing
+completion and storage timing. All live timings use the CoreMedia host clock.
+AVCaptureSession's synchronization clock is used for PTS conversion with
+`CMSyncConvertTime`; Python monotonic time is used only for subprocess supervision.
+See Apple's [synchronizationClock](https://developer.apple.com/documentation/avfoundation/avcapturesession/synchronizationclock)
+and [CMSyncConvertTime](https://developer.apple.com/documentation/coremedia/cmsyncconverttime(_:from:to:)) contracts.
+
+`captureProcessingPassed` requires all 21 images to pass integrity and storage
+checks, all 20 evaluation images to complete, and at least 16 to have PTS-to-processing
+diagnostics within 100 ms and reference-PTS age within 15 seconds. This small sample
+is a commissioning smoke test, not a statistical reliability claim.
+
+Converted presentation timestamps and callback arrival do not establish optical
+exposure time or its error bound. Therefore the real image-age ≤100 ms and anchor-age
+≤15 seconds gates remain `unverified`, `overallPassed` stays false, and
+`captureHostBoundsCalibrated`, `controlEligible`, and `trainingEligible` stay false.
+Passing pixel-processing diagnostics cannot promote an observation or action dataset.
+No actual learning performance is measured by this tool.
+
+Run software regression separately from physical acquisition:
+
+```sh
+python3 -m unittest discover -s tests -p 'test_mac_camera_probe.py' -v
+```
+
+## Commissioning result (2026-10-16)
+
+The first bounded run found the intended Continuity device during preflight but
+could not obtain camera authorization within its startup budget. It exited with
+code 3 (`camera permission unavailable`) after 30.265 seconds, with **zero captured
+frames**. The full 21-image acquisition and all timing criteria remain untested on
+physical images; this is a failed commissioning attempt, not measured camera
+latency. No second live run or threshold adjustment was performed.
+
+The failed execution, frozen plan, helper hash, stderr and audit report were
+preserved locally. Independent replay rejects the incomplete evidence. Controller
+status before and after remained IDLE, all five motor outputs zero, and the bounded
+action API disabled with no action records. No actuator command, firmware upload
+or service start/restart was issued.
+
+Software validation: 669 regression tests passed, including 33 synthetic/fake-process
+camera tests; the macOS helper built successfully. Independent review found and
+resolved an audit gap that had allowed missing execution records; final review
+reported no remaining P0/P1/P2 findings. Software checks do not establish USB video
+transport, optical timing, real detection accuracy or real learning performance.

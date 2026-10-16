@@ -1,0 +1,183 @@
+// macOS-only, finite AVFoundation acquisition. No network or actuator interfaces.
+#import <Foundation/Foundation.h>
+#import <AVFoundation/AVFoundation.h>
+#import <CoreMedia/CoreMedia.h>
+#import <CommonCrypto/CommonDigest.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <math.h>
+
+static double hostNow(void) { return CMTimeGetSeconds(CMClockGetTime(CMClockGetHostTimeClock())); }
+static NSString *digest(NSData *data) {
+    unsigned char hash[CC_SHA256_DIGEST_LENGTH];
+    CC_SHA256(data.bytes, (CC_LONG)data.length, hash);
+    NSMutableString *s = [NSMutableString string];
+    for (int i=0;i<CC_SHA256_DIGEST_LENGTH;i++) [s appendFormat:@"%02x",hash[i]];
+    return s;
+}
+static NSData *json(id obj) { return [NSJSONSerialization dataWithJSONObject:obj options:NSJSONWritingSortedKeys error:nil]; }
+// Exclusive create; existing originals are never replaced. Include fsync and readback.
+static BOOL durable(NSString *path, NSData *data) {
+    if (!data) return NO;
+    int fd=open(path.fileSystemRepresentation,O_WRONLY|O_CREAT|O_EXCL,0600);
+    if(fd<0) return NO;
+    const uint8_t *p=data.bytes; size_t remaining=data.length; BOOL ok=YES;
+    while(remaining) { ssize_t n=write(fd,p,remaining); if(n<=0){ok=NO;break;} p+=n; remaining-=n; }
+    if(fsync(fd)!=0) ok=NO;
+    if(close(fd)!=0) ok=NO;
+    if(![[NSData dataWithContentsOfFile:path] isEqualToData:data]) ok=NO;
+    return ok;
+}
+static BOOL syncDirectory(NSString *dir) { int fd=open(dir.fileSystemRepresentation,O_RDONLY); if(fd<0)return NO; BOOL ok=fsync(fd)==0; close(fd);return ok; }
+static void emit(id obj) { NSData *d=json(obj); if(d){fwrite(d.bytes,1,d.length,stdout);fputc('\n',stdout);fflush(stdout);} }
+static NSArray *devices(void) {
+    return [AVCaptureDeviceDiscoverySession discoverySessionWithDeviceTypes:@[AVCaptureDeviceTypeBuiltInWideAngleCamera,AVCaptureDeviceTypeExternal,AVCaptureDeviceTypeContinuityCamera] mediaType:AVMediaTypeVideo position:AVCaptureDevicePositionUnspecified].devices;
+}
+static NSDictionary *deviceInfo(AVCaptureDevice *d) {
+    return @{@"deviceUniqueId":d.uniqueID,@"localizedName":d.localizedName,@"deviceType":d.deviceType,
+        @"isContinuityCamera":@(d.isContinuityCamera),@"transportType":@(d.transportType),
+        @"transportVerifiedUSB":@NO}; // transportType is retained, not interpreted as USB proof.
+}
+@interface Probe : NSObject <AVCaptureVideoDataOutputSampleBufferDelegate>
+@property AVCaptureSession *session;
+@property AVCaptureDevice *device;
+@property NSString *directory;
+@property NSString *sessionId;
+@property NSString *viewId;
+@property NSMutableArray *receipts;
+@property NSString *reason;
+@property double launchTime,firstCallback,measurementStart,lastHostPTS,lastCallback;
+@property CMTime lastPTS;
+@property NSUInteger warmupFrames,droppedFrames,width,height;
+@property BOOL initialMirrored;
+@property double initialRotation;
+@property BOOL finished;
+@end
+@implementation Probe
+- (void)stop:(NSString*)reason { if(!self.finished){self.reason=reason;self.finished=YES;} }
+- (void)captureOutput:(AVCaptureOutput*)output didDropSampleBuffer:(CMSampleBufferRef)buffer fromConnection:(AVCaptureConnection*)connection { self.droppedFrames++; }
+- (void)captureOutput:(AVCaptureOutput*)output didOutputSampleBuffer:(CMSampleBufferRef)sample fromConnection:(AVCaptureConnection*)connection {
+    @autoreleasepool {
+        if(self.finished)return;
+        double callback=hostNow();
+        if(callback-self.launchTime>=30 && !self.firstCallback){[self stop:@"startup_timeout"];return;}
+        if(!self.firstCallback)self.firstCallback=callback;
+        if(callback-self.firstCallback<1.0 && self.warmupFrames<30){self.warmupFrames++;return;}
+        if(!self.measurementStart)self.measurementStart=callback;
+        if(callback-self.measurementStart>=10){[self stop:@"measurement_timeout"];return;}
+        if(!self.device.connected || !self.device.isContinuityCamera){[self stop:@"device_disconnected_or_changed"];return;}
+        CMTime pts=CMSampleBufferGetPresentationTimeStamp(sample);
+        CMClockRef sourceClock=self.session.synchronizationClock;
+        if(!CMTIME_IS_NUMERIC(pts)||pts.timescale<=0||!sourceClock){[self stop:@"invalid_pts_or_clock"];return;}
+        CMTime converted=CMSyncConvertTime(pts,sourceClock,CMClockGetHostTimeClock());
+        double hostPTS=CMTimeGetSeconds(converted);
+        if(!CMTIME_IS_NUMERIC(converted)||!isfinite(hostPTS)||hostPTS>callback ||
+           (self.receipts.count && (CMTimeCompare(pts,self.lastPTS)<=0||pts.epoch!=self.lastPTS.epoch||hostPTS<=self.lastHostPTS||callback<self.lastCallback))){[self stop:@"pts_invalid_repeated_or_regressed"];return;}
+        CVPixelBufferRef pixel=CMSampleBufferGetImageBuffer(sample);
+        if(!pixel||CVPixelBufferGetPixelFormatType(pixel)!=kCVPixelFormatType_32BGRA){[self stop:@"unsupported_pixel_format"];return;}
+        size_t width=CVPixelBufferGetWidth(pixel),height=CVPixelBufferGetHeight(pixel);
+        if(width==0||height==0||width>1920||height>1080||(self.receipts.count&&(width!=self.width||height!=self.height))){[self stop:@"dimensions_invalid_or_changed"];return;}
+        self.width=width;self.height=height;
+        if(self.receipts.count && (self.initialMirrored!=connection.videoMirrored || self.initialRotation!=connection.videoRotationAngle)){
+            [self stop:@"view_transform_changed"];return;
+        }
+        self.initialMirrored=connection.videoMirrored;self.initialRotation=connection.videoRotationAngle;
+        if(CVPixelBufferLockBaseAddress(pixel,kCVPixelBufferLock_ReadOnly)!=kCVReturnSuccess){[self stop:@"pixel_lock_failed"];return;}
+        size_t stride=CVPixelBufferGetBytesPerRow(pixel);
+        uint8_t *base=CVPixelBufferGetBaseAddress(pixel);
+        if(!base||stride<width*4){CVPixelBufferUnlockBaseAddress(pixel,kCVPixelBufferLock_ReadOnly);[self stop:@"invalid_stride"];return;}
+        NSMutableData *raw=[NSMutableData dataWithLength:width*height*4];
+        uint8_t *dest=raw.mutableBytes; uint64_t sum=0;
+        for(size_t y=0;y<height;y++){
+            memcpy(dest+y*width*4,base+y*stride,width*4);
+            for(size_t x=0;x<width;x++){const uint8_t *p=dest+(y*width+x)*4;sum+=77*p[2]+150*p[1]+29*p[0];}
+        }
+        CVPixelBufferUnlockBaseAddress(pixel,kCVPixelBufferLock_ReadOnly);
+        double processed=hostNow();
+        NSUInteger index=self.receipts.count;
+        NSString *imageFile=[NSString stringWithFormat:@"frame-%04lu.bgra",(unsigned long)index];
+        NSString *metadataFile=[NSString stringWithFormat:@"frame-%04lu.json",(unsigned long)index];
+        double storageStart=hostNow();
+        NSString *imageHash=digest(raw);
+        NSDictionary *metadata=@{@"schemaVersion":@"motionbrain.mac_camera_frame.v1",@"sessionId":self.sessionId,
+            @"viewConfigurationId":self.viewId,@"deviceUniqueId":self.device.uniqueID,
+            @"sourceFrameId":[NSString stringWithFormat:@"%@:%lu",self.sessionId,(unsigned long)index],
+            @"frameIndex":@(index),@"imageFile":imageFile,@"imageSha256":imageHash,
+            @"width":@(width),@"height":@(height),@"pixelFormat":@"BGRA8",@"rowBytes":@(width*4),
+            @"pts":@{@"value":@(pts.value),@"timescale":@(pts.timescale),@"flags":@(pts.flags),@"epoch":@(pts.epoch)},
+            @"convertedHostPtsSeconds":@(hostPTS),@"callbackHostSeconds":@(callback),@"processingCompleteHostSeconds":@(processed),
+            @"storageStartedHostSeconds":@(storageStart),@"timestampSemantics":@"cmsamplebuffer_presentation_timestamp",
+            @"clockDomain":@"coremedia_host_clock",@"clockConversion":@"session_synchronization_clock_to_host_clock",
+            @"processing":@{@"method":@"bgra_luma_mean_v1",@"lumaMean":@((double)sum/(256.0*width*height)),@"pixelCount":@(width*height)},
+            @"videoMirrored":@(connection.videoMirrored),@"videoRotationAngle":@(connection.videoRotationAngle),
+            @"captureHostBoundsCalibrated":@NO,@"controlEligible":@NO,@"trainingEligible":@NO};
+        NSData *meta=json(metadata);
+        BOOL saved=durable([self.directory stringByAppendingPathComponent:imageFile],raw) &&
+            durable([self.directory stringByAppendingPathComponent:metadataFile],meta) && syncDirectory(self.directory);
+        double complete=hostNow(),ms=(complete-storageStart)*1000;
+        NSDictionary *receipt=@{@"frameIndex":@(index),@"metadataFile":metadataFile,@"metadataSha256":digest(meta),
+            @"imageFile":imageFile,@"imageSha256":imageHash,@"persistenceMs":@(ms),@"storageCompleteHostSeconds":@(complete),@"durable":@(saved)};
+        [self.receipts addObject:receipt]; emit(@{@"event":@"frame",@"receipt":receipt});
+        self.lastPTS=pts;self.lastHostPTS=hostPTS;self.lastCallback=callback;
+        if(!saved){[self stop:@"storage_failed"];return;}
+        if(ms>250){[self stop:@"storage_budget_exceeded"];return;}
+        if(complete-self.measurementStart>10){[self stop:@"measurement_timeout"];return;}
+        if(self.receipts.count==21)[self stop:@"sample_budget_complete"];
+    }
+}
+@end
+int main(int argc,const char *argv[]){@autoreleasepool{
+    if(argc==2&&!strcmp(argv[1],"--list")){
+        NSMutableArray *list=[NSMutableArray array];for(AVCaptureDevice *d in devices())[list addObject:deviceInfo(d)];
+        emit(@{@"devices":list,@"authorizationStatus":@([AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo])});return 0;
+    }
+    if(argc!=6||strcmp(argv[1],"--capture")){fprintf(stderr,"usage: --list | --capture DEVICE_ID OUTPUT_DIR SESSION_ID VIEW_ID\n");return 2;}
+    double launch=hostNow();
+    NSString *deviceId=@(argv[2]),*dir=@(argv[3]),*sessionId=@(argv[4]),*viewId=@(argv[5]);
+    if(!sessionId.length||!viewId.length||![[NSFileManager defaultManager] fileExistsAtPath:dir])return 2;
+    // A dedicated fresh directory and nonempty immutable IDs are required by the driver.
+    if([[NSFileManager defaultManager] fileExistsAtPath:[dir stringByAppendingPathComponent:@"session.json"]])return 2;
+    AVAuthorizationStatus auth=[AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo];
+    if(auth==AVAuthorizationStatusNotDetermined){
+        __block BOOL answered=NO;
+        [AVCaptureDevice requestAccessForMediaType:AVMediaTypeVideo completionHandler:^(BOOL granted){@synchronized([AVCaptureDevice class]){answered=YES;}}];
+        while(hostNow()-launch<30){BOOL ready;@synchronized([AVCaptureDevice class]){ready=answered;}if(ready)break;[[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.02]];}
+    }
+    if([AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo]!=AVAuthorizationStatusAuthorized){fprintf(stderr,"camera permission unavailable\n");return 3;}
+    AVCaptureDevice *selected=nil;for(AVCaptureDevice *d in devices())if([d.uniqueID isEqualToString:deviceId])selected=d;
+    if(!selected||!selected.isContinuityCamera){fprintf(stderr,"selected Continuity Camera unavailable; no fallback\n");return 4;}
+    Probe *probe=[Probe new];probe.directory=dir;probe.sessionId=sessionId;probe.viewId=viewId;probe.device=selected;probe.launchTime=launch;probe.receipts=[NSMutableArray array];
+    AVCaptureSession *session=[AVCaptureSession new];probe.session=session;
+    [session beginConfiguration];
+    if(![session canSetSessionPreset:AVCaptureSessionPreset640x480]){fprintf(stderr,"640x480 preset unavailable\n");return 5;}
+    session.sessionPreset=AVCaptureSessionPreset640x480;
+    NSError *error=nil;AVCaptureDeviceInput *input=[AVCaptureDeviceInput deviceInputWithDevice:selected error:&error];
+    if(!input||![session canAddInput:input]){fprintf(stderr,"cannot attach selected camera\n");return 5;}[session addInput:input];
+    AVCaptureVideoDataOutput *output=[AVCaptureVideoDataOutput new];
+    output.videoSettings=@{(id)kCVPixelBufferPixelFormatTypeKey:@(kCVPixelFormatType_32BGRA)};
+    output.alwaysDiscardsLateVideoFrames=YES;
+    dispatch_queue_t queue=dispatch_queue_create("motionbrain.camera-probe",DISPATCH_QUEUE_SERIAL);
+    [output setSampleBufferDelegate:probe queue:queue];
+    if(![session canAddOutput:output])return 5;[session addOutput:output];[session commitConfiguration];
+    NSMutableDictionary *config=[deviceInfo(selected) mutableCopy];
+    [config addEntriesFromDictionary:@{@"schemaVersion":@"motionbrain.mac_camera_session.v1",@"sessionId":sessionId,@"viewConfigurationId":viewId,
+       @"requestedPreset":@"640x480",@"requestedPixelFormat":@"BGRA8",@"processingMethod":@"bgra_luma_mean_v1",
+       @"launchHostSeconds":@(launch),@"captureHostBoundsCalibrated":@NO,@"controlEligible":@NO,@"trainingEligible":@NO}];
+    if(!durable([dir stringByAppendingPathComponent:@"session.json"],json(config))||!syncDirectory(dir))return 6;
+    [session startRunning];
+    // Main thread owns lifecycle; callbacks and deadline state are serialized on queue.
+    while(YES){
+        __block BOOL done=NO;
+        dispatch_sync(queue,^{double now=hostNow();if(now-launch>=45)[probe stop:@"overall_timeout"];else if(!probe.firstCallback&&now-launch>=30)[probe stop:@"startup_timeout"];else if(probe.measurementStart&&now-probe.measurementStart>=10)[probe stop:@"measurement_timeout"];done=probe.finished;});
+        if(done)break;
+        [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+    }
+    [session stopRunning];[output setSampleBufferDelegate:nil queue:NULL];dispatch_sync(queue,^{});
+    BOOL success=[probe.reason isEqualToString:@"sample_budget_complete"];
+    NSDictionary *terminal=@{@"schemaVersion":@"motionbrain.mac_camera_terminal.v1",@"sessionId":sessionId,@"viewConfigurationId":viewId,@"deviceUniqueId":deviceId,
+       @"status":success?@"completed":@"failed",@"reason":probe.reason?:@"unknown",@"frames":probe.receipts,
+       @"recordedFrames":@(probe.receipts.count),@"expectedFrames":@21,@"warmupFrames":@(probe.warmupFrames),@"droppedFrames":@(probe.droppedFrames),
+       @"captureHostBoundsCalibrated":@NO,@"controlEligible":@NO,@"trainingEligible":@NO};
+    if(!durable([dir stringByAppendingPathComponent:@"terminal.json"],json(terminal))||!syncDirectory(dir))return 6;
+    emit(@{@"event":@"terminal",@"status":terminal[@"status"],@"reason":terminal[@"reason"]});return success?0:1;
+}}
