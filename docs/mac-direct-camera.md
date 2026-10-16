@@ -95,9 +95,9 @@ python3 -m unittest discover -s tests -p 'test_mac_camera_probe.py' -v
 The first bounded run found the intended Continuity device during preflight but
 could not obtain camera authorization within its startup budget. It exited with
 code 3 (`camera permission unavailable`) after 30.265 seconds, with **zero captured
-frames**. The full 21-image acquisition and all timing criteria remain untested on
-physical images; this is a failed commissioning attempt, not measured camera
-latency. No second live run or threshold adjustment was performed.
+frames**. That attempt did not test the 21-image acquisition or timing criteria on
+physical images; it is a failed commissioning attempt, not measured camera
+latency. No automatic retry or threshold adjustment was performed.
 
 The failed execution, frozen plan, helper hash, stderr and audit report were
 preserved locally. Independent replay rejects the incomplete evidence. Controller
@@ -110,3 +110,31 @@ camera tests; the macOS helper built successfully. Independent review found and
 resolved an audit gap that had allowed missing execution records; final review
 reported no remaining P0/P1/P2 findings. Software checks do not establish USB video
 transport, optical timing, real detection accuracy or real learning performance.
+
+
+### Separate run after camera authorization
+
+A separately authorized new session used the same executable, processing code and
+fixed criteria. The capture process completed in 3.169 seconds: all 21 raw frames, metadata
+and native pixel measurements passed integrity replay. The actual delivered format
+was **1920×1080 BGRA**, despite the requested 640×480 session preset; no post-result
+resolution change or new capture was performed. Actual frame dimensions, rather
+than the requested preset, determine the evidence configuration.
+
+| Diagnostic | Result |
+|---|---:|
+| Evaluation frames completed | 20/20, plus one reference |
+| Evaluation PTS-to-processing ≤100 ms | **12/20; required 16/20 — failed** |
+| Evaluation PTS-to-processing min / median / max | 75.453 / 81.840 / 115.418 ms |
+| Evaluation callback-to-processing min / median / max | 0.732 / 1.995 / 2.251 ms |
+| Maximum reference-PTS age at processing | 747.274 ms |
+| Maximum raw+metadata durable transaction, all 21 frames | 12.162 ms |
+| Callback-reported dropped frames | 0 |
+
+These timing metrics use presentation timestamps, not verified optical exposure
+bounds. The reference-age diagnostic is not a validated semantic-anchor age.
+`captureProcessingPassed=false` because the fixed 16/20 diagnostic threshold was
+missed; `overallPassed=false` additionally retains the unverified optical timing
+limits. Controller outputs remained off and no action record was created. Actual
+learning-eligible action data remains **zero**. Raw scene images stay outside Git.
+The run ended at the original sample limit; there was no further capture or tuning.
