@@ -179,3 +179,42 @@ Outputs distinguish input preparation, detector-call time and total offline proc
 Detection presence, confidence and boxes are not accuracy: there are no manually
 annotated ground-truth boxes or independent test scenes. Replay timing is not live
 capture-to-detection latency. All learning/control eligibility fields remain false.
+
+## Instrumented run and offline replay (2026-10-16)
+
+The frozen offline replay used the **previous view's** 21 intact frames. All 21
+produced valid detector reports within the single 60-second budget (8.537 seconds
+elapsed), with **0/21 cup detections**. Detector-call time was
+266.429 / 268.809 / 275.091 ms (min / median / max); input preparation median was
+50.384 ms and total offline processing median was 320.146 ms. The detector emitted
+a `toilet` candidate on each image; this is a model output, not a ground-truth label.
+No accuracy or live latency claim follows from these unannotated frames. Removing
+input conversion alone cannot make this fixed CPU detector satisfy 100 ms.
+
+One separately identified view then captured 21 frames after the robot base, joint
+pose and camera mount changed. The original acquisition budget and thresholds were
+retained. Acquisition completed in 2.739 seconds; all 21 image/metadata/luma,
+configuration and durable-write checks passed. **12/20** evaluation PTS diagnostics
+met 100 ms, below the required 16/20: the run failed and ended without a retry.
+
+| New-view diagnostic | Result |
+|---|---:|
+| Delivered format | 1920×1080 BGRA; requested preset 640×480 |
+| Device active format | 1920×1080 `420v`, reported duration 1/30 s |
+| Evaluation PTS-to-processing min / median / max | 66.481 / 79.440 / 115.662 ms |
+| Evaluation callback-to-processing median | 1.965 ms |
+| Evaluation callback-to-return-preparation median | 12.130 ms |
+| Maximum reference-PTS age at processing | 734.597 ms |
+| Maximum durable transaction, all 21 frames | 18.910 ms |
+| Reported dropped samples | 0 |
+
+All eight failed evaluation frames were already more than 100 ms past PTS at
+callback arrival. Warmup callbacks also showed large PTS-to-arrival delays before
+any image persistence, supporting an upstream-delay explanation without identifying
+an ISP, transport or OS queue as the cause. No settings or warmup budget were tuned.
+The new scene's semantic detector performance has **not** been evaluated.
+
+Both experiments preserved optical timing as unverified, overall/control/training
+eligibility as false, and physical learning-eligible action rows as zero. Controller
+status before and after remained IDLE, all motor outputs zero, action API disabled
+and action-record count zero. Raw frames, frozen plans and analysis stay outside Git.
