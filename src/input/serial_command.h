@@ -2,6 +2,7 @@
 #define SERIAL_COMMAND_H
 
 #include <Arduino.h>
+#include "m4_serial_sample.h"
 
 // 전방 선언 (순환 참조 방지)
 class SystemStateManager;
@@ -90,6 +91,8 @@ public:
   void clearCommand();
 
 private:
+  M4SampleFrame m4SampleFrame_;
+  void sendM4Sample(const char* nonce);
   // 시리얼 입력 버퍼
   // Long enough for operational commands such as `wifi token <64 chars>`.
   static const size_t BUFFER_SIZE = 128;  // 최대 명령어 길이

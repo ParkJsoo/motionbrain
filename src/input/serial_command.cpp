@@ -2,6 +2,7 @@
 #include "debug/debug_log.h"
 #include "bridge/stm32_bridge.h"
 #include "control/angle_controller.h"
+#include "control/bounded_action_service.h"
 #include "control/command.h"
 #include "control/command_bus.h"
 #include "control/dispatcher.h"
@@ -276,6 +277,19 @@ void SerialCommand::processSerialInput() {
   // 시리얼 데이터가 있는지 확인
   while (Serial.available() > 0) {
     char c = Serial.read();
+    if (m4SampleFrame_.consume(c)) {
+      // Discard any old partial command when RS arrives. A diagnostic frame,
+      // valid or invalid, must never complete a legacy ARM/motor command.
+      bufferIndex_ = 0;
+      commandBuffer_[0] = '\0';
+      overflowDropping_ = false;
+      if (m4SampleFrame_.ready()) {
+        sendM4Sample(m4SampleFrame_.nonce());
+        m4SampleFrame_.reset();
+        return;  // At most one read-only reply per loop; no stream mode.
+      }
+      continue;
+    }
     
     // 줄바꿈 또는 캐리지 리턴이면 명령어 완성 (또는 오버플로우 드롭 종료)
     if (c == '\n' || c == '\r') {
@@ -315,6 +329,28 @@ void SerialCommand::processSerialInput() {
       commandBuffer_[0] = '\0';
     }
   }
+}
+
+void SerialCommand::sendM4Sample(const char* nonce) {
+  const auto* core = BoundedActions::executor();
+  if (!nonce || !core) return;
+  uint8_t flags = 0;
+  if (shoulderAngleSensor.isI2cConnected()) flags |= 1;
+  if (shoulderAngleSensor.isReadyForMotion()) flags |= 2;
+  if (systemState_ && systemState_->getState() == SystemState::IDLE) flags |= 4;
+  bool off = motorControl_ != nullptr;
+  if (motorControl_) {
+    for (uint8_t i = 1; i <= MotorControl::NUM_MOTORS; ++i) {
+      if (motorControl_->isEnabled(i) || motorControl_->getSpeed(i) != 0) off = false;
+    }
+  }
+  if (off) flags |= 8;
+  if (!shoulderAngleController.isActive() && !BoundedActions::active()) flags |= 16;
+  char response[80];
+  const int n = formatM4Sample(response, sizeof(response), nonce, core->bootId(),
+                              shoulderAngleSensor.getI2cRawAngle(),
+                              shoulderAngleSensor.getI2cLastUpdateMs(), millis(), flags);
+  if (n) Serial.write(reinterpret_cast<const uint8_t*>(response), static_cast<size_t>(n));
 }
 
 /**
