@@ -1,39 +1,25 @@
-# M4 physical `ros2_control` one-shot evidence
+# M4 Physical ROS2 Single-Target Validation — 2026-07-13
 
-As of 2026-07-13, the operator-confirmed physical-write path was validated on the M4 shoulder axis only.
+[Korean](2026-07-13-m4-physical-ros2-control.md) · [Interface](../../ros2_ws/src/motionbrain_hardware_interface/README.en.md)
 
-## Contract
+An operator-confirmed physical write path was validated on the M4 shoulder only.
 
 ```text
-ForwardCommandController -> m4_proposal hardware write
-  -> typed non-forwarded proposal -> 20-second one-shot M4WriteConfirm
-  -> live status revalidation -> authenticated /shoulder
-  -> ESP32 Dispatcher / SafetyGate -> AS5600 closed loop
+ForwardCommandController → m4_proposal → typed proposal
+  → one confirmation within 20 seconds → live-state recheck → authenticated /shoulder
+  → ESP32 Dispatcher / SafetyGate → AS5600 target control
 ```
 
-A proposal does not forward a motor command. The executor revalidates ARMED state,
-sensor freshness, target range, and proposal age; each proposal can be consumed once.
-Direct `http`/`physical` transports and full-arm writes remain disabled.
+Twenty seconds is the proposal-confirmation window, not motion duration. Proposals alone send no command. The executor rechecks ARMED state, sensor freshness, target bounds and proposal age, consuming each proposal only once.
 
-## Physical results
-
-| Check | Result |
+| Test | Result |
 | --- | --- |
-| Full physical write | 248.20 deg start, 250.00 deg target, 249.96 deg final, -0.04 deg error, `TARGET_REACHED`, correction 0 |
-| Non-M4 outputs | M1/M2/M3/M5 commands remained zero |
-| Replay | `proposal_already_consumed`, `forwarded=false` |
-| IDLE smoke | `state_not_armed`, `forwarded=false` |
-| systemd restart | Exactly one executor and `/motionbrain/m4_write_confirm` restored; proposal controller requires an explicit launch |
-| Regression tests | Local Python 185/185; Pi ROS2 72 tests/0 failures |
+| Physical single target | Start248.20°, target250.00°, final249.96°, error−0.04°, `TARGET_REACHED`, correction0 |
+| Other axes | M1/M2/M3/M5 commands remained0 |
+| Duplicate confirmation | `proposal_already_consumed`, `forwarded=false` |
+| IDLE request | `state_not_armed`, `forwarded=false` |
+| Executor restart | One executor and confirmation service recovered; proposal controller launched separately |
 
-An executor-direct supporting check moved from 249.96 deg toward 248.00 deg and ended
-at 248.20 deg (+0.20 deg, correction 2).
+An auxiliary executor-direct test reached 248.20° for a 248.00° target (+0.20°, two corrections). Software validation at that time passed local Python185/185 and Pi ROS2 72 tests with zero failures.
 
-## Claim boundary
-
-This is evidence of a real M4 single-target hardware-write transaction.
-`ForwardCommandController` deliberately avoids the stream of proposals that interpolated
-trajectory commands would create. It is not physical trajectory tracking, full-arm
-actuation, or unattended execution. The historical 230-245 deg interval remains the
-strongest matrix-validated range. The write guard uses live soft limits, but the provisional
-122.08-301.02 deg interval is posture-conditioned and not equivalently validated end to end.
+This is a `ForwardCommandController` single-target result, not trajectory tracking, whole-arm physical writes or unattended execution. It is a separate point test from the 230–245° repetition matrix. The 122.08–301.02° soft setting was pose-conditional at that time, not a validated whole range.

@@ -1,9 +1,0 @@
-{
-  "label": "boot-fix-live-2m",
-  "duration": 120,
-  "requests": 104,
-  "success": 104,
-  "failures": 0,
-  "captures": 80,
-  "capture_success": 80
-}

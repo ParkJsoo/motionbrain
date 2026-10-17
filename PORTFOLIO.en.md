@@ -1,254 +1,52 @@
-# MotionBrain Portfolio One-Pager
+# MotionBrain Portfolio
 
-[Korean README](README.md) | [English README](README.en.md) | [Korean Portfolio](PORTFOLIO.md)
+[한국어](PORTFOLIO.md) · [Project and demo](README.en.md)
 
-## Summary
+An ESP32/STM32/camera/Raspberry Pi/ROS2 integration project that distinguishes sending a command from physically reaching a target. The strongest physical results are M4 single-axis feedback control and system integration. Learned manipulation remains at the data-validation and offline-baseline stage.
 
-MotionBrain is an embedded robotics system project that integrates an ESP32 motion controller, STM32 sensor/teleop layer, ESP32-CAM vision input, and a Raspberry Pi + ROS2 host bridge into one robotic-arm system.
+## Problem and design
 
-The project is designed to demonstrate reliable embedded control, not just motor movement. The main engineering signal is the separation between low-level motion execution, safety state, structured sensor feedback, host-side perception, and ROS2 orchestration.
+The low-cost DC arm cannot measure all joint positions or grasp force. Time-based actuation varies with load, inertia and friction. An AS5600 was added to the M4 shoulder; ESP32 handles outputs, STM32 handles sensing/teleoperation, and Pi handles perception and ROS2.
 
-The physical teleoperation demo media snapshot is tagged as `demo-ready-20260608`.
+- **Shared command boundary:** serial and HTTP inputs use `Dispatcher` and `SafetyGate` with state, sensor-fault and deadman checks. Web manual commands expire; the control loop stops outputs when it detects expiry. A physical stop-latency bound including blocking communication is unverified.
+- **Measured versus estimated state:** M4 measured angles are distinguished from open-loop estimates for other joints in ROS2.
+- **Confirmed ROS2 writes:** `ros2_control` proposals are not forwarded automatically. A separate executor sends one M4 target after operator confirmation within the default 20-second validity window. This is not a 20-second motion duration.
 
-## Screening Signals
+Implementation: [controller](src/control/), [ROS2 hardware interface](ros2_ws/src/motionbrain_hardware_interface/README.en.md), [command journal](ros2_ws/src/motionbrain_ros_bridge/motionbrain_ros_bridge/m4_command_journal.py).
 
-- Real hardware: ESP32 motion controller, STM32 wired teleop layer, ESP32-CAM,
-  and Raspberry Pi were integrated in an actual networked robot stack.
-- Safety boundary: state changes and physical output must pass token checks,
-  state-machine checks, `SafetyGate`, deadman handling, and freshness timeouts.
-- ROS2 systems work: typed messages, ROS2 bridge, C++ control guard, mission
-  supervisor, URDF/RViz, `ros2_control` dry-run/read-only modes, and an
-  operator-confirmed physical-write path for M4 only.
-- Operations readiness: Pi systemd services, SSH/DNS recovery notes, health
-  checks, runtime evidence, `ros2_control` evidence, and CI validation are
-  documented.
-- Honest boundaries: the project separates the bounded M4 single-axis
-  closed-loop result from full-arm position control and does not overclaim
-  arbitrary-object recognition or autonomous grasping.
+## Case 1 — Correcting false M4 target success
 
-## Machine Learning Scope
+The initial controller did not recheck settled error after cutting output: a 234° request stopped at 235.37° but returned success. Settled-error validation, bounded correction and `TARGET_MISSED` were added.
 
-- Implemented source-frame/action-output validation and session-grouped dataset splits.
-- Implemented Mac CPU training/evaluation CLIs for NumPy ridge and no-change baselines.
-- Synthetic smoke tests pass, but there are zero eligible real action samples. Real-data learning and improved manipulation remain unproven.
-- The fixed-budget observation trial stopped on persistence latency after 1 success in 7 requests, failing the usability gate.
-- On 2026-10-17, iPhone-observed manual commands achieved a lipbalm grasp/lift and two additional grasp/lift/place cycles, the first with a close correction. The 21-step, 37-image archive is raw demonstration evidence, not eligible training data.
+At 23.10g, no-load inertia compensation and PWM ramp timing caused a short upward move to fail. Upward correction duration increased from 250 to 500ms; the internal success window tightened to ±0.40° to allow for a sensor step after stopping. The external ±0.50° acceptance criterion remained unchanged.
 
-[Current integration status (Korean)](docs/evidence/2026-10-17-integration-status.md) · [Learning contract and reproduction (Korean)](docs/evidence/2026-10-15-offline-visual-dynamics.md) · [Observation results (Korean)](docs/evidence/2026-10-15-bounded-observation.md)
+| Final regression condition (2026-06-28) | Result | Mean / maximum absolute error |
+| --- | ---: | ---: |
+| No added load | 11/11 | 0.132° / 0.36° |
+| 23.10g | 11/11 | 0.155° / 0.31° |
 
-## Fast Evidence
+These results use the same fixed mount and a 230–245° validation range. They do not establish whole-arm accuracy or performance under other loads/battery conditions. [Conditions, failures and final results](docs/evidence/2026-06-28-m4-shoulder-closed-loop.en.md)
 
-- [Claim-to-evidence matrix (Korean)](docs/evidence/claim-to-evidence-matrix.md):
-  a review guardrail that maps claims to evidence, limitations, and non-claims
-- [Physical teleoperation GIF](https://raw.githubusercontent.com/ParkJsoo/motionbrain/demo-ready-20260608/docs/assets/demo/motionbrain-demo.gif)
-  / [MP4](https://raw.githubusercontent.com/ParkJsoo/motionbrain/demo-ready-20260608/docs/assets/demo/motionbrain-demo.mp4)
-- [`ros2_control` dry-run evidence](docs/evidence/2026-06-16-ros2-control-open-loop.en.md):
-  controller manager, hardware-interface plugin, command/state interfaces,
-  `FollowJointTrajectory`, and `/joint_states` dry-run state mirror
-- [M4 physical `ros2_control` evidence](docs/evidence/2026-07-13-m4-physical-ros2-control.en.md):
-  20-second one-shot confirmation, convergence, replay rejection, and systemd restart
-- [Pi/systemd/ROS2 health evidence](docs/evidence/2026-06-16-pi-system-health.en.md):
-  dashboard, perception, ROS2 bridge services, typed topics, service, and action
-- [Pi runtime measurements](docs/evidence/2026-06-17-runtime-measurements.en.md):
-  HTTP endpoints returned `200`, 15 s bounded ROS2 topic acquisition passed,
-  `/joint_states` was about 4.9-5.0 Hz, and the capture was read-only/no actuation
-- [M4 shoulder closed-loop evidence](docs/evidence/2026-06-28-m4-shoulder-closed-loop.en.md):
-  AS5600 absolute I2C feedback, sensor-fault stops, and bounded target convergence
+A separate ROS2 physical-path test moved from 248.20° toward 250.00° and ended at 249.96°. Duplicate confirmation and disarmed requests were not forwarded. This is single-axis target validation, not trajectory tracking. [2026-07-13 results](docs/evidence/2026-07-13-m4-physical-ros2-control.en.md)
 
-## Engineering Problem
+## Case 2 — Status delays caused by an empty HTTP connection
 
-The arm is a low-cost 5-axis DC motor platform that still lacks force feedback
-and reliable full-arm absolute joint pose. On 2026-06-28, the M4 shoulder alone
-was validated with AS5600 absolute feedback and closed-loop targets over a
-narrow trial range. That result does not justify a full-arm position-control or
-autonomous-grasping claim.
+Status checks intermittently failed around actuation. Instead of replaying uncertain commands, an empty TCP connection and queued request reproduced one failure path. Arduino WebServer's 5000ms initial-byte wait was identified; a project-local adapter now releases only initial connections with no readable data after 100ms.
 
-MotionBrain therefore uses a constrained architecture:
+The same queued GET changed from a reset after 1198.4ms to a successful 39.4ms response. A later status request still timed out at about 830ms on another path, so this is not a complete communication fix. [Reproduction, correction and residual failure (Korean)](docs/evidence/2026-10-17-idle-http-client.md)
 
-- The ESP32 owns motor output and the safety boundary.
-- The STM32 turns sensors and wired teleop inputs into structured UART frames.
-- Serial, HTTP, dashboard, and ROS2-facing commands share the same command semantics.
-- Perception runs on the Raspberry Pi; offline dynamics training runs on a Mac CPU.
-- Physical motion remains safety-gated and operator-confirmed.
+## Observed grasping and learning status
 
-## My Role
+On 2026-10-17, an external observer selected manual commands from iPhone views to grasp and lift lipbalm. Two additional grasp/lift/place cycles followed; the first required one extra close correction. Twenty-one command/output steps and 37 images were preserved privately. [Demonstration and limits (Korean)](docs/evidence/2026-10-17-lipbalm-repetitions.md)
 
-I designed and implemented:
+Perception runs pretrained YOLOv5s through OpenCV DNN/ONNX; no custom detector-training result is claimed. A NumPy ridge action-outcome model, no-change baseline, session-grouped splits, train-only normalization and separate training/evaluation CLIs are implemented. **Eligible real training data remains zero.**
 
-- ESP32 firmware for 5-axis DC motor control
-- `BOOT -> IDLE -> ARMED -> FAULT` safety state machine
-- Shared serial/HTTP command dispatch
-- Token-gated HTTP state-changing commands
-- STM32 `MPU-6050 + UART` sensor/teleop firmware and bench-validated HC-SR04 path
-- Deadman handling, frame freshness timeout, and sensor fault latching
-- M4 shoulder AS5600 I2C absolute-angle feedback, bounded closed-loop targets,
-  and HTTP/dashboard/ROS2 status exposure
-- ESP32-CAM `/capture`-first firmware and `/stream` disablement for stability
-- Raspberry Pi dashboard and perception service
-- OpenCV-based red target detection and target overlay
-- Safety-gated bounded base-nudge control surface
-- ROS2 Jazzy bridge, typed messages, C++ control guard, and mission supervisor
-- `ros2_control` dry-run mock demo and safe open-loop `SystemInterface` scaffold
-- M4 proposal hardware interface, operator-confirm executor, and systemd contract
-- Raspberry Pi systemd deployment and health checks
-- GitHub Actions quality gates for PlatformIO, Python tests, and ROS2 build/test
+Action-linked observations meeting 100ms image age, 15-second anchor age and 250ms durable storage are still missing. A no-actuation observation trial completed only one of seven executed requests before stopping on persistence latency. Both Mac camera runs achieved 12/20 PTS diagnostics against a required 16/20. Grasp demonstrations are neither synchronized training transitions nor learned-policy results. [Data contracts, reproduction and limits (Korean)](docs/data-pipeline.md)
 
-## Operator Screens
+## Validation and remaining work
 
-The final physical teleoperation video is published as the README GIF/MP4. The images below are separate static evidence from the controller, dashboard, and RViz path, showing that MotionBrain includes operator-facing surfaces, observability, and ROS2 visualization rather than only firmware code.
+Software checks run in [PlatformIO/Python](https://github.com/ParkJsoo/motionbrain/actions/workflows/platformio.yml) and [ROS2](https://github.com/ParkJsoo/motionbrain/actions/workflows/ros2.yml) CI. Hardware results are limited to the dated conditions above. Raw photographs and device-specific operations records are not part of the public documentation.
 
-![MotionBrain Control web console](docs/assets/motionbrain-control-stream.png)
-
-The ESP32-hosted control console provides direct capture / Pi tracked-frame camera feedback, token-gated state-changing commands, manual motor/joint control, and current system state in one local surface.
-
-![MotionBrain Pi dashboard](docs/assets/motionbrain-dashboard.png)
-
-The Pi dashboard observes status, safety, teleop, events, camera frames, and detection/alignment results. Physical action buttons remain constrained by token and safety-state checks.
-
-![MotionBrain RViz RobotModel](docs/assets/motionbrain-rviz-robotmodel.png)
-
-The RViz view shows the visualization path for live ROS2 topics mirrored from the Pi dashboard, plus `RobotModel` and TF.
-
-## System Architecture
-
-```text
-STM32 Sensor / Teleop
-  -> UART sensor and teleop frames
-  -> ESP32 Motion Controller
-  -> Dispatcher + SafetyGate
-  -> RobotArm / MotionSequence
-  -> TB6612FNG motor drivers
-  -> 5-axis DC motor arm
-
-ESP32-CAM
-  -> HTTP capture
-  -> direct stream disabled with HTTP 410
-  -> Raspberry Pi perception service
-  -> dashboard target overlay
-  -> ROS2 /camera/detection(_typed)
-
-Raspberry Pi ROS2 Host
-  -> motionbrain_msgs
-  -> motionbrain_ros_bridge
-  -> motionbrain_control C++ guard
-  -> motionbrain_mission supervisor
-  -> typed status, detection, kinematics, guard, and mission topics
-```
-
-## Technical Highlights
-
-### Safety-Gated Motion
-
-Motion commands must pass state checks, fault checks, sensor checks, and token checks before reaching motor output. Browser manual commands use a controller-side lease so missed refreshes force a hard stop.
-
-### Multi-MCU Decomposition
-
-The ESP32 is the motion and safety controller. The STM32 is the sensor and wired teleop layer. This keeps manual input, sensor feedback, and host commands behind one embedded safety boundary.
-
-### Vision Without Bypassing Safety
-
-The ESP32-CAM acts as a camera node. The Raspberry Pi runs detection and overlay logic. The dashboard and ROS2 bridge consume the same selected-target payload instead of each opening competing camera loops.
-
-### ROS2 Host Boundary
-
-ROS2 does not replace the embedded controller. The M4 physical path is `ForwardCommandController -> non-forwarded proposal -> 20-second one-shot operator confirmation -> authenticated /shoulder -> ESP32 SafetyGate -> AS5600 closed loop`. Direct `http`/`physical` transports, full-arm writes, and automatic trajectory tracking remain disabled.
-
-### Demo-Ready Scope
-
-The public demo is physical teleoperation. Supporting evidence covers direct capture / Pi tracked-frame camera feedback, Pi-hosted dashboard, red-target or known-object overlay, ROS2 typed topics, a safety-gated bounded nudge control surface, and token-gated search-light on/off commands. Autonomous grasping remains out of scope for the current hardware state.
-
-## Validation
-
-The hardware and ROS2 results below are June–July 2026 records. The current
-learning implementation is documented separately above.
-
-- ESP32 controller and ESP32-CAM PlatformIO builds pass.
-- `TB6612FNG x3` and `M1~M5` motor outputs were physically tested.
-- M4 shoulder AS5600 angle/magnet status was validated over I2C; bounded targets
-  settled at 238.10/233.96 deg initially and 238.09/234.14 deg in the remount
-  regression.
-- Shoulder teleoperation cancelled an active target as `OVERRIDDEN` within
-  53 ms, followed by a shared soft-limit guard for direct, sequence, and
-  teleoperation M4 paths.
-- M4 calibrated/raw angle, magnet health, sensor freshness, controller state,
-  and manual guard state are exposed through ESP32 `/status`, the Pi dashboard,
-  ROS2 typed status, and diagnostics.
-- Two fixed-mount regressions each covered five 232-243 deg and 75/100% cases
-  plus six repeated 238-to-234 deg cycles, passing 22/22 in total. The second
-  complete matrix had 0.191 deg mean absolute error and 0.31 deg maximum
-  absolute error, with settled-error revalidation and an explicit
-  `TARGET_MISSED` failure state.
-- A 23.1 g short upward move exposed a mismatch between PWM ramp time and the
-  correction pulse. Increasing only the upward correction maximum to 500 ms
-  and adding a separate 0.40 deg internal success margin produced final 11/11
-  regressions both without load (0.132 deg mean, 0.36 deg max) and at 23.1 g
-  (0.155 deg mean, 0.31 deg max).
-- STM32 `MPU-6050 + UART` teleop and the HC-SR04 bench path were validated.
-- Wired teleop produced real motor output under deadman control and stopped on release.
-- The final physical teleoperation demo was captured and published as README GIF/MP4 assets.
-- ESP32-CAM `/status`, `/capture`, and `/stream` returning HTTP 410 by design were verified.
-- Local LAN operation was validated across ESP32 controller, ESP32-CAM, and Raspberry Pi.
-- The ESP32-hosted `MotionBrain Control` page accepted a runtime token and executed state-changing commands.
-- The Pi dashboard verified the camera feed, red target box, and safety-gated bounded nudge control surface.
-- The Pi perception service verified the constrained `cup` target path with YOLOv5s/OpenCV DNN. The latest stable ESP32-CAM service profile is `qvga` / JPEG quality `15`.
-- Raspberry Pi 4 + Ubuntu 24.04 + ROS2 Jazzy `colcon build/test` passed.
-- Health checks passed for `/motionbrain/status_typed`, `/camera/detection_typed`, estimated/measured `/joint_states`, `/motionbrain/kinematics_typed`, `/motionbrain/control_guard_typed`, and `/motionbrain/mission_state_typed`.
-- Pi perception service output was verified through ROS2 `/camera/detection_typed`.
-- The M4 physical path moved from 248.20 deg toward 250.00 deg and ended at 249.96 deg (-0.04 deg, `TARGET_REACHED`); non-M4 outputs stayed zero.
-- Replay was rejected as `proposal_already_consumed`; IDLE was rejected as `state_not_armed`. A systemd restart restored exactly one executor.
-- Local Python tests passed 185/185; Pi ROS2 tests passed 72 with zero failures.
-- Docker/noVNC RViz validation visualized RobotModel/TF and live ROS2 topics mirrored from the Pi dashboard.
-- GitHub Actions validates PlatformIO firmware builds, Python tests, and ROS2 workspace build/test.
-
-## Object Detection Status
-
-The detector uses pretrained YOLOv5s, not a detector trained in this project.
-The Pi constrained known-object detection path exists: OpenCV DNN/ONNX backend loading, explicit model/label paths, selected-target JSON, dashboard overlay, and ROS2 typed detection publishing. Model weights are intentionally not committed.
-
-The current reliable known-object bench path is constrained `cup` recognition with YOLOv5s/OpenCV DNN, `--object-target cup`, and a configured confidence gate. This path has returned `cup` through the Pi dashboard/perception API, while the latest stable ESP32-CAM service profile is `qvga` / JPEG quality `15`. Manual camera operation uses direct `/capture`, while the recognition/confirmation view uses Pi tracked frames.
-
-Current honest positioning:
-
-- Implemented: Pi-hosted object-detection pipeline, selected-target contract, ROS2/dashboard integration, constrained `cup` recognition
-- Stable demo: red target tracking/overlay, direct `/capture` manual camera feedback, cup recognition checks
-- Not yet solved: arbitrary-object recognition, marker/object-assisted automatic grasping, and continuous visual servoing without richer feedback
-
-## Current Limitations
-
-- Only M4 has secured AS5600 feedback and an operator-confirmed physical
-  `ros2_control` single-target path. Other-axis feedback, full-arm writes, and
-  automatic trajectory tracking are unavailable.
-- M4 GPIO0/GPIO15 is the supported allocation under the current pin budget but
-  requires boot-strap discipline. The sensor and magnet are mechanically
-  secured; ROS zero is `222.80 deg` with sign `+1`. The 230-245 deg range is the
-  matrix-proven target range, while `122.08-301.02 deg` is only a provisional
-  current-posture soft range. It is not equivalently validated and must be
-  revalidated for other postures, mounting changes, and loads.
-- Physical guarded routine `run/execute` remains disabled because
-  `base_yaw_reference` is not installed. The ROS2 routine service/action surface
-  is limited to status, dry-run, and expected rejection behavior.
-- HC-SR04 is removed for the final physical demo, with range telemetry handled as disabled/nonblocking
-- ESP32-CAM QVGA input limits general object detection quality
-- No general text-prompt object search
-- The README physical teleop video and non-motion screenshots/evidence are captured; additional search-light toggle or bounded-nudge evidence should be captured only for a specific follow-up goal
-
-## Remaining Work
-
-Connect physical commands/output records and before/after observations to the collector,
-then validate bounded single-axis motion, cancellation, and settling. Compare the baseline
-and model on real data from separate sessions. Evaluate prediction error and physical
-manipulation success independently.
-
-## Related Documents
-
-- [README.en.md](README.en.md): project entry point
-- [README.md](README.md): Korean project entry point
-- [ROBOTICS_SYSTEM_READINESS.en.md](ROBOTICS_SYSTEM_READINESS.en.md): ROS2 and hardware-boundary summary for robotics system roles
-- [PIN_MAP.en.md](PIN_MAP.en.md): ESP32 allocation and M4 AS5600 wiring policy
-- [docs/evidence/2026-06-28-m4-shoulder-closed-loop.en.md](docs/evidence/2026-06-28-m4-shoulder-closed-loop.en.md): physical M4 single-axis closed-loop evidence
-- [docs/evidence/2026-06-16-ros2-control-open-loop.en.md](docs/evidence/2026-06-16-ros2-control-open-loop.en.md): ros2_control dry-run evidence summary
-- [docs/evidence/2026-07-13-m4-physical-ros2-control.en.md](docs/evidence/2026-07-13-m4-physical-ros2-control.en.md): M4 physical one-shot evidence
-- [docs/evidence/2026-06-16-pi-system-health.en.md](docs/evidence/2026-06-16-pi-system-health.en.md): Pi/systemd/ROS2 health evidence summary
-- [docs/evidence/2026-06-17-runtime-measurements.en.md](docs/evidence/2026-06-17-runtime-measurements.en.md): Pi runtime and ROS2 measurement note
-- [EMBEDDED_BRINGUP.en.md](EMBEDDED_BRINGUP.en.md): STM32/ESP32 bring-up and measurement checklist
-- [OPERATIONS.en.md](OPERATIONS.en.md): Pi/systemd/health-check operations notes
+- The other four joints lack position feedback; full-arm trajectory control and force sensing are absent.
+- Electrical cutoff, deadman latency, power transients and long-term reliability still require instrumentation.
+- The next step is to connect verified image timing/anchors with actual outputs, collect data, and compare against a no-change baseline using separate sessions. Prediction error and physical manipulation success need separate evaluation.

@@ -1,101 +1,62 @@
-# motionbrain_hardware_interface
+# ROS2 하드웨어 인터페이스
 
-[English](README.en.md)
+[English](README.en.md) · [운영 안내](../../../OPERATIONS.md)
 
-MotionBrain용 `ros2_control` 하드웨어 인터페이스 기본 구현이다. 현재 저가 DC 로봇팔의 전체 관절에 엔코더 수준 피드백이 있다고 가정하지 않고 ROS2 하드웨어 경계를 명시한다.
+`motionbrain_hardware_interface/MotionBrainHardwareInterface`는 `ros2_control`의 `SystemInterface` 플러그인이다. 전체 관절에 엔코더가 있다고 가정하지 않고, 추정 상태·M4 실측·실물 실행 제안을 구분한다.
 
-## 구현 범위
+## 모드
 
-- `hardware_interface::SystemInterface` 플러그인 `motionbrain_hardware_interface/MotionBrainHardwareInterface`를 제공한다.
-- 기존 5관절 `transport_mode=dry_run` 시연을 유지한다.
-  - `base_yaw_joint`
-  - `shoulder_pitch_joint`
-  - `elbow_pitch_joint`
-  - `wrist_pitch_joint`
-  - `gripper_joint`
-- 각 dry-run 관절에 위치 명령과 위치·속도 상태 인터페이스를 제공한다.
-- 수명주기 콜백, 유한한 명령값 검사, 명령 타임아웃, dry-run 제어기 초기 구동용 개루프 상태 보간을 구현한다.
-- 초기화 시 지원하지 않는 전송 모드는 거부한다. 지원 모드는 `transport_mode=dry_run`, 읽기 전용 `transport_mode=m4_state`, 별도 실행기로 제안을 전달하는 `transport_mode=m4_proposal`이다.
-- controller-manager 기본 동작 점검용 launch·config·URDF 파일을 포함한다.
+| `transport_mode` | 관절과 인터페이스 | 동작 |
+| --- | --- | --- |
+| `dry_run` | 5관절 위치 명령, 위치·속도 상태 | 개루프 상태 보간. 실물 통신 없음 |
+| `m4_state` | `shoulder_pitch_joint` 위치·속도 상태만 | 타입이 정의된 M4 상태 구독. 명령 인터페이스 없음 |
+| `m4_proposal` | M4 위치 명령과 상태 | 별도 실행기로 타입이 정의된 제안 발행. 플러그인에서 HTTP 전송하지 않음 |
 
-## M4 측정 상태 모드
+수명주기 콜백, 유한한 명령값 검사, 명령 타임아웃을 구현한다. 지원하지 않는 모드는 초기화에서 거부한다. `dry_run`의 다섯 관절은 `base_yaw_joint`, `shoulder_pitch_joint`, `elbow_pitch_joint`, `wrist_pitch_joint`, `gripper_joint`다.
 
-보정된 AS5600 상태의 초기 구동을 위한 읽기 전용 M4 어깨 피드백 모드를 제공한다.
+M4 측정 모드는 `status_topic=/motionbrain/status_typed`, `feedback_source=m4_as5600`을 사용한다. `shoulder_feedback_calibration_enabled`, `shoulder_sensor_zero_deg`, `shoulder_direction_sign`, `shoulder_ros_joint_zero_rad`로 보정을 지정한다. `state_stale_timeout_sec` 기본값은 2.0초이며 상태 브리지 조회 간격보다 커야 한다. 보정이 꺼져 있거나 피드백이 오래됐거나 유효하지 않으면 상태를 사용 불가로 처리한다. 원본 각도나 개루프 추정으로 대체하지 않는다.
 
-- `transport_mode=m4_state`
-- 관절 하나: `shoulder_pitch_joint`
-- 상태 인터페이스만 제공: `position`, `velocity`
-- 명령 인터페이스 0개
-- 명시적 하드웨어 파라미터:
-  - `status_topic=/motionbrain/status_typed`
-  - `feedback_source=m4_as5600`
-  - `shoulder_feedback_calibration_enabled`
-  - `shoulder_sensor_zero_deg`
-  - `shoulder_direction_sign`
-  - `shoulder_ros_joint_zero_rad`
-  - `state_stale_timeout_sec` 기본값은 `2.0`이며 예상 상태 브리지 조회 간격보다 커야 한다.
+## 빌드와 조회
 
-이 모드는 `joint_state_broadcaster`로 보정된 측정 상태를 발행한다. `joint_trajectory_controller`를 불러오거나 실물 명령을 보내지 않는다. 보정이 비활성화됐거나 오래됐거나 유효하지 않으면 원본 AS5600 각도나 개루프 기울기 추정으로 대체하지 않고 상태를 사용 불가로 처리한다.
+ROS2 Jazzy 및 [CI의 의존 패키지](../../../.github/workflows/ros2.yml)가 필요하다. `--packages-up-to`로 메시지 패키지 의존성도 함께 빌드한다.
 
-## 안전 경계
-
-`write()`는 ESP32 제어기에 POST하지 않는다. `m4_proposal` 모드에서는 별도의 작업자 확인형 실물 실행기에 타입이 정의된 제안을 발행한다. 플러그인 자체가 모터·STM32·카메라·조명에 접속하지 않는다.
-
-제안 ID에는 무작위 생성자 세션과 순서 번호가 들어간다. 실행기는 영속 호스트 저널로 소비된 ID와 결과 불명을 재시작 뒤에도 유지한다. MCU 수준 중복 제거나 실물 완료 근거를 제공하는 것은 아니다. [명령 저널 검증](../../../docs/evidence/2026-10-14-command-journal-software.md)과 [제한 행동 계약](../../../docs/evidence/2026-10-14-bounded-actions-software.md)을 참고한다.
-
-dry-run URDF는 `transport_mode=dry_run`을 사용한다. M4 측정 URDF는 `transport_mode=m4_state`로 타입이 정의된 상태만 구독하고 명령 인터페이스를 노출하지 않는다. `read()`에서 HTTP를 호출하지 않는다.
-
-실물 구동은 다음 검사를 통과해야 한다.
-
-- ESP32 펌웨어 `SafetyGate`
-- `BOOT -> IDLE -> ARMED -> FAULT` 상태 경계
-- 토큰으로 제한한 HTTP 명령
-- 데드맨·원격조작 타임아웃
-- 루틴 실행기 정책과 피드백 준비 검사
-
-공개 문서에서 설명할 수 있는 범위:
-
-> MotionBrain 로봇팔용 ros2_control SystemInterface 기본 구현에 개루프 dry-run 시연과 읽기 전용 M4 측정 상태 모드를 포함했다. ROS2 하드웨어 경계와 제어기 통합을 검증하며, 실물 구동은 ESP32 펌웨어가 보호한다.
-
-폐루프 궤적 실행, 특정 업체 스마트 액추에이터 통합, 전체 관절 엔코더 검증, 플랫폼 전체 모션 제어, 양산 하드웨어 인터페이스 완성으로 설명하지 않는다.
-
-## 빌드
-
-```bash
+```sh
 cd ros2_ws
 source /opt/ros/jazzy/setup.bash
-colcon build --packages-select motionbrain_hardware_interface
+colcon build --packages-up-to motionbrain_hardware_interface
+source install/setup.bash
 colcon test --packages-select motionbrain_hardware_interface
 colcon test-result --verbose
-```
-
-## 실행
-
-```bash
-source install/setup.bash
 ros2 launch motionbrain_hardware_interface hardware_interface.launch.py
 ```
 
-실행 후 확인:
+별도 터미널에서 환경을 불러온 뒤 조회한다.
 
-```bash
+```sh
 ros2 control list_hardware_interfaces
 ros2 control list_controllers
 ros2 topic echo /joint_states --once
 ```
 
-읽기 전용 M4 측정 상태 모드:
+읽기 전용 실측 모드는 `m4_measured_state.launch.py`다. 기본 보정은 비활성화돼 있다. 현재 장착의 영점·방향을 확인한 뒤에만 보정을 활성화한다.
 
-```bash
-source install/setup.bash
+```sh
 ros2 launch motionbrain_hardware_interface m4_measured_state.launch.py \
   shoulder_feedback_calibration_enabled:=true \
-  shoulder_sensor_zero_deg:=<supervised_zero_deg> \
-  shoulder_direction_sign:=<1_or_-1>
+  shoulder_sensor_zero_deg:='<verified_zero_deg>' \
+  shoulder_direction_sign:='<1_or_-1>'
 ```
 
-감독하의 읽기 전용 사전 점검으로 현재 장착 영점과 방향을 확인할 때까지 `shoulder_feedback_calibration_enabled=false`를 유지한다.
+## 실물 실행 경계
 
-## 향후 실물 백엔드
+`m4_proposal.launch.py`는 제안용 제어기를 띄운다. `write()`는 ESP32에 POST하지 않으며, 별도 M4 실행기가 작업자 확인 후 기존 `/shoulder` 명령을 전송한다. 제안 확인의 기본 유효기간 20초는 모터 구동 시간이 아니다. `read()`도 HTTP를 호출하지 않는다.
 
-향후 ESP32 백엔드는 명시적인 모드 플래그 뒤에 추가하고 펌웨어가 허용한 제한 명령만 전달해야 한다. 현재 로봇팔은 모든 관절에 엔코더가 있는 구성이 아니므로 궤적 완료를 실물 수렴으로 해석하지 않는다. 명령 접수와 추정 동작으로 구분해야 한다.
+제안 ID는 무작위 생성자 세션과 순서 번호를 포함한다. 실행기는 영속 저널로 소비된 ID와 결과 불명을 재시작 뒤에도 보존한다. 이는 MCU 중복 제거 또는 실물 완료 증명이 아니다. [저널·행동 계약](../../../docs/data-pipeline.md)과 [운영 복구](../../../OPERATIONS.md#명령-상태와-복구)를 참고한다.
+
+실제 출력은 ESP32의 상태 머신, `SafetyGate`, 토큰 인증, 데드맨·타임아웃과 피드백 검사를 거친다. 호스트 접수와 출력 OFF는 각각 목표 도달·전기적 정지를 보장하지 않는다. 전체 관절 폐루프 궤적 실행과 기능 안전은 미검증이다.
+
+[2026-07-13 M4 단일 목표 실측](../../../docs/evidence/2026-07-13-m4-physical-ros2-control.md)은 이 경로의 제한된 검증 결과다. 나머지 네 축의 엔코더 기반 제어로 확대하지 않는다.
+
+![RViz 모델 예시](../../../docs/assets/motionbrain-rviz-robotmodel.png)
+
+URDF/RViz 모델 표시 예시이며 실물 추종 정확도의 증거는 아니다.

@@ -37,4 +37,3 @@ def diagnose(tracker, body, source):
             "imageGateReason": reason, "anchorAgeMs": (captured-tracker.anchor_us)/1000,
             "anchorExpired": (captured-tracker.anchor_us)/1000 > p["maxAnchorAgeMs"],
             "liveAcceptanceEvaluated": False, "controlEligible": False, "trainingEligible": False}
-

@@ -1,8 +1,0 @@
-fixed-diag-upload.log exit=0
-fixed-diag-cycles.log exit=0
-production-upload.log exit=0
-production-fixed-cycles.log exit=0
-production-soak.log exit=0
-source-contract.json exit=0
-final-system-status.json exit=0
-FIXED_VALIDATION_DONE

@@ -44,12 +44,11 @@ GPIO2와 GPIO12는 현재 미배정이지만 부트 스트랩 핀이다. GPIO34-
   `MOTIONBRAIN_SHOULDER_I2C_SCL_PIN`, `MOTIONBRAIN_SHOULDER_ADC_PIN` 빌드
   매크로로 재배치하고 부트/회귀 검증을 다시 수행한다.
 
-전기 핀 배치는 현재 프로토타입의 지원 배치로 확정했고, 센서와 자석의 기구
-고정도 완료했다. 현재 ROS shoulder zero는 `222.80°`, sign은 `+1`이다.
-`230-245°`는 가장 강한 matrix evidence가 있는 검증 범위이고,
-`122.08-301.02°`는 현재 elbow/wrist/gripper 자세 조건부 provisional soft
-range다. 센서, 자석, arm 자세, 하중, 주변 간섭 조건이 바뀌면 zero와 안전 범위를
-다시 검증한다.
+펌웨어 기본 보정값은 shoulder zero `222.80°`, sign `+1`이다.
+`230–245°`는 2026-06-28 실측 행렬의 검증 범위이고, `122.08–301.02°`는
+당시 팔꿈치·손목·집게 자세에서 확인한 잠정 소프트 범위다. 현재 자세의 안전
+범위로 자동 적용할 수 없다. 센서·자석·관절 자세·하중·간섭 조건이 바뀌면
+영점과 사용 범위를 다시 검증한다. [실측 조건과 결과](docs/evidence/2026-06-28-m4-shoulder-closed-loop.md)
 
 ## 근거
 

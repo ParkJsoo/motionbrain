@@ -1,138 +1,62 @@
-# motionbrain_hardware_interface
+# ROS2 hardware interface
 
-[한국어](README.md)
+[한국어](README.md) · [Operations](../../../OPERATIONS.en.md)
 
-Safe `ros2_control` hardware-interface scaffold for MotionBrain.
+`motionbrain_hardware_interface/MotionBrainHardwareInterface` is a `ros2_control` `SystemInterface` plugin. It separates estimated state, measured M4 feedback, and physical command proposals without assuming encoders on every joint.
 
-This package exists to show the ROS2 hardware boundary explicitly without
-pretending the current low-cost DC arm has encoder-grade joint feedback.
+## Modes
 
-## What It Does
+| `transport_mode` | Joints and interfaces | Behavior |
+| --- | --- | --- |
+| `dry_run` | Five position commands; position/velocity states | Open-loop state interpolation; no device communication |
+| `m4_state` | Position/velocity state for `shoulder_pitch_joint` only | Subscribes to typed M4 feedback; no command interface |
+| `m4_proposal` | M4 position command and state | Publishes typed proposals to a separate executor; no HTTP from the plugin |
 
-- Exports a `hardware_interface::SystemInterface` plugin:
-  `motionbrain_hardware_interface/MotionBrainHardwareInterface`
-- Keeps the existing five-joint `transport_mode=dry_run` demo:
-  - `base_yaw_joint`
-  - `shoulder_pitch_joint`
-  - `elbow_pitch_joint`
-  - `wrist_pitch_joint`
-  - `gripper_joint`
-- Provides position command interfaces plus position/velocity state interfaces
-  for each dry-run joint.
-- Implements lifecycle callbacks, finite-command validation, command timeout,
-  and open-loop state interpolation for dry-run controller bring-up.
-- Rejects unsupported transport modes at initialization; the current scaffold
-  accepts `transport_mode=dry_run`, read-only `transport_mode=m4_state`, and
-  `transport_mode=m4_proposal` for proposals sent to a separate executor.
-- Includes launch/config/URDF files for controller-manager smoke tests.
+The plugin implements lifecycle callbacks, finite-command checks, and command timeouts. Unsupported modes fail initialization. The five dry-run joints are `base_yaw_joint`, `shoulder_pitch_joint`, `elbow_pitch_joint`, `wrist_pitch_joint`, and `gripper_joint`.
 
-## M4 Measured State Mode
+The measured mode uses `status_topic=/motionbrain/status_typed` and `feedback_source=m4_as5600`. Calibration parameters are `shoulder_feedback_calibration_enabled`, `shoulder_sensor_zero_deg`, `shoulder_direction_sign`, and `shoulder_ros_joint_zero_rad`. `state_stale_timeout_sec` defaults to 2.0 seconds and must exceed the status bridge poll interval. Disabled calibration, stale feedback, or invalid feedback makes state unavailable; raw angles and open-loop estimates are not substitutes.
 
-The package also includes a read-only M4 shoulder feedback mode for calibrated
-AS5600 state bring-up:
+## Build and inspect
 
-- `transport_mode=m4_state`
-- one joint: `shoulder_pitch_joint`
-- state interfaces only: `position` and `velocity`
-- zero command interfaces
-- explicit hardware parameters:
-  - `status_topic=/motionbrain/status_typed`
-  - `feedback_source=m4_as5600`
-  - `shoulder_feedback_calibration_enabled`
-  - `shoulder_sensor_zero_deg`
-  - `shoulder_direction_sign`
-  - `shoulder_ros_joint_zero_rad`
-  - `state_stale_timeout_sec` defaults to `2.0`, which must remain above the
-    expected status bridge poll interval.
+ROS2 Jazzy and the [CI dependencies](../../../.github/workflows/ros2.yml) are required. `--packages-up-to` also builds the message-package dependency.
 
-This mode is intended for publishing calibrated measured state through
-`joint_state_broadcaster`. It does not load `joint_trajectory_controller` and
-does not send physical commands. When calibration is disabled, stale, or
-invalid, the state is unavailable instead of falling back to raw AS5600 degrees
-or open-loop tilt estimates.
-
-## Safety Boundary
-
-`write()` does not POST to the ESP32 controller. In `m4_proposal` mode it publishes
-a typed proposal for the separate operator-confirmed physical executor. The plugin
-itself does not contact a motor, STM32, camera, or light.
-
-Proposal IDs contain a random producer session and sequence. The executor uses a
-persistent host journal to preserve consumed IDs and unknown outcomes across restarts.
-This does not provide MCU-level deduplication or physical completion evidence.
-See the [command journal verification (Korean)](../../../docs/evidence/2026-10-14-command-journal-software.md)
-and [bounded-action contract (Korean)](../../../docs/evidence/2026-10-14-bounded-actions-software.md).
-
-The dry-run URDF uses `transport_mode=dry_run`. The M4 measured URDF uses
-`transport_mode=m4_state`, subscribes only to typed status, and exposes no
-command interfaces. It does not make HTTP calls from `read()`.
-
-Physical actuation remains behind:
-
-- ESP32 firmware `SafetyGate`
-- `BOOT -> IDLE -> ARMED -> FAULT` state boundary
-- token-gated HTTP commands
-- deadman/teleop timeout paths
-- routine executor policy and feedback readiness checks
-
-Use this wording for public claims:
-
-```text
-Implemented a safe ros2_control SystemInterface scaffold for the MotionBrain
-arm, including an open-loop dry-run demo and a read-only M4 measured-state
-mode. It validates the ROS2 hardware boundary and controller integration,
-while physical motion remains guarded by ESP32 firmware.
-```
-
-Do not claim:
-
-```text
-Closed-loop trajectory execution, vendor-specific smart-actuator integration,
-encoder-verified motion, full-platform motion control, or production hardware
-interface completion.
-```
-
-## Build
-
-```bash
+```sh
 cd ros2_ws
 source /opt/ros/jazzy/setup.bash
-colcon build --packages-select motionbrain_hardware_interface
+colcon build --packages-up-to motionbrain_hardware_interface
+source install/setup.bash
 colcon test --packages-select motionbrain_hardware_interface
 colcon test-result --verbose
-```
-
-## Launch
-
-```bash
-source install/setup.bash
 ros2 launch motionbrain_hardware_interface hardware_interface.launch.py
 ```
 
-Then inspect:
+Source the environment in a separate terminal before inspecting:
 
-```bash
+```sh
 ros2 control list_hardware_interfaces
 ros2 control list_controllers
 ros2 topic echo /joint_states --once
 ```
 
-For the read-only M4 measured state mode:
+The read-only measured mode is `m4_measured_state.launch.py`. Calibration is disabled by default. Enable it only after verifying the current mount zero and direction.
 
-```bash
-source install/setup.bash
+```sh
 ros2 launch motionbrain_hardware_interface m4_measured_state.launch.py \
   shoulder_feedback_calibration_enabled:=true \
-  shoulder_sensor_zero_deg:=<supervised_zero_deg> \
-  shoulder_direction_sign:=<1_or_-1>
+  shoulder_sensor_zero_deg:='<verified_zero_deg>' \
+  shoulder_direction_sign:='<1_or_-1>'
 ```
 
-Leave `shoulder_feedback_calibration_enabled=false` until a supervised
-read-only preflight confirms the current mount zero and direction.
+## Physical execution boundary
 
-## Future Physical Backend
+`m4_proposal.launch.py` starts the proposal controller. `write()` does not POST to the ESP32; a separate M4 executor sends the legacy `/shoulder` command after operator confirmation. The default 20-second confirmation validity is not a motor run duration. `read()` does not call HTTP either.
 
-A future ESP32 backend should be added behind an explicit mode flag and should
-forward only bounded, firmware-accepted commands. Because the current arm has no
-per-joint encoders, trajectory completion must be treated as command acceptance
-and estimated motion, not physical convergence.
+Proposal IDs include a random producer session and sequence. The executor preserves consumed IDs and unknown outcomes in a persistent journal across restarts. This does not provide MCU deduplication or proof of physical completion. See the [journal/action contract (Korean)](../../../docs/data-pipeline.md) and [recovery procedure](../../../OPERATIONS.en.md#command-states-and-recovery).
+
+Physical output passes through the ESP32 state machine, `SafetyGate`, token authentication, deadman/timeouts, and feedback checks. Host acceptance does not prove target convergence; output OFF does not prove electrical stop. Full-joint closed-loop trajectories and functional safety remain unverified.
+
+The [2026-07-13 single-target M4 measurement](../../../docs/evidence/2026-07-13-m4-physical-ros2-control.en.md) is a limited validation of this path. It does not establish encoder-based control of the other four axes.
+
+![RViz model example](../../../docs/assets/motionbrain-rviz-robotmodel.png)
+
+This URDF/RViz rendering is not evidence of physical tracking accuracy.

@@ -1,1 +1,0 @@
-{"physicalManipulationImprovementEstablished":false,"reason":"no_eligible_physical_data_or_empty_split","status":"refused","validation":{"eligibleCount":0,"errors":[],"excludedCount":11,"readyForTraining":false,"splitCounts":{"test":0,"train":0,"validation":0},"valid":true}}

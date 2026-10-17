@@ -65,39 +65,21 @@ class RaspiPiAccessTest(unittest.TestCase):
         self.assertTrue(os.access(SCRIPT_PATH, os.R_OK))
 
     def test_operations_docs_have_pi_ssh_recovery_contract(self) -> None:
-        operations_text = (REPO_ROOT / "OPERATIONS.en.md").read_text()
-
-        required_fragments = [
-            "Pi Access / SSH",
-            "check_pi_ssh_target.py",
-            "HostName motionbrain-pi.local",
-            "stale `192.168.219.110`",
-            "motionbrain.local` is the ESP32 motion controller",
-            "not a Pi SSH discovery tool",
-            "ssh.socket",
-            "SSH alias reaches old IP",
-            "router-DNS fallback",
-            "ALLOW_DASHBOARD_DEGRADED=1",
-            "not a motion-ready preflight",
-        ]
-        for fragment in required_fragments:
-            with self.subTest(fragment=fragment):
-                self.assertIn(fragment, operations_text)
-
-        korean_text = (REPO_ROOT / "OPERATIONS.md").read_text()
-        for fragment in [
-            "Pi 접속과 SSH",
-            "HostName motionbrain-pi.local",
-            "라우터 DNS 대체 경로",
-            "Pi가 아니라 ESP32 모션 제어기",
-            "Pi SSH 탐색 도구가 아니다",
-            "SSH 별칭이 이전 IP로 연결됨",
-            "ALLOW_DASHBOARD_DEGRADED=1",
-            "구동 준비 사전 점검은 아니다",
-            "[English](OPERATIONS.en.md)",
+        # Keep the operational distinction in both language variants without
+        # pinning a personal router address or requiring historical incident prose.
+        for filename, distinction, health_boundary, language_link in [
+            ("OPERATIONS.md", "Pi SSH 탐색용이 아니다", "구동 준비 판정은 아니다",
+             "[English](OPERATIONS.en.md)"),
+            ("OPERATIONS.en.md", "discovers ESP32 HTTP services, not Pi SSH", "not a motion-readiness check",
+             "[한국어](OPERATIONS.md)"),
         ]:
-            with self.subTest(language="ko", fragment=fragment):
-                self.assertIn(fragment, korean_text)
+            operations_text = (REPO_ROOT / filename).read_text()
+            for fragment in [
+                "check_pi_ssh_target.py", "discover_device_url.py",
+                "ALLOW_DASHBOARD_DEGRADED=1", distinction, health_boundary, language_link,
+            ]:
+                with self.subTest(filename=filename, fragment=fragment):
+                    self.assertIn(fragment, operations_text)
 
     def test_dashboard_health_script_separates_degraded_observability(self) -> None:
         script_text = (REPO_ROOT / "tools" / "raspi" / "check_dashboard_health.sh").read_text()

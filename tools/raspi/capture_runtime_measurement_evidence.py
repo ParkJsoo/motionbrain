@@ -296,8 +296,6 @@ def build_report(args: argparse.Namespace) -> str:
     lines: list[str] = [
         f"# {capture_date} Runtime Measurement Evidence",
         "",
-        "[README](../../README.md) | [Robotics system readiness](../../ROBOTICS_SYSTEM_READINESS.md)",
-        "",
         "Read-only runtime measurements captured on the Raspberry Pi host. No physical motion,",
         "motor command, or routine execution command was sent; ROS2 service/action calls used",
         "`action: status` only.",

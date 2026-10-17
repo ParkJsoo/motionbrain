@@ -44,12 +44,12 @@ wiring and feature set.
   `MOTIONBRAIN_SHOULDER_I2C_SCL_PIN`, and `MOTIONBRAIN_SHOULDER_ADC_PIN`; boot
   and regression validation must then be repeated.
 
-The electrical allocation is now the supported prototype allocation, and the
-sensor and magnet are mechanically secured. The current ROS shoulder zero is
-`222.80 deg` with sign `+1`. The `230-245 deg` range remains the strongest
-matrix-evidence range, while `122.08-301.02 deg` is a provisional current-posture
-soft range for the observed elbow/wrist/gripper configuration. Revalidate zero
-and safety range after sensor, magnet, arm-posture, load, or clearance changes.
+The firmware calibration defaults are shoulder zero `222.80 deg` and sign `+1`.
+The `230–245 deg` range was covered by the 2026-06-28 measurement matrix;
+`122.08–301.02 deg` was a provisional soft range for the elbow/wrist/gripper
+configuration observed then. It does not establish a safe range for the current
+posture. Revalidate zero and usable range after changes to the sensor, magnet,
+joint posture, load, or clearance. [Measurement conditions and results](docs/evidence/2026-06-28-m4-shoulder-closed-loop.en.md)
 
 ## References
 

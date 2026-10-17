@@ -1,240 +1,52 @@
-# MotionBrain 포트폴리오 요약
+# MotionBrain 포트폴리오
 
-[README](README.md) | [영어 README](README.en.md) | [영어 포트폴리오 요약](PORTFOLIO.en.md)
+[English](PORTFOLIO.en.md) · [프로젝트·데모](README.md)
 
-## 개요
+ESP32·STM32·카메라·Raspberry Pi·ROS2를 통합하면서, 명령을 보냈다는 사실과 실제 로봇이 목표에 도달했다는 사실을 구분하는 제어·검증 구조를 구현했다. 실물 성과의 중심은 M4 단일축 위치 제어와 시스템 통합이다. AI 조작 학습은 데이터 검증과 오프라인 기준선 구현 단계다.
 
-MotionBrain은 ESP32 모션 제어기, STM32 센서/텔레오퍼레이션 계층, ESP32-CAM 비전 입력, Raspberry Pi + ROS2 호스트 브리지를 하나의 로봇팔 시스템으로 통합한 임베디드 로보틱스 시스템 프로젝트다.
+## 문제와 설계
 
-프로젝트의 핵심은 “모터를 움직였다”가 아니라, 실제 하드웨어에서 안전 상태, 명령 경계, 센서 피드백, 비전 입력, ROS2 토픽, 호스트 측 판단을 분리된 계층으로 설계하고 검증했다는 점이다.
+저가 DC 로봇팔은 전체 관절 위치와 파지력을 측정하지 못한다. 단순 시간 기반 구동은 하중·관성·마찰에 따라 결과가 달라진다. 이에 M4 어깨에 AS5600을 추가하고, 모터 출력은 ESP32에, 센서·원격조작 입력은 STM32에, 인식·ROS2 연동은 Pi에 배치했다.
 
-물리 텔레오퍼레이션 데모 미디어 스냅샷은 `demo-ready-20260608` 태그로 고정했다.
+- **공통 명령 경계:** 시리얼·HTTP 입력을 `Dispatcher`와 `SafetyGate`로 모은다. 상태·센서 고장·데드맨 조건을 확인한다. 웹 수동 명령은 유효기간을 두고 제어 루프가 만료를 확인하면 정지한다. 블로킹 통신을 포함한 실물 정지 지연 상한은 검증하지 못했다.
+- **측정과 추정의 분리:** M4 실측 각도와 나머지 관절의 개루프 추정값을 구분해 ROS2로 전달한다.
+- **확인형 ROS2 쓰기:** `ros2_control` 제안은 자동 전송되지 않는다. 기본 20초의 확인 유효기간 안에 작업자가 한 번 확인한 M4 목표만 별도 실행기가 제어기에 전달한다. 20초는 구동 시간이 아니다.
 
-## 서류 검토용 핵심 신호
+구현: [제어기](src/control/), [ROS2 하드웨어 인터페이스](ros2_ws/src/motionbrain_hardware_interface/README.md), [명령 저널](ros2_ws/src/motionbrain_ros_bridge/motionbrain_ros_bridge/m4_command_journal.py).
 
-- 실물 하드웨어 기반: ESP32 모션 제어기, STM32 유선 텔레오퍼레이션,
-  ESP32-CAM, Raspberry Pi를 실제 네트워크와 전원 환경에서 통합했다.
-- 안전 경계 중심: 모든 상태 변경과 물리 출력은 토큰, 상태 머신,
-  `SafetyGate`, deadman, freshness timeout을 통과해야 한다.
-- ROS2 시스템 역량: typed messages, ROS2 bridge, C++ control guard,
-  mission supervisor, URDF/RViz, `ros2_control` dry-run/read-only 모드와
-  operator-confirmed M4 physical write 경로를 갖췄다.
-- 운영 가능성: Pi systemd 서비스, SSH/DNS 복구 절차, health check,
-  runtime evidence, `ros2_control` evidence, CI 검증까지 문서화했다.
-- 주장 경계: M4 어깨 한 축의 제한 폐루프 검증과 로봇팔 전체의 위치 제어를
-  구분하고, 임의 객체 인식이나 자율 집기를 과장하지 않는다.
+## 사례 1 — M4 목표 도달의 잘못된 성공 판정 수정
 
-## AI 구현과 검증 범위
+초기 제어기는 출력 차단 후 목표 오차를 다시 검사하지 않아, 234° 명령이 235.37°에 멈춰도 성공을 반환했다. 안정화 후 오차 검사와 제한 보정, `TARGET_MISSED`를 추가했다.
 
-- 원본 프레임·실제 출력 기록 검증과 세션별 데이터 분할을 구현했다.
-- Mac CPU에서 NumPy 선형 ridge 모델과 무변화 기준선을 학습·평가하는 CLI를 구현했다.
-- 합성 smoke는 통과했으나 실제 적격 행동 데이터는 0개다. 실물 학습·조작 개선은 아직 입증하지 않았다.
-- 고정 예산의 비구동 관측 시험은 7요청 중 1개 성공 후 저장 지연으로 중단돼 사용 가능성 기준에 미달했다.
-- 2026-10-17: 아이폰 관찰로 립밤을 잡고 든 뒤 잡기·들기·놓기를 2회 추가 확인했다. 첫 반복은 닫기 보정이 필요했다. 21단계·37장 원본은 학습 적격이 아닌 시연 자료로 보존했다.
+23.10g 하중에서는 무부하 관성 보상과 PWM 상승 시간이 맞지 않아 짧은 상승이 실패했다. 상승 보정 시간을 250→500ms로 늘리고, 센서 한 스텝 변동에 대비해 내부 성공 기준을 ±0.40°로 강화했다. 외부 합격 기준 ±0.50°는 유지했다.
 
-[최신 통합 현황](docs/evidence/2026-10-17-integration-status.md) · [학습 계약·재현](docs/evidence/2026-10-15-offline-visual-dynamics.md) · [관측 실측](docs/evidence/2026-10-15-bounded-observation.md)
+| 최종 회귀 조건 (2026-06-28) | 결과 | 평균 / 최대 절대오차 |
+| --- | ---: | ---: |
+| 추가 하중 없음 | 11/11 | 0.132° / 0.36° |
+| 23.10g | 11/11 | 0.155° / 0.31° |
 
-## 빠른 증거 링크
+같은 고정 장착, 230–245° 검증 범위의 결과다. 전 관절 정확도나 다른 하중·배터리 조건의 성능을 뜻하지 않는다. [측정 조건·실패·최종 결과](docs/evidence/2026-06-28-m4-shoulder-closed-loop.md)
 
-- [Claim-to-evidence matrix](docs/evidence/claim-to-evidence-matrix.md):
-  주장, 증거, 한계, 주장하지 않는 항목을 한눈에 보는 검토용 guardrail
-- [물리 텔레오퍼레이션 GIF](https://raw.githubusercontent.com/ParkJsoo/motionbrain/demo-ready-20260608/docs/assets/demo/motionbrain-demo.gif)
-  / [MP4](https://raw.githubusercontent.com/ParkJsoo/motionbrain/demo-ready-20260608/docs/assets/demo/motionbrain-demo.mp4)
-- [`ros2_control` dry-run 검증](docs/evidence/2026-06-16-ros2-control-open-loop.md):
-  controller manager, hardware-interface plugin, command/state interface,
-  `FollowJointTrajectory`, `/joint_states` dry-run state mirror
-- [M4 physical `ros2_control` 검증](docs/evidence/2026-07-13-m4-physical-ros2-control.md):
-  20초 one-shot 확인, 실물 수렴, replay 거부, systemd 재기동
-- [Pi/systemd/ROS2 health 검증](docs/evidence/2026-06-16-pi-system-health.md):
-  dashboard, perception, ROS2 bridge service와 typed topic/service/action 상태
-- [Pi runtime 측정](docs/evidence/2026-06-17-runtime-measurements.md):
-  HTTP endpoints `200`, 15초 bounded ROS2 topic acquisition,
-  `/joint_states` 약 4.9-5.0 Hz 확인, read-only/no actuation capture
-- [M4 어깨 폐루프 검증](docs/evidence/2026-06-28-m4-shoulder-closed-loop.md):
-  AS5600 절대각 I2C 피드백, 센서 고장 차단, 230-245° 검증 범위의 제한 목표각 수렴
+ROS2 실물 경로는 별도 시험에서 248.20°→목표 250.00°→종료 249.96°를 확인했다. 중복 확인과 비활성 상태 요청은 전달하지 않았다. 한 축의 단일 목표 검증이며 궤적 추종이 아니다. [2026-07-13 결과](docs/evidence/2026-07-13-m4-physical-ros2-control.md)
 
-## 문제 정의
+## 사례 2 — 빈 HTTP 연결로 인한 상태 조회 지연
 
-저가형 5축 DC 모터 로봇팔은 기본적으로 엔코더, 힘 센서, 신뢰할 수 있는
-전체 관절 절대 위치가 부족하다. 2026-06-28에 M4 어깨 한 축은 AS5600
-절대각 피드백과 좁은 범위의 폐루프 목표각 제어를 검증했지만, 이를 전체
-로봇팔 위치 제어나 완전 자율 집기로 확대해서 주장하지 않는다.
+구동 전후 상태 조회가 간헐적으로 실패했다. 명령을 재전송하기보다 빈 TCP 연결을 유지한 상태에서 대기 요청을 보내 지연 경로를 재현했다. Arduino WebServer의 첫 바이트 대기 기본값 5000ms를 확인하고, 데이터 없는 초기 연결만 100ms에 해제하도록 프로젝트 내부 어댑터를 추가했다.
 
-그래서 MotionBrain은 다음 기준으로 설계했다.
+동일 시험의 대기 GET은 수정 전 1198.4ms 후 리셋에서 수정 후 39.4ms 정상 응답으로 바뀌었다. 이후 다른 경로에서 약 830ms 상태 조회 타임아웃이 남아, 전체 통신 문제가 해결됐다고 판단하지 않았다. [재현·수정·남은 실패](docs/evidence/2026-10-17-idle-http-client.md)
 
-- 저수준 모터 출력은 ESP32 안전 게이트 뒤에 둔다.
-- 센서와 텔레오퍼레이션 입력은 STM32에서 구조화된 UART 프레임으로 보낸다.
-- 시리얼, HTTP, 대시보드, ROS2 입력은 같은 명령 의미를 공유한다.
-- 비전 추론은 Pi, 오프라인 dynamics 학습은 Mac CPU에서 실행한다. 물리 동작은 작업자 확인과 안전 상태를 통과해야 한다.
-- 검증되지 않은 호스트 계층이 직접 모터를 우회 제어하지 않게 한다.
+## 관찰 기반 파지와 학습 단계
 
-## 담당 구현
+2026-10-17 외부 iPhone 화면을 관찰해 수동 명령을 선택하는 방식으로 립밤을 잡고 들었다. 이후 잡기·들기·놓기를 두 번 추가 확인했고 첫 반복에는 닫기 보정 한 번이 필요했다. 비공개 명령·출력 21단계와 이미지 37장을 보존했다. [시연 결과와 한계](docs/evidence/2026-10-17-lipbalm-repetitions.md)
 
-- ESP32 5축 DC 모터 제어 펌웨어
-- `BOOT -> IDLE -> ARMED -> FAULT` 안전 상태 머신
-- 시리얼/HTTP 공통 명령 처리 구조
-- 토큰 기반 HTTP 상태 변경 명령
-- STM32 `MPU-6050 + UART` 센서/텔레오퍼레이션 펌웨어와 HC-SR04 bench 검증 경로
-- 데드맨, 프레임 최신성 타임아웃, 센서 고장 래치
-- M4 어깨 AS5600 I2C 절대각 피드백, 제한 폐루프 목표각 제어와 HTTP/대시보드/ROS2 상태 노출
-- ESP32-CAM `/capture` 중심 펌웨어와 `/stream` 비활성화 안정화
-- Raspberry Pi 대시보드와 인식 서비스
-- OpenCV 기반 빨간 타겟 검출과 타겟 오버레이
-- 안전 게이트 기반 bounded base nudge 제어 표면
-- ROS2 Jazzy 브리지, 타입 지정 메시지, C++ 제어 guard, mission supervisor
-- `ros2_control` dry-run mock 데모와 안전한 open-loop `SystemInterface` 스캐폴드
-- M4 proposal hardware interface, operator-confirm executor와 systemd 운영 계약
-- Raspberry Pi systemd 배포와 상태 점검
-- GitHub Actions 기반 PlatformIO/Python/ROS2 품질 게이트
+인식은 사전 학습 YOLOv5s를 OpenCV DNN/ONNX로 실행한다. 자체 검출기 학습 결과는 없다. 행동 결과 예측용 NumPy ridge 모델과 무변화 기준선, 세션별 분할·train 전용 정규화·학습 및 평가 CLI를 구현했지만 **학습 적격 실물 데이터는 0건**이다.
 
-## 운영 화면
+영상 100ms·앵커 15초·영속 저장 250ms를 충족하는 행동 전후 데이터 연결이 남아 있다. 비구동 관측 시험은 7요청 중 1개만 성공했고 저장 초과로 중단했다. Mac 카메라의 두 실행도 PTS 진단 12/20으로 기준 16/20에 미달했다. 파지 시연을 동기화된 학습 데이터나 학습 정책의 성과로 취급하지 않는다. [데이터 계약·재현·한계](docs/data-pipeline.md)
 
-최종 물리 텔레오퍼레이션 영상은 README 상단 GIF/MP4로 공개했다. 아래 이미지는 영상과 별도로 캡처한 운영 UI/RViz 정적 증거로, MotionBrain이 단순 펌웨어 코드가 아니라 작업자 화면, 관찰 화면, ROS2 시각화까지 갖춘 시스템이라는 점을 보여준다.
+## 검증 범위와 남은 작업
 
-![MotionBrain Control 웹 콘솔](docs/assets/motionbrain-control-stream.png)
+소프트웨어는 [PlatformIO/Python](https://github.com/ParkJsoo/motionbrain/actions/workflows/platformio.yml)과 [ROS2](https://github.com/ParkJsoo/motionbrain/actions/workflows/ros2.yml) CI로 검사한다. 하드웨어 결과는 위 날짜별 기록의 조건에 한정한다. 원본 사진과 장치별 운영 기록은 공개하지 않는다.
 
-ESP32 내장 제어 콘솔은 direct capture / Pi tracked frame 기반 카메라 확인, 토큰 기반 상태 변경 명령, 수동 모터/조인트 제어, 현재 시스템 상태를 한 화면에서 제공한다.
-
-![MotionBrain Pi 대시보드](docs/assets/motionbrain-dashboard.png)
-
-Pi 대시보드는 상태, 안전, 텔레오퍼레이션, 이벤트, 카메라 프레임, 감지/정렬 결과를 관찰하는 운영 화면이다. 물리 동작 버튼은 토큰과 안전 상태를 다시 확인하는 제한된 경로로만 쓰인다.
-
-![MotionBrain RViz RobotModel](docs/assets/motionbrain-rviz-robotmodel.png)
-
-RViz 화면은 Pi dashboard mirror가 게시한 live ROS2 topic, `RobotModel`, TF를 한 화면에서 확인하는 시각화 경로다.
-
-## 시스템 구조
-
-```text
-STM32 센서 / 텔레오퍼레이션
-  -> UART 센서와 조작 프레임
-  -> ESP32 모션 제어기
-  -> Dispatcher + SafetyGate
-  -> RobotArm / MotionSequence
-  -> TB6612FNG 모터 드라이버
-  -> 5축 DC 모터 로봇팔
-
-ESP32-CAM
-  -> HTTP 캡처
-  -> direct 스트림은 HTTP 410으로 비활성화
-  -> Raspberry Pi 인식 서비스
-  -> 대시보드 타겟 오버레이
-  -> ROS2 /camera/detection(_typed)
-
-Raspberry Pi ROS2 호스트
-  -> motionbrain_msgs
-  -> motionbrain_ros_bridge
-  -> motionbrain_control C++ guard
-  -> motionbrain_mission supervisor
-  -> 타입 지정 상태, 감지, 기구학, guard, mission 토픽
-```
-
-## 핵심 기술 포인트
-
-### 안전 중심 제어
-
-모션 명령은 시스템 상태, 고장 래치, 센서 상태, 토큰 검증을 통과해야 실행된다. 수동 웹 조작은 제어기 쪽 lease를 적용해 갱신이 끊기면 즉시 hard stop으로 떨어지게 했다.
-
-### 멀티 MCU 역할 분리
-
-ESP32는 모터 출력과 안전 상태를 담당하고, STM32는 센서/텔레오퍼레이션 프레임을 담당한다. 이 분리는 센서 입력, 수동 조작, 호스트 명령이 같은 ESP32 안전 경계를 통과하게 만든다.
-
-### 비전과 로봇 동작의 분리
-
-ESP32-CAM은 카메라 노드로만 두고, Raspberry Pi에서 감지와 오버레이를 처리한다. 대시보드와 ROS2 브리지는 같은 선택 타겟 payload를 소비한다.
-
-### ROS2 호스트 경계
-
-ROS2는 ESP32 내부 제어를 대체하지 않는다. M4 physical 경로는 `ForwardCommandController -> non-forwarded proposal -> 20초 one-shot operator confirm -> 인증 /shoulder -> ESP32 SafetyGate -> AS5600 폐루프` 순서다. direct `http`/`physical` transport, full-arm write, 자동 trajectory tracking은 비활성화했다.
-
-### 검증 가능한 데모 경계
-
-현재 공개 데모는 실물 텔레오퍼레이션이다. 보조 검증 증거로는 direct capture / Pi tracked frame 기반 카메라 확인, Pi 호스트 대시보드, 빨간 타겟/known-object 타겟 오버레이, ROS2 타입 지정 토픽, 안전 게이트 기반 bounded nudge 제어 표면, 토큰 기반 search-light on/off 명령 경로가 있다. 자동 집기는 아직 활성화하지 않는다.
-
-## 검증 결과
-
-아래 하드웨어·ROS2 수치는 2026년 6–7월 검증 기록이다. 현재 학습 구현의 검증은 위 링크에서 구분한다.
-
-- ESP32 제어기와 ESP32-CAM PlatformIO 빌드 통과
-- `TB6612FNG x3`와 `M1~M5` 실제 모터 출력 확인
-- M4 어깨 AS5600 I2C 각도/자석 상태 확인, 제한 범위 폐루프 목표
-  초기 검증 238.10°/233.96°와 재장착 회귀 238.09°/234.14°로 안정화
-- 텔레오퍼레이션 어깨 입력이 활성 목표를 53ms 만에 `OVERRIDDEN`으로
-  취소하는 것을 확인하고, 직접/sequence/teleop M4 경로에 공통 소프트
-  리밋 가드를 적용
-- M4 보정각, raw 각도, 자석 상태, 센서 최신성, 제어/가드 상태를 ESP32
-  `/status`, Pi 대시보드, ROS2 typed status와 diagnostics에 연결
-- 고정 장착 상태에서 232-243° 및 75/100% 조합 5회와 238↔234° 반복
-  6회를 두 차례 실행해 총 22/22 통과. 두 번째 전체 매트릭스의 평균
-  절대오차는 0.191°, 최대 절대오차는 0.31°였고, 안정화 후 오차 재검사와
-  `TARGET_MISSED` 실패 상태를 적용
-- 23.1g 하중의 첫 단거리 상승 실패에서 PWM 램프와 보정 펄스의 불일치를
-  확인하고 상승 보정 최대 시간을 500ms로 수정. AS5600 한 스텝 변동을 위한
-  내부 성공 여유 `±0.40°`도 분리해 적용한 뒤 무부하 11/11(평균 0.132°,
-  최대 0.36°), 23.1g 11/11(평균 0.155°, 최대 0.31°) 통과
-- STM32 `MPU-6050 + UART` 텔레오퍼레이션과 HC-SR04 bench 경로 검증
-- 유선 텔레오퍼레이션 데드맨 입력으로 실제 모터 출력 및 release 정지 확인
-- 최종 물리 텔레오퍼레이션 데모 영상 캡처와 README GIF/MP4 반영
-- ESP32-CAM `/status`, `/capture` 확인과 `/stream` HTTP 410 비활성화 검증
-- 로컬 LAN에서 ESP32 제어기, ESP32-CAM, Raspberry Pi 동시 연결 확인
-- `MotionBrain Control` 웹 UI에서 토큰 입력 후 상태 변경 명령 확인
-- Pi 대시보드에서 카메라 feed, 빨간 타겟 박스, 안전 게이트 기반 bounded nudge 제어 표면 확인
-- Pi 인식 서비스에서 YOLOv5s/OpenCV DNN 기반 제한 `cup` 타겟 경로 확인. 최신 안정 CAM 서비스 프로필은 ESP32-CAM `qvga` / JPEG quality `15`다.
-- Raspberry Pi 4 + Ubuntu 24.04 + ROS2 Jazzy에서 `colcon build/test` 통과
-- `/motionbrain/status_typed`, `/camera/detection_typed`, estimated/measured `/joint_states`, `/motionbrain/kinematics_typed`, `/motionbrain/control_guard_typed`, `/motionbrain/mission_state_typed` 상태 점검 통과
-- Pi 인식 서비스 결과가 ROS2 `/camera/detection_typed`까지 전달되는 것 확인
-- Docker/noVNC RViz 검증 환경에서 RobotModel/TF와 Pi dashboard mirror 기반 live ROS2 topic 시각화 확인
-- M4 physical `ros2_control`에서 248.20° 시작, 250.00° 목표, 249.96° 종료(-0.04°, `TARGET_REACHED`) 확인; 비-M4 출력은 0 유지
-- replay는 `proposal_already_consumed`, IDLE smoke는 `state_not_armed`로 전달 없이 거부; systemd 재시작 뒤 executor 한 개 자동 복구
-- 로컬 Python 185/185, Pi ROS2 72 tests/0 failures 통과
-- GitHub Actions에서 PlatformIO, Python 테스트, ROS2 workspace 검증
-
-## 객체 인식 현황
-
-검출기는 사전 학습된 YOLOv5s를 사용하며 이 프로젝트에서 자체 학습한 모델은 아니다.
-
-Pi에서 OpenCV DNN/ONNX 기반 constrained known-object detection 경로는 구현했다. `config/coco80.labels`와 명시적 모델 경로를 사용하고, 모델 weight는 repository에 넣지 않는다.
-
-현재 물리 bench에서 가장 신뢰할 수 있는 known-object 경로는 YOLOv5s/OpenCV DNN, `--object-target cup`, 설정된 confidence gate 기준의 제한된 `cup` 확인이다. 이 경로는 Pi 대시보드/인식 API에서 `cup`을 반환한 증거가 있고, 최신 안정 CAM 서비스 프로필은 ESP32-CAM `qvga` / JPEG quality `15`다. 수동 카메라 확인은 direct `/capture`, 인식 확인은 Pi tracked frame으로 분리했다.
-
-따라서 현재 문서와 데모에서는 다음처럼 표현한다.
-
-- 가능: Pi 호스트 객체 인식 흐름, 선택 타겟 계약, ROS2/대시보드 연동, 제한된 `cup` 인식 확인
-- 안정 검증 완료: 빨간 타겟 추적/오버레이, direct `/capture` 기반 수동 카메라 확인, cup 인식 확인
-- 아직 미완료: 임의 물체 인식, 마커/물체 기반 자동 집기, 피드백 없는 연속 visual servoing
-
-## 현재 한계
-
-- M4 어깨만 AS5600 피드백과 operator-confirmed physical `ros2_control`
-  single-target 경로가 있다. 나머지 축 피드백, full-arm write, 자동 trajectory tracking은 없다.
-- M4 GPIO0/GPIO15는 현재 핀 점유에서 유지하는 지원 배치지만 부트 스트랩
-  조건을 준수해야 한다. 센서·자석 고정은 완료했고 ROS zero는 `222.80°`,
-  sign `+1`로 적용했다. `230-245°`는 matrix로 검증한 목표 범위이고,
-  `122.08-301.02°`는 현재 자세 조건부 임시 소프트 범위다. 이 넓은 범위는
-  동등하게 검증된 범위가 아니며 다른 자세, 장착, 하중에서는 다시 검증해야 한다.
-- `base_yaw_reference`가 설치되지 않아 physical guarded routine `run/execute`는
-  비활성화되어 있다. ROS2 routine service/action은 status, dry-run, expected
-  rejection 경계까지만 주장한다.
-- HC-SR04는 최종 물리 데모에서 제거됐고, range telemetry는 disabled/nonblocking 상태로 처리한다.
-- ESP32-CAM QVGA 입력은 일반 객체 인식에는 품질 한계가 있다.
-- 일반 텍스트 명령으로 임의 물체를 찾아 집는 수준은 아직 아니다.
-- README용 물리 텔레오퍼레이션 영상과 비동작 screenshot/evidence는 캡처됐다. 추가 search-light toggle 또는 bounded nudge evidence는 별도 목적이 있을 때만 새로 촬영한다.
-
-## 남은 과제
-
-실제 명령·출력 기록과 전후 관측을 수집기에 연결하고, 한 축의 제한 동작·취소·정착을
-검증해야 한다. 이후 세션을 분리한 실물 데이터로 기준선과 모델을 비교한다.
-예측 오차 감소와 실제 조작 성공률 개선은 별도로 평가한다.
-
-## 관련 문서
-
-- [README.md](README.md): 프로젝트 진입점
-- [README.en.md](README.en.md): 영어 프로젝트 진입점
-- [ROBOTICS_SYSTEM_READINESS.md](ROBOTICS_SYSTEM_READINESS.md): 로보틱스 시스템/ROS2 하드웨어 경계 요약
-- [docs/evidence/claim-to-evidence-matrix.md](docs/evidence/claim-to-evidence-matrix.md): 주장과 증거, 한계, 미주장 항목 matrix
-- [PIN_MAP.md](PIN_MAP.md): ESP32 핀 점유와 M4 AS5600 배치 정책
-- [docs/evidence/2026-06-28-m4-shoulder-closed-loop.md](docs/evidence/2026-06-28-m4-shoulder-closed-loop.md): M4 어깨 단일축 폐루프 실물 검증
-- [docs/evidence/2026-06-16-ros2-control-open-loop.md](docs/evidence/2026-06-16-ros2-control-open-loop.md): `ros2_control` dry-run 검증 요약
-- [docs/evidence/2026-07-13-m4-physical-ros2-control.md](docs/evidence/2026-07-13-m4-physical-ros2-control.md): M4 physical one-shot 검증
-- [docs/evidence/2026-06-16-pi-system-health.md](docs/evidence/2026-06-16-pi-system-health.md): Pi/systemd/ROS2 health 검증 요약
-- [docs/evidence/2026-06-17-runtime-measurements.md](docs/evidence/2026-06-17-runtime-measurements.md): Pi runtime/ROS2 측정 기록
+- 다른 네 관절의 위치 피드백, 전체 관절 궤적 제어, 힘 센싱은 없다.
+- 전기적 비상 정지·데드맨 지연·전원 과도응답의 계측과 장기 신뢰성 검증이 남아 있다.
+- 다음 단계는 검증된 촬영 시각·앵커와 실제 행동 출력을 연결해 데이터를 수집하고, 세션을 분리한 평가에서 무변화 기준선과 비교하는 것이다. 예측 오차와 실제 조작 성공률은 별도로 평가해야 한다.
