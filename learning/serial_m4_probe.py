@@ -7,6 +7,8 @@ from contextlib import nullcontext
 import base64
 import hashlib
 import re
+import struct
+import zlib
 import time
 import uuid
 from pathlib import Path
@@ -19,22 +21,25 @@ from learning.mac_clock_bridge import finite
 POLICY=dict(samples=6, httpRequests=8, serialRequestSeconds=.8, sessionSeconds=12,
             intervalSeconds=.025, drainSeconds=.2, tailDrainSeconds=.2, maxRawBytes=4096, baud=115200,
             maxPersistenceMs=250, maxM4AgeMs=20, retries=0, motorRequests=0)
+COMPACT_LINE=re.compile(rb'M4S3 ([A-Za-z0-9+/]{52})\n')
 FRESH_LINE=re.compile(rb'M4S2 ([0-9a-f]{8}) ([0-9a-f]{32}) ([0-9a-f]{4}) ([0-9a-f]{8}) ([0-9a-f]{8}) ([0-9a-f]{8}) ([0-9a-f]{2})\r?\n')
 LINE=re.compile(rb'M4S1 ([0-9a-f]{8}) ([0-9a-f]{32}) ([0-9a-f]{4}) ([0-9a-f]{8}) ([0-9a-f]{8}) ([0-9a-f]{2})\r?\n')
 
 
 def unexpected_tail(raw):
     return bool(raw and not raw.endswith(b'\n')) or any(
-        any(line.startswith(magic) or magic.startswith(line) for magic in (b'M4S1',b'M4S2'))
+        any(line.startswith(magic) or magic.startswith(line) for magic in (b'M4S1',b'M4S2',b'M4S3'))
         for line in raw.splitlines() if line)
 
 
-def policy_for(initialize_port, fresh_sample=False, transport_trace=False):
-    if any(type(v) is not bool for v in (initialize_port,fresh_sample,transport_trace)):raise ValueError('initialization_choice_invalid')
+def policy_for(initialize_port, fresh_sample=False, transport_trace=False, compact_sample=False):
+    if any(type(v) is not bool for v in (initialize_port,fresh_sample,transport_trace,compact_sample)):raise ValueError('initialization_choice_invalid')
+    fresh_sample=fresh_sample or compact_sample
     policy=dict(POLICY)
     if initialize_port:policy.update(httpRequests=12,sessionSeconds=32,drainSeconds=20, startupMaxRawBytes=65536)
     if fresh_sample:policy.update(freshSample=True,firmwareWaitLimitMs=150,mcuIntervalMarginMs=2)
     if transport_trace:policy.update(transportTrace=True,maxTraceReadCalls=256)
+    if compact_sample:policy.update(compactSample=True,responseFormat='base64_39_bytes_crc32')
     return policy
 
 
@@ -72,18 +77,29 @@ def open_usb(port, serial_number):
     return device
 
 
-def parse_reply(raw, nonce, boot_id, *, fresh_sample=False):
+def parse_reply(raw, nonce, boot_id, *, fresh_sample=False, compact_sample=False):
     if len(raw)>4096:raise ValueError('serial_raw_limit')
     if not raw.endswith(b'\n'):raise ValueError('serial_partial_trailing_bytes')
     candidates=[line for line in raw.splitlines(keepends=True) if unexpected_tail(line)]
     if len(candidates)!=1:raise ValueError('serial_reply_count_invalid')
-    m=(FRESH_LINE if fresh_sample else LINE).fullmatch(candidates[0])
-    if not m:raise ValueError('serial_reply_shape_invalid')
-    fields=[v.decode('ascii') for v in m.groups()]
-    received=int(fields.pop(5),16) if fresh_sample else None
-    token,boot,raw_angle,polled,reported,flags=fields
+    if any(type(v) is not bool for v in (fresh_sample,compact_sample)):raise ValueError('serial_mode_invalid')
+    fresh_sample=fresh_sample or compact_sample
+    if compact_sample:
+        m=COMPACT_LINE.fullmatch(candidates[0])
+        if not m:raise ValueError('serial_reply_shape_invalid')
+        payload=base64.b64decode(m[1],validate=True)
+        if len(payload)!=39 or base64.b64encode(payload)!=m[1]:raise ValueError('compact_payload_invalid')
+        if zlib.crc32(payload[:35])!=struct.unpack('>I',payload[35:])[0]:raise ValueError('compact_crc_mismatch')
+        token_bytes,boot_bytes,raw_angle,polled,reported,received,flags=struct.unpack('>4s16sHIIIB',payload[:35])
+        token,boot=token_bytes.hex(),boot_bytes.hex()
+    else:
+        m=(FRESH_LINE if fresh_sample else LINE).fullmatch(candidates[0])
+        if not m:raise ValueError('serial_reply_shape_invalid')
+        fields=[v.decode('ascii') for v in m.groups()]
+        received=int(fields.pop(5),16) if fresh_sample else None
+        token,boot,raw_angle,polled,reported,flags=fields
+        raw_angle,polled,reported,flags=[int(v,16) for v in (raw_angle,polled,reported,flags)]
     if token!=nonce or boot!=boot_id:raise ValueError('serial_nonce_or_boot_mismatch')
-    raw_angle,polled,reported,flags=[int(v,16) for v in (raw_angle,polled,reported,flags)]
     age=(reported-polled)&0xffffffff
     if raw_angle>4095 or polled==0 or flags!=31 or age>150:raise ValueError('serial_sensor_or_idle_invalid')
     result=dict(nonce=nonce,bootId=boot_id,raw=raw_angle,polledMs=polled,reportedMs=reported,
@@ -104,10 +120,18 @@ def trace_summary(row, enabled):
     return validate_trace(row['transportTrace'],row,raw)
 
 
-def validate_receipt(row, nonce, boot_id, *, fresh_sample=False, transport_trace=False):
+def wire_request(nonce, fresh_sample=False, compact_sample=False):
+    if (any(type(v) is not bool for v in (fresh_sample,compact_sample)) or
+            not isinstance(nonce,str) or not re.fullmatch('[0-9a-f]{8}',nonce)):
+        raise ValueError('serial_request_invalid')
+    return b'\x1e'+(b'3' if compact_sample else b'2' if fresh_sample else b'')+nonce.encode()+b'\n'
+
+
+def validate_receipt(row, nonce, boot_id, *, fresh_sample=False, transport_trace=False, compact_sample=False):
+    fresh_sample=fresh_sample or compact_sample
     if (not isinstance(row,dict) or row.get('schemaVersion')!='motionbrain.serial_m4_receipt.v1' or row.get('transportCompleted') is not True
             or row.get('clockDomain')!='python_monotonic' or not isinstance(row.get('hostClockId'),str)
-            or not row['hostClockId'] or row.get('requestBase64')!=base64.b64encode(b'\x1e'+(b'2' if fresh_sample else b'')+nonce.encode()+b'\n').decode()):
+            or not row['hostClockId'] or row.get('requestBase64')!=base64.b64encode(wire_request(nonce,fresh_sample,compact_sample)).decode()):
         raise ValueError('serial_receipt_invalid')
     trace_summary(row,transport_trace)
     a,b=row['requestStartedMonotonic'],row['receivedMonotonic']
@@ -115,7 +139,7 @@ def validate_receipt(row, nonce, boot_id, *, fresh_sample=False, transport_trace
         raise ValueError('serial_receipt_clock_invalid')
     raw=base64.b64decode(row['rawBase64'],validate=True)
     if hashlib.sha256(raw).hexdigest()!=row.get('rawSha256'):raise ValueError('serial_raw_hash_mismatch')
-    sample=parse_reply(raw,nonce,boot_id,fresh_sample=fresh_sample)
+    sample=parse_reply(raw,nonce,boot_id,fresh_sample=fresh_sample,compact_sample=compact_sample)
     if row.get('sample')!=sample:raise ValueError('serial_sample_recomputation_mismatch')
     age=sample['reportedAgeMs']
     upper=(b-a)*1000+age+1
@@ -142,9 +166,9 @@ def validate_receipt(row, nonce, boot_id, *, fresh_sample=False, transport_trace
                 sensorPhysicalSampleTimeVerified=False,trainingEligible=False,controlEligible=False)
 
 
-def read_sample(device, nonce, boot_id, host_id, *, clock=time, fresh_sample=False, transport_trace=False):
+def read_sample(device, nonce, boot_id, host_id, *, clock=time, fresh_sample=False, transport_trace=False, compact_sample=False):
     if not re.fullmatch('[0-9a-f]{8}',nonce):raise ValueError('nonce_invalid')
-    command=b'\x1e'+(b'2' if fresh_sample else b'')+nonce.encode()+b'\n'
+    command=wire_request(nonce,fresh_sample,compact_sample)
     row=dict(schemaVersion='motionbrain.serial_m4_receipt.v1',clockDomain='python_monotonic',hostClockId=host_id,
              requestBase64=base64.b64encode(command).decode(),requestStartedMonotonic=clock.monotonic(),
              transportCompleted=False)
@@ -182,9 +206,12 @@ def read_sample(device, nonce, boot_id, host_id, *, clock=time, fresh_sample=Fal
                             if transport_trace:step['rawSha256']=hashlib.sha256(chunk).hexdigest()
                 if not chunk:continue
                 if len(raw)>4096:raise ValueError('serial_raw_limit')
-                if b'\n' in chunk and any(line.startswith((b'M4S1 ',b'M4S2 ')) for line in raw.splitlines(keepends=True)):
+                # A read may end partway through a diagnostic log following
+                # the reply. Preserve it and wait for its LF within the same
+                # original deadline/size limits; never discard trailing bytes.
+                if raw.endswith(b'\n') and any(line.startswith((b'M4S1 ',b'M4S2 ',b'M4S3 ')) for line in raw.splitlines(keepends=True)):
                     with operation('parse',rawBytes=len(raw),rawSha256=hashlib.sha256(raw).hexdigest() if transport_trace else None):
-                        row['sample']=parse_reply(bytes(raw),nonce,boot_id,fresh_sample=fresh_sample)
+                        row['sample']=parse_reply(bytes(raw),nonce,boot_id,fresh_sample=fresh_sample,compact_sample=compact_sample)
                     row['transportCompleted']=True
                     break
             if not row['transportCompleted']:raise TimeoutError('serial_request_deadline')
@@ -198,8 +225,9 @@ def read_sample(device, nonce, boot_id, host_id, *, clock=time, fresh_sample=Fal
     return row
 
 
-def collect(output,url,port,serial_number,*,open_port=open_usb,http=direct_get,clock=time,initialize_port=False,fresh_sample=False,transport_trace=False):
-    policy=policy_for(initialize_port,fresh_sample,transport_trace)
+def collect(output,url,port,serial_number,*,open_port=open_usb,http=direct_get,clock=time,initialize_port=False,fresh_sample=False,transport_trace=False,compact_sample=False):
+    policy=policy_for(initialize_port,fresh_sample,transport_trace,compact_sample)
+    fresh_sample=policy.get('freshSample',False)
     store=ArtifactStore(Path(output));refs=[];http_rows=[];serial_rows=[];samples=[];device=None
     start=clock.monotonic();host_id=uuid.uuid4().hex;nonces=[uuid.uuid4().hex[:8] for _ in range(6)]
     if len(set(nonces))!=6:raise ValueError('nonce_collision')
@@ -246,10 +274,10 @@ def collect(output,url,port,serial_number,*,open_port=open_usb,http=direct_get,c
             device=open_port(port,serial_number);startup()
         last_sample=None
         for nonce in nonces:
-            budget();row=read_sample(device,nonce,boot,host_id,clock=clock,fresh_sample=fresh_sample,transport_trace=transport_trace)
+            budget();row=read_sample(device,nonce,boot,host_id,clock=clock,fresh_sample=fresh_sample,transport_trace=transport_trace,compact_sample=compact_sample)
             serial_rows.append(row);save(f'serial/{len(serial_rows):02d}.json',row)
             if row.get('cancelled') is True:raise KeyboardInterrupt()
-            sample=validate_receipt(row,nonce,boot,fresh_sample=fresh_sample,transport_trace=transport_trace)
+            sample=validate_receipt(row,nonce,boot,fresh_sample=fresh_sample,transport_trace=transport_trace,compact_sample=compact_sample)
             if last_sample is not None:
                 for key in ('polledMs','reportedMs'):
                     if not 0<((sample[key]-last_sample[key])&0xffffffff)<1000:
@@ -294,7 +322,8 @@ def audit(root):
         p=read_json_artifact(root,refs['plan.json'])
         fresh_sample=p['policy'].get('freshSample',False)
         transport_trace=p['policy'].get('transportTrace',False)
-        policy=policy_for(p.get('initializePort',False),fresh_sample,transport_trace)
+        compact_sample=p['policy'].get('compactSample',False)
+        policy=policy_for(p.get('initializePort',False),fresh_sample,transport_trace,compact_sample)
         if (p.get('schemaVersion')!='motionbrain.serial_m4_probe.v1' or r.get('schemaVersion')!=p['schemaVersion']
                 or p['policy']!=policy or r['trainingEligible'] is not False or r['controlEligible'] is not False
                 or r['motorRequests']!=0 or r['automaticRetry'] is not False):raise ValueError('serial_contract_invalid')
@@ -309,7 +338,7 @@ def audit(root):
             raise ValueError('serial_attempt_artifact_mismatch')
         for i in range(1,count+1):
             row=read_json_artifact(root,refs[f'serial/{i:02d}.json'])
-            expected_request=base64.b64encode(b'\x1e'+(b'2' if fresh_sample else b'')+p['nonces'][i-1].encode()+b'\n').decode()
+            expected_request=base64.b64encode(wire_request(p['nonces'][i-1],fresh_sample,compact_sample)).decode()
             if (not isinstance(row,dict) or row.get('schemaVersion')!='motionbrain.serial_m4_receipt.v1'
                     or row.get('requestBase64')!=expected_request or row.get('hostClockId')!=p['hostClockId']
                     or row.get('clockDomain')!='python_monotonic' or type(row.get('transportCompleted')) is not bool):
@@ -342,7 +371,7 @@ def audit(root):
                 raise ValueError('controller_boot_or_outputs_changed')
             serial=[read_json_artifact(root,refs[f'serial/{i:02d}.json']) for i in range(1,7)]
             if len(p['nonces'])!=6 or len(set(p['nonces']))!=6:raise ValueError('nonce_set_invalid')
-            samples=[validate_receipt(x,n,boot,fresh_sample=fresh_sample,transport_trace=transport_trace) for x,n in zip(serial,p['nonces'])]
+            samples=[validate_receipt(x,n,boot,fresh_sample=fresh_sample,transport_trace=transport_trace,compact_sample=compact_sample) for x,n in zip(serial,p['nonces'])]
             startup_lower=pre_open[3]['receivedMonotonic'] if pre_open else rows[3]['receivedMonotonic']
             startup_upper=rows[0]['requestStartedMonotonic'] if pre_open else serial[0]['requestStartedMonotonic']
             for name,lower,upper in (('startup',startup_lower,startup_upper),

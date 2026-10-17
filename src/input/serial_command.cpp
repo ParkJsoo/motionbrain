@@ -288,7 +288,7 @@ void SerialCommand::processSerialInput() {
         const char* nonce = m4SampleFrame_.nonce();
         if (!pendingM4Sample_.active()) {
           if (m4SampleFrame_.fresh()) {
-            if (m4SampleFlags() == 31) pendingM4Sample_.begin(nonce, millis());
+            if (m4SampleFlags() == 31) pendingM4Sample_.begin(nonce, millis(), m4SampleFrame_.compact());
           } else {
             sendM4Sample(nonce);
           }
@@ -357,24 +357,31 @@ uint8_t SerialCommand::m4SampleFlags() const {
 
 void SerialCommand::updateM4Sample() {
   if (pendingM4Sample_.ready(shoulderAngleSensor.getI2cLastUpdateMs(), millis(), m4SampleFlags() == 31)) {
-    sendM4Sample(pendingM4Sample_.nonce(), true, pendingM4Sample_.receivedMs());
+    sendM4Sample(pendingM4Sample_.nonce(), true, pendingM4Sample_.receivedMs(), pendingM4Sample_.compact());
     pendingM4Sample_.cancel();
   }
 }
 
-void SerialCommand::sendM4Sample(const char* nonce, bool fresh, uint32_t receivedMs) {
+void SerialCommand::sendM4Sample(const char* nonce, bool fresh, uint32_t receivedMs, bool compact) {
   const auto* core = BoundedActions::executor();
   if (!nonce || !core) return;
   const uint8_t flags = m4SampleFlags();
   char response[90];
   const uint32_t reported = millis();
-  const int n = fresh
-    ? formatFreshM4Sample(response, sizeof(response), nonce, core->bootId(),
-                          shoulderAngleSensor.getI2cRawAngle(),
-                          shoulderAngleSensor.getI2cLastUpdateMs(), reported, receivedMs, flags)
-    : formatM4Sample(response, sizeof(response), nonce, core->bootId(),
-                     shoulderAngleSensor.getI2cRawAngle(),
-                     shoulderAngleSensor.getI2cLastUpdateMs(), reported, flags);
+  int n = 0;
+  if (fresh && compact) {
+    n = formatCompactFreshM4Sample(response, sizeof(response), nonce, core->bootId(),
+                                  shoulderAngleSensor.getI2cRawAngle(),
+                                  shoulderAngleSensor.getI2cLastUpdateMs(), reported, receivedMs, flags);
+  } else if (fresh) {
+    n = formatFreshM4Sample(response, sizeof(response), nonce, core->bootId(),
+                            shoulderAngleSensor.getI2cRawAngle(),
+                            shoulderAngleSensor.getI2cLastUpdateMs(), reported, receivedMs, flags);
+  } else {
+    n = formatM4Sample(response, sizeof(response), nonce, core->bootId(),
+                       shoulderAngleSensor.getI2cRawAngle(),
+                       shoulderAngleSensor.getI2cLastUpdateMs(), reported, flags);
+  }
   if (n) Serial.write(reinterpret_cast<const uint8_t*>(response), static_cast<size_t>(n));
 }
 

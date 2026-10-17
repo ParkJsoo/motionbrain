@@ -95,7 +95,7 @@ private:
   PendingM4Sample pendingM4Sample_;
   uint8_t m4SampleFlags() const;
   void updateM4Sample();
-  void sendM4Sample(const char* nonce, bool fresh = false, uint32_t receivedMs = 0);
+  void sendM4Sample(const char* nonce, bool fresh = false, uint32_t receivedMs = 0, bool compact = false);
   // 시리얼 입력 버퍼
   // Long enough for operational commands such as `wifi token <64 chars>`.
   static const size_t BUFFER_SIZE = 128;  // 최대 명령어 길이
