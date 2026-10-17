@@ -85,6 +85,8 @@ python3 tools/diagnose_controller_http.py --target 'http://<controller-host>' --
 
 이 도구는 최대 네 번의 순차 GET(`/status`, `/sequence`, `/actions`, `/action_outputs`)만 보내고 재시도하지 않는다. 요청 합격 한도는 0.8s, 진단 수집 타임아웃은 2s, 세션 예산은 12s다. 모터 OFF·빈 큐·일치하는 부팅 ID를 확인하지만 전기적 정지나 장기 신뢰성을 증명하지 않는다. [수정 사례와 남은 타임아웃](docs/evidence/2026-10-17-idle-http-client.md)
 
+ESP32의 STA 연결·재연결 시 모뎀 절전을 해제해 센서 조회가 절전 대기를 피하도록 한다. `/status`의 `network.stationPowerSave`는 드라이버 조회 결과로 `none`, `min_modem`, `max_modem`, `not_station`, `unknown`을 반환한다. 설정 실패는 경고하며 연결 자체를 차단하지 않는다. `none`도 20ms 수집 지연을 보장하지 않으므로 실제 요청별 나이를 계속 검사한다. AP 경로와 센서 폴링 주기는 바꾸지 않는다. [유한 지연 계측](docs/mac-direct-camera.md)
+
 ## 명령 상태와 복구
 
 M4 실행기는 `$XDG_STATE_HOME/motionbrain/m4_commands.sqlite3`에 영속 저널을 둔다. 기본값은 `~/.local/state/motionbrain/m4_commands.sqlite3`다. 제어기당 실행기·저널 하나를 사용한다. 같은 파일의 중복 소유는 차단하지만 다른 호스트·경로까지 배타성을 보장하지 않는다.

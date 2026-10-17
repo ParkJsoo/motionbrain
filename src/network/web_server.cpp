@@ -1,6 +1,7 @@
 #include "control/bounded_action_service.h"
 #include "control/numeric_validation.h"
 #include "web_server.h"
+#include "wifi_latency.h"
 
 #include <string.h>
 
@@ -857,6 +858,9 @@ void MotionBrainWebServer::handleStatus() {
   json += "\",";
   json += "\"motorEnabled\":";
   json += motorEnabled ? "true" : "false";
+  json += ",\"network\":{\"stationPowerSave\":\"";
+  json += WiFiLatency::stationPowerSave();
+  json += "\"}";
   
   // 모터 상태 추가
   if (motorControl_ != nullptr) {

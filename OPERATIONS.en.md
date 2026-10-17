@@ -85,6 +85,8 @@ python3 tools/diagnose_controller_http.py --target 'http://<controller-host>' --
 
 The tool sends at most four sequential GETs (`/status`, `/sequence`, `/actions`, `/action_outputs`) without retries. Acceptance is 0.8s per request, diagnostic collection timeout is 2s, and session budget is 12s. It checks motors OFF, empty queue and matching boot IDs, not electrical stopping or long-term reliability. [Correction and residual timeouts (Korean)](docs/evidence/2026-10-17-idle-http-client.md)
 
+STA connection and reconnection disable ESP32 modem sleep to avoid power-save waits during sensor queries. `/status` reports the driver-read `network.stationPowerSave` as `none`, `min_modem`, `max_modem`, `not_station`, or `unknown`. Failure logs a warning without blocking the connection. Even `none` does not guarantee collection within 20ms; continue checking each request. AP behavior and sensor polling intervals are unchanged. [Finite latency measurement (Korean)](docs/mac-direct-camera.md)
+
 ## Command states and recovery
 
 The M4 executor stores a durable journal at `$XDG_STATE_HOME/motionbrain/m4_commands.sqlite3`, defaulting to `~/.local/state/motionbrain/m4_commands.sqlite3`. Use one executor/journal per controller. Duplicate ownership of the same file is blocked; different hosts/paths are outside that protection.

@@ -1,4 +1,5 @@
 #include "wifi_ap.h"
+#include "wifi_latency.h"
 #include "debug/debug_log.h"
 #include <ESPmDNS.h>
 
@@ -110,6 +111,9 @@ bool WiFiAP::initStation(const char* ssid, const char* password, const char* hos
   DebugLog::info("Hostname: %s", hostname_);
 
   WiFi.mode(WIFI_STA);
+  if (!WiFiLatency::disableStationSleep()) {
+    DebugLog::warn("WiFi STA: modem sleep disable was not confirmed");
+  }
   WiFi.setHostname(hostname_);
   WiFi.begin(ssid_, password_[0] != '\0' ? password_ : nullptr);
 
@@ -239,5 +243,8 @@ void WiFiAP::checkStation() {
 
   DebugLog::warn("WiFi STA: disconnected; reconnecting");
   WiFi.disconnect();
+  if (!WiFiLatency::disableStationSleep()) {
+    DebugLog::warn("WiFi STA: modem sleep disable was not confirmed on reconnect");
+  }
   WiFi.begin(ssid_, password_[0] != '\0' ? password_ : nullptr);
 }
