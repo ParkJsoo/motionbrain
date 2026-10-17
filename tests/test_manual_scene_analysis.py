@@ -1,16 +1,11 @@
 """Synthetic checks for the offline diagnostic; no real images or devices."""
-import importlib.util
-from pathlib import Path
 import unittest
 
 from learning.dry_run import VirtualClock
 from learning.fast_observation import AnchoredRoiMeasurement, MeasurementError
 from test_fast_observation import anchor, jpeg, metadata
 
-PATH = Path(__file__).resolve().parents[1] / "docs/evidence/manual-scene-2026-10-15/analyze.py"
-SPEC = importlib.util.spec_from_file_location("manual_scene_analysis", PATH)
-ANALYSIS = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(ANALYSIS)
+from learning import manual_scene_analysis as ANALYSIS
 
 
 class ManualSceneAnalysisTest(unittest.TestCase):
