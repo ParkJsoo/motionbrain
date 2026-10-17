@@ -24,8 +24,8 @@ Good first evidence links for reviewers:
 
 - [PORTFOLIO.en.md](PORTFOLIO.en.md)
 - [ROBOTICS_SYSTEM_READINESS.en.md](ROBOTICS_SYSTEM_READINESS.en.md)
-- [docs/evidence/claim-to-evidence-matrix.md](docs/evidence/claim-to-evidence-matrix.md)
-- [OPERATIONS.md](OPERATIONS.md)
+- [docs/evidence/claim-to-evidence-matrix.md (Korean)](docs/evidence/claim-to-evidence-matrix.md)
+- [OPERATIONS.en.md](OPERATIONS.en.md)
 - [PIN_MAP.en.md](PIN_MAP.en.md)
 - [docs/evidence/2026-06-28-m4-shoulder-closed-loop.en.md](docs/evidence/2026-06-28-m4-shoulder-closed-loop.en.md)
 - [docs/evidence/2026-06-16-ros2-control-open-loop.en.md](docs/evidence/2026-06-16-ros2-control-open-loop.en.md)
@@ -54,13 +54,13 @@ model does not use PyTorch.
 
 **There are zero eligible real action samples.** Synthetic fixtures validate the
 numerical pipeline only; real-data learning and improved manipulation are unproven.
-[Features, data contract, and reproduction](docs/evidence/2026-10-15-offline-visual-dynamics.md)
+[Features, data contract, and reproduction (Korean)](docs/evidence/2026-10-15-offline-visual-dynamics.md)
 
 The no-actuation observation trial retained the 100 ms frame, 15 s anchor, and
 250 ms persistence limits. Of 20 planned requests, 7 ran and 1 succeeded before
 268.89 ms persistence triggered a stop. The usability gate failed; physical action
 collection remains unconnected.
-[Observation protocol and results](docs/evidence/2026-10-15-bounded-observation.md)
+[Observation protocol and results (Korean)](docs/evidence/2026-10-15-bounded-observation.md)
 
 ## 2026-10-17 Demonstrations and Collection Status
 
@@ -74,9 +74,9 @@ Eligible real training samples remain **zero**. The 100ms frame, 15s anchor and
 250ms persistence requirements are unchanged; optical timestamps, semantic anchors
 and action/frame synchronization still need verification. Empty HTTP connection
 waiting was reduced from 5s to 100ms, but intermittent latency is not fully resolved.
-[Integration status and remaining work](docs/evidence/2026-10-17-integration-status.md) ·
-[Repeated demonstration evidence](docs/evidence/2026-10-17-lipbalm-repetitions.md) ·
-[Raw archive format](docs/hardware-demonstrations.md)
+[Integration status and remaining work (Korean)](docs/evidence/2026-10-17-integration-status.md) ·
+[Repeated demonstration evidence (Korean)](docs/evidence/2026-10-17-lipbalm-repetitions.md) ·
+[Raw archive format (Korean)](docs/hardware-demonstrations.md)
 
 ## Demo Video
 
@@ -109,7 +109,7 @@ The Docker/noVNC RViz view mirrors Pi dashboard status and detection through rea
 This README is the project entry point for structure, demo media, and build/run
 commands. Detailed validation results and portfolio claim boundaries live in
 [PORTFOLIO.en.md](PORTFOLIO.en.md) and the
-[claim-to-evidence matrix](docs/evidence/claim-to-evidence-matrix.md).
+[claim-to-evidence matrix (Korean)](docs/evidence/claim-to-evidence-matrix.md).
 
 - Physical motion authority remains inside the ESP32 firmware `SafetyGate`.
   ROS2 physical writes are limited to an operator-confirmed one-shot M4 target.
@@ -192,7 +192,7 @@ ssh motionbrain-pi 'hostname; hostname -I; systemctl is-active ssh'
 
 The Pi SSH alias should primarily follow `motionbrain-pi.local`, not a DHCP IP
 literal. Treat `.davolink` as a router-DNS fallback. See
-[OPERATIONS.md](OPERATIONS.md) for the access and recovery flow.
+[OPERATIONS.en.md](OPERATIONS.en.md) for the access and recovery flow.
 
 Build and test the ROS2 workspace on Raspberry Pi:
 
@@ -257,7 +257,7 @@ stable minimum.
 - [PORTFOLIO.en.md](PORTFOLIO.en.md): English portfolio summary
 - [PORTFOLIO.md](PORTFOLIO.md): Korean portfolio summary
 - [ROBOTICS_SYSTEM_READINESS.en.md](ROBOTICS_SYSTEM_READINESS.en.md): robotics system and ROS2 hardware-boundary summary
-- [docs/evidence/claim-to-evidence-matrix.md](docs/evidence/claim-to-evidence-matrix.md): claim/evidence/limitation/non-claim matrix
+- [docs/evidence/claim-to-evidence-matrix.md (Korean)](docs/evidence/claim-to-evidence-matrix.md): claim/evidence/limitation/non-claim matrix
 - [PIN_MAP.en.md](PIN_MAP.en.md): ESP32 allocation and M4 AS5600 I2C boot conditions
 - [docs/evidence/2026-06-28-m4-shoulder-closed-loop.en.md](docs/evidence/2026-06-28-m4-shoulder-closed-loop.en.md): M4 shoulder AS5600 absolute feedback and bounded physical closed-loop evidence
 - [docs/evidence/2026-06-16-ros2-control-open-loop.en.md](docs/evidence/2026-06-16-ros2-control-open-loop.en.md): public ros2_control dry-run evidence note
@@ -266,8 +266,8 @@ stable minimum.
 - [docs/evidence/2026-06-17-runtime-measurements.en.md](docs/evidence/2026-06-17-runtime-measurements.en.md): Pi runtime endpoint latency, ROS2 topic/status probe, and instrument inventory record
 - [docs/evidence/2026-06-16-embedded-bench-checks.en.md](docs/evidence/2026-06-16-embedded-bench-checks.en.md): recovered DMM-level embedded bench sanity-check evidence
 - [docs/evidence/physical-safety-validation-plan.en.md](docs/evidence/physical-safety-validation-plan.en.md): physical safety planned-evidence procedure for hard cutoff, deadman latency, PWM/UART/I2C, and motor sag
-- [EMBEDDED_BRINGUP.md](EMBEDDED_BRINGUP.md): STM32/ESP32 bring-up and measurement checklist
-- [OPERATIONS.md](OPERATIONS.md): Pi/systemd/health-check operations notes
+- [EMBEDDED_BRINGUP.en.md](EMBEDDED_BRINGUP.en.md): STM32/ESP32 bring-up and measurement checklist
+- [OPERATIONS.en.md](OPERATIONS.en.md): Pi/systemd/health-check operations notes
 
 ## License
 

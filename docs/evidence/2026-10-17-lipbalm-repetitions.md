@@ -1,62 +1,31 @@
-# Lipbalm place and repeated demonstrations — 2026-10-17
+# 립밤 놓기와 반복 시연 — 2026-10-17
 
-Following the first visually confirmed grasp, the user authorized placing the
-lipbalm and repeating the operation to begin data collection. The object was
-placed upright, then grasped, lifted and placed in two additional observed cycles.
-A separate read-only reviewer checked the image sequences and controller results.
+최초 파지를 영상으로 확인한 뒤, 사용자 승인에 따라 립밤을 내려놓고 데이터 수집을 위한 반복 동작을 진행했다. 물체를 세워 놓은 다음 추가로 두 번 잡기·들기·놓기를 관찰했다. 별도의 읽기 전용 검토자가 이미지 순서와 제어기 결과를 확인했다.
 
-| Phase | Motion requests | Visual outcome |
+| 단계 | 구동 요청 수 | 영상에서 확인한 결과 |
 | --- | ---: | --- |
-| Initial place | 5 | Lowered, opened, raised empty jaws; object remained standing |
-| First repeat | 8 + next phase's first release check | First lift missed; one extra close pulse allowed visible lift, then placement and release |
-| Second phase | 8, including prior release check | Planned two close pulses, visible lift, lower, open, raise empty jaws; no extra close correction |
+| 최초 놓기 | 5 | 내리기·열기·빈 집게 올리기 후 물체가 서 있는 상태 유지 |
+| 첫 반복 | 8 + 다음 단계의 첫 분리 확인 | 첫 들기는 실패. 닫기 펄스 한 번을 추가한 뒤 들기·놓기·분리 확인 |
+| 두 번째 단계 | 8, 앞 반복의 분리 확인 포함 | 계획한 닫기 펄스 두 번 후 들기·내리기·열기·빈 집게 올리기. 추가 닫기 보정 없음 |
 
-These phase counts total **21 new motion requests**, not 22: the first step of the
-second phase is the release verification shared with the first cycle. This is
-**two additional grasp/lift/place demonstrations**, one requiring correction.
-It is not a measured autonomous-policy success rate or uncorrected repeatability
-claim. No encoder-calibrated lift height or gripping force is inferred.
+새 구동 요청은 합계 **21회**다. 두 번째 단계의 첫 동작이 첫 반복의 분리 검증을 겸하므로 22회로 중복 계산하지 않는다. **추가 잡기·들기·놓기 시연 두 번** 중 한 번은 보정이 필요했다. 자율 정책의 성공률이나 무보정 반복성을 측정한 결과가 아니다. 엔코더로 보정된 들기 높이나 파지력을 추론하지 않는다.
 
-Every new request finished with `failure=null`, verified IDLE, five motors OFF
-and an empty queue. The final command was STOP232. A separate four-endpoint
-read-only check confirmed unchanged STOP, controller boot and output history;
-maximum request time was 65.7ms and shoulder angle was 219.90 degrees. The same
-PWM limits, 750ms manual lease, 0.8s request criterion, output audit and per-step
-visual inspection were retained. No firmware upload or service restart occurred.
-This finite sample does not eliminate the previously observed HTTP latency risk.
+각 새 요청은 `failure=null`로 끝났고 IDLE·모터 5개 OFF·빈 큐를 확인했다. 최종 명령은 STOP232였다. 별도의 네 엔드포인트 읽기 전용 검사에서 STOP·부팅 ID·출력 이력이 그대로임을 확인했다. 최대 요청 시간은 65.7ms, 어깨 각도는 219.90도였다. 기존 PWM 한도, 750ms 수동 명령 유효기간, 0.8s 요청 기준, 출력 감사와 단계별 영상 확인을 유지했다. 이 반복 중 펌웨어 업로드나 서비스 재시작은 없었다. 이 유한 표본으로 이전의 HTTP 지연 위험이 해소됐다고 볼 수는 없다.
 
-## Raw collection
+## 원본 수집
 
-Three private immutable archives contain 21 plans/results, 21 iPhone observation
-snapshots, 16 ESP32-CAM JPEGs and their 16 HTTP receipts. All archive audits passed.
-The initial-place phase predates paired CAM snapshots, and this missing modality
-is explicit. The first repeat's missed lift is retained rather than discarded.
-The iPhone provider returned JPEG bytes under locally chosen `.png` names; original
-files were kept, and byte-identical `.jpg` copies were prepared for archival with
-SHA-256 correspondence. The initial mislabeled import failed and has no terminal
-manifest; it is excluded from the three complete archives.
+비공개 불변 보관 자료 세 개에 계획·결과 21쌍, iPhone 관찰 이미지 21장, ESP32-CAM JPEG 16장과 HTTP 응답 기록 16개를 저장했다. 세 자료 모두 감사를 통과했다. 최초 놓기 단계는 CAM 동시 보관을 추가하기 전이므로 해당 영상의 누락을 명시했다. 첫 반복의 들기 실패도 버리지 않고 보존했다.
 
-**Training-eligible transitions remain zero.** These are unsynchronized observation
-snapshots plus manual-lease control logs. Source optical age, semantic anchor age
-and source capture persistence are unverified. Video100ms, anchor15s and storage250ms
-are unchanged; fast offline copying does not qualify original capture persistence.
-The raw-only schema cannot be passed off as a validated capture-session dataset.
-Raw images, tokens, device addresses and private receipts are not committed.
+iPhone 제공기는 로컬에서 지정한 `.png` 이름으로 JPEG 바이트를 반환했다. 원본은 유지하고, 보관용으로 바이트가 같은 `.jpg` 사본을 만들어 SHA-256 대응 관계를 남겼다. 확장자가 잘못된 최초 가져오기는 실패했고 최종 매니페스트가 없다. 완성된 보관 자료 세 개에 포함하지 않는다.
 
-## Software verification
+**학습 적격 전이는 여전히 0건이다.** 자료는 비동기 관찰 이미지와 수동 명령 유효기간이 적용된 제어 로그다. 원본 광학 시각에 따른 영상 나이, 의미 기반 앵커 나이, 원본 촬영 자료의 영속 저장 시간은 검증되지 않았다. 영상100ms·앵커15s·저장250ms를 유지하며, 빠른 오프라인 복사는 원본 저장 기준의 통과 근거가 아니다. 원본 보관 전용 스키마를 검증된 capture-session 데이터셋으로 취급하지 않는다. 원본 이미지·토큰·장치 주소·비공개 응답 기록은 커밋하지 않는다.
 
-- `hardware_demo`: 12 tests, including failed terminal readback cleanup, byte
-  preservation, missing/failed attempts, symlink rejection, tampering, JPEG
-  signatures and existing v1 PNG inventory compatibility.
-- `test_action_dataset`: 15 passed; `test_transition_artifacts`: 13 passed.
-- Independent implementation review identified and resolved terminal-failure,
-  timing-contract and backward-compatibility issues; no remaining P0/P1/P2 finding.
-- An additional `test_capture_persistence` invocation could not import `cv2` in
-  the system Python. It did not execute and is not counted as a pass. No existing
-  capture/persistence implementation was changed by this archive-only work.
-- The work branch was pushed; no CI run was reported for the implementation commits.
-  Main remains unchanged. Local tests and visual checks are not CI or training admission.
+## 소프트웨어 검증
 
-The next collection milestone is synchronized, qualified transition capture with
-verified optical timestamps, semantic lipbalm anchors and the existing bounded
-execution contract; raw demonstration replay alone does not satisfy it.
+- `hardware_demo`: 12개 테스트. 최종 재읽기 실패 시 정리, 바이트 보존, 누락·실패 시도, 심볼릭 링크 거부, 변조, JPEG 시그니처, 기존 v1 PNG 목록 호환성을 포함한다.
+- `test_action_dataset`: 15개 통과. `test_transition_artifacts`: 13개 통과.
+- 독립 구현 검토에서 최종 기록 실패·시간 계약·하위 호환 문제를 발견해 수정했다. 남은 P0/P1/P2 지적은 없다.
+- 당시 추가 실행한 `test_capture_persistence`는 시스템 Python에서 `cv2`를 가져오지 못해 실행되지 않았다. 통과로 계산하지 않는다. 원본 보관 작업에서는 기존 촬영·영속 저장 구현을 변경하지 않았다.
+- 이 시연 기록 작성 당시에는 작업 브랜치만 푸시했고 구현 커밋의 CI 실행 결과가 보고되지 않았으며 main은 변경 전이었다. 이후 통합 검증은 [당일 통합 현황](2026-10-17-integration-status.md)에 기록했다. 로컬 테스트와 영상 확인을 CI 통과나 학습 적격 판정으로 대신하지 않는다.
+
+다음 수집 목표는 검증된 광학 시각, 립밤의 의미 기반 앵커, 기존 제한 실행 계약을 연결한 동기화 전이 수집이다. 원본 시연을 재생하는 것만으로는 충족되지 않는다.

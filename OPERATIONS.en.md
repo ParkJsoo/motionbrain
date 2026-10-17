@@ -1,0 +1,447 @@
+# Operations
+
+[한국어](OPERATIONS.md)
+
+[README](README.en.md) | [EMBEDDED_BRINGUP](EMBEDDED_BRINGUP.en.md)
+
+This is the operator-oriented view of MotionBrain on Raspberry Pi. It is useful
+for system-quality, Linux operations, and troubleshooting discussions.
+
+## Software and physical boundary
+
+The physical collection adapter is not connected. New MCU bounded-action APIs remain
+disabled by default; host journal acceptance does not establish motion completion.
+Pi ROS2 build/test and no-actuation checks are recorded in the
+[deployment evidence (Korean)](docs/evidence/2026-10-15-deployment-no-drive.md).
+
+The fixed-budget [observation trial (Korean)](docs/evidence/2026-10-15-bounded-observation.md)
+failed its usability gate. The [NumPy training/evaluation pipeline (Korean)](docs/evidence/2026-10-15-offline-visual-dynamics.md)
+is implemented, but all 11 saved synthetic attempts are excluded and no real training
+samples are eligible. Software tests and synthetic smoke do not establish physical
+stopping, grasping, or learned manipulation performance.
+
+## M4 command journal
+
+The operator-confirmed M4 executor stores command records at
+`$XDG_STATE_HOME/motionbrain/m4_commands.sqlite3` (default:
+`~/.local/state/motionbrain/m4_commands.sqlite3`). Keep one durable journal and
+one executor for a controller. Empty/relative `XDG_STATE_HOME` falls back to the home
+directory; explicit journal paths must be absolute (home expansion is allowed).
+`command_journal_path` and
+`command_journal_max_records` are ROS parameters. A second owner of the same file
+fails closed; a different path or host is outside that protection.
+
+`/motionbrain/m4_write_result` uses `motionbrain_msgs/srv/M4WriteConfirm` with only
+`command_id` as its request. It is read-only and never calls the controller.
+Inspect `raw_json.executionState`: `accepted` is a controller acknowledgment,
+not target attainment. `forwarded` indicates a transport attempt or possible
+attempt before a crash; it does not prove physical motion. Repeated confirmation
+returns the recorded outcome and `proposal_already_consumed` without another POST.
+
+An `outcome_unknown` record blocks new confirmations. There is no reconciliation
+API yet. Do not delete the database or select a new path to clear this condition.
+The 10,000-record default cap includes pending and consumed records; reaching it
+rejects new proposals without evicting old IDs. Pending requests are canceled on
+restart, and a reserved dispatch becomes unknown. Missing results do not prove
+non-execution. The legacy MCU endpoint still lacks command-ID deduplication and
+per-request deadline enforcement; this host change is not sufficient to start
+learning-driven physical trials. See the [bounded-action contract (Korean)](docs/evidence/2026-10-14-bounded-actions-software.md)
+and [software evidence (Korean)](docs/evidence/2026-10-14-command-journal-software.md).
+
+## Experimental MCU bounded actions
+
+The new `/actions` API uses a controller boot ID and command ID, one active action,
+a fixed 32-record registry without eviction, and MCU deadlines. It is disabled by
+default (`MOTIONBRAIN_ENABLE_BOUNDED_ACTIONS=0`). This does not change the existing
+host executor's legacy `/shoulder` transport. `/action_outputs` exposes software
+PWM writes, not electrical measurements or joint travel. Unknown outcomes block
+new motion but never the existing emergency stop/disarm path. Do not reboot or
+clear records automatically to bypass unknown/full states.
+
+See the [API, verification and physical checklist (Korean)](docs/evidence/2026-10-14-bounded-actions-software.md).
+Hardware activation and physical validation of this API remain pending.
+
+`learning.action_execution.BoundedActionExecutor` adds a separate persistent host
+journal for this API. Each proposal requires the exact confirmed request, explicit
+axis/output limits, and a final caller-supplied freshness/persistence guard after
+preflight and durable reservation. Keep one executor per controller and a journal
+separate from legacy M4. Repeated IDs never resend; interrupted dispatch or ambiguous
+results block subsequent commands. A single best-effort targeted cancel does not
+clear unknown outcomes. `request_stop()` signals cancellation but cannot interrupt
+blocking network I/O or replace the controller's emergency stop.
+
+`learning.action_port.BoundedActionHTTP` is disabled by default and has no live CLI.
+Credentials are prepared in memory before the final guard; receipts contain no
+credentials. Terminal receipts require matching controller records and contiguous
+output-off traces; they do not prove physical arrival or training eligibility.
+`JournaledSyntheticCaptureAdapter` exercises this path only with a synthetic port.
+`learning.device_capture.DeviceCaptureSession` connects the executor to exact-frame
+GETs, raw JPEG/metadata storage and independent M4 status samples on a shared local
+transport. It accepts one exact confirmation per new session and never resumes or
+reuses an existing command ID. Before dispatch it requires verified producer clock
+evidence, frame age at most 100 ms, M4 age at most 20 ms and persistence at most
+250 ms. Anchored shadow observations are rejected; their separate 15 s limit is unchanged.
+
+After software output-off, at most six samples over 500 ms must establish a 50 ms
+M4 stationary interval within an explicitly supplied tolerance. Output history and
+M4 are checked again after the final image. This is M4 stability evidence only:
+`physicalSettledVerified` and `trainingEligible` remain false. The separate
+commissioning schema preserves remote clocks and cannot enter the action dataset.
+`audit_device_capture` checks saved evidence without executing or reconciling commands.
+Current uncalibrated perception observations fail the dispatch gate; no live CLI or
+physical calibration override is provided.
+
+## Source observations and transition records
+
+ESP32-CAM `/capture` now identifies the original camera buffer using a boot ID and
+first-DMA timestamp. The perception service offers exact metadata and JPEG lookup
+by `frameId`; expired IDs return 404 without substituting the latest image. Old
+camera firmware remains display-only because it cannot establish source age.
+`CameraDetection.msg` has new source fields: rebuild the ROS workspace together
+before deployment. The guard assumes bridge/subscriber ROS clocks are shared,
+then uses a steady clock to age observations. `require_detection=false` still
+allows status-only readiness, but stale observations produce no motion suggestion.
+
+`learning.schema.validate_transition` separates schema validity from training
+eligibility. Raw records with unknown outcomes, held/stale frames, dropped output
+history, or unverified clock bounds remain excluded from training.
+See the [contract and verification (Korean)](docs/evidence/2026-10-14-source-observations-software.md).
+
+The [dry-run collector (Korean)](docs/evidence/2026-10-14-dry-run-collector-software.md) is available via
+`python3 tools/capture_action_transitions.py --dry-run`. It stores synthetic original
+JPEGs, hashes, raw observations, intent, and partial/error records under ignored
+`datasets/action_transitions/dry_run/`. Use `--audit-run PATH` for read-only integrity
+checks; this never resumes or retries actions. Synthetic records remain ineligible
+for physical training. This collector has no physical execution switch.
+Before dispatch, the runner checks source age plus calibrated clock uncertainty and
+elapsed monotonic time, both before and after durable intent. Exceeding the limit
+results in zero execute calls. If intent was already stored, the audit conservatively
+retains `outcome_unknown`; it does not resume or retry the action.
+
+## Dataset manifests (offline)
+
+Use explicit saved run directories and a new output directory:
+
+```sh
+python3 tools/build_action_dataset.py --runs datasets/action_transitions/dry_run/RUN_ID --output-dir datasets/action_transitions/manifests/MANIFEST_ID
+python3 tools/build_action_dataset.py --validate datasets/action_transitions/manifests/MANIFEST_ID/manifest.json
+python3 tools/build_action_dataset.py --validate datasets/action_transitions/manifests/MANIFEST_ID/manifest.json --require-ready
+```
+
+`manifest.json` retains all attempts and exclusion reasons. `validation.json` is
+an immutable validation snapshot; `--validate` reloads source files and recomputes
+eligibility, integrity and assignments. Keep source directories with the manifest.
+No images are rewritten and existing output directories cannot be overwritten.
+The default exit code 0 means a consistent inventory, including an inventory with
+zero eligible samples. Training callers must use `--require-ready`: exit 2 rejects
+invalid inventories or empty physical train/validation/test partitions. Current
+synthetic runs correctly fail that readiness gate. Physical provenance declarations
+are required but are not hardware authentication; there is no physical collector yet.
+See [dataset policy, tests and limitations (Korean)](docs/evidence/2026-10-14-dataset-manifest-software.md).
+
+## Pi Access / SSH
+
+Use a hostname-based SSH alias for the Pi. Do not pin the alias to a DHCP IP:
+that was the recurring failure mode when the Pi moved from an old address to
+`192.168.219.114` while the Mac still tried the stale `192.168.219.110`.
+These are historical example addresses, not current device addresses.
+
+Recommended `~/.ssh/config` entry on the Mac:
+
+```sshconfig
+Host motionbrain-pi motionbrain-pi.local motionbrain-pi.davolink
+    HostName motionbrain-pi.local
+    User motionbrain
+    HostKeyAlias motionbrain-pi.local
+    AddressFamily inet
+```
+
+First check from the Mac:
+
+```bash
+python3 tools/raspi/check_pi_ssh_target.py
+ssh -o ConnectTimeout=5 motionbrain-pi 'hostname; hostname -I; systemctl is-active ssh'
+nc -vz motionbrain-pi.local 22
+nc -vz motionbrain-pi.davolink 22
+```
+
+Interpretation:
+
+- `motionbrain-pi.local` is the primary Pi SSH target.
+- `motionbrain-pi.davolink` is only a router-DNS fallback; it may disappear
+  even while `.local` and SSH still work.
+- `motionbrain.local` is the ESP32 motion controller, not the Pi.
+- `motionbrain-cam.local` is the ESP32-CAM, not the Pi.
+- `tools/raspi/discover_device_url.py` discovers ESP32 controller/camera HTTP
+  `/status` endpoints. It is not a Pi SSH discovery tool.
+
+On the Pi, Ubuntu 24.04 can expose SSH through `ssh.socket`; `ssh.service` may
+show `disabled` while `ssh.socket` is `enabled` and `active`. Verify both before
+changing systemd state:
+
+```bash
+systemctl is-active ssh
+systemctl is-enabled ssh.socket
+systemctl is-active ssh.socket
+ss -ltnp | grep ':22 '
+```
+
+If DNS works but SSH warns about a changed host key after a fresh OS install,
+remove only the stale Pi key and reconnect:
+
+```bash
+ssh-keygen -R motionbrain-pi.local
+ssh-keygen -R motionbrain-pi.davolink
+```
+
+## Runtime Services
+
+Systemd units live in `deploy/systemd/`:
+
+| Service | Purpose | Env file |
+| --- | --- | --- |
+| `motionbrain-perception.service` | Pi perception API for camera detection | `/etc/motionbrain/perception.env` |
+| `motionbrain-dashboard.service` | Pi dashboard and controller proxy | `/etc/motionbrain/dashboard.env` |
+| `motionbrain-ros-bridge.service` | ROS2 Jazzy bridge and typed topics | `/etc/motionbrain/ros-bridge.env` |
+| `motionbrain-dashboard-reconcile.timer` | periodic dashboard/perception reconciliation | service-specific env |
+
+Example install flow on the Pi:
+
+```bash
+tools/raspi/install_systemd_units.sh
+sudo systemctl enable --now motionbrain-perception.service
+sudo systemctl enable --now motionbrain-dashboard.service
+sudo systemctl enable --now motionbrain-ros-bridge.service
+```
+
+The installer copies service/timer units and writes env examples under
+`/etc/motionbrain/`. Override `MOTIONBRAIN_REPO` or `MOTIONBRAIN_SERVICE_USER`
+when installing from a different checkout path or Linux account. Edit copied
+env files before enabling services on real hardware. Keep
+`MOTIONBRAIN_HTTP_TOKEN` out of git, logs, screenshots, and public demos.
+Dashboard-side controls and ESP32 command tokens are separate boundaries: the
+dashboard can observe read-only state without exposing the controller token, and
+state-changing requests must still pass the controller firmware gate.
+
+The default dashboard env binds to `127.0.0.1`. Change
+`MOTIONBRAIN_DASHBOARD_HOST=0.0.0.0` only for a supervised LAN demo where the Pi
+dashboard should be reachable from another machine.
+
+The installer keeps runtime env files private:
+
+```bash
+sudo stat -c '%U:%G %a %n' /etc/motionbrain /etc/motionbrain/*.env
+```
+
+Expected ownership is `root:<service-group>` with mode `750` on
+`/etc/motionbrain` and `640` on env files. Existing env files are not
+overwritten, but the installer refreshes owner/mode. The reconcile timer runs
+root-owned copies under `/usr/local/libexec/motionbrain/` for
+`reconcile_dashboard_services.sh`, `discover_device_url.py`, and
+`apply_camera_profile.py` instead of executing mutable checkout helpers directly.
+
+For object-mode perception on the Raspberry Pi, keep CPU load bounded with
+`MOTIONBRAIN_OPENCV_THREADS`, `MOTIONBRAIN_PERCEPTION_INTERVAL`, and
+`MOTIONBRAIN_PERCEPTION_STALE_SECONDS` in `/etc/motionbrain/perception.env`.
+The default systemd wrapper uses one OpenCV worker thread and a conservative
+freshness window for YOLOv5s/OpenCV DNN.
+
+For ESP32 controller/camera `.local` or IP drift, use the discovery and reconcile
+helpers on the Pi instead of hard-coding stale device addresses:
+
+```bash
+python3 tools/raspi/discover_device_url.py --help
+tools/raspi/reconcile_dashboard_services.sh
+```
+
+After changing systemd units or env files, validate the installed units on the
+Pi before a demo:
+
+```bash
+for script in tools/raspi/install_systemd_units.sh tools/raspi/reconcile_dashboard_services.sh; do
+  bash -n "${script}"
+done
+tools/raspi/install_systemd_units.sh
+sudo systemd-analyze verify /etc/systemd/system/motionbrain-*.service /etc/systemd/system/motionbrain-*.timer
+sudo systemctl daemon-reload
+systemctl cat motionbrain-dashboard.service motionbrain-perception.service motionbrain-ros-bridge.service motionbrain-dashboard-reconcile.service
+sudo systemctl start motionbrain-dashboard-reconcile.service
+systemctl status motionbrain-dashboard-reconcile.service --no-pager
+systemd-analyze security motionbrain-dashboard.service motionbrain-perception.service motionbrain-ros-bridge.service
+```
+
+## Health Checks
+
+Dashboard/perception:
+
+```bash
+CHECK_SERVICE=1 tools/raspi/check_dashboard_health.sh
+```
+
+If the ESP32 controller or ESP32-CAM is intentionally powered off, keep the
+dashboard service check separate from motion readiness:
+
+```bash
+ALLOW_DASHBOARD_DEGRADED=1 CHECK_SERVICE=1 tools/raspi/check_dashboard_health.sh
+```
+
+This accepts a structured dashboard `degraded` response for read-only
+observability, but it is not a motion-ready preflight.
+
+ROS2 bridge:
+
+```bash
+CHECK_SERVICE=1 tools/raspi/check_ros_bridge_health.sh
+```
+
+The ROS2 bridge check validates discovery first and then samples multiple
+topics, diagnostics, managed lifecycle state, one service, and one action
+sequentially. It also verifies that a physical `run` request is rejected by the
+ROS2 bridge policy unless `CHECK_ROUTINE_RUN_REJECTION=0` is set. On the Pi this
+can take a few minutes. If topic discovery passes but samples do not arrive
+after the configured deadline, inspect recent bridge logs and restart the
+service:
+
+```bash
+journalctl -u motionbrain-ros-bridge.service -n 120 --no-pager
+sudo systemctl restart motionbrain-ros-bridge.service
+CHECK_SERVICE=1 SAMPLE_TIMEOUT_SECONDS=25 tools/raspi/check_ros_bridge_health.sh
+```
+
+The default diagnostic thresholds allow the current read-only bring-up state:
+M4 shoulder feedback may be `WARN` when the measured angle is outside calibrated
+limits, and routine feedback may be `WARN` while `base_yaw_reference` is not
+installed. For a motion-ready preflight, require clean diagnostics explicitly:
+
+```bash
+EXPECTED_SHOULDER_DIAGNOSTIC_MAX_LEVEL=0 \
+EXPECTED_FEEDBACK_DIAGNOSTIC_MAX_LEVEL=0 \
+CHECK_SERVICE=1 tools/raspi/check_ros_bridge_health.sh
+```
+
+ROS2 evidence capture:
+
+```bash
+tools/raspi/capture_ros2_evidence.sh
+```
+
+ros2_control mock evidence:
+
+```bash
+tools/raspi/capture_ros2_control_mock_evidence.sh
+```
+
+ros2_control open-loop hardware-interface evidence:
+
+```bash
+tools/raspi/capture_ros2_control_hardware_evidence.sh
+```
+
+## Logs
+
+```bash
+systemctl status motionbrain-perception.service --no-pager
+systemctl status motionbrain-dashboard.service --no-pager
+systemctl status motionbrain-ros-bridge.service --no-pager
+
+journalctl -u motionbrain-perception.service -n 100 --no-pager
+journalctl -u motionbrain-dashboard.service -n 100 --no-pager
+journalctl -u motionbrain-ros-bridge.service -n 100 --no-pager
+```
+
+## ROS2 Topics To Check
+
+Read-only topics expected from the bridge:
+
+- `/motionbrain/status_typed`
+- `/motionbrain/routine_typed`
+- `/motionbrain/diagnostics`
+- `/motionbrain/events_typed`
+- `/camera/detection_typed`
+- `/joint_states`
+- `/motionbrain/end_effector_pose`
+- `/motionbrain/kinematics_typed`
+- `/motionbrain/control_guard_typed`
+- `/motionbrain/mission_state_typed`
+
+Sample commands:
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source ros2_ws/install/setup.bash
+ros2 topic list
+ros2 topic echo /motionbrain/status_typed --once
+ros2 topic echo /motionbrain/control_guard_typed --once
+```
+
+## HTTP Surfaces
+
+ESP32 controller:
+
+- `GET /status`
+- `GET /events`
+- `GET /routine`
+- `POST /command`
+- `POST /routine`
+
+ESP32-CAM:
+
+- `GET /status`
+- `GET /capture`
+- `GET /stream` returns HTTP 410 by design; use `/capture` or Pi tracked frames
+- `POST /camera`
+
+Pi services:
+
+- dashboard `GET /api/config`
+- dashboard `GET /api/status`
+- perception `GET /health`
+- perception `GET /api/detection`
+
+State-changing HTTP calls require the local command token where implemented.
+Use read-only endpoints for evidence capture unless a physical operator is
+present.
+
+## Recovery Playbook
+
+| Symptom | First checks | Recovery |
+| --- | --- | --- |
+| dashboard unavailable | `check_dashboard_health.sh`, service status | restart dashboard and perception services |
+| Pi hostname not resolving | `python3 tools/raspi/check_pi_ssh_target.py --skip-remote`, router DHCP lease, mDNS | use `motionbrain-pi.local` first; treat `.davolink` as fallback |
+| Pi port 22 closed | `nc -vz motionbrain-pi.davolink 22`, `ssh.socket` status on console | enable/start `ssh.socket` or `ssh.service` |
+| SSH alias reaches old IP | `ssh -G motionbrain-pi`, compare with router/`hostname -I` | remove literal `HostName` IP from `~/.ssh/config` |
+| SSH auth denied | `ssh -vv motionbrain-pi`, key path, user | use `User motionbrain` and the expected key |
+| SSH host key changed | SSH warning host, recent OS reinstall | `ssh-keygen -R` only the stale Pi hostname/IP |
+| SSH works but services fail | `systemctl status ...`, repo path, env files | fix `/home/motionbrain/...` path or service env |
+| ROS2 topics missing | `check_ros_bridge_health.sh`, `ros2 topic list` | restart ROS bridge, confirm ROS workspace overlay |
+| ROS2 topics listed but samples hang | bridge journal, controller `/routine`, sample timeout | restart ROS bridge, then rerun with `SAMPLE_TIMEOUT_SECONDS=25` |
+| camera stale | ESP32-CAM `/status`, `/capture`, Wi-Fi, perception logs | keep `/stream` disabled, verify power/network first, and let perception recover through capture backoff before restarting |
+| Pi load high | `uptime`, `vcgencmd get_throttled`, perception `/health` latency | lower OpenCV threads or increase perception interval, then restart perception |
+| controller command rejected | `/status`, fault latch, token, ARMED state | clear fault only after physical inspection |
+| routine blocked | `/routine`, feedback readiness, active sequence | keep dry-run, inspect feedback block reason |
+| token missing | service env file, dashboard status, ESP32 command rejection | restore `/etc/motionbrain/*.env`, restart service |
+| perception stale | perception `/health`, `/api/detection`, camera URL, `nextCaptureDelayMs` | verify `/capture` and camera URL; restart only if the active service is not recovering through backoff |
+| feedback not installed | `/motionbrain/routine_typed`, diagnostics `base_yaw_fault` | keep physical routine execution disabled |
+
+## QA Matrix
+
+| Layer | Verification |
+| --- | --- |
+| ESP32 firmware | `pio run` |
+| ESP32-CAM firmware | `pio run -d firmware/esp32cam` |
+| Host contracts | `python3 -m unittest discover -s tests` |
+| ROS2 workspace | GitHub Actions Jazzy container `colcon build/test` |
+| Pi services | `check_dashboard_health.sh`, `check_ros_bridge_health.sh` |
+| Physical demo | operator-held teleop, deadman release, bounded motion evidence |
+
+Residual risk: this is a personal robotics system, not a production fleet. The
+right operational claim is CI/systemd/health-check experience for a real
+hardware prototype, not enterprise-scale SRE or commercial production service
+operation.
+
+Demo boundary: dashboard alignment nudges are token- and safety-gated bounded
+commands, not autonomous visual servoing. The current cup path is an
+operator-confirmed dry-run plan, not a physical grasp demo.
+
+For the separate manually observed lipbalm demonstration, see the
+[repetition evidence (Korean)](docs/evidence/2026-10-17-lipbalm-repetitions.md).

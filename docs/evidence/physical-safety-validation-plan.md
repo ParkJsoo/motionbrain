@@ -1,27 +1,23 @@
-# 물리 Safety Evidence 보강 계획
+# 실물 안전 검증 보강 계획
 
-[English](physical-safety-validation-plan.en.md)
+[기존 영어 번역](physical-safety-validation-plan.en.md)
 
 ## 상태
 
-이 문서는 planned evidence다. 아래 항목은 아직 완료 증거가 아니며, public
-claim-to-evidence matrix의 완료 Evidence로 승격하지 않는다. 각 항목은 지정된
-artifact가 캡처되고 pass/fail 판정이 리뷰된 뒤에만 "captured" 또는 "passed"로
-상태를 바꿀 수 있다.
+이 문서는 **계획**이다. 아래 항목은 완료 근거가 아니며 공개 주장-근거 표의 완료 항목으로 올리지 않는다. 지정한 자료를 수집하고 합격·실패 판정을 검토한 뒤에만 상태를 `captured` 또는 `passed`로 바꾼다.
 
-이 계획이 보강하려는 gap은 다음과 같다.
+보강할 항목은 다음과 같다.
 
-- hard E-stop 또는 TB6612FNG `VM` cutoff가 실제 motor power를 끊는지
-- deadman release부터 ESP32 PWM off까지의 지연 시간
-- ESP32 PWM, STM32-ESP32 UART, M4 AS5600 I2C 파형
-- motor supply voltage sag와 controller/sensor 영향
+- 물리 비상 정지 또는 TB6612FNG `VM` 차단이 실제 모터 전원을 끊는지 확인.
+- 데드맨 해제부터 ESP32 PWM OFF까지의 지연 측정.
+- ESP32 PWM, STM32–ESP32 UART, M4 AS5600 I2C 파형 측정.
+- 모터 공급 전압 강하와 제어기·센서에 미치는 영향 확인.
 
-이 계획은 certified functional safety, unattended operation, production power
-integrity를 주장하지 않는다.
+기능 안전 인증, 무인 운전, 양산 전원 무결성을 주장하는 계획은 아니다.
 
 ## 공통 산출물 규칙
 
-모든 캡처는 새 evidence note로 승격하기 전까지 아래 naming을 따른다.
+새 검증 기록으로 정리하기 전까지 다음 이름 규칙을 사용한다.
 
 ```text
 docs/evidence/artifacts/physical-safety/YYYY-MM-DD/
@@ -34,242 +30,201 @@ docs/evidence/artifacts/physical-safety/YYYY-MM-DD/
   YYYY-MM-DD-physical-safety-<test-id>-runNN-photo.jpg
 ```
 
-`summary.md`에는 다음을 기록한다.
+`summary.md`에 기록할 내용:
 
-- hardware revision, battery or bench-supply setting, load condition, firmware
-  build identity
-- probe points, probe ground, instrument model/sample rate
-- command sequence and operator action
-- measured values, pass/fail result, failed acceptance item if any
-- final state: motor speeds 0, fault/safety state, sensor status
+- 하드웨어 리비전, 배터리 또는 실험실 전원 설정, 부하 조건, 펌웨어 빌드 식별값.
+- 프로브 측정점·접지, 계측기 모델·샘플링 속도.
+- 명령 순서와 작업자 조작.
+- 측정값, 합격·실패 결과, 실패한 합격 조건.
+- 최종 상태: 모터 속도 0, 고장·안전 상태, 센서 상태.
 
-원본 `.sr`, `.csv`, `.log`, `.mp4`는 요약 PNG보다 우선한다. PNG와 표만 있고
-원본 캡처가 없으면 public Evidence로 쓰지 않는다.
+원본 `.sr`, `.csv`, `.log`, `.mp4`가 요약 PNG보다 우선한다. PNG와 표만 있고 원본이 없으면 공개 검증 근거로 쓰지 않는다.
 
-## Evidence Status Map
+## 검증 상태표
 
-| ID | Planned claim after pass | Current status | Required evidence | Still not claimed |
+| ID | 통과 후 설명할 수 있는 내용 | 현재 상태 | 필요한 근거 | 여전히 주장하지 않는 내용 |
 | --- | --- | --- | --- | --- |
-| `P1-HW-ESTOP` | Hardware E-stop or `VM` cutoff removes motor drive power during bounded motion | planned | wiring photo/schematic, switch edge, motor-side `VM`, commanded PWM, video, final state log | Certified E-stop, safety-rated channel, unattended operation |
-| `P1-DEADMAN-LATENCY` | Deadman release drives active motor PWM to off within the measured acceptance window | planned | synchronized deadman edge, active PWM pin, optional UART decode, serial/status log, repeated runs | Human-safe stop distance, certified stop category |
-| `P1-PWM-UART-I2C` | Bench waveforms match expected PWM frequency/duty, UART framing, and I2C health under bounded commands | planned | logic/scope captures, protocol decodes, screenshots, command log | EMC margin, all-environment signal integrity |
-| `P1-MOTOR-SAG` | Bounded M4 motion keeps motor supply within measured bench acceptance and does not reset controller/sensors | planned | simultaneous supply traces, command log, sensor/status log, final state | Root-cause closure for all power faults, battery lifetime guarantee |
+| `P1-HW-ESTOP` | 제한 구동 중 물리 비상 정지 또는 `VM` 차단으로 모터 구동 전원 제거 | 계획 | 배선 사진·회로도, 스위치 에지, 모터 측 `VM`, 명령 PWM, 영상, 최종 상태 로그 | 인증된 비상 정지, 안전 등급 채널, 무인 운전 |
+| `P1-DEADMAN-LATENCY` | 데드맨 해제 후 측정 합격 구간 안에 활성 모터 PWM OFF | 계획 | 동기화한 해제 에지·활성 PWM, 선택적 UART 해독, 시리얼·상태 로그, 반복 시험 | 사람에게 안전한 정지 거리, 인증 정지 등급 |
+| `P1-PWM-UART-I2C` | 제한 명령에서 PWM 주파수·듀티, UART 프레임, I2C 상태가 예상과 일치 | 계획 | 로직·오실로스코프 원본, 프로토콜 해독, 화면, 명령 로그 | EMC 여유, 모든 환경의 신호 무결성 |
+| `P1-MOTOR-SAG` | 제한 M4 구동 중 전원이 측정 합격 범위 안이며 제어기·센서 리셋 없음 | 계획 | 동시 전압 파형, 명령·센서·상태 로그, 최종 상태 | 모든 전원 고장 원인 해결, 배터리 수명 보장 |
 
-## P1-HW-ESTOP: Hard E-stop 또는 VM Cutoff
+## P1-HW-ESTOP: 물리 비상 정지 또는 VM 차단
 
-### Requirement
+### 요구사항
 
-물리 stop evidence는 firmware `stop`, HTTP command, ROS2 guard만으로 충분하지
-않다. 최소 하나의 hard E-stop 또는 `VM` cutoff 경로가 TB6612FNG motor supply
-path를 끊는다는 증거가 필요하다. 설치된 hardware cutoff가 없다면 이 항목은
-`blocked: hardware not installed`로 남긴다.
+펌웨어 `stop`, HTTP 명령, ROS2 가드만으로 실물 정지 근거를 충족하지 않는다. 물리 비상 정지 또는 `VM` 차단 경로가 TB6612FNG 모터 전원 경로를 끊는 증거가 최소 하나 필요하다. 하드웨어 차단 장치가 없으면 `blocked: hardware not installed`로 남긴다.
 
-### Procedure
+### 절차
 
-1. 로봇팔을 지그 또는 손이 닿지 않는 bench 위치에 고정한다.
-2. TB6612FNG motor-side `VM`, E-stop/contact edge, active motor PWM을 동시에
-   캡처한다. 가능하면 motor terminal voltage 또는 supply current도 함께 캡처한다.
-3. 저속/짧은 bounded M4 motion을 시작한다.
-4. motion 중 hard E-stop 또는 `VM` cutoff를 작동한다.
-5. release/reset 전에는 새 motion command가 실행되지 않는지 확인한다.
-6. reset/re-arm 절차를 별도 로그로 남긴다.
+1. 로봇팔을 지그나 손이 닿지 않는 작업대 위치에 고정한다.
+2. TB6612FNG 모터 측 `VM`, 비상 정지·접점 에지, 활성 모터 PWM을 동시에 측정한다. 가능하면 모터 단자 전압이나 공급 전류도 측정한다.
+3. 저속·짧은 제한 M4 구동을 시작한다.
+4. 구동 중 물리 비상 정지 또는 `VM` 차단을 작동한다.
+5. 해제·리셋 전에 새 구동 명령이 실행되지 않는지 확인한다.
+6. 리셋·재활성화 절차를 별도 로그로 남긴다.
 
-### Required Artifacts
+### 필요한 자료
 
-- `p1-hw-estop-runNN-photo.jpg`: cutoff wiring and probe placement
-- `p1-hw-estop-runNN.logic.sr`: switch/contact edge and active PWM
-- `p1-hw-estop-runNN.scope.csv`: motor-side `VM` voltage trace
-- `p1-hw-estop-runNN.scope.png`: annotated timing screenshot
-- `p1-hw-estop-runNN.video.mp4`: operator action and motor stop
-- `p1-hw-estop-runNN.serial.log`: final controller status and re-arm behavior
+- `p1-hw-estop-runNN-photo.jpg`: 차단 배선과 프로브 위치.
+- `p1-hw-estop-runNN.logic.sr`: 스위치·접점 에지와 활성 PWM.
+- `p1-hw-estop-runNN.scope.csv`: 모터 측 `VM` 전압 파형.
+- `p1-hw-estop-runNN.scope.png`: 시간 주석을 붙인 화면.
+- `p1-hw-estop-runNN.video.mp4`: 작업자 조작과 모터 정지.
+- `p1-hw-estop-runNN.serial.log`: 최종 제어기 상태와 재활성화 동작.
 
-### Pass/Fail Criteria
+### 합격·실패 기준
 
-Pass:
+합격:
 
-- cutoff is hardware-visible as a switch/contact edge or relay/MOSFET gate event
-- motor-side `VM` is disconnected or falls below 10% of pre-cut voltage within
-  250 ms; if bulk capacitance keeps voltage above that, the summary must show
-  no H-bridge drive current/path and mark residual-energy handling as follow-up
-- active PWM is off or irrelevant because `VM` is physically removed
-- no motor continues driven motion after cutoff
-- restart requires explicit reset/re-arm; motion does not resume automatically
+- 스위치·접점 에지 또는 릴레이·MOSFET 게이트 사건으로 하드웨어 차단이 관찰된다.
+- 모터 측 `VM`이 분리되거나 250ms 안에 차단 전 전압의 10% 미만으로 내려간다. 대용량 커패시터 때문에 그보다 높게 유지되면 H-브리지 구동 전류·경로가 없다는 근거를 요약에 제시하고 잔류 에너지 처리를 후속 과제로 남긴다.
+- 활성 PWM이 OFF이거나 `VM`이 물리적으로 제거돼 구동에 영향을 주지 않는다.
+- 차단 후 어떤 모터도 구동력을 받아 계속 움직이지 않는다.
+- 재시작에는 명시적 리셋·재활성화가 필요하며 자동 재개하지 않는다.
 
-Fail:
+실패:
 
-- only firmware/software stop is shown
-- `VM` remains connected and motor can still be driven after cutoff
-- motion resumes without explicit reset/re-arm
-- artifacts do not show both operator action and electrical cutoff timing
+- 펌웨어·소프트웨어 정지만 보인다.
+- 차단 후에도 `VM`이 연결돼 모터 구동이 가능하다.
+- 명시적 리셋·재활성화 없이 구동이 재개된다.
+- 작업자 조작과 전기적 차단 시각을 함께 확인할 자료가 없다.
 
-## P1-DEADMAN-LATENCY: Release-to-PWM-Off
+## P1-DEADMAN-LATENCY: 해제부터 PWM OFF까지
 
-### Requirement
+### 요구사항
 
-Deadman release evidence must measure the time from a physical release signal to
-PWM off on the active motor path. Video alone is not enough unless synchronized
-with an electrical timestamp.
+물리적 데드맨 해제 신호부터 활성 모터 경로의 PWM OFF까지 시간을 측정해야 한다. 전기 타임스탬프와 동기화되지 않은 영상만으로는 충분하지 않다.
 
-### Procedure
+### 절차
 
-1. Capture the deadman switch edge or STM32 release frame timing, ESP32 active
-   PWM pin, and serial/status log in one run.
-2. Use a bounded low-speed M4 command or teleoperation motion.
-3. Release deadman while PWM is active.
-4. Repeat at least 10 times across the same setup.
-5. Record release edge time, last non-zero PWM edge/duty, final motor speed 0,
-   and final controller state.
+1. 데드맨 스위치 에지 또는 STM32 해제 프레임 시각, ESP32 활성 PWM 핀, 시리얼·상태 로그를 한 실행에서 기록한다.
+2. 제한된 저속 M4 명령 또는 원격조작 구동을 사용한다.
+3. PWM이 활성일 때 데드맨을 해제한다.
+4. 동일 구성에서 최소 10회 반복한다.
+5. 해제 에지 시각, 마지막 비영 PWM 에지·듀티, 최종 모터 속도 0, 최종 제어기 상태를 기록한다.
 
-### Required Artifacts
+### 필요한 자료
 
-- `p1-deadman-latency-runNN.logic.sr`: release edge and PWM off timing
-- `p1-deadman-latency-runNN.scope.png`: annotated latency cursor screenshot
-- `p1-deadman-latency-runNN.serial.log`: state/event output
-- `p1-deadman-latency-runNN.video.mp4`: physical release context
-- `p1-deadman-latency-summary.md`: table of all runs, mean, p95, max
+- `p1-deadman-latency-runNN.logic.sr`: 해제 에지와 PWM OFF 시각.
+- `p1-deadman-latency-runNN.scope.png`: 지연 커서를 표시한 화면.
+- `p1-deadman-latency-runNN.serial.log`: 상태·이벤트 출력.
+- `p1-deadman-latency-runNN.video.mp4`: 물리적 해제 상황.
+- `p1-deadman-latency-summary.md`: 전체 실행 표, 평균, p95, 최대값.
 
-### Acceptance
+### 합격 기준
 
-Pass:
+합격:
 
-- at least 10/10 release trials captured with synchronized electrical timing
-- active PWM duty reaches 0 within 100 ms max from release edge
-- no non-commanded axis produces PWM during or after release
-- final status reports all motor speeds 0 and no automatic restart
+- 최소 10/10 해제 시험에 동기화한 전기 시각이 있다.
+- 해제 에지부터 최대 100ms 안에 활성 PWM 듀티가 0에 도달한다.
+- 해제 중이나 이후 명령하지 않은 축에서 PWM이 나오지 않는다.
+- 최종 상태의 모든 모터 속도가 0이며 자동 재시작이 없다.
 
-Fail:
+실패:
 
-- max release-to-PWM-off latency exceeds 100 ms
-- PWM reappears without a new operator command
-- only frame timeout is measured while the physical release event is missing
-- serial/status output contradicts the captured electrical state
+- 해제→PWM OFF 최대 지연이 100ms를 넘는다.
+- 새 작업자 명령 없이 PWM이 다시 나온다.
+- 물리적 해제 사건 없이 프레임 타임아웃만 측정했다.
+- 시리얼·상태 출력이 전기 측정 결과와 모순된다.
 
-If the system intentionally relies on a configured frame timeout instead of an
-explicit release frame, this item remains failed for deadman-release evidence and
-must be split into a separate timeout evidence note.
+명시적 해제 프레임 대신 설정한 프레임 타임아웃에 의존하는 시스템이라면 데드맨 해제 근거 항목은 실패로 남기고, 별도의 타임아웃 검증 기록으로 분리한다.
 
-## P1-PWM-UART-I2C: 파형 캡처
+## P1-PWM-UART-I2C: 파형 측정
 
-### Requirement
+### 요구사항
 
-Runtime logs and DMM checks do not prove waveform timing. This evidence requires
-logic analyzer or oscilloscope captures with raw files and decoded protocol
-output.
+실행 로그와 디지털 멀티미터 측정은 파형 시간을 증명하지 않는다. 로직 분석기 또는 오실로스코프 원본과 프로토콜 해독 결과가 필요하다.
 
-### PWM Procedure
+### PWM 절차
 
-1. Pick one active axis first, preferably M4 because it has AS5600 feedback.
-2. Probe its PWM pin and both direction pins using the current pin map.
-3. Run bounded commands at representative duty levels, such as 25%, 50%, 75%,
-   and 100%, if mechanically safe.
-4. Confirm non-commanded motor PWM pins remain idle when practical.
+1. 활성 축 하나를 먼저 고른다. AS5600 피드백이 있는 M4를 우선한다.
+2. 현재 핀맵에 따라 PWM 핀과 양쪽 방향 핀을 측정한다.
+3. 기구적으로 안전하다면 25%·50%·75%·100% 등 대표 듀티에서 제한 명령을 실행한다.
+4. 가능하면 명령하지 않은 모터 PWM 핀이 유휴 상태인지 확인한다.
 
-PWM pass criteria:
+PWM 합격 기준:
 
-- measured PWM frequency is 1 kHz +/- 5% or matches the documented configured
-  firmware value
-- duty is within +/- 5 percentage points of the commanded duty, or the summary
-  explains 8-bit rounding
-- direction pins are not both active in a shoot-through state
-- non-commanded axes stay at 0 PWM during the bounded command
+- 측정 주파수가 1 kHz ±5%이거나 문서화된 펌웨어 설정값과 일치한다.
+- 듀티가 명령값 ±5%p 이내이거나 요약에 8비트 반올림 차이를 설명한다.
+- 방향 핀이 동시에 활성화돼 관통 전류를 만드는 상태가 없다.
+- 제한 명령 중 명령하지 않은 축의 PWM은 0이다.
 
-### UART Procedure
+### UART 절차
 
-1. Probe STM32-to-ESP32 UART at the ESP32 receive side.
-2. Decode as 115200 8N1 unless the active firmware config says otherwise.
-3. Capture idle, active teleoperation, deadman release, and timeout/stop cases.
+1. ESP32 수신 측에서 STM32→ESP32 UART를 측정한다.
+2. 현재 펌웨어 설정이 다르지 않으면 115200 8N1로 해독한다.
+3. 유휴·활성 원격조작·데드맨 해제·타임아웃/정지 상황을 기록한다.
 
-UART pass criteria:
+UART 합격 기준:
 
-- decoder reports the configured baud/framing with no framing errors in the
-  captured window
-- frame cadence is recorded and has no unexplained gap larger than 2x nominal
-  cadence during active teleoperation
-- release or stop frames are visible when the procedure depends on them
+- 해독기가 설정한 baud·프레임 형식을 보고하고 기록 구간에 프레이밍 오류가 없다.
+- 프레임 주기를 기록하며 활성 원격조작 중 설명되지 않은 공백이 명목 주기의 2배를 넘지 않는다.
+- 절차가 해제·정지 프레임에 의존하면 해당 프레임이 보여야 한다.
 
-### I2C Procedure
+### I2C 절차
 
-1. Probe M4 AS5600 I2C at ESP32 SDA `GPIO0` and SCL `GPIO15`; do not probe a Pi
-   I2C bus as a substitute.
-2. Capture `shoulder status` and at least one bounded shoulder target.
-3. If STM32 MPU-6050 I2C is captured, keep it as a separate run and do not attach
-   probes that can disturb boot straps or pull-ups.
+1. ESP32 SDA `GPIO0`, SCL `GPIO15`에서 M4 AS5600 I2C를 측정한다. Pi I2C 버스로 대체하지 않는다.
+2. `shoulder status`와 제한된 어깨 목표 명령 최소 하나를 기록한다.
+3. STM32 MPU-6050 I2C도 측정한다면 별도 실행으로 분리하고 부팅 설정 핀이나 풀업에 영향을 주는 프로브 연결을 피한다.
 
-I2C pass criteria:
+I2C 합격 기준:
 
-- SDA/SCL idle high before transaction
-- expected address ACK is visible (`0x36` for AS5600, `0x68` for MPU-6050 if
-  captured)
-- no stuck-low bus, repeated NACK storm, or unexpected bus reset during motion
-- rise time meets the selected I2C mode limit; if the mode is unknown, record
-  bus speed and compare against standard-mode 100 kHz / 1000 ns rise-time
-  expectations as the conservative baseline
+- 트랜잭션 전에 SDA/SCL이 유휴 high다.
+- 예상 주소의 ACK가 보인다. AS5600은 `0x36`, MPU-6050을 측정하면 `0x68`이다.
+- 구동 중 버스 low 고착, 반복 NACK 폭주, 예상하지 않은 버스 리셋이 없다.
+- 상승 시간이 선택한 I2C 모드 한도를 충족한다. 모드를 모르면 버스 속도를 기록하고 보수적 기준으로 표준 모드 100 kHz / 상승 시간 1000ns와 비교한다.
 
-### Required Artifacts
+### 필요한 자료
 
-- `p1-waveform-pwm-runNN.logic.sr`, `.scope.png`, `.scope.csv`
-- `p1-waveform-uart-runNN.logic.sr`, decode export, `.serial.log`
-- `p1-waveform-i2c-as5600-runNN.logic.sr`, decode export, `.scope.png`
-- command transcript and final status log for each run
+- `p1-waveform-pwm-runNN.logic.sr`, `.scope.png`, `.scope.csv`.
+- `p1-waveform-uart-runNN.logic.sr`, 해독 내보내기, `.serial.log`.
+- `p1-waveform-i2c-as5600-runNN.logic.sr`, 해독 내보내기, `.scope.png`.
+- 각 실행의 명령 기록과 최종 상태 로그.
 
-## P1-MOTOR-SAG: Motor Voltage Sag
+## P1-MOTOR-SAG: 모터 전압 강하
 
-### Requirement
+### 요구사항
 
-Phone video plus a basic multimeter can show approximate voltage drop, but P1
-evidence needs synchronized traces that separate battery terminal voltage,
-regulator or XL4015 output, and TB6612FNG motor-side `VM` as much as practical.
+휴대폰 영상과 기본 멀티미터로 대략적인 전압 강하는 볼 수 있다. P1 근거에는 배터리 단자, 레귤레이터 또는 XL4015 출력, TB6612FNG 모터 측 `VM`을 가능한 한 분리한 동기화 파형이 필요하다.
 
-### Procedure
+### 절차
 
-1. Use a two-channel oscilloscope or synchronized data logger. If only meters are
-   available, mark status as `captured: approximate`, not `passed`.
-2. Capture battery terminal voltage and TB6612FNG motor-side `VM`; add XL4015
-   output as a third channel if available.
-3. Run bounded M4 motion with no added load and with the known 23.10 g load.
-4. For each run, record pre-motion voltage, minimum voltage, recovery voltage at
-   1 s after motion, controller status, AS5600 status, and STM32 IMU status.
-5. Repeat at least 3 runs per condition.
+1. 2채널 오실로스코프 또는 동기화 데이터 로거를 사용한다. 미터만 있으면 `passed` 대신 `captured: approximate`로 표시한다.
+2. 배터리 단자 전압과 TB6612FNG 모터 측 `VM`을 측정한다. 가능하면 세 번째 채널에 XL4015 출력을 추가한다.
+3. 추가 부하 없음 및 알려진 23.10g 부하 조건에서 제한 M4 구동을 수행한다.
+4. 매 실행의 구동 전 전압, 최저 전압, 종료 1s 후 회복 전압, 제어기·AS5600·STM32 IMU 상태를 기록한다.
+5. 조건마다 최소 3회 반복한다.
 
-### Required Artifacts
+### 필요한 자료
 
 - `p1-motor-sag-noload-runNN.scope.csv`
 - `p1-motor-sag-23g-runNN.scope.csv`
 - `p1-motor-sag-runNN.scope.png`
 - `p1-motor-sag-runNN.serial.log`
 - `p1-motor-sag-runNN.video.mp4`
-- `p1-motor-sag-summary.md`: table with pre/min/recovery voltage and percent sag
+- `p1-motor-sag-summary.md`: 구동 전·최저·회복 전압과 강하율 표.
 
-### Acceptance
+### 합격 기준
 
-Pass for bounded bench evidence:
+제한된 작업대 검증의 합격 조건:
 
-- 3/3 no-load and 3/3 23.10 g runs captured with synchronized voltage traces
-- motor-side `VM` stays above the project-defined motor-supply minimum; until a
-  stricter hardware limit is documented, any drop below 5.0 V on the nominal 6 V
-  bench supply is a fail for this evidence item
-- no ESP32 brownout/reset, STM32 IMU fault, AS5600 readiness fault, or unexpected
-  SafetyGate block occurs during the captured pulse
-- voltage recovers to within 95% of pre-motion value within 1 s after the motion
-  ends
+- 무부하 3/3, 23.10g 3/3 실행에 동기화 전압 파형이 있다.
+- 모터 측 `VM`이 프로젝트의 모터 전원 최저값 이상이다. 더 엄격한 하드웨어 한도를 문서화하기 전까지 공칭 6V 작업대 전원에서 5.0V 미만 강하는 이 항목의 실패다.
+- 기록한 펄스 중 ESP32 저전압·리셋, STM32 IMU 고장, AS5600 준비 고장, 예상하지 않은 SafetyGate 차단이 없다.
+- 구동 종료 뒤 1s 안에 전압이 구동 전 값의 95% 이상으로 회복한다.
 
-Fail:
+실패:
 
-- only approximate handheld readings are available
-- voltage and command timing are not synchronized
-- controller or sensor resets during the bounded pulse
-- sag exceeds the acceptance threshold without a follow-up mitigation note
+- 대략적인 휴대형 계측값만 있다.
+- 전압과 명령 시각이 동기화되지 않았다.
+- 제한 펄스 중 제어기나 센서가 리셋된다.
+- 후속 완화 기록 없이 전압 강하가 합격 한도를 넘는다.
 
-## Evidence Promotion Rule
+## 완료 근거로 전환하는 조건
 
-After capture, create a dated evidence note only if the raw artifacts are present
-and the pass/fail table is complete. Until then, public documents may say only:
+수집 후 원본 자료와 완성된 합격·실패 표가 있을 때만 날짜별 검증 기록을 만든다. 그 전에는 다음 범위로 설명한다.
 
-```text
-Physical safety instrumentation plan exists for hard cutoff, deadman latency,
-PWM/UART/I2C waveform, and motor-supply sag evidence; these are planned, not yet
-completed evidence.
-```
+> 물리 전원 차단, 데드맨 지연, PWM/UART/I2C 파형, 모터 전압 강하를 계측할 계획이 있다. 아직 완료된 검증 근거는 아니다.
 
-Do not convert this plan into claims such as certified functional safety,
-production E-stop, verified stop distance, or production power integrity.
+이 계획을 기능 안전 인증, 양산 비상 정지, 검증된 정지 거리, 양산 전원 무결성 주장으로 바꾸지 않는다.

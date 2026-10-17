@@ -1,14 +1,8 @@
-# Bounded controller HTTP diagnostics
+# 횟수와 시간이 제한된 제어기 HTTP 진단
 
-Use `tools/diagnose_controller_http.py` to preserve evidence of an intermittent
-controller status failure without executing a motor command or accessing a camera.
-It makes at most four sequential GET requests: `/status`, `/sequence`, `/actions`,
-and `/action_outputs`. It does not discover devices, follow redirects, retry,
-load curl configuration, authenticate, or start services.
+`tools/diagnose_controller_http.py`는 모터 명령이나 카메라 접근 없이 간헐적인 제어기 상태 조회 실패를 기록한다. `/status`, `/sequence`, `/actions`, `/action_outputs`에 순서대로 최대 네 번 GET 요청을 보낸다. 장치 탐색, 리다이렉트 추적, 재시도, curl 설정 읽기, 인증, 서비스 시작은 하지 않는다.
 
-Run it from the host whose network path is being investigated, with the current
-controller address already verified. Each invocation requires a new evidence
-directory; an existing session is never resumed or overwritten.
+현재 제어기 주소를 먼저 확인하고, 조사하려는 네트워크 경로의 호스트에서 실행한다. 실행마다 새로운 증거 디렉터리가 필요하며, 기존 세션을 재개하거나 덮어쓰지 않는다.
 
 ```sh
 python3 tools/diagnose_controller_http.py \
@@ -16,36 +10,15 @@ python3 tools/diagnose_controller_http.py \
   --output .local/http-diagnostic/session-01
 ```
 
-The fixed collection limits are 0.8 seconds to connect, 2 seconds per HTTP
-request, and a 12-second session budget. Any response taking more than 0.8 seconds
-fails the diagnostic; the longer collection timeout is not a relaxed acceptance
-criterion. Each response is limited to 64 KiB by curl and checked before parsing.
-Curl must support `--max-filesize`; older curl versions may not enforce the limit
-while receiving a response without Content-Length. Use a current curl for a
-strict transfer-size bound. Host scheduling and filesystem delays may extend
-wall-clock cleanup beyond the subprocess deadline.
+수집 한도는 연결 0.8초, HTTP 요청당 2초, 세션 전체 12초로 고정한다. 응답이 0.8초를 넘으면 진단 실패다. 더 긴 수집 타임아웃은 합격 기준 완화가 아니다. curl이 응답 크기를 64 KiB로 제한하며 파싱 전에도 검사한다. `--max-filesize`를 지원하는 curl이 필요하다. 오래된 버전은 Content-Length가 없는 응답을 수신하는 동안 한도를 적용하지 못할 수 있으므로, 엄격한 전송 크기 제한에는 최신 curl을 사용한다. 호스트 스케줄링과 파일시스템 지연 때문에 종료 정리의 실제 시간은 하위 프로세스 기한을 넘을 수 있다.
 
-`plan.json` records the target and limits before the first request. Each attempt
-has the original response body (when curl produced one), stdout timing fields,
-stderr, attempt timestamp, and a result. HTTP `000`, partial JSON, transport
-failure, HTTP failure, invalid metrics, invalid payload, and interruption remain
-distinguishable. A failure terminates collection immediately. Connect/first-byte/
-total timings narrow the observed phase; they do not establish a root cause.
+첫 요청 전에 `plan.json`에 대상과 한도를 기록한다. 각 시도에는 curl이 생성한 원본 응답 본문, 표준 출력의 시간 지표, 표준 오류, 시도 시각, 결과를 남긴다. HTTP `000`, 일부만 받은 JSON, 전송 실패, HTTP 실패, 잘못된 지표·본문, 중단을 구분한다. 실패하면 즉시 수집을 끝낸다. 연결·첫 바이트·전체 소요 시간은 문제가 관찰된 단계를 좁힐 뿐 원인을 확정하지 않는다.
 
-Success means the four responses arrived within the diagnostic limit and the
-reported controller was idle, all five motors disabled at speed zero, the queue
-empty, actions inactive, and the action/output boot IDs consistent. These are
-sequential observations, not an atomic snapshot, electrical measurements, a
-proof of reliable stopping during motion, or a long-term reliability test.
-Historical output entries are retained without interpreting them as current PWM.
+성공은 네 응답이 한도 안에 도착하고, 조회된 제어기가 IDLE·모터 5개 비활성 및 속도 0·빈 큐·비활성 행동이며, 행동과 출력의 부팅 ID가 일치했다는 뜻이다. 순차 관측이므로 원자적 스냅샷이나 전기 측정, 구동 중 정지 신뢰성, 장기 신뢰성의 증거는 아니다. 과거 출력 항목은 보존하되 현재 PWM으로 해석하지 않는다.
 
-A closed diagnostic must not trigger an automatic retry or a physical experiment.
-Review its evidence first and prepare a separate finite session if required.
-These limits do not alter the video 100 ms, anchor 15 s, or storage 250 ms gates.
-Diagnostic records are not training-eligible data. Keep raw records under
-Git-ignored `.local/`; do not publish device details or private captures.
+종료된 진단을 자동 재시도나 실물 실험의 계기로 사용하지 않는다. 먼저 근거를 검토하고 필요하면 별도의 유한 세션을 준비한다. 영상 100ms·앵커 15s·저장 250ms 기준은 그대로이며, 진단 기록은 학습 적격 데이터가 아니다. 원본 기록은 Git에서 제외한 `.local/`에 두고 장치 상세정보나 비공개 촬영 자료를 공개하지 않는다.
 
-Offline regression tests:
+오프라인 회귀 테스트:
 
 ```sh
 python3 -m unittest discover -s tests -p 'test_controller_http_diagnostic.py'

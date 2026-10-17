@@ -261,5 +261,5 @@ systemd wrapper는 ESP32-CAM 재부팅 후에도 이 카메라 프로필을 다�
 
 ## 라이선스
 
-Project code is MIT licensed; see [LICENSE](LICENSE). STM32 HAL/CMSIS vendor
-files retain their upstream licenses under `firmware/stm32/MotionBrainSensor/Drivers/`.
+프로젝트 코드는 MIT 라이선스를 따른다. [LICENSE](LICENSE)를 참고한다.
+`firmware/stm32/MotionBrainSensor/Drivers/`의 STM32 HAL/CMSIS 외부 제공 파일은 원래 라이선스를 유지한다.

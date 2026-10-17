@@ -30,7 +30,7 @@ hardware integration, ROS2 system software, and real-robot issue analysis.
 - Physical controller and dashboard overview: [README.en.md](README.en.md)
 - Portfolio problem framing and honest limitations: [PORTFOLIO.en.md](PORTFOLIO.en.md)
 - Claim/evidence/limitation matrix:
-  [docs/evidence/claim-to-evidence-matrix.md](docs/evidence/claim-to-evidence-matrix.md)
+  [docs/evidence/claim-to-evidence-matrix.md (Korean)](docs/evidence/claim-to-evidence-matrix.md)
 - Public `ros2_control` dry-run evidence note:
   [docs/evidence/2026-06-16-ros2-control-open-loop.en.md](docs/evidence/2026-06-16-ros2-control-open-loop.en.md)
 - Public Pi/systemd/ROS2 health evidence note:
@@ -206,6 +206,6 @@ Synthetic checks do not establish real-data accuracy; eligible real action sampl
 zero. On 2026-10-17, observed lipbalm grasp/lift and two additional grasp/place cycles
 preserved 21 manual command/output steps and 37 images. These demonstrations do not
 prove the learning bounded-action contract, optical timestamps, semantic anchors,
-settling or action/frame synchronization. See [current integration status](docs/evidence/2026-10-17-integration-status.md),
-the [learning contract](docs/evidence/2026-10-15-offline-visual-dynamics.md),
-and the [failed observation usability trial](docs/evidence/2026-10-15-bounded-observation.md).
+settling or action/frame synchronization. See [current integration status (Korean)](docs/evidence/2026-10-17-integration-status.md),
+the [learning contract (Korean)](docs/evidence/2026-10-15-offline-visual-dynamics.md),
+and the [failed observation usability trial (Korean)](docs/evidence/2026-10-15-bounded-observation.md).

@@ -1,16 +1,10 @@
-# Mac direct-camera commissioning
+# Mac 직접 카메라 초기 검증
 
-`tools/probe_mac_camera.py` runs one finite AVFoundation acquisition and audits the
-exact delivered image pixels and native processing results. It does not call a
-controller, start a service, generate action transitions, or train a model.
-The macOS helper requires macOS 14 or later and an explicitly selected Continuity
-Camera; it never falls back to another camera. Python audit is platform independent.
+`tools/probe_mac_camera.py`는 유한한 AVFoundation 영상 획득을 한 번 실행하고, 실제 전달된 이미지 픽셀과 네이티브 처리 결과를 검사한다. 제어기 호출, 서비스 시작, 행동 전이 생성, 모델 학습은 하지 않는다. macOS 보조 프로그램은 macOS 14 이상과 명시적으로 선택한 연속성 카메라(Continuity Camera)가 필요하며 다른 카메라로 자동 전환하지 않는다. Python 감사는 플랫폼과 무관하게 실행할 수 있다.
 
-## Build and run
+## 빌드와 실행
 
-Build with a matching Xcode compiler and SDK. The embedded Info.plist declares the
-camera permission purpose and opts into Continuity Camera discovery. Output binaries
-and camera data belong in Git-excluded paths.
+서로 호환되는 Xcode 컴파일러와 SDK로 빌드한다. 내장 Info.plist는 카메라 권한 용도를 선언하고 연속성 카메라 탐색을 활성화한다. 출력 바이너리와 카메라 자료는 Git에서 제외한 경로에 둔다.
 
 ```sh
 mkdir -p .local/bin
@@ -24,140 +18,67 @@ python3 tools/probe_mac_camera.py capture \
 python3 tools/probe_mac_camera.py audit datasets/mac_camera/<new-run>
 ```
 
-Run capture through the Python wrapper: native AVFoundation and filesystem calls
-can block, so the wrapper supplies the independent process deadline. A fresh output
-directory is mandatory; there is no resume, overwrite, automatic retry, or camera
-fallback. A new command is a new experiment and requires a separately justified
-budget; a failed run must not be silently replaced.
+촬영은 Python 래퍼를 통해 실행한다. 네이티브 AVFoundation과 파일시스템 호출이 블로킹될 수 있어 래퍼가 독립적인 프로세스 기한을 적용한다. 새 출력 디렉터리가 필수이며 재개·덮어쓰기·자동 재시도·카메라 대체는 없다. 새 명령은 새 실험이므로 별도로 정당화한 예산이 필요하다. 실패한 실행을 조용히 바꿔치기하지 않는다.
 
-The iPhone must be locked, stably mounted and trusted by the Mac for USB use.
-A cable connection alone is not evidence of the actual video transport: raw
-AVFoundation `transportType` is recorded, and `transportVerifiedUSB` stays false.
-See [Apple's Continuity Camera requirements](https://support.apple.com/en-us/102546).
+iPhone은 잠금 상태로 안정적으로 고정하고, USB 사용을 위해 Mac을 신뢰하도록 설정해야 한다. 케이블 연결만으로 실제 영상 전송 경로를 입증할 수는 없다. 원본 AVFoundation `transportType`을 기록하며 `transportVerifiedUSB`는 false로 유지한다. [Apple 연속성 카메라 요구사항](https://support.apple.com/en-us/102546)을 참고한다.
 
-## Fixed acquisition contract
+## 고정 영상 획득 계약
 
-- One process, startup at most 30 seconds; fixed warmup ends after 1 second or
-  30 callbacks, whichever occurs first.
-- One reference frame and 20 evaluation frames; measurement at most 10 seconds,
-  process at most 45 seconds, followed by at most 2 seconds termination grace.
-- Serial callbacks, late video frames discarded and counted. Requested output is
-  640×480 BGRA; actual dimensions, row layout, rotation and mirroring are recorded.
-- Raw tightly packed BGRA pixels are copied without row padding. This is the
-  delivered AVFoundation image, not a sensor RAW or pre-transport image.
-- Native processing computes the exact weighted mean luma
-  `(77*R + 150*G + 29*B)/256`. Audit recomputes it from the preserved bytes.
-  This is image processing, not semantic detection, tracking or learned inference.
-- Raw image and frame metadata are exclusively created, fsynced, read back, and
-  the directory is fsynced. A separate terminal receipt binds both SHA-256 hashes
-  and records the complete transaction time. The 250 ms bound applies to this
-  transaction, not to the later terminal receipt, execution log or offline audit.
-- Storage failure or duration over 250 ms, invalid/duplicate/regressing PTS,
-  device loss, changed dimensions/rotation/mirroring, or deadline ends the run.
-  Partial files remain available for audit.
+- 프로세스 하나, 시작 최대 30초. 고정 준비 구간은 1초 또는 콜백 30회 중 먼저 도달할 때 끝난다.
+- 기준 프레임 한 장과 평가 프레임 20장. 측정 최대 10초, 프로세스 최대 45초, 이후 종료 유예 최대 2초.
+- 콜백은 직렬 처리하며 늦은 프레임을 버리고 그 수를 센다. 요청 출력은 640×480 BGRA이며 실제 크기·행 배치·회전·반전 여부를 기록한다.
+- 행 패딩을 제외한 밀집 BGRA 바이트를 그대로 복사한다. AVFoundation이 전달한 이미지이며 센서 RAW나 전송 전 이미지가 아니다.
+- 네이티브 처리는 가중 평균 밝기 `(77*R + 150*G + 29*B)/256`를 계산한다. 감사는 보존한 바이트로 이를 재계산한다. 이는 영상 처리이며 의미 기반 검출·추적·학습 추론이 아니다.
+- 원본 이미지와 프레임 메타데이터를 배타적으로 생성하고 `fsync`, 재읽기, 디렉터리 `fsync`를 수행한다. 별도 최종 기록이 두 SHA-256 해시와 전체 저장 트랜잭션 시간을 연결한다. 250ms 한도는 이 트랜잭션에 적용하며 이후 최종 기록·실행 로그·오프라인 감사에는 적용하지 않는다.
+- 저장 실패 또는 250ms 초과, 잘못되거나 중복·역행하는 PTS, 장치 연결 해제, 크기·회전·반전 변화, 기한 도달 시 실행을 끝낸다. 부분 파일은 감사용으로 남긴다.
 
-The frame-zero reference is a temporal diagnostic reference. It is **not** the
-semantic object anchor required by the existing ESP32 observation pipeline.
-Physical mount stability and scene changes cannot be proved by these metadata.
-A moved camera or changed scene needs a new view ID and session; old calibration,
-anchors and action-training groups must not be reused.
+0번 기준 프레임은 시간 진단용 참조다. 기존 ESP32 관측 파이프라인이 요구하는 **의미 기반 물체 앵커가 아니다.** 메타데이터만으로 물리적 고정 상태나 장면 변화를 증명할 수 없다. 카메라나 장면이 바뀌면 새 view ID와 세션이 필요하며 기존 보정·앵커·행동 학습 그룹을 재사용하지 않는다.
 
-## Timestamp and result meaning
+## 타임스탬프와 결과 해석
 
-Every image has a unique session/sequence identity, original rational CMTime PTS
-(value, timescale, flags and epoch), converted host PTS, callback arrival, processing
-completion and storage timing. All live timings use the CoreMedia host clock.
-AVCaptureSession's synchronization clock is used for PTS conversion with
-`CMSyncConvertTime`; Python monotonic time is used only for subprocess supervision.
-See Apple's [synchronizationClock](https://developer.apple.com/documentation/avfoundation/avcapturesession/synchronizationclock)
-and [CMSyncConvertTime](https://developer.apple.com/documentation/coremedia/cmsyncconverttime(_:from:to:)) contracts.
+각 이미지에는 고유 세션·순서 ID, 원본 유리수 CMTime PTS(value·timescale·flags·epoch), 변환한 호스트 PTS, 콜백 도착, 처리 완료, 저장 시각을 기록한다. 실시간 계측은 모두 CoreMedia 호스트 시계를 사용한다. AVCaptureSession 동기화 시계와 `CMSyncConvertTime`으로 PTS를 변환하며 Python 단조 시계는 하위 프로세스 감독에만 사용한다. Apple의 [synchronizationClock](https://developer.apple.com/documentation/avfoundation/avcapturesession/synchronizationclock)과 [CMSyncConvertTime](https://developer.apple.com/documentation/coremedia/cmsyncconverttime(_:from:to:)) 계약을 참고한다.
 
-`captureProcessingPassed` requires all 21 images to pass integrity and storage
-checks, all 20 evaluation images to complete, and at least 16 to have PTS-to-processing
-diagnostics within 100 ms and reference-PTS age within 15 seconds. This small sample
-is a commissioning smoke test, not a statistical reliability claim.
+`captureProcessingPassed`는 이미지 21장 모두의 무결성·저장 검사 통과, 평가 이미지 20장 완료, 그중 최소 16장의 PTS→처리 진단 100ms 이내 및 기준 PTS 나이 15초 이내를 요구한다. 작은 표본의 초기 점검이며 통계적 신뢰성 주장은 아니다.
 
-Converted presentation timestamps and callback arrival do not establish optical
-exposure time or its error bound. Therefore the real image-age ≤100 ms and anchor-age
-≤15 seconds gates remain `unverified`, `overallPassed` stays false, and
-`captureHostBoundsCalibrated`, `controlEligible`, and `trainingEligible` stay false.
-Passing pixel-processing diagnostics cannot promote an observation or action dataset.
-No actual learning performance is measured by this tool.
+변환한 표시 시각이나 콜백 도착 시각은 광학 노출 시각·오차 한도를 확정하지 못한다. 따라서 실제 영상 나이 ≤100ms와 앵커 나이 ≤15초는 `unverified`, `overallPassed`는 false로 유지한다. `captureHostBoundsCalibrated`, `controlEligible`, `trainingEligible`도 false다. 픽셀 처리 진단 통과로 관측이나 행동 데이터셋의 자격을 올리지 않는다. 이 도구는 실제 학습 성능을 측정하지 않는다.
 
-Run software regression separately from physical acquisition:
+소프트웨어 회귀 테스트는 실물 촬영과 분리해 실행한다.
 
 ```sh
 python3 -m unittest discover -s tests -p 'test_mac_camera_probe.py' -v
 ```
 
-## Commissioning result (2026-10-16)
+## 초기 검증 결과 (2026-10-16)
 
-The first bounded run found the intended Continuity device during preflight but
-could not obtain camera authorization within its startup budget. It exited with
-code 3 (`camera permission unavailable`) after 30.265 seconds, with **zero captured
-frames**. That attempt did not test the 21-image acquisition or timing criteria on
-physical images; it is a failed commissioning attempt, not measured camera
-latency. No automatic retry or threshold adjustment was performed.
+첫 유한 실행은 사전 점검에서 지정한 연속성 장치를 찾았지만 시작 예산 안에 카메라 권한을 얻지 못했다. 30.265초 후 코드 3(`camera permission unavailable`)으로 끝났으며 **촬영 프레임은 0장**이다. 실물 영상 21장의 획득·시간 기준을 시험한 것이 아니며, 카메라 지연 측정값이 아닌 초기 검증 실패다. 자동 재시도나 기준 조정은 하지 않았다.
 
-The failed execution, frozen plan, helper hash, stderr and audit report were
-preserved locally. Independent replay rejects the incomplete evidence. Controller
-status before and after remained IDLE, all five motor outputs zero, and the bounded
-action API disabled with no action records. No actuator command, firmware upload
-or service start/restart was issued.
+실패 실행, 고정한 계획, 보조 프로그램 해시, 표준 오류, 감사 보고서를 로컬에 보존했다. 독립 재검증은 불완전한 근거를 거부한다. 전후 제어기는 IDLE·모터 출력 5개 0·제한 행동 API 비활성·행동 기록 없음 상태였다. 액추에이터 명령, 펌웨어 업로드, 서비스 시작·재시작은 하지 않았다.
 
-Software validation: 669 regression tests passed, including 33 synthetic/fake-process
-camera tests; the macOS helper built successfully. Independent review found and
-resolved an audit gap that had allowed missing execution records; final review
-reported no remaining P0/P1/P2 findings. Software checks do not establish USB video
-transport, optical timing, real detection accuracy or real learning performance.
+소프트웨어 검증에서는 합성·가짜 프로세스 카메라 테스트 33개를 포함해 회귀 테스트 669개가 통과했고 macOS 보조 프로그램 빌드도 성공했다. 독립 검토에서 실행 기록 누락을 허용하던 감사 결함을 찾아 수정했으며 최종 P0/P1/P2 지적은 없었다. 이 검사는 USB 영상 전송, 광학 시각, 실제 검출 정확도, 실제 학습 성능을 입증하지 않는다.
 
+### 카메라 권한 승인 후 별도 실행
 
-### Separate run after camera authorization
+별도 승인한 새 세션에서 동일 실행 파일·처리 코드·고정 기준을 사용했다. 촬영 프로세스는 3.169초에 끝났고 원본 프레임 21장, 메타데이터, 네이티브 픽셀 측정값의 무결성 재검증을 모두 통과했다. 요청한 세션 설정은 640×480이지만 실제 전달 형식은 **1920×1080 BGRA**였다. 결과 확인 후 해상도를 바꾸거나 새로 촬영하지 않았다. 근거의 구성은 요청 설정이 아니라 실제 프레임 크기를 따른다.
 
-A separately authorized new session used the same executable, processing code and
-fixed criteria. The capture process completed in 3.169 seconds: all 21 raw frames, metadata
-and native pixel measurements passed integrity replay. The actual delivered format
-was **1920×1080 BGRA**, despite the requested 640×480 session preset; no post-result
-resolution change or new capture was performed. Actual frame dimensions, rather
-than the requested preset, determine the evidence configuration.
+| 진단 | 결과 |
+| --- | ---: |
+| 완료한 평가 프레임 | 20/20, 기준 프레임 한 장 별도 |
+| 평가 PTS→처리 ≤100ms | **12/20, 요구 16/20 — 실패** |
+| 평가 PTS→처리 최소 / 중앙값 / 최대 | 75.453 / 81.840 / 115.418 ms |
+| 평가 콜백→처리 최소 / 중앙값 / 최대 | 0.732 / 1.995 / 2.251 ms |
+| 처리 시 기준 PTS 나이 최대 | 747.274 ms |
+| 21장 전체 원본+메타데이터 영속 저장 트랜잭션 최대 | 12.162 ms |
+| 콜백이 보고한 누락 프레임 | 0 |
 
-| Diagnostic | Result |
-|---|---:|
-| Evaluation frames completed | 20/20, plus one reference |
-| Evaluation PTS-to-processing ≤100 ms | **12/20; required 16/20 — failed** |
-| Evaluation PTS-to-processing min / median / max | 75.453 / 81.840 / 115.418 ms |
-| Evaluation callback-to-processing min / median / max | 0.732 / 1.995 / 2.251 ms |
-| Maximum reference-PTS age at processing | 747.274 ms |
-| Maximum raw+metadata durable transaction, all 21 frames | 12.162 ms |
-| Callback-reported dropped frames | 0 |
+이 시간 지표는 표시 타임스탬프를 사용하며 검증된 광학 노출 한도가 아니다. 기준 프레임 나이 진단은 검증된 의미 기반 앵커 나이가 아니다. 고정된 16/20 진단 기준에 미달해 `captureProcessingPassed=false`이며, 미검증 광학 시각 조건까지 유지하므로 `overallPassed=false`다. 제어기 출력은 OFF였고 행동 기록은 생성되지 않았다. 실제 학습 적격 행동 데이터는 **0건**이다. 장면 원본은 Git 밖에 보관했다. 원래 표본 한도에서 끝났으며 추가 촬영이나 조정은 하지 않았다.
 
-These timing metrics use presentation timestamps, not verified optical exposure
-bounds. The reference-age diagnostic is not a validated semantic-anchor age.
-`captureProcessingPassed=false` because the fixed 16/20 diagnostic threshold was
-missed; `overallPassed=false` additionally retains the unverified optical timing
-limits. Controller outputs remained off and no action record was created. Actual
-learning-eligible action data remains **zero**. Raw scene images stay outside Git.
-The run ended at the original sample limit; there was no further capture or tuning.
+## 선택적 콜백·형식 진단
 
-## Optional callback and format diagnostics
+새 래퍼 실행은 계측 버전 1을 요구하며, 불변 보관된 이전 촬영은 이 진단 없이도 읽을 수 있다. 보조 프로그램의 `--describe-capabilities`는 촬영 없는 호환성 검사다. 세션 메타데이터는 시작 전 preset, 출력 설정, 활성 형식을 기록한다. 각 프레임은 실제 설정, 활성·샘플 형식, 전달 픽셀 형식, 방향, 장치가 보고한 프레임 지속 시간을 SHA-256 해시로 연결한다. 구성이 바뀌면 실행을 중단한다. 설정되지 않은 장치 CMTime 지속 시간은 원본 진단값으로 남기며 실제 관측 FPS로 해석하지 않는다.
 
-New wrapper runs require instrumentation version 1; immutable legacy captures remain
-readable without those diagnostics. The helper's `--describe-capabilities` is a
-non-capturing compatibility check. Session metadata records the pre-start preset,
-output settings and active format. Each frame binds the actual settings, active and
-sample formats, delivered pixel format, orientation and device-reported frame-duration
-values with a SHA-256 hash; a configuration change aborts the run. Unset device
-CMTime duration values remain raw diagnostics and never establish an observed FPS.
+준비 콜백은 최대 30개, 누락 샘플 기록은 최대 64개까지 보존하고 잘린 개수를 명시한다. 빠진 준비 시각이나 누락 사유는 미상으로 남긴다. 최종 기록에는 영속 저장과 출력 비우기 뒤의 콜백 반환 준비 시각, delegate 큐를 비울 때까지의 수명주기 시각이 들어간다. 반환 준비 시각은 콜백 반환 **전**에 측정하므로 실제 다음 호출 준비 상태를 증명하거나 카메라 ISP·전송·상위 큐 지연을 분리하지 못한다. 고정 합격 기준은 바꾸지 않으며 노출 시각을 입증하지 않는다.
 
-Up to 30 warmup callbacks and 64 dropped-sample records are retained, with an explicit
-truncation count. Missing warmup timing or dropped-sample reasons remain unknown.
-Terminal receipts record callback return-preparation timestamps after persistence
-and output flushing, and lifecycle timestamps through delegate-queue draining.
-A return-preparation timestamp is sampled **before** callback return; it cannot prove
-actual dispatch readiness or isolate camera ISP, transport and upstream queue delay.
-These diagnostics do not change the fixed acceptance criteria or establish exposure time.
-
-## Frozen offline object-detector replay
+## 고정 조건의 오프라인 물체 검출 재생
 
 ```sh
 python3 tools/evaluate_mac_camera_detection.py \
@@ -166,55 +87,27 @@ python3 tools/evaluate_mac_camera_detection.py \
   --output .local/detector-evaluation/<new-run>
 ```
 
-The replay validates all original evidence before freezing model, label, implementation
-and input hashes. A timing-only failure is allowed for offline analysis and remains
-recorded. It executes one CPU worker with a 60-second deadline and 2-second termination
-grace, one warmup on frame zero and exactly 21 evaluations. Settings are fixed to
-YOLOv5s ONNX, input 640, cup only, confidence 0.20, NMS 0.45, largest target, no aliases.
-OpenCV parallel regions are disabled and its effective thread setting must report one.
-BGRA is converted to BGR and lossless PNG for the existing detector entry point.
-No capture, action, training, retry or parameter search is performed.
+재생기는 모든 원본 근거를 검증한 뒤 모델·라벨·구현·입력 해시를 고정한다. 시간 기준만 실패한 자료는 오프라인 분석을 허용하되 실패를 그대로 기록한다. CPU 작업자 하나, 60초 기한, 2초 종료 유예를 사용하며 0번 프레임 준비 실행 한 번과 정확히 21번의 평가를 수행한다. 설정은 YOLOv5s ONNX, 입력 640, cup만, 신뢰도 0.20, NMS 0.45, 가장 큰 대상, 별칭 없음으로 고정한다. OpenCV 병렬 영역을 비활성화하고 유효 스레드 설정이 하나인지 확인한다. 기존 검출기 진입점에 맞춰 BGRA를 BGR 및 무손실 PNG로 변환한다. 촬영·행동·학습·재시도·파라미터 탐색은 하지 않는다.
 
-Outputs distinguish input preparation, detector-call time and total offline processing.
-Detection presence, confidence and boxes are not accuracy: there are no manually
-annotated ground-truth boxes or independent test scenes. Replay timing is not live
-capture-to-detection latency. All learning/control eligibility fields remain false.
+출력은 입력 준비, 검출기 호출, 전체 오프라인 처리 시간을 구분한다. 검출 여부·신뢰도·박스는 정확도가 아니다. 수동 정답 박스나 독립 시험 장면이 없기 때문이다. 재생 시간은 실시간 촬영→검출 지연이 아니다. 모든 학습·제어 적격 필드는 false로 유지한다.
 
-## Instrumented run and offline replay (2026-10-16)
+## 계측 실행과 오프라인 재생 (2026-10-16)
 
-The frozen offline replay used the **previous view's** 21 intact frames. All 21
-produced valid detector reports within the single 60-second budget (8.537 seconds
-elapsed), with **0/21 cup detections**. Detector-call time was
-266.429 / 268.809 / 275.091 ms (min / median / max); input preparation median was
-50.384 ms and total offline processing median was 320.146 ms. The detector emitted
-a `toilet` candidate on each image; this is a model output, not a ground-truth label.
-No accuracy or live latency claim follows from these unannotated frames. Removing
-input conversion alone cannot make this fixed CPU detector satisfy 100 ms.
+고정 오프라인 재생은 **이전 구도**의 온전한 프레임 21장을 사용했다. 단일 60초 예산 안에서 21개 모두 유효한 검출 보고서를 생성했고 실제 소요 시간은 8.537초였다. **컵 검출은 0/21**이었다. 검출기 호출 시간 최소 / 중앙값 / 최대는 266.429 / 268.809 / 275.091 ms, 입력 준비 중앙값은 50.384ms, 전체 오프라인 처리 중앙값은 320.146ms였다. 각 이미지에서 `toilet` 후보가 나왔지만 이는 모델 출력이며 정답 라벨이 아니다. 주석 없는 이 프레임으로 정확도나 실시간 지연을 주장하지 않는다. 입력 변환만 제거해도 이 고정 CPU 검출기는 100ms를 충족하지 못한다.
 
-One separately identified view then captured 21 frames after the robot base, joint
-pose and camera mount changed. The original acquisition budget and thresholds were
-retained. Acquisition completed in 2.739 seconds; all 21 image/metadata/luma,
-configuration and durable-write checks passed. **12/20** evaluation PTS diagnostics
-met 100 ms, below the required 16/20: the run failed and ended without a retry.
+로봇 베이스·관절 자세·카메라 고정 위치를 바꾼 뒤 별도 식별한 새 구도에서 21장을 촬영했다. 원래 획득 예산과 기준을 유지했다. 획득은 2.739초에 끝났고 21장 모두 이미지·메타데이터·밝기·구성·영속 쓰기 검사를 통과했다. 평가 PTS 진단 **12/20**이 100ms를 충족해 요구 16/20에 미달했다. 실행은 실패로 끝났고 재시도하지 않았다.
 
-| New-view diagnostic | Result |
-|---|---:|
-| Delivered format | 1920×1080 BGRA; requested preset 640×480 |
-| Device active format | 1920×1080 `420v`, reported duration 1/30 s |
-| Evaluation PTS-to-processing min / median / max | 66.481 / 79.440 / 115.662 ms |
-| Evaluation callback-to-processing median | 1.965 ms |
-| Evaluation callback-to-return-preparation median | 12.130 ms |
-| Maximum reference-PTS age at processing | 734.597 ms |
-| Maximum durable transaction, all 21 frames | 18.910 ms |
-| Reported dropped samples | 0 |
+| 새 구도 진단 | 결과 |
+| --- | ---: |
+| 전달 형식 | 1920×1080 BGRA, 요청 preset 640×480 |
+| 장치 활성 형식 | 1920×1080 `420v`, 보고 지속 시간 1/30 s |
+| 평가 PTS→처리 최소 / 중앙값 / 최대 | 66.481 / 79.440 / 115.662 ms |
+| 평가 콜백→처리 중앙값 | 1.965 ms |
+| 평가 콜백→반환 준비 중앙값 | 12.130 ms |
+| 처리 시 기준 PTS 나이 최대 | 734.597 ms |
+| 21장 전체 영속 저장 트랜잭션 최대 | 18.910 ms |
+| 보고된 누락 샘플 | 0 |
 
-All eight failed evaluation frames were already more than 100 ms past PTS at
-callback arrival. Warmup callbacks also showed large PTS-to-arrival delays before
-any image persistence, supporting an upstream-delay explanation without identifying
-an ISP, transport or OS queue as the cause. No settings or warmup budget were tuned.
-The new scene's semantic detector performance has **not** been evaluated.
+실패한 평가 프레임 여덟 장은 모두 콜백 도착 시 이미 PTS로부터 100ms를 넘었다. 준비 콜백도 이미지 저장 전부터 큰 PTS→도착 지연을 보였다. 이는 상위 경로 지연 가능성을 뒷받침하지만 ISP·전송·OS 큐 중 원인을 특정하지 않는다. 설정이나 준비 예산을 조정하지 않았다. 새 장면의 의미 기반 검출 성능은 **평가하지 않았다.**
 
-Both experiments preserved optical timing as unverified, overall/control/training
-eligibility as false, and physical learning-eligible action rows as zero. Controller
-status before and after remained IDLE, all motor outputs zero, action API disabled
-and action-record count zero. Raw frames, frozen plans and analysis stay outside Git.
+두 실험 모두 광학 시각은 미검증, 전체 통과·제어·학습 적격성은 false, 실물 학습 적격 행동 행은 0건으로 유지했다. 전후 제어기는 IDLE·모든 모터 출력 0·행동 API 비활성·행동 기록 0개였다. 원본 프레임, 고정 계획, 분석 자료는 Git 밖에 보관한다.

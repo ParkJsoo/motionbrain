@@ -34,11 +34,11 @@ The physical teleoperation demo media snapshot is tagged as `demo-ready-20260608
 - The fixed-budget observation trial stopped on persistence latency after 1 success in 7 requests, failing the usability gate.
 - On 2026-10-17, iPhone-observed manual commands achieved a lipbalm grasp/lift and two additional grasp/lift/place cycles, the first with a close correction. The 21-step, 37-image archive is raw demonstration evidence, not eligible training data.
 
-[Current integration status](docs/evidence/2026-10-17-integration-status.md) · [Learning contract and reproduction](docs/evidence/2026-10-15-offline-visual-dynamics.md) · [Observation results](docs/evidence/2026-10-15-bounded-observation.md)
+[Current integration status (Korean)](docs/evidence/2026-10-17-integration-status.md) · [Learning contract and reproduction (Korean)](docs/evidence/2026-10-15-offline-visual-dynamics.md) · [Observation results (Korean)](docs/evidence/2026-10-15-bounded-observation.md)
 
 ## Fast Evidence
 
-- [Claim-to-evidence matrix](docs/evidence/claim-to-evidence-matrix.md):
+- [Claim-to-evidence matrix (Korean)](docs/evidence/claim-to-evidence-matrix.md):
   a review guardrail that maps claims to evidence, limitations, and non-claims
 - [Physical teleoperation GIF](https://raw.githubusercontent.com/ParkJsoo/motionbrain/demo-ready-20260608/docs/assets/demo/motionbrain-demo.gif)
   / [MP4](https://raw.githubusercontent.com/ParkJsoo/motionbrain/demo-ready-20260608/docs/assets/demo/motionbrain-demo.mp4)
@@ -250,5 +250,5 @@ manipulation success independently.
 - [docs/evidence/2026-07-13-m4-physical-ros2-control.en.md](docs/evidence/2026-07-13-m4-physical-ros2-control.en.md): M4 physical one-shot evidence
 - [docs/evidence/2026-06-16-pi-system-health.en.md](docs/evidence/2026-06-16-pi-system-health.en.md): Pi/systemd/ROS2 health evidence summary
 - [docs/evidence/2026-06-17-runtime-measurements.en.md](docs/evidence/2026-06-17-runtime-measurements.en.md): Pi runtime and ROS2 measurement note
-- [EMBEDDED_BRINGUP.md](EMBEDDED_BRINGUP.md): STM32/ESP32 bring-up and measurement checklist
-- [OPERATIONS.md](OPERATIONS.md): Pi/systemd/health-check operations notes
+- [EMBEDDED_BRINGUP.en.md](EMBEDDED_BRINGUP.en.md): STM32/ESP32 bring-up and measurement checklist
+- [OPERATIONS.en.md](OPERATIONS.en.md): Pi/systemd/health-check operations notes
