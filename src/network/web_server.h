@@ -2,7 +2,7 @@
 #define WEB_SERVER_H
 
 #include <Arduino.h>
-#include <WebServer.h>  // ESP32 WebServer 라이브러리
+#include "idle_connection_web_server.h"
 #include <stdint.h>      // uint16_t를 위해 추가
 #include "motion/motion_sequence.h"
 
@@ -83,7 +83,7 @@ public:
 
 private:
   // ESP32 WebServer 객체 (포트 80으로 명시적 초기화)
-  ::WebServer server_{80};  // ::WebServer는 전역 네임스페이스의 WebServer 클래스
+  IdleConnectionWebServer server_{80};
 
   bool active_;         // 웹 서버 활성화 여부
   uint16_t port_;       // HTTP 서버 포트

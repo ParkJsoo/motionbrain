@@ -286,6 +286,11 @@ void MotionBrainWebServer::appendRuntimeDiagnosticsJson(String& json) const {
   json += "\",\"uptimeMs\":";
   json += String(millis());
   json += "}";
+  json += ",\"http\":{\"firstByteWaitMs\":";
+  json += String(IdleConnectionWebServer::FIRST_BYTE_WAIT_MS);
+  json += ",\"idleConnectionReleases\":";
+  json += String(server_.idleConnectionReleases());
+  json += "}";
   json += ",\"sensor\":{";
   json += "\"source\":\"";
   json += useStm32Sensor ? "stm32_bridge" : "teleop_embedded";
