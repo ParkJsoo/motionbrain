@@ -46,7 +46,7 @@ With the new boot, all five motors OFF and the existing browser tabs open:
 
 After the user confirmed the battery was ON again, a fresh admitted visual approach was executed. On the eleventh motion request after the firmware change, a second gripper-close pulse received its command response and a successful STOP response, but the following final `/status` GET timed out after about 830 ms. That physical phase was closed and was not automatically resumed.
 
-The move response took about 43 ms and STOP took about 150 ms. A separate read-only check confirmed IDLE, all five motors OFF, queue0, unchanged boot and STOP command identity. Retrospective output audit found only the intended M1 close output, lasting 442 ms. The original final-check failure is preserved separately from this later confirmation. The lipbalm was still standing; no lift or successful grasp was verified.
+The move response took about 43 ms and STOP took about 150 ms. A separate read-only check confirmed IDLE, all five motors OFF, queue 0, unchanged boot and STOP command identity. Retrospective output audit found only the intended M1 close output, lasting 442 ms. The original final-check failure is preserved separately from this later confirmation. The lipbalm was still standing; no lift or successful grasp was verified.
 
 Thus the empty-client correction is effective for its reproduced scenario, but intermittent HTTP latency remains unresolved. A further bounded GET-only packet trace was started with all motors OFF. No threshold was relaxed and no training-eligible data was produced. Firmware changes require separate approval before any further upload.
 
@@ -68,4 +68,16 @@ The Mac direct route then passed twelve authenticated default-speed100 requests,
 
 Eleven subsequent single-joint requests through the Mac route completed with final IDLE and output audits. Shoulder, elbow and wrist adjustments advanced the approach; three short lift checks did not lift the lipbalm. One close request targeted PWM40 but only reached PWM20 because the output ramp began late; its move response took 694.3 ms and nonzero output lasted 302 ms. This is not evidence that PWM40 lacks gripping force. A separate close reached PWM40 and held it for 520 ms, followed by another observed close and lift check. No PWM cap was raised. Some later request latencies approached the 0.8 s criterion even on the Mac route, so it remains an alternate path with finite validation, not a complete communication fix.
 
-At the last recorded stop, all five motors were OFF, the queue was empty and shoulder angle was 218.23 degrees. The lipbalm was still standing. The rear jaw was occluded in the iPhone view and the close camera could not establish whether the object lay between both jaws; one external depth observation was requested before further approach. No successful grasp or training-eligible episode is claimed. Video100 ms, anchor15 s and storage250 ms remain unchanged.
+Before the additional user-supplied photographs, all five motors were OFF, the queue was empty and shoulder angle was 218.23 degrees. The lipbalm was still standing. The rear jaw was occluded in the iPhone view and the close camera could not establish whether the object lay between both jaws; one external depth observation was requested before further approach. At that stage, no successful grasp had been verified. No training-eligible episode was produced. Video 100 ms, anchor 15 s and storage 250 ms remained unchanged.
+
+## Visually confirmed grasp and lift
+
+The user supplied three oblique photographs that showed the target near the mouth of the still-open jaws, then confirmed that the gripper could close at the corrected position. Two further bounded shoulder-down pulses increased insertion depth. The same PWM40 gripper limit was retained, with separate 750 ms close requests and visual observation after each; no PWM cap was raised.
+
+After two final close pulses (711 ms and 703 ms of nonzero driver output), a shoulder-up pulse produced visible object motion. A second shoulder-up pulse confirmed a clear gap between the lipbalm bottom and the tabletop, with the object suspended from the gripper. A later iPhone observation showed the object still held after STOP. The two final lift outputs lasted 474 ms and 712 ms at a requested PWM60 maximum.
+
+A separate read-only check confirmed IDLE, five motors OFF, queue 0, no active bounded action, unchanged boot and final STOP 148. Its four requests were all below 0.8 s (maximum 131.0 ms). The final shoulder reading was 218.23 degrees. Twenty single-joint requests through the Mac route have now completed with final IDLE and output audits; this finite result does not resolve every intermittent HTTP delay.
+
+Independent read-only review confirmed that the image sequence supports physical grasp and lift, and that the raw outputs support final STOP with all motors OFF.
+
+This is one visually guided physical grasp-and-lift demonstration, assisted by the user's extra views and alignment confirmation. It is not evidence of a trained autonomous policy, calibrated grasp force, repeated reliability or a training-eligible synchronized episode. The private images and command/output records are archived separately; no token or raw photograph is published to Git. Main is unchanged.
