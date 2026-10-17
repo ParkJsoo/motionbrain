@@ -29,6 +29,17 @@ class FakeSerial:
         b=bytes(self.pending[:1]);del self.pending[:1];return b
     def close(self):self.closed=True
 
+def fresh_line(nonce='0123abcd',boot=BOOT,polled=1005,reported=1008,received=1000):
+    return f'M4S2 {nonce} {boot} 0ada {polled:08x} {reported:08x} {received:08x} 1f\n'.encode()
+
+class FreshSerial(FakeSerial):
+    def write(self,command):
+        assert command[:2]==b'\x1e2' and command[-1:]==b'\n' and len(command)==11
+        self.writes.append(command)
+        received=1000+len(self.writes)*30
+        self.pending.extend(self.mutate(fresh_line(command[2:10].decode(),polled=received+5,reported=received+8,received=received)))
+        return len(command)
+
 class SerialM4Test(unittest.TestCase):
     def setUp(self):
         self.f=fixture.ProbeTest();self.f.setUp();self.addCleanup(self.f.doCleanups)
@@ -36,6 +47,90 @@ class SerialM4Test(unittest.TestCase):
     def run_probe(self,**kwargs):
         return collect(self.f.root,'http://192.0.2.1','test-port','test-serial',
                        open_port=kwargs.pop("open_port",lambda *_:self.serial),http=self.f.read,clock=self.f.clock,**kwargs)
+    def test_available_bytes_read_in_batch_without_losing_duplicates(self):
+        class BatchSerial(FreshSerial):
+            @property
+            def in_waiting(self):return len(self.pending)
+            def read(self,n):
+                self.read_sizes.append(n)
+                self.clock.sleep(.0001*max(1,min(n,len(self.pending))))
+                b=bytes(self.pending[:n]);del self.pending[:n];return b
+        self.serial=BatchSerial(self.f.clock);self.serial.read_sizes=[]
+        r=self.run_probe(fresh_sample=True)
+        self.assertEqual(r['status'],'recorded',r);self.assertTrue(audit(self.f.root)['ok'])
+        self.assertEqual(self.serial.read_sizes.count(82),6)
+    def test_batch_duplicate_or_partial_tail_cannot_disappear(self):
+        for raw in (fresh_line()+fresh_line(),fresh_line()+b'M4S',fresh_line()+b'partial log',
+                    fresh_line()+b'M4S2\n',fresh_line()+b'M4S\n',fresh_line()+b'M4S1x\n'):
+            with self.assertRaises(ValueError):parse_reply(raw,'0123abcd',BOOT,fresh_sample=True)
+    def test_batch_malformed_extra_magic_rejects_collector(self):
+        class BatchSerial(FreshSerial):
+            @property
+            def in_waiting(self):return len(self.pending)
+            def read(self,n):
+                self.clock.sleep(.0001*max(1,min(n,len(self.pending))))
+                b=bytes(self.pending[:n]);del self.pending[:n];return b
+        self.serial=BatchSerial(self.f.clock)
+        self.serial.mutate=lambda b:b+b'M4S2\n' if len(self.serial.writes)==6 else b
+        r=self.run_probe(fresh_sample=True)
+        self.assertEqual(r['status'],'rejected');self.assertEqual(r['serialCount'],6)
+        row=json.loads((self.f.root/'serial/06.json').read_text())
+        self.assertTrue(base64.b64decode(row['rawBase64']).endswith(b'M4S2\n'))
+    def test_audit_recomputes_malformed_extra_magic_with_valid_hashes(self):
+        from learning.artifacts import describe_artifact
+        self.serial=FreshSerial(self.f.clock);self.run_probe(fresh_sample=True)
+        path=self.f.root/'serial/06.json';row=json.loads(path.read_text())
+        raw=base64.b64decode(row['rawBase64'])+b'M4S2\n'
+        row.update(rawBase64=base64.b64encode(raw).decode(),rawSha256=hashlib.sha256(raw).hexdigest())
+        path.write_text(json.dumps(row))
+        result_path=self.f.root/'result.json';result=json.loads(result_path.read_text())
+        result['artifacts']=[describe_artifact(self.f.root,x['artifactRef']) for x in result['artifacts']]
+        result_path.write_text(json.dumps(result))
+        event_path=self.f.root/'events/00000001.json';event=json.loads(event_path.read_text())
+        event['payload']['summary']=describe_artifact(self.f.root,'result.json');event_path.write_text(json.dumps(event))
+        result=audit(self.f.root)
+        self.assertFalse(result['ok']);self.assertIn('serial_reply_count_invalid',result['issues'])
+    def test_transport_buffer_count_failure_keeps_failure_receipt(self):
+        class BrokenSerial(FreshSerial):
+            @property
+            def in_waiting(self):raise OSError('disconnected')
+        self.serial=BrokenSerial(self.f.clock)
+        r=self.run_probe(fresh_sample=True)
+        self.assertEqual(r['status'],'rejected');self.assertEqual(r['serialCount'],1)
+        self.assertTrue(self.serial.closed)
+    def test_fresh_samples_audit_and_conservative_wait_subtraction(self):
+        self.serial=FreshSerial(self.f.clock)
+        r=self.run_probe(fresh_sample=True)
+        self.assertEqual(r['status'],'recorded',r);self.assertEqual(r['serialCount'],6)
+        self.assertTrue(audit(self.f.root)['ok'])
+        for sample in r['samples']:
+            self.assertEqual(sample['firmwareWaitMs'],8)
+            self.assertEqual(sample['firmwareWaitLowerDiagnosticMs'],6)
+            self.assertAlmostEqual(sample['ageUpperDiagnosticMs'],sample['transportMs']-6+3+2)
+            self.assertFalse(sample['mcuClockRateCalibrated'])
+            self.assertFalse(sample['trainingEligible'])
+    def test_fresh_rejects_cached_protocol_and_stale_or_impossible_markers(self):
+        for raw in (line(),fresh_line(polled=1000),fresh_line(polled=999),fresh_line(polled=1009),fresh_line(reported=1151)):
+            with self.assertRaises(ValueError):parse_reply(raw,'0123abcd',BOOT,fresh_sample=True)
+        sample=parse_reply(fresh_line(polled=2,reported=4,received=0xfffffff8),'0123abcd',BOOT,fresh_sample=True)
+        self.assertEqual((sample['firmwareWaitMs'],sample['reportedAgeMs']),(12,2))
+    def test_fresh_cannot_subtract_more_wait_than_host_elapsed(self):
+        self.serial=FreshSerial(self.f.clock)
+        self.serial.mutate=lambda b:fresh_line(b.split()[1].decode(),received=1000,polled=1090,reported=1100)
+        r=self.run_probe(fresh_sample=True)
+        self.assertEqual(r['failure'],'firmware_wait_exceeds_host_rtt');self.assertEqual(r['serialCount'],1)
+    def test_fresh_timeout_and_final_duplicate_preserve_raw(self):
+        self.serial=FreshSerial(self.f.clock)
+        self.serial.mutate=lambda b:b+b if len(self.serial.writes)==6 else b
+        r=self.run_probe(fresh_sample=True)
+        self.assertEqual(r['failure'],'unexpected_serial_tail_reply')
+        self.assertTrue(audit(self.f.root)['ok'])
+        self.assertTrue(unexpected_tail(b'M4S2\n'))
+    def test_fresh_wrong_wire_version_fails_first_request(self):
+        self.serial=FreshSerial(self.f.clock);self.serial.mutate=lambda b:b.replace(b'M4S2',b'M4S1')
+        r=self.run_probe(fresh_sample=True)
+        self.assertEqual(r['status'],'rejected');self.assertEqual(r['serialCount'],1)
+        self.assertEqual(len(self.serial.writes),1)
     def test_finite_six_samples_eight_http_and_audit(self):
         r=self.run_probe();self.assertEqual(r['status'],'recorded',r)
         self.assertEqual((r['httpCount'],r['serialCount'],r['within20ms']),(8,6,6))

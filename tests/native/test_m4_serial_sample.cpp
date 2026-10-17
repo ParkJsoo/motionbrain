@@ -25,4 +25,29 @@ int main() {
   assert(!formatM4Sample(out,10,"0123abcd",boot,1,1,1,31));
   assert(!formatM4Sample(out,sizeof(out),"arm",boot,1,1,1,31));
   assert(!formatM4Sample(out,sizeof(out),"0123abcd",boot,4096,1,1,31));
+
+  for (char c : std::string("\x1e" "20123abcd\n")) assert(f.consume(c));
+  assert(f.fresh() && std::strcmp(f.nonce(), "0123abcd") == 0);
+  f.reset();
+  PendingM4Sample pending;
+  assert(!pending.begin("arm", 100));
+  assert(pending.begin("0123abcd", 100));
+  assert(!pending.begin("abcd0123", 101)); // never replace a pending nonce
+  assert(!pending.ready(99, 110, true));
+  assert(!pending.ready(100, 110, true));
+  assert(pending.ready(105, 110, true));
+  assert(std::strcmp(pending.nonce(), "0123abcd") == 0);
+  pending.cancel(); assert(!pending.ready(105, 110, true));
+  assert(pending.begin("0123abcd", 100));
+  assert(!pending.ready(120, 251, true) && !pending.active());
+  assert(pending.begin("0123abcd", 100));
+  assert(!pending.ready(120, 130, false) && !pending.active());
+  assert(pending.begin("0123abcd", 0xfffffff8));
+  assert(pending.ready(2, 4, true));
+  char fresh[90];
+  assert(formatFreshM4Sample(fresh,sizeof(fresh),pending.nonce(),boot,2000,2,4,pending.receivedMs(),31)==82);
+  assert(std::string(fresh).find("00000002 00000004 fffffff8 1f\n") != std::string::npos);
+  assert(!formatFreshM4Sample(fresh,sizeof(fresh),"0123abcd",boot,1,100,110,100,31));
+  assert(!formatFreshM4Sample(fresh,sizeof(fresh),"0123abcd",boot,1,110,251,100,31));
+  assert(!formatFreshM4Sample(fresh,80,"0123abcd",boot,1,110,120,100,31));
 }

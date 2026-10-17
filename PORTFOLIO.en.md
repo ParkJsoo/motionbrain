@@ -45,7 +45,7 @@ Action-linked observations meeting 100ms image age, 15-second anchor age and 250
 
 An offline collection review joins saved transitions with lipbalm semantic anchors, optical measurements, original persistence receipts, M4 stability intervals, visual whole-arm settling and output records after OFF, reporting missing evidence. Synthetic regression tests cover these joins; producer instrumentation and physical collection remain outstanding. A passing review does not grant training eligibility or execution approval.
 
-A same-Mac diagnostic now links video PTS and M4 polling markers through bounded host-clock conversion, with independent recomputation from saved originals. The conversion interval was approximately −1.08 to +1.12µs, but M4 collection age met the 20ms limit in 0/6 samples. Optical exposure and physical sensor-sample alignment remain unverified. [Conditions and limitations (Korean)](docs/mac-direct-camera.md)
+A same-Mac diagnostic now links video PTS and M4 polling markers through bounded host-clock conversion, with independent recomputation from saved originals. The conversion interval was approximately −1.08 to +1.12µs, but HTTP M4 collection age met the 20ms limit in 0/6 samples. A separate wired diagnostic waits for the next regular update and distinguishes MCU waiting time; its final six-sample trial produced diagnostic age upper bounds of 20.145–34.900ms, also 0/6 within 20ms. This calculation includes an explicit MCU clock-rate error assumption, not a measured clock calibration. Optical exposure and physical sensor-sample alignment remain unverified. [Conditions and limitations (Korean)](docs/mac-direct-camera.md)
 
 ## Validation and remaining work
 

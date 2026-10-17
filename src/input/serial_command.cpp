@@ -151,6 +151,7 @@ void SerialCommand::logCommandResult(const CommandResult& result) {
 void SerialCommand::update() {
   // 시리얼 입력 처리
   processSerialInput();
+  updateM4Sample();
   
   // 명령어가 완성되면 처리
   if (hasCommand()) {
@@ -284,7 +285,14 @@ void SerialCommand::processSerialInput() {
       commandBuffer_[0] = '\0';
       overflowDropping_ = false;
       if (m4SampleFrame_.ready()) {
-        sendM4Sample(m4SampleFrame_.nonce());
+        const char* nonce = m4SampleFrame_.nonce();
+        if (!pendingM4Sample_.active()) {
+          if (m4SampleFrame_.fresh()) {
+            if (m4SampleFlags() == 31) pendingM4Sample_.begin(nonce, millis());
+          } else {
+            sendM4Sample(nonce);
+          }
+        }
         m4SampleFrame_.reset();
         return;  // At most one read-only reply per loop; no stream mode.
       }
@@ -331,9 +339,7 @@ void SerialCommand::processSerialInput() {
   }
 }
 
-void SerialCommand::sendM4Sample(const char* nonce) {
-  const auto* core = BoundedActions::executor();
-  if (!nonce || !core) return;
+uint8_t SerialCommand::m4SampleFlags() const {
   uint8_t flags = 0;
   if (shoulderAngleSensor.isI2cConnected()) flags |= 1;
   if (shoulderAngleSensor.isReadyForMotion()) flags |= 2;
@@ -346,10 +352,29 @@ void SerialCommand::sendM4Sample(const char* nonce) {
   }
   if (off) flags |= 8;
   if (!shoulderAngleController.isActive() && !BoundedActions::active()) flags |= 16;
-  char response[80];
-  const int n = formatM4Sample(response, sizeof(response), nonce, core->bootId(),
-                              shoulderAngleSensor.getI2cRawAngle(),
-                              shoulderAngleSensor.getI2cLastUpdateMs(), millis(), flags);
+  return flags;
+}
+
+void SerialCommand::updateM4Sample() {
+  if (pendingM4Sample_.ready(shoulderAngleSensor.getI2cLastUpdateMs(), millis(), m4SampleFlags() == 31)) {
+    sendM4Sample(pendingM4Sample_.nonce(), true, pendingM4Sample_.receivedMs());
+    pendingM4Sample_.cancel();
+  }
+}
+
+void SerialCommand::sendM4Sample(const char* nonce, bool fresh, uint32_t receivedMs) {
+  const auto* core = BoundedActions::executor();
+  if (!nonce || !core) return;
+  const uint8_t flags = m4SampleFlags();
+  char response[90];
+  const uint32_t reported = millis();
+  const int n = fresh
+    ? formatFreshM4Sample(response, sizeof(response), nonce, core->bootId(),
+                          shoulderAngleSensor.getI2cRawAngle(),
+                          shoulderAngleSensor.getI2cLastUpdateMs(), reported, receivedMs, flags)
+    : formatM4Sample(response, sizeof(response), nonce, core->bootId(),
+                     shoulderAngleSensor.getI2cRawAngle(),
+                     shoulderAngleSensor.getI2cLastUpdateMs(), reported, flags);
   if (n) Serial.write(reinterpret_cast<const uint8_t*>(response), static_cast<size_t>(n));
 }
 
