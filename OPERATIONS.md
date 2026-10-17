@@ -45,7 +45,7 @@ python3 tools/raspi/check_pi_ssh_target.py
 tools/raspi/install_systemd_units.sh
 ```
 
-환경 파일의 장치 URL, 모델 경로, 토큰을 설정한 후 필요한 서비스만 활성화한다. 다른 체크아웃·계정에는 설치기의 `MOTIONBRAIN_REPO`, `MOTIONBRAIN_SERVICE_USER`를 지정한다.
+설치기는 아래 표의 환경 파일명을 사용한다. 기존 파일은 덮어쓰지 않으며, 이전 `motionbrain-*.env` 파일만 있으면 내용을 새 이름으로 복사하고 이전 파일도 보존한다. `.env.example`은 최신 템플릿으로 갱신한다. 환경 파일의 장치 URL, 모델 경로, 토큰을 설정한 후 필요한 서비스만 활성화한다. 다른 체크아웃·계정에는 설치기의 `MOTIONBRAIN_REPO`, `MOTIONBRAIN_SERVICE_USER`를 지정한다.
 
 | 서비스 | 환경 파일 | 역할 |
 | --- | --- | --- |

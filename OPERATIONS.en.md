@@ -45,7 +45,7 @@ Review the [systemd examples](deploy/systemd/) before installing on Pi. The inst
 tools/raspi/install_systemd_units.sh
 ```
 
-Configure device URLs, model paths and tokens, then enable only the required services. Set installer variables `MOTIONBRAIN_REPO` and `MOTIONBRAIN_SERVICE_USER` for another checkout/account.
+The installer uses the environment filenames in the table below. It preserves existing files; if only a legacy `motionbrain-*.env` file exists, it copies its contents to the correct name and retains the old file. `.env.example` files are refreshed from the current templates. Configure device URLs, model paths and tokens, then enable only the required services. Set installer variables `MOTIONBRAIN_REPO` and `MOTIONBRAIN_SERVICE_USER` for another checkout/account.
 
 | Service | Environment file | Purpose |
 | --- | --- | --- |

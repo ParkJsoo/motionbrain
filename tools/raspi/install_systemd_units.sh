@@ -34,7 +34,10 @@ render_env_example() {
   local base
   local rendered
   local target
+  local legacy
   base="$(basename "${src}" .example)"
+  legacy="${ENV_DIR}/${base}"
+  base="${base#motionbrain-}"
   rendered="${tmp_dir}/${base}.example"
   target="${ENV_DIR}/${base}"
   sed \
@@ -43,7 +46,12 @@ render_env_example() {
     "${src}" > "${rendered}"
   sudo install -o root -g "${SERVICE_GROUP}" -m 0640 "${rendered}" "${target}.example"
   if [[ ! -e "${target}" ]]; then
-    sudo install -o root -g "${SERVICE_GROUP}" -m 0640 "${rendered}" "${target}"
+    if [[ -f "${legacy}" ]]; then
+      # Preserve settings written under the former, unused prefixed filename.
+      sudo install -o root -g "${SERVICE_GROUP}" -m 0640 "${legacy}" "${target}"
+    else
+      sudo install -o root -g "${SERVICE_GROUP}" -m 0640 "${rendered}" "${target}"
+    fi
   else
     sudo chown root:"${SERVICE_GROUP}" "${target}"
     sudo chmod 0640 "${target}"
