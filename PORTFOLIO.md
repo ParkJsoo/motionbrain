@@ -45,6 +45,8 @@ ROS2 실물 경로는 별도 시험에서 248.20°→목표 250.00°→종료 24
 
 수집 준비용 오프라인 검사기는 저장된 전이·립밤 의미 앵커·광학 계측·원본 저장 영수증·M4 안정 구간·전체 팔의 시각 정착·OFF 이후 출력 기록을 연결하고 누락을 보고한다. 합성 회귀로 연결 규칙을 검증했으며, 실제 생산자의 계측 연결과 실물 수집은 남아 있다. 검사 통과를 학습 적격성이나 실행 승인으로 승격하지 않는다.
 
+같은 Mac의 영상 PTS와 M4 폴링 표식을 호스트 시계 구간으로 연결하는 진단을 추가하고 원본 재계산 감사를 통과했다. 시계 변환 구간은 약 −1.08~+1.12µs였지만, M4 수집 나이는 20ms 기준 0/6이었다. 광학 노출·센서 물리 샘플 동시성은 미검증이다. [계측 조건과 한계](docs/mac-direct-camera.md)
+
 ## 검증 범위와 남은 작업
 
 소프트웨어는 [PlatformIO/Python](https://github.com/ParkJsoo/motionbrain/actions/workflows/platformio.yml)과 [ROS2](https://github.com/ParkJsoo/motionbrain/actions/workflows/ros2.yml) CI로 검사한다. 하드웨어 결과는 위 날짜별 기록의 조건에 한정한다. 원본 사진과 장치별 운영 기록은 공개하지 않는다.

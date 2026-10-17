@@ -61,8 +61,11 @@ def read_controller(url, endpoint, *, clock=time):
 
 
 def _check(receipt, endpoint):
+    completed = isinstance(receipt, dict) and (
+        (receipt.get("transport", "curl") == "curl" and receipt.get("curlExit") == 0)
+        or (receipt.get("transport") == "python_http_client" and receipt.get("transportCompleted") is True))
     if (not isinstance(receipt, dict) or receipt.get("endpoint") != endpoint or receipt.get("method") != "GET"
-            or receipt.get("curlExit") != 0 or receipt.get("httpStatus") != "200"
+            or not completed or receipt.get("httpStatus") != "200"
             or type(receipt.get("elapsedMs")) not in (int, float)
             or not 0 <= receipt["elapsedMs"] <= 800):
         raise ProbeRejected("controller_request_failed_or_exceeded_800ms")
@@ -151,7 +154,7 @@ def stop_camera(process):
 
 
 def run_probe(output, *, controller_url, helper, device_id, view_id,
-              read=read_controller, launch=launch_camera, stop=stop_camera, clock=time):
+              read=read_controller, launch=launch_camera, stop=stop_camera, clock=time, clock_probe=None):
     """One new run; refuse on state change, failed storage, timeout or early exit."""
     controller_url = validate_target(controller_url)
     create_plan(device_id, view_id)  # Reject malformed identifiers before device IO.
@@ -189,12 +192,16 @@ def run_probe(output, *, controller_url, helper, device_id, view_id,
 
     save("plan.json", dict(schemaVersion=SCHEMA, policy=POLICY, controllerUrl=controller_url,
                            viewId=view_id, deviceId=device_id, trainingEligible=False,
-                           controlEligible=False, clockDomainsMerged=False, hostClockId=clock_id))
+                           controlEligible=False, clockDomainsMerged=False, hostClockId=clock_id,
+                           clockBridgeRequested=clock_probe is not None))
     result = dict(schemaVersion=SCHEMA, status="rejected", failure=None, samples=samples,
                   trainingEligible=False, controlEligible=False, motorRequests=0,
                   clockDomainsMerged=False, framesPairedWithSensors=False, automaticRetry=False,
                   observationStartedMonotonic=start)
     try:
+        if clock_probe is not None:
+            bridge_before=clock_probe.sample(clock_id)
+            save('clock/before.json',bridge_before)
         baseline = {e:get(e,"baseline") for e in ENDPOINTS}
         if baseline["actions"]["bootId"] != baseline["action_outputs"]["bootId"]:
             raise ProbeRejected("baseline_boot_mismatch")
@@ -231,12 +238,19 @@ def run_probe(output, *, controller_url, helper, device_id, view_id,
             raise ProbeRejected("controller_boot_changed")
         if final["action_outputs"] != baseline["action_outputs"]:
             raise ProbeRejected("output_history_changed")
+        if clock_probe is not None:
+            from learning.mac_clock_bridge import link_saved_frames
+            bridge_after=clock_probe.sample(clock_id)
+            save('clock/after.json',bridge_after)
+            linked=link_saved_frames(store.root,bridge_before,bridge_after,receipts[4:10],clock_id,
+                                    [camera_started,result['cameraProcessEndedMonotonic']])
+            result['clockLink']=save('clock/link.json',linked)
         budget()
         result.update(status="recorded", outputHistoryUnchanged=True,
                       m4Within20ms=sum(x["within20ms"] for x in samples))
     except StorageError:
         raise
-    except (ProbeRejected, OSError, subprocess.TimeoutExpired) as exc:
+    except (ProbeRejected, OSError, ValueError, subprocess.SubprocessError) as exc:
         result["status"] = "rejected"
         result["failure"] = str(exc) if isinstance(exc, ProbeRejected) else type(exc).__name__
     finally:
@@ -329,6 +343,16 @@ def audit_probe(root):
                     or abs(ended-started-elapsed) > .000001 or elapsed > POLICY["sessionSeconds"]
                     or total < elapsed):
                 issues.append("observation_deadline_or_timing_invalid")
+            if plan.get('clockBridgeRequested') is True:
+                from learning.mac_clock_bridge import link_saved_frames
+                before=read_json_artifact(root,descriptors['clock/before.json'])
+                after=read_json_artifact(root,descriptors['clock/after.json'])
+                linked=read_json_artifact(root,descriptors['clock/link.json'])
+                if (result.get('clockLink')!=descriptors['clock/link.json'] or linked!=link_saved_frames(
+                        root,before,after,rows[4:10],plan['hostClockId'],[timing[0],timing[2]])):
+                    issues.append('clock_link_recomputation_mismatch')
+            elif result.get('clockLink') is not None:
+                issues.append('unexpected_clock_link')
         return dict(ok=not issues, issues=issues, status=result["status"], camera=camera,
                     trainingEligible=False, controlEligible=False, framesPairedWithSensors=False)
     except (StorageError, ProbeRejected, OSError, ValueError, KeyError, TypeError, AttributeError) as exc:

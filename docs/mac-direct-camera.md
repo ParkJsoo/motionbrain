@@ -60,6 +60,25 @@ IDLE·모터 다섯 개 OFF·빈 시퀀스·센서 준비 상태를 검사하고
 
 이어 영상·제어기 응답 보관 도구로 한 번 더 유한 관측했다. 4.089초에 GET 14회와 영상 21장을 기록했고 원본 감사가 통과했다. PTS→처리 진단 20/20, 최소/중앙값/최대 58.914/62.728/66.409ms, 영속 저장 최대 16.730ms, 보고된 누락 0장이었다. 여섯 M4 값은 모두 219.81°였으나 보고 나이 9–13ms에 요청 왕복 시간을 더한 값은 55.051–175.123ms로 **20ms 기준 0/6**이었다. 전후 IDLE·모터 다섯 개 OFF, 같은 부팅 ID·출력 이력을 확인했다. ARM·모터 명령은 보내지 않았다. 관측 보관 성공이며, 전체 팔 정착·광학 동기화·행동 전이 적격을 입증한 결과는 아니다.
 
+## HTTP 지연 분리와 같은 Mac 시계 연결
+
+```sh
+# 촬영 없이 최대 14 GET: 전후 상태 확인 + curl/direct 각 세 번 비교
+python3 tools/probe_controller_latency.py --controller-url 'http://<controller-host>' --output '.local/latency/<new-run>'
+# 새 촬영 한 번. 직접 HTTP와 시계 연결은 각각 명시적으로 선택한다.
+python3 tools/probe_mac_controller.py --direct-http --clock-bridge --controller-url 'http://<controller-host>' --helper .local/bin/mac-camera-probe --device-id '<Continuity Camera ID>' --view-id '<new-view-id>' --output '.local/observation/<new-run>'
+```
+
+직접 HTTP는 매 요청 새 연결을 만들고 닫으며 연결·전송·헤더·본문 구간을 기록한다. 주 스레드의 전체 800ms 기한을 사용하며 기존 타이머가 있으면 거부한다. 응답은 64KiB까지, 재시도·리다이렉트는 없고 잘린 본문과 실패한 요청도 분모와 원본에 남긴다. 지연 비교는 최대 12초이며 오류 시 다음 요청을 보내지 않는다. 비교 요약은 정수 센서 나이의 1ms 양자화 여유를 포함한다.
+
+`--clock-bridge`는 같은 Mac 부팅에서 CoreMedia host clock과 Python `monotonic`이 모두 `mach_absolute_time`을 사용하는지 확인한다. 촬영 전후 각 여덟 호출의 앞뒤 시각으로 변환 구간을 계산하고, 1µs 반올림 여유를 더한다. 변환은 두 계측 사이 최대 50초에만 유효하다. 원래 시계·PTS·응답은 유지하고, 별도 `clock/link.json`에 21개 PTS와 가장 가까운 M4 조회의 **사후** 구간 거리를 기록한다. 감사는 저장된 원본에서 이를 재계산한다.
+
+M4 `ageMs`는 펌웨어의 센서 폴링 시작 표식이다. HTTP 시작·수신 구간과 정수 나이 오차를 사용해 이 표식을 호스트 시계 구간으로 제한할 수 있지만 AS5600 내부 물리 샘플 시각은 확인되지 않는다. `presentationClockLinked=true`는 PTS 시계 연결만 뜻한다. `postHocAssociation=true`, `physicalSampleAlignmentVerified=false`이며 광학 노출·인과적 학습 쌍·실물 학습 적격으로 승격하지 않는다.
+
+2026-10-17 지연 비교에서 Mac은 다섯 번째 요청인 첫 curl 조회가 800ms 기한을 초과해 중단했다(비교 1회 시도, 유효 0회). Pi의 별도 14 GET 실행은 완료했지만 curl 왕복 67.499–358.903ms, 직접 HTTP 35.646–53.749ms로 각 세 번 모두 20ms 센서 나이 기준에 미달했다. 실행 호스트·시점이 달라 성능 개선율을 주장하지 않는다.
+
+이어 같은 Mac에서 시계 연결을 켠 14 GET·21프레임 관측과 원본 감사가 통과했다. 시계 변환 구간은 −1.083~+1.125µs, 영상 PTS→처리 진단은 20/20(최소/중앙값/최대 62.074/64.780/71.482ms), 영속 저장 최대 11.451ms였다. M4 보고 나이+왕복 시간은 50.358–286.661ms로 20ms 기준 0/6, PTS와 폴링 표식의 구간 거리 상한도 20ms 이내 0/21이었다. IDLE·다섯 모터 OFF와 전후 부팅·출력 이력 불변을 확인했고 ARM·모터 명령은 0회였다. 시계 연결은 검증했지만 M4 수집 지연과 광학·물리 샘플 정합성은 해결되지 않았다.
+
 ## 고정 오프라인 검출 평가
 
 ```sh

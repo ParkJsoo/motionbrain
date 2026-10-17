@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 import signal
+import subprocess
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -19,6 +20,8 @@ def main(argv=None):
     p.add_argument("--helper")
     p.add_argument("--device-id")
     p.add_argument("--view-id")
+    p.add_argument("--direct-http",action="store_true",help="use main-thread HTTP with a total request deadline")
+    p.add_argument("--clock-bridge",action="store_true",help="record same-Mac PTS clock conversion; not optical exposure")
     args=p.parse_args(argv)
     if args.audit:
         r=audit_probe(args.audit);print(json.dumps(r,indent=2));return 0 if r["ok"] else 2
@@ -29,11 +32,18 @@ def main(argv=None):
         raise KeyboardInterrupt("SIGTERM")
     signal.signal(signal.SIGTERM,terminate)
     try:
+        options={}
+        if args.direct_http:
+            from learning.controller_latency import direct_get
+            options['read']=direct_get
+        if args.clock_bridge:
+            from learning.mac_clock_bridge import MacHostClock
+            options['clock_probe']=MacHostClock()
         r=run_probe(args.output,controller_url=args.controller_url,helper=args.helper,
-                    device_id=args.device_id,view_id=args.view_id)
+                    device_id=args.device_id,view_id=args.view_id,**options)
         print(json.dumps(r,indent=2,allow_nan=False))
         return 0 if r["status"]=="recorded" else 2
-    except (StorageError,OSError,ValueError,KeyboardInterrupt) as exc:
+    except (StorageError,OSError,ValueError,subprocess.SubprocessError,KeyboardInterrupt) as exc:
         print(json.dumps(dict(error=type(exc).__name__,automaticRetry=False,trainingEligible=False)))
         return 130 if isinstance(exc,KeyboardInterrupt) else 2
     finally:
