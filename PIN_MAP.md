@@ -44,7 +44,12 @@ GPIO2와 GPIO12는 현재 미배정이지만 부트 스트랩 핀이다. GPIO34-
   `MOTIONBRAIN_SHOULDER_I2C_SCL_PIN`, `MOTIONBRAIN_SHOULDER_ADC_PIN` 빌드
   매크로로 재배치하고 부트/회귀 검증을 다시 수행한다.
 
-펌웨어 기본 보정값은 shoulder zero `222.80°`, sign `+1`이다.
+보정값은 적용하는 좌표계를 구분한다.
+
+- ESP32 센서의 장착 오프셋은 [`MOUNT_OFFSET_DEGREES = -24.35°`](src/peripheral/shoulder_angle_sensor.h)다. AS5600 원시각을 로봇팔의 센서 좌표로 보정한다.
+- ROS2 M4 제안·실행 경로의 기본 영점은 [`222.80°`, 방향 부호 `+1`](ros2_ws/src/motionbrain_ros_bridge/motionbrain_ros_bridge/m4_write_contract.py)이다. 센서 좌표와 ROS 관절 좌표를 변환하는 값이며 펌웨어 장착 오프셋과 별개다.
+- 읽기 전용 [`m4_state` URDF](ros2_ws/src/motionbrain_hardware_interface/urdf/motionbrain_m4_measured.urdf)는 영점 `0.0°`·보정 비활성으로 시작한다. 현재 장착에서 영점·방향을 확인한 뒤 설정한다.
+
 `230–245°`는 2026-06-28 실측 행렬의 검증 범위이고, `122.08–301.02°`는
 당시 팔꿈치·손목·집게 자세에서 확인한 잠정 소프트 범위다. 현재 자세의 안전
 범위로 자동 적용할 수 없다. 센서·자석·관절 자세·하중·간섭 조건이 바뀌면

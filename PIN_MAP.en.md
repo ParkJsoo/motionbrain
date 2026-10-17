@@ -44,7 +44,12 @@ wiring and feature set.
   `MOTIONBRAIN_SHOULDER_I2C_SCL_PIN`, and `MOTIONBRAIN_SHOULDER_ADC_PIN`; boot
   and regression validation must then be repeated.
 
-The firmware calibration defaults are shoulder zero `222.80 deg` and sign `+1`.
+Calibration values belong to different coordinate transforms.
+
+- The ESP32 sensor mount offset is [`MOUNT_OFFSET_DEGREES = -24.35 deg`](src/peripheral/shoulder_angle_sensor.h). It maps the raw AS5600 angle to the arm's sensor coordinate.
+- The ROS2 M4 proposal/execution path defaults to [zero `222.80 deg` and direction sign `+1`](ros2_ws/src/motionbrain_ros_bridge/motionbrain_ros_bridge/m4_write_contract.py). These values map between sensor and ROS joint coordinates and are separate from the firmware mount offset.
+- The read-only [`m4_state` URDF](ros2_ws/src/motionbrain_hardware_interface/urdf/motionbrain_m4_measured.urdf) starts with zero `0.0 deg` and calibration disabled. Verify the current mount zero and direction before configuring it.
+
 The `230–245 deg` range was covered by the 2026-06-28 measurement matrix;
 `122.08–301.02 deg` was a provisional soft range for the elbow/wrist/gripper
 configuration observed then. It does not establish a safe range for the current
