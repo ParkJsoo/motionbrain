@@ -202,14 +202,15 @@ class ProbeTest(unittest.TestCase):
         with patch.object(ArtifactStore,'write_json',slow),self.assertRaises(StorageError):self.run_probe()
         self.assertFalse(self.calls)
 
-    def test_interrupt_cleans_camera_without_seal(self):
+    def test_interrupt_between_requests_cleans_camera_and_seals_known_prefix(self):
         original=self.read
         def interrupt(*a,**kw):
             if len(self.calls)==4:raise KeyboardInterrupt()
             return original(*a,**kw)
-        with self.assertRaises(KeyboardInterrupt):self.run_probe(read=interrupt)
+        result=self.run_probe(read=interrupt)
+        self.assertTrue(result['cancelled']);self.assertEqual(result['requestCount'],4)
         self.stop.assert_called_once()
-        self.assertFalse(audit_probe(self.root)['ok'])
+        self.assertTrue(audit_probe(self.root)['ok'])
 
     def rewrite_summary(self, mutate):
         p=self.root/'result.json';v=json.loads(p.read_text());mutate(v);p.write_text(json.dumps(v))
@@ -268,18 +269,22 @@ class ProbeTest(unittest.TestCase):
 
 class TransportTest(unittest.TestCase):
     def test_exact_read_only_command_and_bounded_process(self):
-        response=Mock(stdout=b'{}\n200',returncode=0)
-        with patch('learning.mac_controller_probe.subprocess.run',return_value=response) as run:
+        response=Mock(returncode=0)
+        response.communicate.return_value=(b'{}\n200',b'')
+        with patch('learning.mac_controller_probe.subprocess.Popen',return_value=response) as run:
             result=read_controller('http://192.0.2.1','status')
         args=run.call_args.args[0]
         self.assertEqual(args[-1],'http://192.0.2.1/status')
         for forbidden in ('--location','-L','--retry','--data','--request'):
             self.assertNotIn(forbidden,args)
-        self.assertEqual(run.call_args.kwargs['timeout'],1.2)
+        response.communicate.assert_called_once_with(timeout=1.2)
+        self.assertEqual(run.call_args.kwargs['stdout'],subprocess.PIPE)
+        self.assertEqual(run.call_args.kwargs['stderr'],subprocess.PIPE)
         self.assertEqual(result['method'],'GET')
+        self.assertEqual((result['responseBody'],result['httpStatus'],result['curlExit']),('{}','200',0))
 
     def test_nonwhitelisted_endpoint_rejected_before_subprocess(self):
-        with patch('learning.mac_controller_probe.subprocess.run') as run:
+        with patch('learning.mac_controller_probe.subprocess.Popen') as run:
             for endpoint in ('arm','command','capture','actions/cancel','status?arm=1'):
                 with self.assertRaises(ValueError):read_controller('http://192.0.2.1',endpoint)
             run.assert_not_called()

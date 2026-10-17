@@ -78,7 +78,7 @@ private:
   uint32_t lastI2cUpdateMs_;
 
   void sample(uint32_t now);
-  void pollI2c(uint32_t now);
+  void pollI2c(uint32_t now, uint64_t updateEnteredUs, uint64_t afterAdcUs, bool adcSampled);
   bool readI2c(uint8_t reg, uint8_t* data, size_t size);
   void logSample(const char* phase, int16_t shoulderMotorSpeed) const;
 };

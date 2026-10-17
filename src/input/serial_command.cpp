@@ -1,3 +1,4 @@
+#include "input/m4_stage_service.h"
 #include "serial_command.h"
 #include "debug/debug_log.h"
 #include "bridge/stm32_bridge.h"
@@ -288,7 +289,14 @@ void SerialCommand::processSerialInput() {
         const char* nonce = m4SampleFrame_.nonce();
         if (!pendingM4Sample_.active()) {
           if (m4SampleFrame_.fresh()) {
-            if (m4SampleFlags() == 31) pendingM4Sample_.begin(nonce, millis(), m4SampleFrame_.compact());
+            if (m4SampleFlags() == 31) {
+              const uint32_t received = millis();
+              const uint64_t parsedUs = M4Diagnostics::nowUs();
+              if (pendingM4Sample_.begin(nonce, received, m4SampleFrame_.compact())) {
+                const auto* core = BoundedActions::executor();
+                if (core) M4Diagnostics::trace().begin(core->bootId(), nonce, received, parsedUs, m4SampleFrame_.compact());
+              }
+            }
           } else {
             sendM4Sample(nonce);
           }
@@ -356,15 +364,19 @@ uint8_t SerialCommand::m4SampleFlags() const {
 }
 
 void SerialCommand::updateM4Sample() {
-  if (pendingM4Sample_.ready(shoulderAngleSensor.getI2cLastUpdateMs(), millis(), m4SampleFlags() == 31)) {
+  const bool wasPending = pendingM4Sample_.active();
+  const uint32_t now = millis();
+  if (pendingM4Sample_.ready(shoulderAngleSensor.getI2cLastUpdateMs(), now, m4SampleFlags() == 31)) {
     sendM4Sample(pendingM4Sample_.nonce(), true, pendingM4Sample_.receivedMs(), pendingM4Sample_.compact());
     pendingM4Sample_.cancel();
+  } else if (wasPending && !pendingM4Sample_.active()) {
+    M4Diagnostics::trace().cancel(uint32_t(now - pendingM4Sample_.receivedMs()) > 150);
   }
 }
 
 void SerialCommand::sendM4Sample(const char* nonce, bool fresh, uint32_t receivedMs, bool compact) {
   const auto* core = BoundedActions::executor();
-  if (!nonce || !core) return;
+  if (!nonce || !core) { if (fresh) M4Diagnostics::trace().formatFailed(); return; }
   const uint8_t flags = m4SampleFlags();
   char response[90];
   const uint32_t reported = millis();
@@ -382,7 +394,15 @@ void SerialCommand::sendM4Sample(const char* nonce, bool fresh, uint32_t receive
                        shoulderAngleSensor.getI2cRawAngle(),
                        shoulderAngleSensor.getI2cLastUpdateMs(), reported, flags);
   }
-  if (n) Serial.write(reinterpret_cast<const uint8_t*>(response), static_cast<size_t>(n));
+  if (n) {
+    if (fresh) M4Diagnostics::trace().replyEnqueued(reported, shoulderAngleSensor.getI2cLastUpdateMs(),
+                                                  shoulderAngleSensor.getI2cRawAngle(), static_cast<size_t>(n),
+                                                  M4Diagnostics::nowUs());
+    const size_t written = Serial.write(reinterpret_cast<const uint8_t*>(response), static_cast<size_t>(n));
+    if (fresh) M4Diagnostics::trace().writeReturned(written, M4Diagnostics::nowUs());
+  } else if (fresh) {
+    M4Diagnostics::trace().formatFailed();
+  }
 }
 
 /**

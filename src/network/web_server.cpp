@@ -1,3 +1,6 @@
+#include "input/m4_stage_service.h"
+#include <memory>
+#include <new>
 #include "control/bounded_action_service.h"
 #include "control/numeric_validation.h"
 #include "web_server.h"
@@ -115,6 +118,7 @@ bool MotionBrainWebServer::init(SystemStateManager* systemState, MotorControl* m
   server_.on("/actions", HTTP_GET, [this]() { this->handleActionStatus(); });
   server_.on("/actions/cancel", HTTP_POST, [this]() { this->handleActionCancel(); });
   server_.on("/action_outputs", HTTP_GET, [this]() { this->handleActionOutputs(); });
+  server_.on("/m4_diagnostics", HTTP_GET, [this]() { this->handleM4Diagnostics(); });
   server_.on("/events", HTTP_GET, [this]() { this->handleEvents(); });
   server_.on("/command", HTTP_POST, [this]() { this->handleCommand(); });
   server_.on("/motor", HTTP_POST, [this]() { this->handleMotor(); });
@@ -2061,4 +2065,17 @@ void MotionBrainWebServer::handleActionOutputs() {
   String json;
   BoundedActions::appendOutputJson(json);
   server_.send(200, "application/json", json);
+}
+
+// Passive snapshot only: deliberately no DebugLog/Serial output, clear, or poll.
+void MotionBrainWebServer::handleM4Diagnostics() {
+  sendNoStoreHeaders(server_);
+  const auto* core = BoundedActions::executor();
+  if (!core) { sendErrorJson(503, "m4_diagnostics_unavailable"); return; }
+  constexpr size_t CAPACITY = 12288;
+  std::unique_ptr<char[]> body(new (std::nothrow) char[CAPACITY]);
+  if (!body || !M4Diagnostics::trace().formatJson(body.get(), CAPACITY, core->bootId())) {
+    sendErrorJson(503, "m4_diagnostics_snapshot_failed"); return;
+  }
+  server_.send(200, "application/json", body.get());
 }

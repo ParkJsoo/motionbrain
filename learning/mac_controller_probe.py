@@ -35,27 +35,98 @@ class ProbeRejected(RuntimeError):
 
 
 def read_controller(url, endpoint, *, clock=time):
-    """A bounded curl process, not an unbounded per-socket read timeout."""
+    """One bounded curl GET, retaining observed bytes even when interrupted."""
+    import base64
     url = validate_target(url)
     if endpoint not in ENDPOINTS:
         raise ValueError("read_only_endpoint_required")
     started = clock.monotonic()
-    result = subprocess.run([
-        "curl", "--disable", "--globoff", "--noproxy", "*", "--proto", "=http",
-        "--connect-timeout", ".8", "--max-time", ".8", "--max-filesize", "65536",
-        "--silent", "--show-error", "--write-out", "\n%{http_code}", url+"/"+endpoint,
-    ], capture_output=True, timeout=1.2, check=False)
+    process = None
+    stdout = stderr = b""
+    observations = []
+    error = None
+    cancelled = completed = False
+    cleanup_errors = []
+
+    def observe(out, err):
+        # communicate() retries return cumulative output, not new chunks.
+        # Keep every observed snapshot if cleanup fails or a prefix disagrees.
+        nonlocal stdout, stderr
+        if isinstance(out, bytes):
+            if len(out) >= len(stdout): stdout = out
+        if isinstance(err, bytes):
+            if len(err) >= len(stderr): stderr = err
+        if isinstance(out, bytes) or isinstance(err, bytes):
+            observations.append(dict(stdoutBase64=base64.b64encode(out or b"").decode(),
+                                     stderrBase64=base64.b64encode(err or b"").decode()))
+
+    try:
+        process = subprocess.Popen([
+            "curl", "--disable", "--globoff", "--noproxy", "*", "--proto", "=http",
+            "--connect-timeout", ".8", "--max-time", ".8", "--max-filesize", "65536",
+            "--silent", "--show-error", "--write-out", "\n%{http_code}", url+"/"+endpoint,
+        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        observe(*process.communicate(timeout=1.2))
+        completed = True
+    except KeyboardInterrupt:
+        cancelled, error = True, "cancelled"
+    except subprocess.TimeoutExpired as exc:
+        observe(exc.output, exc.stderr)
+        error = "TimeoutExpired"
+    except OSError as exc:
+        error = type(exc).__name__
+    finally:
+        if process is not None and not completed:
+            # Never start another GET. A repeated cancellation can interrupt
+            # either cleanup wait, but cannot create an unbounded retry loop.
+            for action in (process.terminate, process.kill):
+                try:
+                    action()
+                except OSError as exc:
+                    cleanup_errors.append(type(exc).__name__)
+                except KeyboardInterrupt:
+                    cancelled, error = True, "cancelled"
+                try:
+                    observe(*process.communicate(timeout=.2))
+                    break
+                except subprocess.TimeoutExpired as exc:
+                    observe(exc.output, exc.stderr)
+                    cleanup_errors.append("TimeoutExpired")
+                except KeyboardInterrupt:
+                    cancelled, error = True, "cancelled"
+                except OSError as exc:
+                    cleanup_errors.append(type(exc).__name__)
+            for stream in (process.stdout, process.stderr):
+                if stream is not None:
+                    try: stream.close()
+                    except OSError as exc: cleanup_errors.append(type(exc).__name__)
     ended = clock.monotonic()
-    body, _, status = result.stdout.rpartition(b"\n")
+    # An interrupted stdout suffix may look like a status code. Only normal
+    # completion permits interpreting curl's write-out trailer as HTTP status.
+    body, status = stdout, b""
+    if completed:
+        candidate, separator, trailer = stdout.rpartition(b"\n")
+        if separator and len(trailer) == 3 and trailer.isdigit():
+            body, status = candidate, trailer
     receipt = dict(endpoint=endpoint, method="GET", clockDomain="python_monotonic",
                    requestStartedMonotonic=started, receivedMonotonic=ended,
-                   elapsedMs=(ended-started)*1000, curlExit=result.returncode,
+                   elapsedMs=(ended-started)*1000,
+                   curlExit=process.returncode if process is not None else None,
                    httpStatus=status.decode("ascii", errors="replace"),
                    responseBody=body.decode("utf-8", errors="replace"),
-                   bodySha256=hashlib.sha256(body).hexdigest())
+                   bodySha256=hashlib.sha256(body).hexdigest(),
+                   stdoutBase64=base64.b64encode(stdout).decode(),
+                   stderrBase64=base64.b64encode(stderr).decode(),
+                   stdoutSha256=hashlib.sha256(stdout).hexdigest(),
+                   stderrSha256=hashlib.sha256(stderr).hexdigest(),
+                   outputObservations=observations,
+                   cleanupIncomplete=process is not None and process.returncode is None,
+                   cleanupErrors=cleanup_errors)
+    if error is not None: receipt["error"] = error
+    if cancelled: receipt["cancelled"] = True
     try:
         receipt["response"] = _decode_json(body)
-    except (ValueError, UnicodeError):
+    except (ValueError, UnicodeError, RecursionError):
         receipt["response"] = None
     return receipt
 
@@ -188,6 +259,7 @@ def run_probe(output, *, controller_url, helper, device_id, view_id,
         row["hostClockId"] = clock_id
         receipts.append(row)
         save(f"controller/{len(receipts):02d}-{endpoint}.json", row)
+        if row.get('cancelled') is True:raise KeyboardInterrupt()
         return _check(row, endpoint)
 
     save("plan.json", dict(schemaVersion=SCHEMA, policy=POLICY, controllerUrl=controller_url,
@@ -250,6 +322,8 @@ def run_probe(output, *, controller_url, helper, device_id, view_id,
                       m4Within20ms=sum(x["within20ms"] for x in samples))
     except StorageError:
         raise
+    except KeyboardInterrupt:
+        result.update(failure='cancelled',cancelled=True)
     except (ProbeRejected, OSError, ValueError, subprocess.SubprocessError) as exc:
         result["status"] = "rejected"
         result["failure"] = str(exc) if isinstance(exc, ProbeRejected) else type(exc).__name__

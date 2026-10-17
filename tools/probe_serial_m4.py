@@ -16,6 +16,7 @@ def main():
     p.add_argument('--fresh-sample',action='store_true',help='S2: one reply after the next regular sensor update, with MCU wait diagnostics')
     p.add_argument('--transport-trace',action='store_true',help='record bounded host write/read/parse observations; not wire timestamps')
     p.add_argument('--compact-sample',action='store_true',help='S3: fresh sample with full identity/timestamps and CRC32 in a 58-byte response')
+    p.add_argument('--firmware-timing',action='store_true',help='two read-only RAM stage snapshots; requires compact sample')
     a=p.parse_args()
     if a.audit:
         r=audit(a.audit);print(json.dumps(r,indent=2));return 0 if r['ok'] else 2
@@ -23,7 +24,7 @@ def main():
     def terminate(signum,frame):raise KeyboardInterrupt('SIGTERM')
     old=signal.signal(signal.SIGTERM,terminate)
     try:
-        r=collect(a.output,a.controller_url,a.port,a.usb_serial,initialize_port=a.initialize_port,fresh_sample=a.fresh_sample,transport_trace=a.transport_trace,compact_sample=a.compact_sample)
+        r=collect(a.output,a.controller_url,a.port,a.usb_serial,initialize_port=a.initialize_port,fresh_sample=a.fresh_sample,transport_trace=a.transport_trace,compact_sample=a.compact_sample,firmware_timing=a.firmware_timing)
         print(json.dumps(r,indent=2));return 130 if r.get('cancelled') is True else (0 if r['status']=='recorded' else 2)
     finally:signal.signal(signal.SIGTERM,old)
 

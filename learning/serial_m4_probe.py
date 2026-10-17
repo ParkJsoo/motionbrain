@@ -32,14 +32,16 @@ def unexpected_tail(raw):
         for line in raw.splitlines() if line)
 
 
-def policy_for(initialize_port, fresh_sample=False, transport_trace=False, compact_sample=False):
-    if any(type(v) is not bool for v in (initialize_port,fresh_sample,transport_trace,compact_sample)):raise ValueError('initialization_choice_invalid')
+def policy_for(initialize_port, fresh_sample=False, transport_trace=False, compact_sample=False, firmware_timing=False):
+    if any(type(v) is not bool for v in (initialize_port,fresh_sample,transport_trace,compact_sample,firmware_timing)):raise ValueError('initialization_choice_invalid')
+    if firmware_timing and not compact_sample:raise ValueError('firmware_timing_requires_compact_sample')
     fresh_sample=fresh_sample or compact_sample
     policy=dict(POLICY)
     if initialize_port:policy.update(httpRequests=12,sessionSeconds=32,drainSeconds=20, startupMaxRawBytes=65536)
     if fresh_sample:policy.update(freshSample=True,firmwareWaitLimitMs=150,mcuIntervalMarginMs=2)
     if transport_trace:policy.update(transportTrace=True,maxTraceReadCalls=256)
     if compact_sample:policy.update(compactSample=True,responseFormat='base64_39_bytes_crc32')
+    if firmware_timing:policy.update(firmwareTiming=True,diagnosticRequests=2)
     return policy
 
 
@@ -225,10 +227,10 @@ def read_sample(device, nonce, boot_id, host_id, *, clock=time, fresh_sample=Fal
     return row
 
 
-def collect(output,url,port,serial_number,*,open_port=open_usb,http=direct_get,clock=time,initialize_port=False,fresh_sample=False,transport_trace=False,compact_sample=False):
-    policy=policy_for(initialize_port,fresh_sample,transport_trace,compact_sample)
+def collect(output,url,port,serial_number,*,open_port=open_usb,http=direct_get,clock=time,initialize_port=False,fresh_sample=False,transport_trace=False,compact_sample=False,firmware_timing=False):
+    policy=policy_for(initialize_port,fresh_sample,transport_trace,compact_sample,firmware_timing)
     fresh_sample=policy.get('freshSample',False)
-    store=ArtifactStore(Path(output));refs=[];http_rows=[];serial_rows=[];samples=[];device=None
+    store=ArtifactStore(Path(output));refs=[];http_rows=[];serial_rows=[];samples=[];diagnostics=[];device=None
     start=clock.monotonic();host_id=uuid.uuid4().hex;nonces=[uuid.uuid4().hex[:8] for _ in range(6)]
     if len(set(nonces))!=6:raise ValueError('nonce_collision')
     def save(path,value):
@@ -239,7 +241,17 @@ def collect(output,url,port,serial_number,*,open_port=open_usb,http=direct_get,c
         if clock.monotonic()-start>policy['sessionSeconds']:raise ValueError('session_deadline')
     def get(endpoint,phase):
         budget();r=http(url,endpoint,clock=clock);r.update(phase=phase,hostClockId=host_id)
-        http_rows.append(r);save(f'http/{len(http_rows):02d}.json',r);return _check(r,endpoint)
+        http_rows.append(r);save(f'http/{len(http_rows):02d}.json',r)
+        if r.get('cancelled') is True:raise KeyboardInterrupt()
+        return _check(r,endpoint)
+    def diagnostic(phase):
+        from learning.m4_stage_trace import check_diagnostics
+        budget()
+        if len(diagnostics)>=2:raise ValueError('diagnostic_request_budget')
+        row=http(url,'m4_diagnostics',clock=clock);row.update(phase=phase,hostClockId=host_id)
+        diagnostics.append(row);save(f'firmware/{phase}.json',row)
+        if row.get('cancelled') is True:raise KeyboardInterrupt()
+        return check_diagnostics(row)
     def check_baseline(values):
         if values['actions']['bootId']!=values['action_outputs']['bootId'] or values['actions']['enabled']:
             raise ValueError('baseline_boot_or_action_feature_invalid')
@@ -272,6 +284,9 @@ def collect(output,url,port,serial_number,*,open_port=open_usb,http=direct_get,c
                 pre_open['action_outputs'],baseline['action_outputs'])
         else:
             device=open_port(port,serial_number);startup()
+        if firmware_timing:
+            stage_before=diagnostic('before')
+            if stage_before['bootId']!=boot or stage_before['active']:raise ValueError('diagnostic_boot_or_active_mismatch')
         last_sample=None
         for nonce in nonces:
             budget();row=read_sample(device,nonce,boot,host_id,clock=clock,fresh_sample=fresh_sample,transport_trace=transport_trace,compact_sample=compact_sample)
@@ -297,6 +312,9 @@ def collect(output,url,port,serial_number,*,open_port=open_usb,http=direct_get,c
                                         startedMonotonic=tail_start,endedMonotonic=clock.monotonic()))
         if unexpected_tail(tail):raise ValueError('unexpected_serial_tail_reply')
         device.close();device=None
+        if firmware_timing:
+            from learning.m4_stage_trace import link_stages
+            result['firmwareStages']=link_stages(stage_before,diagnostic('after'),samples)
         final={e:get(e,'final') for e in ENDPOINTS}
         if final['actions']['bootId']!=boot or final['action_outputs']!=baseline['action_outputs']:
             raise ValueError('controller_boot_or_outputs_changed')
@@ -308,6 +326,7 @@ def collect(output,url,port,serial_number,*,open_port=open_usb,http=direct_get,c
         if device is not None:device.close()
     result.update(endedMonotonic=clock.monotonic(),httpCount=len(http_rows),serialCount=len(serial_rows),
                   within20ms=sum(s['within20ms'] for s in samples),artifacts=list(refs))
+    if firmware_timing:result['diagnosticCount']=len(diagnostics)
     ref=save('result.json',result);store.append('serial_probe_sealed','observation',{'summary':ref})
     return result
 
@@ -323,7 +342,8 @@ def audit(root):
         fresh_sample=p['policy'].get('freshSample',False)
         transport_trace=p['policy'].get('transportTrace',False)
         compact_sample=p['policy'].get('compactSample',False)
-        policy=policy_for(p.get('initializePort',False),fresh_sample,transport_trace,compact_sample)
+        firmware_timing=p['policy'].get('firmwareTiming',False)
+        policy=policy_for(p.get('initializePort',False),fresh_sample,transport_trace,compact_sample,firmware_timing)
         if (p.get('schemaVersion')!='motionbrain.serial_m4_probe.v1' or r.get('schemaVersion')!=p['schemaVersion']
                 or p['policy']!=policy or r['trainingEligible'] is not False or r['controlEligible'] is not False
                 or r['motorRequests']!=0 or r['automaticRetry'] is not False):raise ValueError('serial_contract_invalid')
@@ -350,8 +370,21 @@ def audit(root):
             if not all(finite(v) for v in (a,b)) or not 0<=a<=b:raise ValueError('serial_attempt_clock_invalid')
             item=trace_summary(row,transport_trace)
             if item is not None:traces.append(item)
+        diagnostic_rows=[]
+        if firmware_timing:
+            dc=r.get('diagnosticCount')
+            if type(dc) is not int or not 0<=dc<=2:raise ValueError('diagnostic_count_invalid')
+            phases=['before','after'][:dc]
+            if {name for name in refs if name.startswith('firmware/')}!={f'firmware/{n}.json' for n in phases}:
+                raise ValueError('diagnostic_artifact_set_invalid')
+            diagnostic_rows=[read_json_artifact(root,refs[f'firmware/{n}.json']) for n in phases]
+            for row,phase in zip(diagnostic_rows,phases):
+                if row.get('phase')!=phase or row.get('hostClockId')!=p['hostClockId']:
+                    raise ValueError('diagnostic_identity_invalid')
+        elif any(name.startswith('firmware/') for name in refs):raise ValueError('unexpected_diagnostic_artifacts')
         if r['status']=='recorded':
             expected={'plan.json','serial/startup.json','serial/tail.json'}|{f'http/{i:02d}.json' for i in range(1,policy['httpRequests']+1)}|{f'serial/{i:02d}.json' for i in range(1,7)}
+            if firmware_timing:expected|={'firmware/before.json','firmware/after.json'}
             if set(refs)!=expected:raise ValueError('serial_artifact_set_invalid')
             rows=[read_json_artifact(root,refs[f'http/{i:02d}.json']) for i in range(1,policy['httpRequests']+1)]
             phases=['pre_open']*4+['baseline']*4+['final']*4 if p.get('initializePort',False) else ['baseline']*4+['final']*4
@@ -372,6 +405,13 @@ def audit(root):
             serial=[read_json_artifact(root,refs[f'serial/{i:02d}.json']) for i in range(1,7)]
             if len(p['nonces'])!=6 or len(set(p['nonces']))!=6:raise ValueError('nonce_set_invalid')
             samples=[validate_receipt(x,n,boot,fresh_sample=fresh_sample,transport_trace=transport_trace,compact_sample=compact_sample) for x,n in zip(serial,p['nonces'])]
+            if firmware_timing:
+                from learning.m4_stage_trace import check_diagnostics,link_stages
+                if len(diagnostic_rows)!=2 or r.get('firmwareStages')!=link_stages(*(check_diagnostics(x) for x in diagnostic_rows),samples):
+                    raise ValueError('firmware_stage_recomputation_mismatch')
+                if not (rows[3]['receivedMonotonic']<=diagnostic_rows[0]['requestStartedMonotonic']<=diagnostic_rows[0]['receivedMonotonic']<=serial[0]['requestStartedMonotonic']
+                        and serial[-1]['receivedMonotonic']<=diagnostic_rows[1]['requestStartedMonotonic']<=diagnostic_rows[1]['receivedMonotonic']<=rows[4]['requestStartedMonotonic']):
+                    raise ValueError('firmware_stage_receipt_order_invalid')
             startup_lower=pre_open[3]['receivedMonotonic'] if pre_open else rows[3]['receivedMonotonic']
             startup_upper=rows[0]['requestStartedMonotonic'] if pre_open else serial[0]['requestStartedMonotonic']
             for name,lower,upper in (('startup',startup_lower,startup_upper),

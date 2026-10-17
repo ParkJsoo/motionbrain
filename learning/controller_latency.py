@@ -42,7 +42,7 @@ def deadline(seconds):
 
 def direct_get(url, endpoint, *, clock=time):
     url=validate_target(url)
-    if endpoint not in ENDPOINTS:raise ValueError('read_only_endpoint_required')
+    if endpoint not in (*ENDPOINTS,'m4_diagnostics'):raise ValueError('read_only_endpoint_required')
     address=urlsplit(url)
     start=clock.monotonic()
     row=dict(transport='python_http_client',transportCompleted=False,method='GET',endpoint=endpoint,
@@ -68,6 +68,8 @@ def direct_get(url, endpoint, *, clock=time):
             if response.length not in (None,0) or not response.isclosed():
                 raise ValueError('incomplete_http_body')
             row.update(response=_decode_json(bytes(body)),transportCompleted=True)
+    except KeyboardInterrupt:
+        row.update(error='cancelled',cancelled=True)
     except (OSError, ValueError, http.client.HTTPException) as exc:
         row['error']=type(exc).__name__
         if isinstance(exc,http.client.IncompleteRead):body.extend(exc.partial[:max(0,65537-len(body))])
@@ -108,6 +110,7 @@ def collect(output, url, *, direct=direct_get, curl=read_controller, clock=time)
         row.update(phase=phase,hostClockId=host_id)
         row.setdefault('transport','curl')
         rows.append(row);save(f'http/{len(rows):02d}.json',row)
+        if row.get('cancelled') is True:raise KeyboardInterrupt()
         return _check(row,endpoint)
     save('plan.json',dict(policy=POLICY,url=url,hostClockId=host_id,mode='read_only_latency_comparison'))
     result=dict(status='rejected',failure=None,trainingEligible=False,controlEligible=False,motorRequests=0,
@@ -123,6 +126,7 @@ def collect(output, url, *, direct=direct_get, curl=read_controller, clock=time)
             raise ProbeRejected('controller_boot_or_output_changed')
         if clock.monotonic()-start>12:raise ProbeRejected('observation_budget')
         result.update(status='recorded',outputHistoryUnchanged=True)
+    except KeyboardInterrupt:result.update(failure='cancelled',cancelled=True)
     except (ProbeRejected,OSError,ValueError,subprocess.TimeoutExpired) as exc:
         result['failure']=str(exc) if isinstance(exc,ProbeRejected) else type(exc).__name__
     result.update(endedMonotonic=clock.monotonic(),requestCount=len(rows),rows=rows)

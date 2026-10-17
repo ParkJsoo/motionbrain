@@ -3,6 +3,7 @@
 #include "motor/motor_driver.h"        // MotorControl 사용
 #include "motion/robot_arm.h"          // RobotArm 사용 (Phase 2-A)
 #include "motion/motion_sequence.h"    // MotionSequence 사용 (Phase 2-B)
+#include "input/m4_stage_service.h"
 #include "input/serial_command.h"      // SerialCommand 사용
 #include "input/teleop_adapter.h"      // TeleopAdapter 사용
 #include "network/wifi_ap.h"           // WiFiAP 사용
@@ -194,6 +195,7 @@ void setup() {
  * - 웹 서버 HTTP 요청 처리
  */
 void loop() {
+  M4Diagnostics::trace().loopStarted(M4Diagnostics::nowUs());
   // 상태 머신 업데이트 (타임아웃 체크)
   systemState.update();
 

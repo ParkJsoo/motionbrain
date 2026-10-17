@@ -163,6 +163,7 @@ private:
   void handleActionStatus();
   void handleActionCancel();
   void handleActionOutputs();
+  void handleM4Diagnostics();
 
   /**
    * POST /sequence 처리

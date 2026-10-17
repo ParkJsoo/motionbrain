@@ -42,7 +42,7 @@ def main(argv=None):
         r=run_probe(args.output,controller_url=args.controller_url,helper=args.helper,
                     device_id=args.device_id,view_id=args.view_id,**options)
         print(json.dumps(r,indent=2,allow_nan=False))
-        return 0 if r["status"]=="recorded" else 2
+        return 130 if r.get("cancelled") else 0 if r["status"]=="recorded" else 2
     except (StorageError,OSError,ValueError,subprocess.SubprocessError,KeyboardInterrupt) as exc:
         print(json.dumps(dict(error=type(exc).__name__,automaticRetry=False,trainingEligible=False)))
         return 130 if isinstance(exc,KeyboardInterrupt) else 2

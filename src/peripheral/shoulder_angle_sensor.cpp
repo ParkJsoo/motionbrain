@@ -1,3 +1,4 @@
+#include "input/m4_stage_service.h"
 #include "peripheral/shoulder_angle_sensor.h"
 
 #include "debug/debug_log.h"
@@ -49,16 +50,19 @@ void ShoulderAngleSensor::init() {
 }
 
 void ShoulderAngleSensor::update(int16_t shoulderMotorSpeed) {
+  const bool traceActive = M4Diagnostics::trace().active();
+  const uint64_t updateEnteredUs = traceActive ? M4Diagnostics::nowUs() : 0;
   if (!initialized_) {
     init();
   }
 
   const uint32_t now = millis();
-  if ((now - lastSampleMs_) >= SAMPLE_INTERVAL_MS) {
+  const bool adcSampled = (now - lastSampleMs_) >= SAMPLE_INTERVAL_MS;
+  if (adcSampled) {
     sample(now);
   }
   if ((now - lastI2cPollMs_) >= I2C_POLL_INTERVAL_MS) {
-    pollI2c(now);
+    pollI2c(now, updateEnteredUs, traceActive ? M4Diagnostics::nowUs() : 0, adcSampled);
   }
 
   const bool moving = shoulderMotorSpeed != 0;
@@ -167,17 +171,22 @@ void ShoulderAngleSensor::sample(uint32_t now) {
   lastSampleMs_ = now;
 }
 
-void ShoulderAngleSensor::pollI2c(uint32_t now) {
+void ShoulderAngleSensor::pollI2c(uint32_t now, uint64_t updateEnteredUs, uint64_t afterAdcUs, bool adcSampled) {
+  const bool traceActive = M4Diagnostics::trace().active();
+  if (traceActive) M4Diagnostics::trace().pollStarted(now, updateEnteredUs, afterAdcUs, M4Diagnostics::nowUs(), adcSampled);
   uint8_t status = 0;
   const bool wasConnected = i2cConnected_;
   uint8_t angleBytes[2] = {0, 0};
   const bool statusRead = readI2c(AS5600_REG_STATUS, &status, 1);
+  if (traceActive && statusRead) M4Diagnostics::trace().angleStarted(M4Diagnostics::nowUs());
   const bool angleRead = statusRead &&
     readI2c(AS5600_REG_RAW_ANGLE, angleBytes, sizeof(angleBytes));
+  if (traceActive && statusRead) M4Diagnostics::trace().angleCompleted(M4Diagnostics::nowUs(), angleRead);
   i2cConnected_ = statusRead && angleRead;
   lastI2cPollMs_ = now;
 
   if (!i2cConnected_) {
+    if (traceActive) M4Diagnostics::trace().pollCompleted(M4Diagnostics::nowUs(), false);
     magnetStatus_ = 0;
     if (wasConnected) {
       DebugLog::warn("AS5600 I2C disconnected (addr=0x%02X)", I2C_ADDRESS);
@@ -201,6 +210,7 @@ void ShoulderAngleSensor::pollI2c(uint32_t now) {
   if (!wasConnected) {
     DebugLog::info("AS5600 I2C connected (addr=0x%02X)", I2C_ADDRESS);
   }
+  if (traceActive) M4Diagnostics::trace().pollCompleted(M4Diagnostics::nowUs(), true);
 }
 
 bool ShoulderAngleSensor::readI2c(uint8_t reg, uint8_t* data, size_t size) {
