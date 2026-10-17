@@ -11,6 +11,7 @@
 | 원본·전이 | `learning/schema.py`, `artifacts.py`, `provenance.py` | 프레임·이미지 해시·행동·출력 이력 연결. 스키마 유효성과 학습 적격성 분리 |
 | 제한 행동 실행 | `learning/action_execution.py`, `action_port.py` | 정확히 확인한 요청, 영속 예약, 전송 직전 신선도·저장 가드. 불확실한 결과 재전송 금지 |
 | 실물 초기 수집 계약 | `learning/device_capture.py` | 정확한 프레임 GET·원본 저장·독립 M4 조회. 생산자 시계 검증이 없으면 전송 거부 |
+| 수집 근거 사전 검토 | `learning/collection_readiness.py` | 저장된 전이와 립밤 앵커·광학 시각·원본 저장 영수증·시각 정착·OFF 이후 출력 연결. 학습 승격·실물 실행 없음 |
 | 매니페스트·분할 | `learning/dataset.py`, `splits.py` | 모든 시도·제외 사유 보존, 원본 재검증, 세션·에피소드·프레임·이미지·명령 누수 차단 |
 | 특징·모델 | `learning/features.py`, `models.py`, `visual_dynamics.py` | 명령 전에 알 수 있는 입력만 사용, train 전용 정규화, 별도 평가 |
 
@@ -51,6 +52,47 @@ python3 tools/build_action_dataset.py --validate '<new-manifest-dir>/manifest.js
 ```
 
 수집기는 합성 JPEG·관측·실행 의도와 부분 실패를 저장하며 실물 실행 스위치가 없다. 원본은 Git에서 제외한 `datasets/`에 둔다. 감사는 행동을 재개하거나 재시도하지 않는다.
+
+## 수동 시연에서 수집 계약으로 연결하기
+
+수동 시연의 원본 보관 형식과 제한 행동 전이 형식은 다르다. 이전 단계의 사후 이미지를 다음 단계의 사전 이미지로 바꾸거나, 수동 명령의 PWM·시간을 `/actions` 실행 결과로 바꾸지 않는다.
+
+| 필요한 근거 | 수동 시연 자료의 누락 | 오프라인 검토에서 요구하는 연결 |
+| --- | --- | --- |
+| 전후 영상 | 비동기 사후 스냅샷만 보관 | 전이·프레임 ID와 이미지 SHA-256 일치, 행동 전·OFF 후 촬영 순서 |
+| 광학 시각 | PTS·callback·HTTP 수신 시각으로 노출을 입증하지 못함 | 같은 session/view/카메라 boot에 적용되는 광학 계측 자료·유효 구간·검토자. 불확실성을 포함한 노출 구간 |
+| M4 실측 | 이미지와 독립적으로 읽은 상태 | 원래 센서 샘플 구간·출처를 보존. 소비 및 행동 직전까지 20ms 검사 |
+| 립밤 앵커 | 의미·인스턴스·구도에 고정된 앵커 없음 | `lipbalm`·물체 인스턴스·새 view·사람의 박스 검토·원본 이미지 연결. 모든 사용 시점까지 15초 |
+| 원본 저장 | 사후 아카이브 복사 시간만으로 입증 불가 | 원래 촬영 트랜잭션의 시작·완료·파일 및 디렉터리 fsync·재읽기 영수증. 250ms 이내, 소비 전 완료 |
+| 정착·결과 | OFF와 최종 한 장만으로 전체 팔 정착 입증 불가 | OFF 후 서로 다른 3–6프레임, 최소 50ms 구간의 M4 실측, 이후 최종 영상. 전체 팔·물체의 시각 정착과 작업 성공/실패/불명을 별도 기록 |
+| 실제 출력 | manual lease이며 제한 행동 ordinal과 다름 | 기존 행동 스키마 검사와 최종 영상 소비 이후 읽은 출력 이력. OFF 기준 행, 연속 sequence·시각, 누락 0·재출력 없음 |
+
+새 CLI는 **이미 저장된 파일만** 읽는다. 아래 경로는 실제 저장 경로로 바꾸며 결과는 Git 제외 경로에 쓴다. `--output-dir`은 새 디렉터리여야 한다.
+
+```sh
+# 수동 시연: 모든 시도의 분모·실패·영상 유무·누락 사유를 보존
+python3 tools/review_collection_readiness.py '<saved-demo>' --demo --output-dir '.local/<new-demo-review>'
+# 초기 수집: 저장된 DeviceCaptureSession만 감사, 시계 변환이나 전이 변환 없음
+python3 tools/review_collection_readiness.py '<saved-device-capture>' --device-capture
+# CaptureRunner 결과에 연결할 미작성 scene-template.json과 차단 보고서 생성
+python3 tools/review_collection_readiness.py '<saved-run>' --transition 'attempts/<transition-id>.json' --output-dir '.local/<new-review>'
+# 근거가 채워진 scene JSON 재검사. 모든 참조는 saved-run 내부의 상대 경로
+python3 tools/review_collection_readiness.py '<saved-run>' --transition 'attempts/<transition-id>.json' --scene '<scene.json>'
+```
+
+`scene-template.json`의 미확인 항목은 `null` 또는 빈 목록이다. 자동으로 과거 구도·박스·앵커를 채우지 않는다. `schemaVersion`은 `motionbrain.collection_scene.v1`이며 다음 구조를 사용한다. 완전한 **합성** 예시는 `tests/test_collection_readiness.py`에 있다.
+
+- 상위: 전이 파일의 `{artifactRef, sha256, bytes}`, `transitionId`, `sessionId`, `viewId`, `objectInstanceId`, `targetLabel=lipbalm`, 고정 `policy`, 명시한 `m4ToleranceDegrees`(0–1°). 허용오차는 현장 검증을 대신하는 기본값이 없다.
+- `anchor`, `before`, `after`, `settling[]`: 동일 session/view/물체·프레임 ID·카메라 boot·`capturedUs`, 이미지 descriptor, 이미지 크기·박스, 검토자와 `annotationMethod=human_semantic_review`. `exposureHostBounds={clockId,earliest,latest}`는 불확실성이 포함된 호스트 단조 시각(초)이며 원래 수집기의 구간보다 좁힐 수 없다. `consumedMonotonic`은 같은 시계다.
+- `opticalCalibration`: JSON descriptor. 그 원본에는 session/view/카메라 boot, `method=optical_exposure_bounds`, `opticalExposureVerified=true`, 검토자, 원본 `measurement` descriptor, `validHostBounds`가 필요하다. 문자열 선언만으로 광학 검증이 성립하는 것은 아니다.
+- 각 프레임의 `persistence`: `basis=original_capture_transaction`, 같은 `clockId`, 시작·완료 단조 시각, 이미지 descriptor·프레임 ID, `fileFsynced`, `directoryFsynced`, `readbackVerified`, 이 값들을 담은 원래 JSON의 `receipt` descriptor. 감사·복사 시간을 대신 넣지 않는다.
+- 앵커 외 프레임의 `m4`: 센서 JSON descriptor. `motor=4`, `sensor=AS5600`, `measured=true`, `angleDegrees`, `sampledHostBounds`가 필요하며 전후 프레임은 원래 전이의 M4 기록과 같아야 한다. 정착 샘플 구간도 중복 없이 50ms 이상이어야 한다.
+- `visualReview`: 전이 descriptor·session/view/물체 ID·프레임별 이미지 descriptor를 고정한 JSON. 검토자, `method=human_sequence_review`, `wholeArmStationary`, `objectStationary`, `taskOutcome=success|failure|unknown`을 별도로 기록한다.
+- `finalOutputLog`: 기존 `driver_write` 이력에 조회 요청의 `readHostBounds`를 함께 저장한 JSON descriptor. 촬영 시각과 MCU `atMs`를 직접 비교하지 않는다.
+
+`recordedEvidenceComplete`는 기록 간 일관성 검사이며 장치 인증·광학 계측의 진위·물리적 정착을 보증하지 않는다. **`trainingEligible`, `controlEligible`, `executionAllowed`는 항상 false**다. 합성 출처·알려진 합성 이미지도 차단한다. 종료 코드 2는 누락·불일치·합성 자료이며, 코드 0도 학습·구동 허가가 아니다. 기존 데이터셋 빌더로 자동 전달하거나 적격 전이로 변환하지 않는다.
+
+현재 실제 생산자는 광학 보정·공통 시계 연결·립밤 의미 앵커·다중 시각 정착 자료를 생성하지 못한다. `DeviceCaptureSession`의 독립 M4 조회와 영상은 시계 영역을 그대로 보존하므로 이 도구가 동시 측정으로 재해석하지 않는다. 다음 실물 수집은 해당 계측·생산자 연결과 기존 원본/저널/출처/분할 검증을 모두 충족해야 한다. 이번 사전 검토 도구의 합성 검증이나 기존 21단계 아카이브 무결성 통과로 실물 학습 적격 수가 증가하지 않는다.
 
 `manifest.json`은 모든 시도와 제외 사유를 담는다. `--validate`는 저장된 적격 플래그를 믿지 않고 원본·해시·저널·출처·분할을 재검증한다. 기본 종료 코드 0은 목록 정합성이다. 적격 샘플 0개일 수 있다. 학습에는 `--require-ready`가 필요하며 잘못된 목록이나 빈 실물 train/validation/test 분할은 종료 코드 2로 거부한다. 출처 선언과 SHA-256은 하드웨어 인증이나 원본 전체 변조 방지가 아니다.
 

@@ -43,6 +43,8 @@ Perception runs pretrained YOLOv5s through OpenCV DNN/ONNX; no custom detector-t
 
 Action-linked observations meeting 100ms image age, 15-second anchor age and 250ms durable storage are still missing. A no-actuation observation trial completed only one of seven executed requests before stopping on persistence latency. Both Mac camera runs achieved 12/20 PTS diagnostics against a required 16/20. Grasp demonstrations are neither synchronized training transitions nor learned-policy results. [Data contracts, reproduction and limits (Korean)](docs/data-pipeline.md)
 
+An offline collection review joins saved transitions with lipbalm semantic anchors, optical measurements, original persistence receipts, M4 stability intervals, visual whole-arm settling and output records after OFF, reporting missing evidence. Synthetic regression tests cover these joins; producer instrumentation and physical collection remain outstanding. A passing review does not grant training eligibility or execution approval.
+
 ## Validation and remaining work
 
 Software checks run in [PlatformIO/Python](https://github.com/ParkJsoo/motionbrain/actions/workflows/platformio.yml) and [ROS2](https://github.com/ParkJsoo/motionbrain/actions/workflows/ros2.yml) CI. Hardware results are limited to the dated conditions above. Raw photographs and device-specific operations records are not part of the public documentation.
