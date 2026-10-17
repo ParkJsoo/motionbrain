@@ -152,6 +152,8 @@ def read_sample(device, nonce, boot_id, host_id, *, clock=time, fresh_sample=Fal
                     row['transportCompleted']=True
                     break
             if not row['transportCompleted']:raise TimeoutError('serial_request_deadline')
+    except KeyboardInterrupt:
+        row.update(error='cancelled',cancelled=True)
     except (OSError,ValueError) as exc:row['error']=str(exc)
     finally:
         row['receivedMonotonic']=clock.monotonic()
@@ -209,6 +211,7 @@ def collect(output,url,port,serial_number,*,open_port=open_usb,http=direct_get,c
         for nonce in nonces:
             budget();row=read_sample(device,nonce,boot,host_id,clock=clock,fresh_sample=fresh_sample)
             serial_rows.append(row);save(f'serial/{len(serial_rows):02d}.json',row)
+            if row.get('cancelled') is True:raise KeyboardInterrupt()
             sample=validate_receipt(row,nonce,boot,fresh_sample=fresh_sample)
             if last_sample is not None:
                 for key in ('polledMs','reportedMs'):
@@ -234,6 +237,7 @@ def collect(output,url,port,serial_number,*,open_port=open_usb,http=direct_get,c
             raise ValueError('controller_boot_or_outputs_changed')
         budget();result.update(status='recorded',outputHistoryUnchanged=True)
     except StorageError:raise
+    except KeyboardInterrupt:result.update(failure='cancelled',cancelled=True)
     except (OSError,ValueError,ProbeRejected) as exc:result['failure']=str(exc)
     finally:
         if device is not None:device.close()

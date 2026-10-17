@@ -22,7 +22,7 @@ def main():
     old=signal.signal(signal.SIGTERM,terminate)
     try:
         r=collect(a.output,a.controller_url,a.port,a.usb_serial,initialize_port=a.initialize_port,fresh_sample=a.fresh_sample)
-        print(json.dumps(r,indent=2));return 0 if r['status']=='recorded' else 2
+        print(json.dumps(r,indent=2));return 130 if r.get('cancelled') is True else (0 if r['status']=='recorded' else 2)
     finally:signal.signal(signal.SIGTERM,old)
 
 if __name__=='__main__':raise SystemExit(main())

@@ -230,11 +230,35 @@ class SerialM4Test(unittest.TestCase):
     def test_cancellation_closes_port_and_does_not_retry(self):
         original=self.serial.read
         def interrupt(n):
-            if self.serial.writes:raise KeyboardInterrupt()
+            if self.serial.writes and len(self.serial.pending)==64:raise KeyboardInterrupt()
             return original(n)
         self.serial.read=interrupt
-        with self.assertRaises(KeyboardInterrupt):self.run_probe()
+        r=self.run_probe()
         self.assertTrue(self.serial.closed);self.assertEqual(len(self.serial.writes),1)
+        self.assertEqual((r['status'],r['failure'],r['serialCount']),('rejected','cancelled',1))
+        self.assertTrue(r['cancelled']);self.assertFalse(r['trainingEligible'])
+        row=json.loads((self.f.root/'serial/01.json').read_text())
+        self.assertTrue(row['cancelled']);self.assertFalse(row['transportCompleted'])
+        raw=base64.b64decode(row['rawBase64']);self.assertEqual(len(raw),9)
+        self.assertEqual(hashlib.sha256(raw).hexdigest(),row['rawSha256'])
+        self.assertTrue((self.f.root/'result.json').exists());self.assertTrue(audit(self.f.root)['ok'])
+    def test_cancel_before_first_serial_byte_preserves_attempt(self):
+        self.serial.read=lambda n:(_ for _ in ()).throw(KeyboardInterrupt()) if self.serial.writes else b''
+        # Startup needs the synthetic clock to advance independently.
+        original=self.serial.read
+        def read(n):self.f.clock.sleep(.005);return original(n)
+        self.serial.read=read
+        r=self.run_probe();self.assertEqual(r['failure'],'cancelled');self.assertEqual(r['serialCount'],1)
+        row=json.loads((self.f.root/'serial/01.json').read_text());self.assertEqual(row['rawBase64'],'')
+        self.assertTrue(self.serial.closed)
+    def test_cli_reports_sealed_cancellation_with_exit_130(self):
+        from tools import probe_serial_m4 as cli
+        import io,signal
+        previous=signal.getsignal(signal.SIGTERM)
+        args=['probe','--output','unused','--controller-url','http://192.0.2.1','--port','fake','--usb-serial','fake']
+        with patch('sys.argv',args),patch.object(cli,'collect',return_value=dict(status='rejected',cancelled=True)),patch('sys.stdout',new_callable=io.StringIO):
+            self.assertEqual(cli.main(),130)
+        self.assertIs(signal.getsignal(signal.SIGTERM),previous)
     def test_reported_time_must_advance_with_same_boot(self):
         def mutate(b):
             n=len(self.serial.writes);polled=1000+n*30
