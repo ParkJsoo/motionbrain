@@ -98,6 +98,67 @@ class SerialM4Test(unittest.TestCase):
         r=self.run_probe(fresh_sample=True)
         self.assertEqual(r['status'],'rejected');self.assertEqual(r['serialCount'],1)
         self.assertTrue(self.serial.closed)
+    def reseal(self,relative,mutate):
+        from learning.artifacts import describe_artifact
+        path=self.f.root/relative;value=json.loads(path.read_text());mutate(value);path.write_text(json.dumps(value))
+        path=self.f.root/'result.json';result=json.loads(path.read_text())
+        result['artifacts']=[describe_artifact(self.f.root,x['artifactRef']) for x in result['artifacts']]
+        path.write_text(json.dumps(result))
+        path=self.f.root/'events/00000001.json';event=json.loads(path.read_text())
+        event['payload']['summary']=describe_artifact(self.f.root,'result.json');path.write_text(json.dumps(event))
+    def test_opt_in_trace_records_boundaries_and_recomputes_audit(self):
+        r=self.run_probe(transport_trace=True)
+        self.assertEqual(r['status'],'recorded',r)
+        a=audit(self.f.root);self.assertTrue(a['ok'],a)
+        self.assertEqual(len(a['transportTraceSummaries']),6)
+        for summary in a['transportTraceSummaries']:
+            self.assertTrue(summary['hostObservationOnly']);self.assertFalse(summary['wireTimeVerified'])
+            self.assertEqual((summary['readCalls'],summary['rawBytes']),(73,73))
+        row=json.loads((self.f.root/'serial/01.json').read_text())
+        self.assertEqual(row['transportTrace']['phases'][0]['kind'],'write')
+        self.assertEqual(row['transportTrace']['phases'][-1]['kind'],'parse')
+    def test_trace_cancellation_preserves_partial_chunks_and_failed_audit(self):
+        original=self.serial.read
+        def read(n):
+            if self.serial.writes and len(self.serial.pending)==64:raise KeyboardInterrupt()
+            return original(n)
+        self.serial.read=read
+        r=self.run_probe(transport_trace=True)
+        self.assertEqual((r['failure'],r['serialCount']),('cancelled',1))
+        a=audit(self.f.root);self.assertTrue(a['ok'],a)
+        self.assertEqual(a['transportTraceSummaries'][0]['rawBytes'],9)
+        self.reseal('serial/01.json',lambda v:v['transportTrace']['phases'][-1].update(rawOffset=0))
+        self.assertFalse(audit(self.f.root)['ok'])
+    def test_trace_end_clock_cancellation_preserves_observed_bytes(self):
+        original=self.f.clock.monotonic;interrupted=[]
+        def clock():
+            if self.serial.writes and len(self.serial.pending)==64 and not interrupted:
+                interrupted.append(True);raise KeyboardInterrupt()
+            return original()
+        self.f.clock.monotonic=clock
+        r=self.run_probe(transport_trace=True)
+        self.assertEqual((r['failure'],r['serialCount']),('cancelled',1))
+        row=json.loads((self.f.root/'serial/01.json').read_text())
+        self.assertEqual(len(base64.b64decode(row['rawBase64'])),9)
+        self.assertEqual(row['transportTrace']['phases'][-1]['errorType'],'KeyboardInterrupt')
+        self.assertTrue(self.serial.closed)
+        a=audit(self.f.root);self.assertTrue(a['ok'],a)
+    def test_trace_read_cap_is_a_sealed_failure_without_retry(self):
+        self.serial.mutate=lambda b:b''
+        r=self.run_probe(transport_trace=True)
+        self.assertEqual(r['failure'],'serial_receipt_invalid');self.assertEqual(r['serialCount'],1)
+        row=json.loads((self.f.root/'serial/01.json').read_text())
+        self.assertEqual(row['error'],'transport_trace_read_limit')
+        a=audit(self.f.root);self.assertTrue(a['ok'],a)
+        self.assertEqual(a['transportTraceSummaries'][0]['readCalls'],256)
+    def test_trace_mode_cannot_silently_lose_receipt_trace(self):
+        self.run_probe(transport_trace=True)
+        self.reseal('serial/01.json',lambda v:v.pop('transportTrace'))
+        self.assertFalse(audit(self.f.root)['ok'])
+    def test_failed_attempt_request_cannot_be_replaced_by_legacy_command(self):
+        self.serial.mutate=lambda b:b'bad\n';self.run_probe(transport_trace=True)
+        self.reseal('serial/01.json',lambda v:v.update(requestBase64=base64.b64encode(b'arm\n').decode()))
+        self.assertFalse(audit(self.f.root)['ok'])
     def test_fresh_samples_audit_and_conservative_wait_subtraction(self):
         self.serial=FreshSerial(self.f.clock)
         r=self.run_probe(fresh_sample=True)

@@ -3,6 +3,7 @@
 RS frames cannot dispatch ARM/motor commands. Firmware poll markers, not physical
 AS5600 conversion timestamps, are bounded in the collector's monotonic clock.
 """
+from contextlib import nullcontext
 import base64
 import hashlib
 import re
@@ -28,11 +29,12 @@ def unexpected_tail(raw):
         for line in raw.splitlines() if line)
 
 
-def policy_for(initialize_port, fresh_sample=False):
-    if type(initialize_port) is not bool or type(fresh_sample) is not bool:raise ValueError('initialization_choice_invalid')
+def policy_for(initialize_port, fresh_sample=False, transport_trace=False):
+    if any(type(v) is not bool for v in (initialize_port,fresh_sample,transport_trace)):raise ValueError('initialization_choice_invalid')
     policy=dict(POLICY)
     if initialize_port:policy.update(httpRequests=12,sessionSeconds=32,drainSeconds=20, startupMaxRawBytes=65536)
     if fresh_sample:policy.update(freshSample=True,firmwareWaitLimitMs=150,mcuIntervalMarginMs=2)
+    if transport_trace:policy.update(transportTrace=True,maxTraceReadCalls=256)
     return policy
 
 
@@ -93,11 +95,21 @@ def parse_reply(raw, nonce, boot_id, *, fresh_sample=False):
     return result
 
 
-def validate_receipt(row, nonce, boot_id, *, fresh_sample=False):
+def trace_summary(row, enabled):
+    if ('transportTrace' in row) != enabled:raise ValueError('transport_trace_presence_mismatch')
+    if not enabled:return None
+    from learning.serial_transport_trace import validate_trace
+    raw=base64.b64decode(row['rawBase64'],validate=True)
+    if hashlib.sha256(raw).hexdigest()!=row.get('rawSha256'):raise ValueError('serial_raw_hash_mismatch')
+    return validate_trace(row['transportTrace'],row,raw)
+
+
+def validate_receipt(row, nonce, boot_id, *, fresh_sample=False, transport_trace=False):
     if (not isinstance(row,dict) or row.get('schemaVersion')!='motionbrain.serial_m4_receipt.v1' or row.get('transportCompleted') is not True
             or row.get('clockDomain')!='python_monotonic' or not isinstance(row.get('hostClockId'),str)
             or not row['hostClockId'] or row.get('requestBase64')!=base64.b64encode(b'\x1e'+(b'2' if fresh_sample else b'')+nonce.encode()+b'\n').decode()):
         raise ValueError('serial_receipt_invalid')
+    trace_summary(row,transport_trace)
     a,b=row['requestStartedMonotonic'],row['receivedMonotonic']
     if (not all(finite(v) for v in (a,b)) or not 0<=a<=b or b-a>.8):
         raise ValueError('serial_receipt_clock_invalid')
@@ -130,25 +142,49 @@ def validate_receipt(row, nonce, boot_id, *, fresh_sample=False):
                 sensorPhysicalSampleTimeVerified=False,trainingEligible=False,controlEligible=False)
 
 
-def read_sample(device, nonce, boot_id, host_id, *, clock=time, fresh_sample=False):
+def read_sample(device, nonce, boot_id, host_id, *, clock=time, fresh_sample=False, transport_trace=False):
     if not re.fullmatch('[0-9a-f]{8}',nonce):raise ValueError('nonce_invalid')
     command=b'\x1e'+(b'2' if fresh_sample else b'')+nonce.encode()+b'\n'
     row=dict(schemaVersion='motionbrain.serial_m4_receipt.v1',clockDomain='python_monotonic',hostClockId=host_id,
              requestBase64=base64.b64encode(command).decode(),requestStartedMonotonic=clock.monotonic(),
              transportCompleted=False)
     raw=bytearray()
+    if transport_trace:
+        from learning.serial_transport_trace import TransportTrace
+        trace=TransportTrace(clock)
+        operation=trace.operation
+    else:
+        operation=lambda kind,**fields:nullcontext(fields)
     try:
         with deadline(.8):
-            if device.write(command)!=len(command):raise OSError('partial_serial_write')
+            with operation('write',requestedBytes=len(command)) as step:
+                written=device.write(command);step['returnedBytes']=written
+            if written!=len(command):raise OSError('partial_serial_write')
             while clock.monotonic()-row['requestStartedMonotonic']<=.8:
-                available=getattr(device,'in_waiting',0)
-                if type(available) is not int or available<0:raise ValueError('serial_buffer_count_invalid')
-                chunk=device.read(max(1,min(4097-len(raw),available)))
+                with operation('buffer_query') as step:
+                    available=getattr(device,'in_waiting',0)
+                    if type(available) is not int or available<0:raise ValueError('serial_buffer_count_invalid')
+                    step['availableBytes']=available
+                requested=max(1,min(4097-len(raw),available))
+                offset=len(raw);chunk=None;step=None
+                try:
+                    with operation('read',requestedBytes=requested,rawOffset=offset) as step:
+                        chunk=device.read(requested)
+                        raw.extend(chunk);step['returnedBytes']=len(chunk)
+                finally:
+                    # Preserve a returned chunk even if cancellation interrupts
+                    # bookkeeping. A read that raises before returning has no
+                    # observed bytes; never invent bytes from the driver.
+                    if chunk is not None:
+                        if len(raw)==offset:raw.extend(chunk)
+                        if step is not None:
+                            step['returnedBytes']=len(chunk)
+                            if transport_trace:step['rawSha256']=hashlib.sha256(chunk).hexdigest()
                 if not chunk:continue
-                raw.extend(chunk)
                 if len(raw)>4096:raise ValueError('serial_raw_limit')
                 if b'\n' in chunk and any(line.startswith((b'M4S1 ',b'M4S2 ')) for line in raw.splitlines(keepends=True)):
-                    row['sample']=parse_reply(bytes(raw),nonce,boot_id,fresh_sample=fresh_sample)
+                    with operation('parse',rawBytes=len(raw),rawSha256=hashlib.sha256(raw).hexdigest() if transport_trace else None):
+                        row['sample']=parse_reply(bytes(raw),nonce,boot_id,fresh_sample=fresh_sample)
                     row['transportCompleted']=True
                     break
             if not row['transportCompleted']:raise TimeoutError('serial_request_deadline')
@@ -158,11 +194,12 @@ def read_sample(device, nonce, boot_id, host_id, *, clock=time, fresh_sample=Fal
     finally:
         row['receivedMonotonic']=clock.monotonic()
         row['rawBase64']=base64.b64encode(raw).decode();row['rawSha256']=hashlib.sha256(raw).hexdigest()
+        if transport_trace:row['transportTrace']=trace.snapshot()
     return row
 
 
-def collect(output,url,port,serial_number,*,open_port=open_usb,http=direct_get,clock=time,initialize_port=False,fresh_sample=False):
-    policy=policy_for(initialize_port,fresh_sample)
+def collect(output,url,port,serial_number,*,open_port=open_usb,http=direct_get,clock=time,initialize_port=False,fresh_sample=False,transport_trace=False):
+    policy=policy_for(initialize_port,fresh_sample,transport_trace)
     store=ArtifactStore(Path(output));refs=[];http_rows=[];serial_rows=[];samples=[];device=None
     start=clock.monotonic();host_id=uuid.uuid4().hex;nonces=[uuid.uuid4().hex[:8] for _ in range(6)]
     if len(set(nonces))!=6:raise ValueError('nonce_collision')
@@ -209,10 +246,10 @@ def collect(output,url,port,serial_number,*,open_port=open_usb,http=direct_get,c
             device=open_port(port,serial_number);startup()
         last_sample=None
         for nonce in nonces:
-            budget();row=read_sample(device,nonce,boot,host_id,clock=clock,fresh_sample=fresh_sample)
+            budget();row=read_sample(device,nonce,boot,host_id,clock=clock,fresh_sample=fresh_sample,transport_trace=transport_trace)
             serial_rows.append(row);save(f'serial/{len(serial_rows):02d}.json',row)
             if row.get('cancelled') is True:raise KeyboardInterrupt()
-            sample=validate_receipt(row,nonce,boot,fresh_sample=fresh_sample)
+            sample=validate_receipt(row,nonce,boot,fresh_sample=fresh_sample,transport_trace=transport_trace)
             if last_sample is not None:
                 for key in ('polledMs','reportedMs'):
                     if not 0<((sample[key]-last_sample[key])&0xffffffff)<1000:
@@ -248,7 +285,7 @@ def collect(output,url,port,serial_number,*,open_port=open_usb,http=direct_get,c
 
 
 def audit(root):
-    root=Path(root);events,issues=read_events(root)
+    root=Path(root);events,issues=read_events(root);traces=[]
     try:
         if len(events)!=1 or events[0]['kind']!='serial_probe_sealed':raise ValueError('serial_seal_missing')
         r=read_json_artifact(root,events[0]['payload']['summary']);issues+=verify_artifacts(root,r['artifacts'])
@@ -256,10 +293,34 @@ def audit(root):
         if len(refs)!=len(r['artifacts']):raise ValueError('duplicate_artifacts')
         p=read_json_artifact(root,refs['plan.json'])
         fresh_sample=p['policy'].get('freshSample',False)
-        policy=policy_for(p.get('initializePort',False),fresh_sample)
+        transport_trace=p['policy'].get('transportTrace',False)
+        policy=policy_for(p.get('initializePort',False),fresh_sample,transport_trace)
         if (p.get('schemaVersion')!='motionbrain.serial_m4_probe.v1' or r.get('schemaVersion')!=p['schemaVersion']
                 or p['policy']!=policy or r['trainingEligible'] is not False or r['controlEligible'] is not False
                 or r['motorRequests']!=0 or r['automaticRetry'] is not False):raise ValueError('serial_contract_invalid')
+        # Trace evidence is audited even for rejected/cancelled attempts.
+        if (not isinstance(p['nonces'],list) or len(p['nonces'])!=6 or
+                any(not isinstance(n,str) or not re.fullmatch('[0-9a-f]{8}',n) for n in p['nonces']) or
+                len(set(p['nonces']))!=6):raise ValueError('nonce_set_invalid')
+        count=r['serialCount']
+        if type(count) is not int or not 0<=count<=6:raise ValueError('serial_attempt_count_invalid')
+        serial_paths={name for name in refs if re.fullmatch(r'serial/\d+\.json',name)}
+        if serial_paths!={f'serial/{i:02d}.json' for i in range(1,count+1)}:
+            raise ValueError('serial_attempt_artifact_mismatch')
+        for i in range(1,count+1):
+            row=read_json_artifact(root,refs[f'serial/{i:02d}.json'])
+            expected_request=base64.b64encode(b'\x1e'+(b'2' if fresh_sample else b'')+p['nonces'][i-1].encode()+b'\n').decode()
+            if (not isinstance(row,dict) or row.get('schemaVersion')!='motionbrain.serial_m4_receipt.v1'
+                    or row.get('requestBase64')!=expected_request or row.get('hostClockId')!=p['hostClockId']
+                    or row.get('clockDomain')!='python_monotonic' or type(row.get('transportCompleted')) is not bool):
+                raise ValueError('serial_attempt_identity_invalid')
+            raw=base64.b64decode(row['rawBase64'],validate=True)
+            if len(raw)>4097 or hashlib.sha256(raw).hexdigest()!=row['rawSha256']:
+                raise ValueError('serial_attempt_raw_invalid')
+            a,b=row['requestStartedMonotonic'],row['receivedMonotonic']
+            if not all(finite(v) for v in (a,b)) or not 0<=a<=b:raise ValueError('serial_attempt_clock_invalid')
+            item=trace_summary(row,transport_trace)
+            if item is not None:traces.append(item)
         if r['status']=='recorded':
             expected={'plan.json','serial/startup.json','serial/tail.json'}|{f'http/{i:02d}.json' for i in range(1,policy['httpRequests']+1)}|{f'serial/{i:02d}.json' for i in range(1,7)}
             if set(refs)!=expected:raise ValueError('serial_artifact_set_invalid')
@@ -281,7 +342,7 @@ def audit(root):
                 raise ValueError('controller_boot_or_outputs_changed')
             serial=[read_json_artifact(root,refs[f'serial/{i:02d}.json']) for i in range(1,7)]
             if len(p['nonces'])!=6 or len(set(p['nonces']))!=6:raise ValueError('nonce_set_invalid')
-            samples=[validate_receipt(x,n,boot,fresh_sample=fresh_sample) for x,n in zip(serial,p['nonces'])]
+            samples=[validate_receipt(x,n,boot,fresh_sample=fresh_sample,transport_trace=transport_trace) for x,n in zip(serial,p['nonces'])]
             startup_lower=pre_open[3]['receivedMonotonic'] if pre_open else rows[3]['receivedMonotonic']
             startup_upper=rows[0]['requestStartedMonotonic'] if pre_open else serial[0]['requestStartedMonotonic']
             for name,lower,upper in (('startup',startup_lower,startup_upper),
@@ -311,4 +372,4 @@ def audit(root):
                     or r['failure'] is not None):raise ValueError('serial_summary_mismatch')
         elif r['status']!='rejected':raise ValueError('serial_status_invalid')
     except (OSError,ValueError,KeyError,TypeError,AttributeError,OverflowError,StorageError,ProbeRejected) as exc:issues.append(str(exc))
-    return dict(ok=not issues,issues=issues,trainingEligible=False,controlEligible=False)
+    return dict(ok=not issues,issues=issues,transportTraceSummaries=traces,trainingEligible=False,controlEligible=False)
