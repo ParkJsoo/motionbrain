@@ -3,7 +3,7 @@
 `tools/archive_hardware_demo.py SOURCE NEW_DESTINATION` snapshots private manual
 robot evidence without opening a connection or issuing commands. Source phases
 contain `step-01`, `step-02`, etc. Only `plan.json`, `execution/result.json`,
-`after.png`, optional `camera.jpg` and `camera-receipt.json` are copied. Credentials,
+`after.png` or `after.jpg`, optional `camera.jpg` and `camera-receipt.json` are copied. Credentials,
 scripts and unrelated files are excluded. Source paths must not contain symlinks;
 keep source files unchanged during archival.
 
@@ -15,7 +15,7 @@ python3 tools/archive_hardware_demo.py .local/example-phase datasets/raw-demo-00
 The destination must be new. Files are immutable, private, fsynced and verified by
 SHA-256 readback before terminal `demo.json` is written. Failed or missing attempts
 are retained in the inventory. `archiveComplete` means copying finished;
-`sourceRecordsComplete` means the three required files exist for every contiguous
+`sourceRecordsComplete` means plan, result and at least one after image exist for every contiguous
 step, not that execution or the physical task succeeded. Caught write failures remove the terminal manifest. Abrupt process/power loss
 can interrupt cleanup: audit surviving bytes before use, and never resume an
 archive in place. A later audit does not prove earlier fsync durability. `audit_demo()` detects
@@ -37,3 +37,7 @@ for the training dataset builder. Use these records for visual annotation,
 repeatability analysis and debugging. Qualifying transitions still requires the
 existing optical timing, semantic anchor, bounded-action and persistence evidence.
 Keep images, receipts and archives in ignored `.local/` or `datasets/`, never Git.
+
+Image suffixes must match their encoded PNG/JPEG signatures. If a screenshot
+provider returns JPEG under a PNG filename, prepare a byte-identical `.jpg` copy
+in a separate input directory; do not transcode or discard the original evidence.

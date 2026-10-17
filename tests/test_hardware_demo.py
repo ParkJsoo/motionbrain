@@ -74,6 +74,29 @@ class HardwareDemoTests(unittest.TestCase):
         self.assertIn('invalid_trainingEligible', errors)
         self.assertIn('invalid_qualityPolicy', errors)
 
+    def test_original_v1_png_inventory_remains_valid(self):
+        archive_demo(self.source, self.dest)
+        path = self.dest / 'demo.json'; data = json.loads(path.read_text())
+        data['attempts'][0]['missing'].remove('after.jpg')
+        path.write_text(json.dumps(data))
+        self.assertEqual([], audit_demo(self.dest))
+
+    def test_jpeg_observation_supported_without_transcoding(self):
+        (self.step / 'after.png').unlink()
+        raw = b'\xff\xd8fixture\xff\xd9'
+        (self.step / 'after.jpg').write_bytes(raw)
+        manifest = archive_demo(self.source, self.dest)
+        self.assertTrue(manifest['sourceRecordsComplete'])
+        self.assertEqual([], audit_demo(self.dest))
+        self.assertEqual(raw, (self.dest / 'step-01/after.jpg').read_bytes())
+        self.assertEqual(['step-01/after.jpg'], manifest['observation']['evidenceRefs'])
+
+    def test_mislabeled_jpeg_rejected(self):
+        (self.step / 'after.png').write_bytes(b'\xff\xd8fixture\xff\xd9')
+        with self.assertRaises(StorageError):
+            archive_demo(self.source, self.dest)
+        self.assertFalse((self.dest / 'demo.json').exists())
+
     def test_final_readback_failure_removes_terminal(self):
         original = artifacts._read
         def read(root, relative):

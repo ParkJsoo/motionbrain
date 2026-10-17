@@ -12,7 +12,7 @@ from learning.artifacts import ArtifactStore, StorageError, _decode_json, verify
 
 SCHEMA = 'motionbrain.hardware_demo.v1'
 POLICY = {'maxSourceAgeMs': 100, 'maxAnchorAgeMs': 15000, 'maxPersistenceMs': 250}
-FILES = ('plan.json', 'execution/result.json', 'after.png', 'camera.jpg', 'camera-receipt.json')
+FILES = ('plan.json', 'execution/result.json', 'after.png', 'after.jpg', 'camera.jpg', 'camera-receipt.json')
 MAX_BYTES = 16 * 1024 * 1024
 CHECKS = {'sourceAge': 'unknown', 'anchorAge': 'unknown', 'sourceCapturePersistence': 'unknown'}
 TIMING = {'images': 'unsynchronized_observation_snapshots',
@@ -111,10 +111,12 @@ def archive_demo(source, destination, *, observation='unknown', note=''):
         'schemaVersion': SCHEMA, 'purpose': 'raw_hardware_demonstration',
         'archiveComplete': True, 'attempts': attempts, 'sourceIssues': issues,
         'observation': {'label': observation, 'note': note, 'basis': 'operator_visual_annotation',
-                        'evidenceRefs': [a['artifacts']['after.png']['artifactRef']
-                                         for a in attempts if 'after.png' in a['artifacts']]},
+                        'evidenceRefs': [a['artifacts'][name]['artifactRef']
+                                         for a in attempts for name in ('after.png', 'after.jpg')
+                                         if name in a['artifacts']]},
         'sourceRecordsComplete': not issues and all(
-            not set(a['missing']) & {'plan.json', 'execution/result.json', 'after.png'} for a in attempts),
+            {'plan.json', 'execution/result.json'} <= set(a['artifacts'])
+            and bool({'after.png', 'after.jpg'} & set(a['artifacts'])) for a in attempts),
         'qualityChecks': dict(CHECKS),
         'qualityPolicy': dict(POLICY), 'trainingEligible': False, 'controlEligible': False,
         'eligibilityReasons': ['manual_lease_not_bounded_action', 'optical_capture_time_unverified',
@@ -164,7 +166,7 @@ def audit_demo(root):
         assets, missing = attempt['artifacts'], attempt.get('missing')
         if (not isinstance(missing, list) or not all(isinstance(x, str) for x in missing)
                 or len(missing) != len(set(missing)) or set(assets) & set(missing)
-                or set(assets) | set(missing) != set(FILES)):
+                or set(assets) | set(missing) not in (set(FILES), set(FILES) - {'after.jpg'})):
             errors.append('invalid_file_inventory')
         for name, descriptor in assets.items():
             if not isinstance(descriptor, dict) or descriptor.get('artifactRef') != f'{step}/{name}':
@@ -177,7 +179,8 @@ def audit_demo(root):
         errors.append('invalid_sourceIssues')
     complete = not expected_issues and all(
         isinstance(a, dict) and isinstance(a.get('artifacts'), dict)
-        and {'plan.json', 'execution/result.json', 'after.png'} <= set(a['artifacts'])
+        and {'plan.json', 'execution/result.json'} <= set(a['artifacts'])
+        and bool({'after.png', 'after.jpg'} & set(a['artifacts']))
         for a in attempts)
     if manifest.get('sourceRecordsComplete') is not complete:
         errors.append('invalid_sourceRecordsComplete')
