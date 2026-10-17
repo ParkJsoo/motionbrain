@@ -31,8 +31,23 @@ This is not a complete HTTP latency bound: partial headers/bodies and response w
 - Native adapter coverage includes 99/100 ms boundary, an already-readable request, disconnected/closing clients, millis wraparound, queued real requests and consecutive empty clients. It uses a minimal transport double; the ESP32 build verifies compatibility with the actual SDK.
 - Independent read-only review found no P0/P1/P2 issue in the final implementation and surrounding SDK cleanup path.
 
-## Deployment and remaining checks
+## Approved deployment and hardware validation
 
-Firmware has not been uploaded; device behavior with this patch is unverified. User approval is required before uploading/restarting the ESP32 controller. Keep the existing Chrome dashboard/control/camera and QuickTime preview open. After an approved upload, verify the new boot and OFF state, repeat the same bounded empty-client fixture, confirm the release counter, and check ordinary GET/form/query traffic and authenticated non-motion commands under the unchanged criterion. If unexplained timeouts remain, continue packet-level diagnosis instead of declaring the communication issue fixed or resuming grasp commands.
+The user explicitly approved one main ESP32 firmware upload and confirmed the arm battery was OFF. Commit `2a98159` was uploaded once to the reidentified CP2102N controller. Upload completed in 64.51 s, flash hashes verified, and the controller rebooted. The application image SHA-256 was `447b75f5d7be022f17b2b8ab412f062f7a2cb40fe26efd070e790ad097796cfd`. Pi services, CAM firmware and STM32 firmware were not restarted or uploaded.
 
-The robot remains near the lipbalm in the last visually observed pose. Existing failed physical trials stay closed; any later motion must use a fresh admitted plan and verify output/state and actual movement. No gripper-close or successful grasp is claimed.
+With the new boot, all five motors OFF and the existing browser tabs open:
+
+- The same 1.2 s empty-client fixture completed its queued status GET in 39.4 ms, compared with the pre-change 1198.4 ms/reset result. The idle-release counter increased from 1 to 2. This global counter does not uniquely attribute a release to the fixture socket or prove an exact physical 100 ms deadline.
+- Initial and final command identity, boot and motor-output history were unchanged. All nine fixture requests were below 0.8 s; the routine pre-read was 44.8 ms. The fixture's routine pre-read timing was inspected afterward because its admission check did not yet include that request.
+- Twelve authenticated default-speed100 requests all succeeded, with maximum POST latency 78.947 ms. Maximum across these requests and surrounding telemetry was 359.034 ms. Final IDLE, unchanged motor outputs and exact command progression were verified. No ARM or joint request was made in this validation.
+- These results validate the reproduced empty-client path and a finite normal-command sample, not all possible communication failures.
+
+## Residual failure during the subsequent visual grasp attempt
+
+After the user confirmed the battery was ON again, a fresh admitted visual approach was executed. On the eleventh motion request after the firmware change, a second gripper-close pulse received its command response and a successful STOP response, but the following final `/status` GET timed out after about 830 ms. That physical phase was closed and was not automatically resumed.
+
+The move response took about 43 ms and STOP took about 150 ms. A separate read-only check confirmed IDLE, all five motors OFF, queue0, unchanged boot and STOP command identity. Retrospective output audit found only the intended M1 close output, lasting 442 ms. The original final-check failure is preserved separately from this later confirmation. The lipbalm was still standing; no lift or successful grasp was verified.
+
+Thus the empty-client correction is effective for its reproduced scenario, but intermittent HTTP latency remains unresolved. A further bounded GET-only packet trace was started with all motors OFF. No threshold was relaxed and no training-eligible data was produced. Firmware changes require separate approval before any further upload.
+
+The work branch contains the reviewed correction; main has not been merged or pushed. Branch-push CI is not configured: workflows run on main/master pushes, pull requests or manual dispatch. Local test/build success is not CI success.
