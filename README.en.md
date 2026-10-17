@@ -62,6 +62,22 @@ The no-actuation observation trial retained the 100 ms frame, 15 s anchor, and
 collection remains unconnected.
 [Observation protocol and results](docs/evidence/2026-10-15-bounded-observation.md)
 
+## 2026-10-17 Demonstrations and Collection Status
+
+Lipbalm grasp/lift was visually confirmed using an iPhone overview to select
+manual commands, followed by two additional grasp/lift/place cycles. The first
+repeat needed one extra close correction. The initial placement and two repeats
+preserve 21 command/output steps, 21 iPhone snapshots and 16 ESP32-CAM images as
+private raw evidence. This is an observed demonstration, not learned-policy grasping.
+
+Eligible real training samples remain **zero**. The 100ms frame, 15s anchor and
+250ms persistence requirements are unchanged; optical timestamps, semantic anchors
+and action/frame synchronization still need verification. Empty HTTP connection
+waiting was reduced from 5s to 100ms, but intermittent latency is not fully resolved.
+[Integration status and remaining work](docs/evidence/2026-10-17-integration-status.md) ·
+[Repeated demonstration evidence](docs/evidence/2026-10-17-lipbalm-repetitions.md) ·
+[Raw archive format](docs/hardware-demonstrations.md)
+
 ## Demo Video
 
 The GIF below shows the final physical teleoperation demo directly in the README.

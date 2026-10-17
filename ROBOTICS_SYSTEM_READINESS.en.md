@@ -203,6 +203,9 @@ joint-control claims.
 
 A NumPy dynamics baseline and validated dataset pipeline are implemented on Mac CPU.
 Synthetic checks do not establish real-data accuracy; eligible real action samples remain
-zero. Physical collection still needs command-journal integration and bounded single-axis
-motion/off/settling validation. See the [learning contract](docs/evidence/2026-10-15-offline-visual-dynamics.md)
-and [failed observation usability trial](docs/evidence/2026-10-15-bounded-observation.md).
+zero. On 2026-10-17, observed lipbalm grasp/lift and two additional grasp/place cycles
+preserved 21 manual command/output steps and 37 images. These demonstrations do not
+prove the learning bounded-action contract, optical timestamps, semantic anchors,
+settling or action/frame synchronization. See [current integration status](docs/evidence/2026-10-17-integration-status.md),
+the [learning contract](docs/evidence/2026-10-15-offline-visual-dynamics.md),
+and the [failed observation usability trial](docs/evidence/2026-10-15-bounded-observation.md).

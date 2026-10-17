@@ -32,8 +32,9 @@ The physical teleoperation demo media snapshot is tagged as `demo-ready-20260608
 - Implemented Mac CPU training/evaluation CLIs for NumPy ridge and no-change baselines.
 - Synthetic smoke tests pass, but there are zero eligible real action samples. Real-data learning and improved manipulation remain unproven.
 - The fixed-budget observation trial stopped on persistence latency after 1 success in 7 requests, failing the usability gate.
+- On 2026-10-17, iPhone-observed manual commands achieved a lipbalm grasp/lift and two additional grasp/lift/place cycles, the first with a close correction. The 21-step, 37-image archive is raw demonstration evidence, not eligible training data.
 
-[Learning contract and reproduction](docs/evidence/2026-10-15-offline-visual-dynamics.md) · [Observation results](docs/evidence/2026-10-15-bounded-observation.md)
+[Current integration status](docs/evidence/2026-10-17-integration-status.md) · [Learning contract and reproduction](docs/evidence/2026-10-15-offline-visual-dynamics.md) · [Observation results](docs/evidence/2026-10-15-bounded-observation.md)
 
 ## Fast Evidence
 

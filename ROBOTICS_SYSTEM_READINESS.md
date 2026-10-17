@@ -199,6 +199,9 @@ I2C signal integrity, transient motor voltage, closed-loop joint-control
 
 Mac CPU의 NumPy dynamics 기준선과 검증된 데이터셋 경로를 구현했다.
 합성 검증은 실물 정확도를 입증하지 않으며 적격 실제 행동 데이터는 0개다.
-실물 수집에는 명령 journal 연결과 한 축 제한 동작·출력 off·정착 검증이 남아 있다.
+2026-10-17에 관찰 기반 립밤 파지와 추가 잡기·놓기 2회를 확인했고, 수동 제어
+21단계의 출력·OFF 기록과 화면 37장을 원본으로 보존했다. 이 시연은 학습용
+bounded-action 계약·광학 시각·의미 anchor·정착·행동 전후 동기화를 입증하지 않는다.
+[최신 통합 현황](docs/evidence/2026-10-17-integration-status.md)을 함께 본다.
 [학습 계약](docs/evidence/2026-10-15-offline-visual-dynamics.md)과
 [관측 사용 가능성 미통과 결과](docs/evidence/2026-10-15-bounded-observation.md)를 참고한다.

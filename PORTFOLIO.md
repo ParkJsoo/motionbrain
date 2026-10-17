@@ -30,8 +30,9 @@ MotionBrain은 ESP32 모션 제어기, STM32 센서/텔레오퍼레이션 계층
 - Mac CPU에서 NumPy 선형 ridge 모델과 무변화 기준선을 학습·평가하는 CLI를 구현했다.
 - 합성 smoke는 통과했으나 실제 적격 행동 데이터는 0개다. 실물 학습·조작 개선은 아직 입증하지 않았다.
 - 고정 예산의 비구동 관측 시험은 7요청 중 1개 성공 후 저장 지연으로 중단돼 사용 가능성 기준에 미달했다.
+- 2026-10-17: 아이폰 관찰로 립밤을 잡고 든 뒤 잡기·들기·놓기를 2회 추가 확인했다. 첫 반복은 닫기 보정이 필요했다. 21단계·37장 원본은 학습 적격이 아닌 시연 자료로 보존했다.
 
-[학습 계약·재현](docs/evidence/2026-10-15-offline-visual-dynamics.md) · [관측 실측](docs/evidence/2026-10-15-bounded-observation.md)
+[최신 통합 현황](docs/evidence/2026-10-17-integration-status.md) · [학습 계약·재현](docs/evidence/2026-10-15-offline-visual-dynamics.md) · [관측 실측](docs/evidence/2026-10-15-bounded-observation.md)
 
 ## 빠른 증거 링크
 

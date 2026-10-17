@@ -20,14 +20,17 @@
 | M4 하중 조건에서 전원 강하와 STM32 MPU boot recovery 이슈를 관찰하고 firmware retry를 보강했다 | [M4 전원 계측과 STM32 MPU 부팅 복구](2026-06-28-m4-shoulder-closed-loop.md#전원-계측과-stm32-mpu-부팅-복구) | 휴대폰 촬영과 일반 멀티미터 기반 근사 계측이다. 배터리/XL4015/배선/부하 영향을 완전히 분리하지 못했다 | Root-cause closure for all power faults, wiring/pull-up/sensor-module defect exclusion |
 | 유한 관측 요청과 실패 중단을 구현하고 고정 기준으로 평가했다 | [관측 프로토콜·실측](2026-10-15-bounded-observation.md) | 20요청 중 7개 실행·1개 성공 후 저장 초과로 중단. 사용 가능성 관문 미통과 | Reliable continuous observation, control-ready capture |
 | 원본·행동 검증, 그룹 분할, NumPy 선형 dynamics 학습·평가를 구현했다 | [데이터셋 계약](2026-10-14-dataset-manifest-software.md), [특징·CLI·검증](2026-10-15-offline-visual-dynamics.md) | 합성 smoke만 확인. 적격 실물 데이터 0개, production 학습 거부 | Real-data model accuracy, learned manipulation improvement, PyTorch dynamics model |
+| Mac 카메라 수집·계측과 고정 프레임 검출기 replay를 구현했다 | [카메라 계측·결과](../mac-direct-camera.md) | 두 유한 촬영 모두 PTS 진단 12/20으로 미통과. 광학 시각 미검증, 고정 replay는 실시간 성능 아님 | Validated USB transport, optical freshness guarantee, live detector accuracy |
+| 빈 HTTP 연결 대기 문제를 재현하고 제한했다 | [통신 진단·배포·잔여 실패](2026-10-17-idle-http-client.md) | 첫 byte 없는 연결 대기만 100ms 제한. 간헐 HTTP 지연은 미해결 | Complete latency fix, bounded physical stop time |
+| 관찰 기반 립밤 파지·들기와 추가 잡기·놓기 2회를 확인했다 | [반복 시연](2026-10-17-lipbalm-repetitions.md), [원본 기록기](../hardware-demonstrations.md) | 첫 추가 반복은 닫기 보정 1회. 21단계·37장 원본은 비동기 관찰 자료, 적격 학습 데이터 0개 | Learned-policy grasping, uncorrected success rate, training-ready episodes |
 
 ## 절대 주장하지 않을 항목
 
 - Full-arm closed loop: 미완료. M4 어깨 한 축만 제한 폐루프다.
 - Full-arm physical `ros2_control`: 미완료. M4 operator-confirmed single-target만
   실물 검증했으며 trajectory tracking으로 주장하지 않는다.
-- Autonomous grasping: 미완료. 현재 공개 데모는 작업자 텔레오퍼레이션과 제한
-  perception 확인이다.
+- Autonomous grasping: 미완료. 공개 데모는 작업자 텔레오퍼레이션이며, 추가 립밤 시연도
+  외부 화면을 관찰해 수동 명령을 선택한 결과다. 학습 정책의 제어는 아니다.
 - 합성 fixture의 오차 감소를 실물 학습·조작 개선으로 제시하지 않는다.
 - 사전 학습 YOLO 추론을 자체 검출기 학습 성과로 제시하지 않는다.
 
