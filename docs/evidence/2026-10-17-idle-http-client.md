@@ -51,3 +51,21 @@ The move response took about 43 ms and STOP took about 150 ms. A separate read-o
 Thus the empty-client correction is effective for its reproduced scenario, but intermittent HTTP latency remains unresolved. A further bounded GET-only packet trace was started with all motors OFF. No threshold was relaxed and no training-eligible data was produced. Firmware changes require separate approval before any further upload.
 
 The work branch contains the reviewed correction; main has not been merged or pushed. Branch-push CI is not configured: workflows run on main/master pushes, pull requests or manual dispatch. Local test/build success is not CI success.
+
+## Route comparison and continued visual control
+
+A finite GET-only comparison kept the 0.8 s criterion, 2 s diagnostic collection timeout, zero retries and existing UI tabs. Both Pi runs ended at the predeclared 80 s session budget, rather than a network timeout. All completed requests passed and final IDLE, command identity, boot and output history were unchanged.
+
+| Route | Status requests including initial/final | Median / p95 / max total ms | Median / p95 / max connect ms |
+| --- | ---: | ---: | ---: |
+| Pi, original Wi-Fi power save on | 107 | 155.9 / 364.2 / 390.1 | 76.7 / 330.0 / 333.2 |
+| Pi, temporary power save off | 109 | 127.9 / 362.4 / 394.7 | 75.2 / 329.3 / 359.5 |
+| Mac direct, subsequent finite sample | 42 | 101.5 / 146.8 / 157.3 | 71.5 / 81.8 / 87.4 |
+
+Pi power save off did not materially improve the observed delay and was restored to on. The official Ubuntu iw package was installed for this diagnosis; no service restart was needed. Pi packet collectors reported zero kernel drops. These sequential samples do not isolate an AP, ESP32 or driver root cause, and do not prove that the residual timeout is eliminated.
+
+The Mac direct route then passed twelve authenticated default-speed100 requests, with a maximum of 103.638 ms across requests and surrounding telemetry. Command progression was exact and outputs remained unchanged. A fresh admission and an independently reviewed private runner used the same 0.8 s limit, 750 ms manual lease, per-step STOP, output/boot/provenance checks and PWM caps. Seventeen mock tests passed, including rejection of malformed credential values without echoing them. Temporary credentials were excluded from evidence archives.
+
+Eleven subsequent single-joint requests through the Mac route completed with final IDLE and output audits. Shoulder, elbow and wrist adjustments advanced the approach; three short lift checks did not lift the lipbalm. One close request targeted PWM40 but only reached PWM20 because the output ramp began late; its move response took 694.3 ms and nonzero output lasted 302 ms. This is not evidence that PWM40 lacks gripping force. A separate close reached PWM40 and held it for 520 ms, followed by another observed close and lift check. No PWM cap was raised. Some later request latencies approached the 0.8 s criterion even on the Mac route, so it remains an alternate path with finite validation, not a complete communication fix.
+
+At the last recorded stop, all five motors were OFF, the queue was empty and shoulder angle was 218.23 degrees. The lipbalm was still standing. The rear jaw was occluded in the iPhone view and the close camera could not establish whether the object lay between both jaws; one external depth observation was requested before further approach. No successful grasp or training-eligible episode is claimed. Video100 ms, anchor15 s and storage250 ms remain unchanged.
