@@ -26,6 +26,7 @@ jobs:
             python3-colcon-common-extensions \
             python3-opencv \
             python3-pytest \
+            python3-serial \
             ros-jazzy-ament-cmake-gtest \
             ros-jazzy-controller-manager \
             ros-jazzy-hardware-interface \
