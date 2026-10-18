@@ -105,4 +105,6 @@ The archive tool does not contact devices. It copies plans, results, after-image
 
 `archiveComplete` means copying finished, not task success. Observation snapshots are not synchronized action frames; image/anchor/source-persistence checks remain `unknown`. `trainingEligible` and `controlEligible` remain false. Offline copy speed cannot establish acquisition-time compliance. Keep raw images, receipts and execution records in ignored `.local/` or `datasets/`, outside Git.
 
+The separate `esp32cam_register_diag` build observes 34 raw OV2640 registers at most three times. Sensor/DMA initialization occurs internally, but there are no image requests or exports and no automatic retry after failure or expiry. Only offline checks and builds are verified; actual exposure bounds and training eligibility remain unverified. [Finite register diagnostic (Korean)](docs/ov2640-register-diagnostic.md)
+
 [Training/evaluation reproduction (Korean)](docs/data-pipeline.md) · [Mac camera instrumentation (Korean)](docs/mac-direct-camera.md) · [ROS2 hardware interface](ros2_ws/src/motionbrain_hardware_interface/README.en.md)

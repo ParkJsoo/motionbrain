@@ -105,4 +105,6 @@ python3 tools/archive_hardware_demo.py '.local/<source-phase>' 'datasets/<new-ar
 
 `archiveComplete`는 복사 완료이며 작업 성공이 아니다. 관찰 스냅샷은 동기화된 행동 프레임이 아니고, 영상·앵커·원본 저장 시간 검증은 `unknown`이다. `trainingEligible`·`controlEligible`은 false이며 오프라인 복사 속도로 촬영 시점 기준을 충족할 수 없다. 원본 이미지·응답·실행 기록은 `.local/` 또는 `datasets/`에 보관하며 Git에 올리지 않는다.
 
+별도 `esp32cam_register_diag` 빌드는 OV2640 원시 레지스터 34개를 최대 3회 관찰한다. 내부 센서/DMA 초기화가 있지만 이미지 요청·반출은 없으며, 오류·기한 종료 뒤 자동 재시도하지 않는다. 오프라인 검사·빌드만 검증됐고 실제 노출 상한·학습 적격은 미검증이다. [유한 레지스터 진단](docs/ov2640-register-diagnostic.md)
+
 [학습·평가 재현](docs/data-pipeline.md) · [Mac 카메라 계측](docs/mac-direct-camera.md) · [ROS2 하드웨어 인터페이스](ros2_ws/src/motionbrain_hardware_interface/README.md)

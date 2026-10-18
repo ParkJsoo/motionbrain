@@ -42,3 +42,6 @@ jobs:
 
       - name: Build ESP32-CAM firmware
         run: pio run -d firmware/esp32cam
+
+      - name: Build finite ESP32-CAM register diagnostic
+        run: pio run -d firmware/esp32cam -e esp32cam_register_diag

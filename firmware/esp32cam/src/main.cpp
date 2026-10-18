@@ -10,6 +10,13 @@
 #include "source_frame_metadata.h"
 #include "fresh_capture.h"
 
+#ifndef MOTIONBRAIN_REGISTER_DIAGNOSTIC
+#define MOTIONBRAIN_REGISTER_DIAGNOSTIC 0
+#endif
+#if MOTIONBRAIN_REGISTER_DIAGNOSTIC
+#include "ov2640_register_diagnostic_esp32.h"
+#endif
+
 // AI Thinker ESP32-CAM pin map.
 #define PWDN_GPIO_NUM     32
 #define RESET_GPIO_NUM    -1
@@ -915,6 +922,118 @@ void connectWifi() {
   }
 }
 
+#if MOTIONBRAIN_REGISTER_DIAGNOSTIC
+WiFiServer diagnosticServer(80);
+ov2640_diag::TrialGate diagnosticGate;
+bool diagnosticCameraActive = false;
+bool diagnosticClosed = false;
+int diagnosticDeinitStatus = ov2640_diag::NOT_ATTEMPTED;
+
+void closeRegisterDiagnostic() {
+  if (diagnosticClosed) return;
+  diagnosticClosed = true;
+  if (diagnosticCameraActive) diagnosticDeinitStatus = esp_camera_deinit();
+  diagnosticCameraActive = false;
+  // Power down even if deinit reports an error. Never recover or reboot to retry.
+  pinMode(PWDN_GPIO_NUM, OUTPUT);
+  digitalWrite(PWDN_GPIO_NUM, HIGH);
+}
+
+void sendRegisterResponse(WiFiClient& client, int code, const String& body) {
+  String response = "HTTP/1.1 " + String(code) + " Diagnostic\r\nContent-Type: application/json\r\nContent-Length: " +
+      String(body.length()) + "\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n" + body;
+  const uint64_t started = esp_timer_get_time();
+  size_t offset = 0;
+  while (offset < response.length() && esp_timer_get_time()-started < ov2640_diag::REQUEST_US) {
+    if (diagnosticGate.elapsed(esp_timer_get_time())) closeRegisterDiagnostic();
+    const int sent = ::send(client.fd(), response.c_str()+offset, response.length()-offset, MSG_DONTWAIT);
+    if (sent > 0) offset += sent;
+    else if (sent < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) break;
+    else delay(1);
+  }
+  client.stop();
+}
+
+void handleRegisterDiagnostic(WiFiClient& client, const char* nonce) {
+  const char* rejection = diagnosticGate.begin(nonce, esp_timer_get_time());
+  ov2640_diag::Snapshot snapshot;
+  snapshot.startedUs = snapshot.endedUs = esp_timer_get_time();
+  sensor_t* sensor = diagnosticCameraActive ? esp_camera_sensor_get() : nullptr;
+  const int pid = sensor ? sensor->id.PID : -1;
+  const uint32_t xclk = diagnosticCameraActive ? ledc_get_freq(LEDC_LOW_SPEED_MODE, LEDC_TIMER_0) : 0;
+  if (*rejection) {
+    snapshot.failure = rejection;
+  } else if (!sensor || pid != 0x26 || sensor->slv_addr != 0x30 || xclk != 20000000) {
+    snapshot.failure = "sensor_or_clock_mismatch";
+  } else {
+    ov2640_diag::Esp32Bus bus;
+    snapshot = ov2640_diag::observe(bus);
+  }
+  if (!snapshot.ok) diagnosticGate.fault = true;
+  if (diagnosticGate.fault || diagnosticGate.attempts >= ov2640_diag::MAX_ATTEMPTS ||
+      diagnosticGate.elapsed(esp_timer_get_time())) closeRegisterDiagnostic();
+  if (diagnosticClosed && diagnosticDeinitStatus != ESP_OK) {
+    snapshot.ok = false;
+    snapshot.failure = "camera_deinit_failed";
+  }
+  const String body = ov2640_diag::json(snapshot, nonce, cameraBootId,
+      diagnosticGate.attempts, xclk, pid, diagnosticClosed, diagnosticDeinitStatus);
+  sendRegisterResponse(client, snapshot.ok ? 200 : 503, body);
+}
+
+void pollRegisterDiagnostic() {
+  WiFiClient client = diagnosticServer.available();
+  if (!client) return;
+  ov2640_diag::RequestParser parser(esp_timer_get_time());
+  while (client.connected() && !parser.complete && !parser.failed && !parser.expired(esp_timer_get_time())) {
+    if (diagnosticGate.elapsed(esp_timer_get_time())) { closeRegisterDiagnostic(); break; }
+    if (!client.available()) { delay(1); continue; }
+    parser.feed(static_cast<char>(client.read()), esp_timer_get_time());
+  }
+  char nonce[17];
+  if (parser.nonce(nonce)) handleRegisterDiagnostic(client, nonce);
+  else sendRegisterResponse(client, 400, "{\"error\":\"invalid_or_expired_request\"}");
+}
+
+void setupRegisterDiagnostic() {
+  diagnosticGate.readyUs = esp_timer_get_time();
+  String error;
+  // Same default sensor mode, without initCamera's warmup fb_get/image export.
+  diagnosticCameraActive = configureCamera(&CAMERA_PROFILE_OPTIONS[0], DEFAULT_CAMERA_JPEG_QUALITY, error);
+  if (!diagnosticCameraActive) {
+    diagnosticGate.fault = true;
+    esp_camera_deinit();  // configureCamera can fail after driver initialization.
+    closeRegisterDiagnostic();
+  }
+  WifiConfig config{};
+  // No provisioning, credential changes, or automatic reboot in this build.
+  if (!loadWifiConfig(config)) {
+    diagnosticGate.fault = true;
+    closeRegisterDiagnostic();
+    Serial.println("Register diagnostic closed: existing Wi-Fi config required");
+    return;
+  }
+  WiFi.setHostname(MOTIONBRAIN_CAMERA_HOSTNAME);
+  WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);
+  WiFi.begin(config.ssid, config.password[0] ? config.password : nullptr);
+  const uint32_t started = millis();
+  while (WiFi.status() != WL_CONNECTED && millis()-started < 10000) delay(10);
+  if (WiFi.status() != WL_CONNECTED) {
+    diagnosticGate.fault = true;
+    closeRegisterDiagnostic();
+    Serial.println("Register diagnostic closed: Wi-Fi timeout");
+    return;
+  }
+  snprintf(cameraBootId, sizeof(cameraBootId), "%08lx%08lx%08lx%08lx",
+           static_cast<unsigned long>(esp_random()), static_cast<unsigned long>(esp_random()),
+           static_cast<unsigned long>(esp_random()), static_cast<unsigned long>(esp_random()));
+  diagnosticServer.begin();
+  Serial.printf("Register diagnostic ready: boot=%s appElfSha256=%s IP=%s; internal DMA active, image export disabled\n",
+                cameraBootId, ov2640_diag::appElfHash().c_str(), WiFi.localIP().toString().c_str());
+}
+#endif
+
 } // namespace
 
 void setup() {
@@ -928,6 +1047,10 @@ void setup() {
                 currentFrameProfile->name,
                 currentJpegQuality,
                 psramFound() ? "yes" : "no");
+#if MOTIONBRAIN_REGISTER_DIAGNOSTIC
+  setupRegisterDiagnostic();
+  return;
+#else
   clearRequestedOnBoot();
 
   if (!initCamera()) {
@@ -951,11 +1074,18 @@ void setup() {
   loopHeartbeatMs = millis();
   startHttpSupervisorTask();
   Serial.println("Camera HTTP server ready");
+#endif
 }
 
 void loop() {
+#if MOTIONBRAIN_REGISTER_DIAGNOSTIC
+  if (diagnosticGate.elapsed(esp_timer_get_time())) closeRegisterDiagnostic();
+  pollRegisterDiagnostic();
+  delay(1);
+#else
   loopHeartbeatMs = millis();
   server.handleClient();
   loopHeartbeatMs = millis();
   delay(1);
+#endif
 }
