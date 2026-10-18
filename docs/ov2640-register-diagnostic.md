@@ -54,6 +54,40 @@ python3 tools/probe_ov2640_registers.py --audit .local/ov2640-register-run
 
 감사의 `evidenceIntegrityOk`는 실패 기록에도 참일 수 있다. `successfulRun`은 세 요청의 진단 검사가 모두 통과했는지를 별도로 뜻한다. `exposureUpperBoundUs=null`, 광학 검증·학습·제어 적격 false는 유지한다.
 
+## 업로드 없이 UART 연결을 유지하는 관찰
+
+이미 진단 앱이 설치돼 있다면 USB 전원 연결을 관찰하는 호스트 실행기를 사용할 수 있다. 이 경로는 업로드 도구를 실행하지 않고 명시적 DTR/RTS 리셋 펄스를 보내지 않는다. 현재 카메라의 USB 식별과 전원 연결을 포함한 유한 시험 승인은 별도로 필요하다.
+
+기존처럼 업로드 도구가 닫은 포트를 새 관찰기가 다시 열면 그 사이의 부팅 원인을 구분하기 어렵다. `esptool`의 `--after no_reset`도 stub 사용 시 ROM 복귀 명령을 수행할 수 있으므로 옵션 이름만으로 리셋 동작이 없었다고 판단하지 않는다. 새 관찰기는 한 UART 연결과 수신기를 앱 준비 응답 및 HTTP 수집 종료까지 유지한다. 처음 열 때 발생하는 pyserial의 입력 버퍼 비우기를 억제하고, 포트 열기·초기 제어선 설정·수신·닫기 경계를 기록한다. 지원하지 않는 직렬 구현에서는 실행을 거부한다.
+
+앱 준비에는 관찰된 ROM 부팅 표식, `MotionBrain ESP32-CAM boot`, 예상 app ELF SHA256이 포함된 준비 응답이 순서대로 필요하다. ROM 표식만 있는 부분 로그는 준비 완료로 인정하지 않는다. HTTP 응답의 부팅 ID도 UART 준비 응답과 같아야 한다. 수집 중 UART에서 재부팅·오류가 발견되면 현재 요청의 원본을 보존하고 다음 요청을 시작하지 않는다. 이미 진행 중인 HTTP 요청은 기존 2초 기한 안에 끝나며 UART 수신기는 그동안에도 동작한다.
+
+호스트의 준비 관찰 기한은 포트를 연 뒤 15초다. **이 값은 전원을 넣은 시각이나 물리 부팅 지연의 측정값이 아니다.** USB 열거 이전, 최초 포트 열기의 전기적 영향, OS·USB 버퍼의 손실 여부는 별도 한계다. 연결을 유지했다는 사실만으로 물리 부팅 횟수나 전체 구간의 무손실을 보증하지 않는다. 마지막 포트 닫기도 물리 전원 차단을 입증하지 않으며, 시험 종료 후 사용자 전원 분리 확인이 필요하다.
+
+실행기는 시작 시 대상 USB가 이미 있으면 거부한다. 승인 후 먼저 관찰기를 시작하고 30초 대기 구간 안에 카메라 USB를 한 번 연결한다. 포트 이름·VID/PID·USB 위치와, 있는 경우 시리얼 번호가 모두 일치해야 포트를 연다. 아래 값은 현재 승인된 장치 식별로 대체하며, USB 시리얼 번호가 있는 장치는 `--usb-serial`도 지정한다.
+
+```bash
+python3 tools/probe_ov2640_uart.py --execute \
+  --port "$APPROVED_CAMERA_PORT" \
+  --usb-vid "$APPROVED_USB_VID" --usb-pid "$APPROVED_USB_PID" \
+  --usb-location "$APPROVED_USB_LOCATION" \
+  --expected-app-elf-sha256 "$APPROVED_APP_ELF_SHA256" \
+  --output-dir .local/ov2640-uart-run
+python3 tools/probe_ov2640_uart.py --audit .local/ov2640-uart-run
+```
+
+UART 수신량은 65,536바이트까지 허용하고, 이를 초과한 마지막 수신 조각도 저장한 뒤 실패로 종료한다. 마지막 HTTP 응답 뒤 0.25초를 추가 관찰한다. 수신 스레드 종료 대기는 회당 0.5초, 닫기 전후 최대 두 번이며 종료 실패를 정상 종료로 취급하지 않는다. 저장·OS 호출까지 포함한 물리 총시간 상한을 보증하는 값은 아니다.
+
+오프라인 회귀 테스트는 가짜 직렬 포트와 HTTP 응답을 사용한다. 비공개 실패 바이트는 Git 제외 경로에 두고 선택적으로 주입할 수 있다. 아래 명령은 실제 장치를 열지 않는다.
+
+```bash
+python3 -m unittest tests.test_ov2640_uart_session tests.test_ov2640_register_probe
+MOTIONBRAIN_UART_REGRESSION_RAW="$PRIVATE_FAILED_UART_RAW" \
+  python3 -m unittest tests.test_ov2640_uart_session
+```
+
+실패·취소와 수신 원본은 새 실행 디렉터리에 보존하며, 저장 실패도 성공으로 판정하지 않는다. 과거 실패 표본은 당시 실패 판정 그대로 유지한다. 이 관찰 모드가 레지스터 진단을 통과해도 노출 상한과 학습 적격은 검증되지 않는다.
+
 ## 남은 물리 근거
 
 자동 AEC는 읽는 도중 분할 값을 바꿀 수 있으므로 `atomicSnapshot=false`다. 세 번 같은 값이 나와도 최악 노출 상한을 증명하지 않는다. `aec_value`는 µs 단위가 아니며 `ledc_get_freq`는 설정에 따른 주파수 계산값이지 실측 클록이 아니다.
