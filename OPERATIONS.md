@@ -105,6 +105,6 @@ python3 tools/archive_hardware_demo.py '.local/<source-phase>' 'datasets/<new-ar
 
 `archiveComplete`는 복사 완료이며 작업 성공이 아니다. 관찰 스냅샷은 동기화된 행동 프레임이 아니고, 영상·앵커·원본 저장 시간 검증은 `unknown`이다. `trainingEligible`·`controlEligible`은 false이며 오프라인 복사 속도로 촬영 시점 기준을 충족할 수 없다. 원본 이미지·응답·실행 기록은 `.local/` 또는 `datasets/`에 보관하며 Git에 올리지 않는다.
 
-별도 `esp32cam_register_diag` 빌드는 OV2640 원시 레지스터 34개를 최대 3회 관찰한다. 내부 센서/DMA 초기화가 있지만 이미지 요청·반출은 없으며, 오류·기한 종료 뒤 자동 재시도하지 않는다. 이미 설치된 진단 앱은 USB 전원 연결을 관찰하는 호스트 실행기로 확인할 수 있다. 이 실행기는 UART 연결을 준비 응답부터 HTTP 수집 종료까지 유지하며 펌웨어 업로드나 명시적 리셋 펄스를 보내지 않는다. 실물 진단 완료·실제 노출 상한·학습 적격은 미검증이다. [유한 레지스터 진단](docs/ov2640-register-diagnostic.md)
+별도 `esp32cam_register_diag` 빌드는 OV2640 원시 레지스터 34개를 최대 3회 관찰한다. 내부 센서/DMA 초기화가 있지만 이미지 요청·반출은 없으며, 오류·기한 종료 뒤 자동 재시도하지 않는다. 이미 설치된 진단 앱은 USB 전원 연결을 관찰하는 호스트 실행기로 확인할 수 있다. 이 실행기는 UART 연결을 준비 응답부터 HTTP 수집 종료까지 유지하며 펌웨어 업로드나 명시적 리셋 펄스를 보내지 않는다. 2026-10-18 실물 두 시도는 모두 진단 완료에 실패했다(0/2). 첫 시도는 UART 전환 경계에서 중단했고, 둘째는 드라이버 PID `0x3660`(OV3660)을 OV2640 전용 가드가 추가 진단 SCCB 접근 전에 거부했다. 실제 노출 상한은 미검증이며 학습 적격 행동 전이는 0건이다. [유한 레지스터 진단](docs/ov2640-register-diagnostic.md)
 
 [학습·평가 재현](docs/data-pipeline.md) · [Mac 카메라 계측](docs/mac-direct-camera.md) · [ROS2 하드웨어 인터페이스](ros2_ws/src/motionbrain_hardware_interface/README.md)
