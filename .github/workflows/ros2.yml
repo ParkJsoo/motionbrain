@@ -41,6 +41,11 @@ jobs:
             ros-jazzy-ros2controlcli \
             ros-jazzy-rosidl-default-generators
 
+      - name: Set up Node.js for browser recovery tests
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Run host and ROS2 contract tests
         run: python3 -m unittest discover -s tests
 

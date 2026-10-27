@@ -122,7 +122,7 @@ class Esp32CamFirmwareContractTest(unittest.TestCase):
             "cameraMode = 'tracked'",
             "LIVE CAPTURE",
             "cameraMode = 'capture'",
-            "img.src = cameraPath('/capture?t=' + Date.now())",
+            "loadCameraImage(cameraPath('/capture?t=' + Date.now()))",
             "startTrackedCamera(false)",
         ]
         for fragment in expected_fragments:

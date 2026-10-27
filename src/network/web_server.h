@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include "idle_connection_web_server.h"
+#include "vision_endpoint_lease.h"
 #include <stdint.h>      // uint16_t를 위해 추가
 #include "motion/motion_sequence.h"
 
@@ -103,6 +104,9 @@ private:
 
   bool submitCommand(const Command& command, CommandResult& result);
   bool requireCommandAuth();
+  VisionEndpointLease visionEndpoint_;
+  void handleVisionEndpoint();
+  void handleVisionEndpointPublish();
   void appendStateSummaryJson(String& json) const;
   void appendRecoveryJson(String& json) const;
   void appendRuntimeDiagnosticsJson(String& json) const;

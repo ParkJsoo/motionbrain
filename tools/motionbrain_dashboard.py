@@ -646,6 +646,7 @@ INDEX_HTML = """<!doctype html>
       <section>
         <h2>Vision Feed</h2>
         <div class="panel-body">
+          <div id="frameConnection" role="status">CONNECTING</div>
           <div class="camera-stage" id="cameraStage">
             <img id="cameraFrame" class="camera-frame" alt="ESP32-CAM capture">
             <div class="vision-overlay" id="visionOverlay">
@@ -733,11 +734,43 @@ INDEX_HTML = """<!doctype html>
   </main>
 
   <script>
+    /* DEVICE_RECOVERY_SCRIPT */
     const logLines = [];
     let lastStatus = null;
     let lastDetection = null;
     let lastPolicyProposal = null;
     let dashboardConfig = null;
+    let refreshBusy = false, visionBusy = false, frameBusy = false;
+    let recoveryBusy = false, configFailures = 0, nextRecoveryAt = 0;
+    let frameWatchdog = null;
+    async function recoverDashboard() {
+      if (recoveryBusy || document.hidden || Date.now() < nextRecoveryAt) return;
+      recoveryBusy = true; nextRecoveryAt = Date.now() + 10000;
+      try {
+        const controllers = [dashboardConfig && dashboardConfig.motionBaseUrl,
+          sessionStorage.getItem('motionbrainDiscoveryController'), 'http://motionbrain.local'];
+        const result = await MotionBrainDiscovery.discover(controllers, ['http://motionbrain-pi.local:8765']);
+        if (result && !document.hidden && configFailures >= 2 && result.base !== location.origin) {
+          // Do not transfer tokens, fragments, commands, or authorization to another origin.
+          window.location.replace(result.base + '/');
+        }
+      } finally { recoveryBusy = false; }
+    }
+    function refreshFrame() {
+      if (document.hidden || frameBusy) return;
+      const img = document.getElementById('cameraFrame');
+      const state = document.getElementById('frameConnection');
+      frameBusy = true;
+      const finish = ok => {
+        clearTimeout(frameWatchdog); frameWatchdog = null; frameBusy = false;
+        state.textContent = ok ? 'VIDEO CONNECTED' : 'VIDEO RECONNECTING';
+        if (!ok) { img.removeAttribute('src'); updateDetection({detected:false,reason:'frame_unavailable'}); }
+      };
+      img.onload = () => finish(true);
+      img.onerror = () => finish(false);
+      frameWatchdog = setTimeout(() => finish(false), 6000);
+      img.src = `/api/capture?t=${Date.now()}`;
+    }
     let dashboardAuthToken = sessionStorage.getItem("motionbrainDashboardToken") || "";
 
     function hydrateDashboardTokenFromHash() {
@@ -826,8 +859,13 @@ INDEX_HTML = """<!doctype html>
     }
 
     async function getJson(url, options = {}) {
-      const response = await fetch(url, { cache: "no-store" });
-      const data = await response.json();
+      const abort = new AbortController();
+      const timer = setTimeout(() => abort.abort(), 2000);
+      let response, data;
+      try {
+        response = await fetch(url, { cache: "no-store", signal: abort.signal });
+        data = await response.json();
+      } finally { clearTimeout(timer); }
       if (options.allowDegraded && data.degraded) {
         return data;
       }
@@ -975,7 +1013,7 @@ INDEX_HTML = """<!doctype html>
       if (!detected) {
         box.classList.remove("visible");
         dot.classList.remove("visible");
-        lockState.textContent = payload.reason ? "NO SIGNAL" : "SEARCHING";
+        lockState.textContent = ["no_objects", "target_not_found"].includes(payload.reason) ? "NO TARGET" : (payload.reason ? "DETECTION UNAVAILABLE" : "SEARCHING");
         lockState.className = "lock-state";
         return;
       }
@@ -1142,15 +1180,23 @@ INDEX_HTML = """<!doctype html>
     }
 
     async function refresh() {
+      if (refreshBusy || document.hidden) return;
+      refreshBusy = true;
+      try {
       try {
         const config = await getJson("/api/config");
+        if (!MotionBrainDiscovery.dashboardConfig(config)) throw new Error("dashboard identity mismatch");
         dashboardConfig = config;
+        configFailures = 0;
+        if (MotionBrainDiscovery.localBase(config.motionBaseUrl)) sessionStorage.setItem('motionbrainDiscoveryController', config.motionBaseUrl);
         document.getElementById("motionTarget").textContent = `motion: ${config.motionBaseUrl}`;
         document.getElementById("cameraTarget").textContent = `camera: ${config.cameraUrl || "disabled"}`;
         updateDashboardAuthState();
         updateAlignActionState();
         updateCupPlanState();
       } catch (err) {
+        ++configFailures;
+        if (configFailures >= 2) recoverDashboard();
         pushLog(`config error: ${err.message}`);
       }
 
@@ -1167,16 +1213,19 @@ INDEX_HTML = """<!doctype html>
       }
 
       document.getElementById("lastRefresh").textContent = `last: ${new Date().toLocaleTimeString()}`;
+      } finally { refreshBusy = false; }
     }
 
     async function refreshVision() {
+      if (document.hidden) return;
+      refreshFrame();
+      if (visionBusy) return;
+      visionBusy = true;
       try {
         updateDetection(await getJson("/api/detection"));
-        const img = document.getElementById("cameraFrame");
-        if (img) img.src = `/api/capture?t=${Date.now()}`;
       } catch (err) {
         updateDetection({ detected: false, reason: err.message });
-      }
+      } finally { visionBusy = false; }
     }
 
     function updatePolicyProposal(proposal) {
@@ -1274,7 +1323,10 @@ INDEX_HTML = """<!doctype html>
     }
 
     document.addEventListener("visibilitychange", () => {
-      if (!document.hidden) {
+      if (document.hidden) {
+        clearTimeout(frameWatchdog); frameWatchdog = null; frameBusy = false;
+        document.getElementById('cameraFrame').removeAttribute('src');
+      } else {
         refresh();
         refreshVision();
       }
@@ -1300,6 +1352,11 @@ INDEX_HTML = """<!doctype html>
 </body>
 </html>
 """
+
+# Serve exactly the same bounded discovery implementation embedded in the firmware.
+INDEX_HTML = INDEX_HTML.replace("/* DEVICE_RECOVERY_SCRIPT */", (
+    Path(__file__).resolve().parents[1] / "web" / "device_recovery.js"
+).read_text(encoding="utf-8"))
 
 
 def fetch_json(url: str, timeout: float) -> dict[str, Any]:
@@ -1483,10 +1540,19 @@ class DashboardHandler(BaseHTTPRequestHandler):
         try:
             if parsed.path == "/":
                 self.send_html(INDEX_HTML)
+            elif parsed.path == "/api/discovery":
+                # Public identity/address metadata only; no status, credentials, or controls.
+                self.send_json({
+                    "service": "motionbrain-dashboard", "recoveryVersion": 1,
+                    "motionBaseUrl": self.server.motion_base_url,
+                    "cameraUrl": self.server.camera_url,
+                }, public_discovery=True)
             elif parsed.path == "/api/config":
                 payload = {
                     "ok": True,
                     "motionBaseUrl": self.server.motion_base_url,
+                    "service": "motionbrain-dashboard",
+                    "recoveryVersion": 1,
                     "cameraUrl": self.server.camera_url,
                     "perceptionUrl": self.server.perception_url,
                     "detectColor": self.server.detect_color,
@@ -1793,12 +1859,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
         payload: dict[str, Any],
         status: HTTPStatus = HTTPStatus.OK,
         allow_cross_origin: bool = False,
+        public_discovery: bool = False,
     ) -> None:
         body = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
-        if allow_cross_origin:
+        if public_discovery:
+            self.send_header("Access-Control-Allow-Origin", "*")
+        elif allow_cross_origin:
             self.send_cross_origin_headers()
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()

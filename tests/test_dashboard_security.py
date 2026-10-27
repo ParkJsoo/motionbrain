@@ -87,6 +87,19 @@ class DashboardSecurityTest(unittest.TestCase):
         except urllib.error.HTTPError as exc:
             return exc.code, dict(exc.headers), json.loads(exc.read().decode("utf-8"))
 
+    def test_discovery_is_public_across_old_dashboard_origins_without_credentials(self) -> None:
+        with self.running_server() as server:
+            for origin in ("http://192.168.1.99:8765", "http://motionbrain-pi.local:8765"):
+                status, headers, payload = self.request_json(server, "/api/discovery", headers={"Origin": origin})
+                self.assertEqual(status, 200)
+                self.assertEqual(headers.get("Access-Control-Allow-Origin"), "*")
+                self.assertNotIn("Access-Control-Allow-Credentials", headers)
+                self.assertEqual(set(payload), {"service", "recoveryVersion", "motionBaseUrl", "cameraUrl"})
+                self.assertEqual(payload["service"], "motionbrain-dashboard")
+                self.assertEqual(headers["Cache-Control"], "no-store")
+                _, restricted, _ = self.request_json(server, "/api/config", headers={"Origin": origin})
+                self.assertNotIn("Access-Control-Allow-Origin", restricted)
+
     def test_config_never_exposes_dashboard_token_and_only_allows_configured_cors(self) -> None:
         with self.running_server(cors_origins={"http://allowed.example"}) as server:
             status, headers, payload = self.request_json(server, "/api/config")

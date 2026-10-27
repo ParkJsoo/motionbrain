@@ -261,7 +261,15 @@ if [[ "${RECONCILE_ROS_BRIDGE}" != "0" ]]; then
   fi
 fi
 
+publish_dashboard_address() {
+  if [[ -n "${controller_url}" ]]; then
+    "${DISCOVERY_PYTHON}" "${HELPER_DIR}/publish_vision_endpoint.py" \
+      "${controller_url}" "${DASHBOARD_URL}" || true
+  fi
+}
+
 if [[ "${restart_needed}" == "0" ]]; then
+  publish_dashboard_address
   echo "MotionBrain dashboard services already match discovered devices"
   exit 0
 fi
@@ -271,3 +279,6 @@ if [[ "${#restart_services[@]}" == "0" ]]; then
   restart_services=(motionbrain-perception.service motionbrain-dashboard.service)
 fi
 systemctl restart "${restart_services[@]}"
+
+# If startup is still in progress, the next timer cycle renews the lease.
+publish_dashboard_address

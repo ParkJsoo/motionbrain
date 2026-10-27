@@ -66,7 +66,7 @@ sudo install \
   -m 0755 \
   "${REPO_DIR}/tools/raspi/reconcile_dashboard_services.sh" \
   "${LIBEXEC_DIR}/reconcile_dashboard_services.sh"
-for helper in discover_device_url.py apply_camera_profile.py; do
+for helper in discover_device_url.py apply_camera_profile.py publish_vision_endpoint.py; do
   sudo install \
     -o root \
     -g root \
