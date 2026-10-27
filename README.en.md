@@ -18,7 +18,7 @@ A personal robotics project integrating an ESP32-controlled five-axis DC arm, ST
 | M4 shoulder feedback | AS5600 target control; final no-added-load and 23.10g regressions each passed 11/11 | Fixed mount and limited range on 2026-06-28; no position feedback on the other four axes |
 | ROS2 integration | Typed messages, URDF/RViz, control guard, `ros2_control` | Physical writes validated only for operator-confirmed single M4 targets |
 | Observed manipulation | Lipbalm grasp/lift followed by two additional grasp/place cycles | An external observer selected manual commands from camera views; first repeat required correction; not a learned policy |
-| Perception and learning code | Pretrained YOLOv5s inference, NumPy ridge training/evaluation and data validation | Zero eligible real training samples; autonomous grasping and learning gains unverified |
+| Perception and learning code | Pretrained YOLOv5s inference, NumPy ridge training/evaluation, offline lip-balm/gripper data loading, direction display and relative-position evaluation | Zero eligible physical action transitions. New CV tools checked with synthetic predictions; custom model training, autonomous grasping and learning gains unverified |
 
 ## Architecture
 
@@ -49,6 +49,7 @@ An existing static UI example, not the current device state.
 | [PIN_MAP.en.md](PIN_MAP.en.md) | Motor/sensor wiring and boot-pin constraints |
 | [ROS2 hardware interface](ros2_ws/src/motionbrain_hardware_interface/README.en.md) | Dry-run, measured-state and M4 proposal modes |
 | [Data and learning pipeline (Korean)](docs/data-pipeline.md) | Action records, eligibility, splits and reproducible training/evaluation |
+| [Offline lip-balm/gripper CV (Korean)](docs/offline-cv.md) | Approved data loader, candidate previews, and detection/direction/relative-position evaluation of saved predictions |
 
 ## Local builds and checks
 
