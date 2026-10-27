@@ -153,3 +153,5 @@ python -m unittest discover -s tests -p 'test_cv_tensors.py' -v
 ```
 
 torch가 없는 환경에서는 tensor 테스트가 명시적으로 건너뛰어지며 이를 변환 검증 통과로 세지 않는다. torchvision·모델·optimizer는 어댑터 테스트에 필요하지 않다. 이 모듈에는 학습 실행기나 체크포인트 저장 경로가 없다.
+
+학습 실행은 별도 [제한된 CV 개발 학습 실행기](bounded-cv-training.md)에 분리돼 있다. 이 문서의 inspect/render/evaluate와 tensor 어댑터는 학습을 자동 실행하지 않는다.
