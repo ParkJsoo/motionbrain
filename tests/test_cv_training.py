@@ -85,6 +85,21 @@ class BoundedLoopTest(unittest.TestCase):
         r=run_loop(self.backend,self.plan,emit,900,clock=self.clock)
         self.assertEqual(r['status'],'failed');self.assertEqual(self.backend.calls,0)
 
+    def test_sampling_diagnostics_survive_gradient_failure_without_stale_loss(self):
+        calls=[]
+        def loss(batch):
+            calls.append(batch)
+            if len(calls)==2:raise RuntimeError('gradient failed after sampling')
+            return {'loss':1.0}
+        self.backend.loss_and_grad=loss
+        self.backend.batch_diagnostics=lambda:{'imageIds':[f'image-{len(calls)}'],'selectedTotal':4}
+        r=self.run_fake()
+        self.assertEqual(r['status'],'failed');self.assertEqual(r['stepsCompleted'],1)
+        self.assertEqual(r['lastBatch']['imageIds'],['image-2'])
+        self.assertNotIn('lastLosses',r)
+        intent=next(e for e in self.events if e['event']=='step_intent')
+        self.assertEqual(intent['lastBatch']['imageIds'],['image-1'])
+
 
 class FakeProcess:
     def __init__(self, target=None, args=None, mode='success'):
@@ -162,11 +177,16 @@ class PlanAndExecutionTest(unittest.TestCase):
     def test_plan_caps_types_schema_and_paths(self):
         p,_=load_plan(self.path);self.assertEqual(p.manifest,str(self.manifest));self.assertEqual(p.seconds,900)
         for key,value in [('epochs',11),('steps',31),('seconds',901),('steps',True),('seconds',0),
-                          ('seed',-1),('schema','other'),('weights_sha256','bad'),('unknown',1)]:
+                          ('seed',-1),('schema','other'),('weights_sha256','bad'),('unknown',1),
+                          ('roi_sampling','other'),('roi_sampling',True),('roi_sampling',None)]:
             with self.subTest(key=key,value=value):
                 original=copy.deepcopy(self.doc);self.doc[key]=value;self.write_plan()
                 with self.assertRaises((ValueError,TypeError)):load_plan(self.path)
                 self.doc=original
+    def test_roi_policy_is_optional_and_explicit(self):
+        p,_=load_plan(self.path);self.assertEqual(p.roi_sampling,'default')
+        self.doc['roi_sampling']='negative_cap_3x';self.write_plan()
+        p,_=load_plan(self.path);self.assertEqual(p.roi_sampling,'negative_cap_3x')
     def test_preflight_checks_hashes_and_pilot_counts_without_decoding(self):
         plan,_=load_plan(self.path);self.assertEqual(len(preflight(plan)['frames']),6)
         for p in [self.weights,self.manifest,self.root/'0.png']:
@@ -272,18 +292,26 @@ class TorchBackendContractTest(unittest.TestCase):
         import torch
         from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
         from learning.cv_training import TorchBackend
+        from torchvision.models.detection._utils import BalancedPositiveNegativeSampler
         self.torch=torch
         class TinyModel(torch.nn.Module):
             def __init__(self):
                 super().__init__();self.backbone=torch.nn.Sequential(torch.nn.Linear(2,2),torch.nn.BatchNorm2d(2))
                 self.roi_heads=torch.nn.Module();self.roi_heads.box_predictor=FastRCNNPredictor(2,91)
+                self.roi_heads.fg_bg_sampler=BalancedPositiveNegativeSampler(512,0.25)
+                self.rpn=torch.nn.Module()
+                self.rpn.fg_bg_sampler=BalancedPositiveNegativeSampler(256,0.5)
             def forward(self, images, targets):
+                if targets:
+                    self.roi_heads.fg_bg_sampler([target['sample_labels'] for target in targets])
                 return {'loss':sum(p.square().sum() for p in self.roi_heads.box_predictor.parameters())}
         tmp=tempfile.TemporaryDirectory();self.addCleanup(tmp.cleanup);self.root=Path(tmp.name)
         weights=self.root/'weights.pth';weights.write_bytes(b'mocked local state; no download')
-        self.plan=Plan('mock-manifest','a'*64,str(weights),hashlib.sha256(weights.read_bytes()).hexdigest(),str(self.root))
+        self.plan=Plan('mock-manifest','a'*64,str(weights),hashlib.sha256(weights.read_bytes()).hexdigest(),str(self.root),
+                       roi_sampling=getattr(self,'policy','default'))
         state=TinyModel().state_dict()
-        dataset=type('Dataset',(),{'manifest_sha256':'a'*64,'__len__':lambda s:6})()
+        frames=[type('Frame',(),{'image_id':i,'id':f'frame-{i}'})() for i in range(1,7)]
+        dataset=type('Dataset',(),{'manifest_sha256':'a'*64,'__len__':lambda s:6,'frames':frames})()
         from unittest.mock import MagicMock
         self.optimizer=MagicMock()
         with patch('torchvision.models.detection.fasterrcnn_mobilenet_v3_large_320_fpn',side_effect=lambda **kw:TinyModel()) as factory, \
@@ -295,7 +323,12 @@ class TorchBackendContractTest(unittest.TestCase):
         self.assertEqual(factory.call_args.kwargs,{'weights':None,'weights_backbone':None,'num_classes':91})
         self.assertTrue(load.call_args.kwargs['weights_only'])
         self.assertEqual(load.call_args.kwargs['map_location'],'cpu')
+        self.tiny_model_type=TinyModel
+        self.mock_dataset=dataset
+        self.mock_initial_state=state
     def test_only_predictor_trainable_and_backbone_bn_frozen(self):
+        self.assertIs(self.backend.model.roi_heads.fg_bg_sampler,self.backend.roi_sampler)
+        self.assertEqual(self.backend.roi_sampler.policy,'default')
         self.assertTrue(self.backend.model.training)
         self.assertFalse(self.backend.model.backbone.training)
         from torchvision.ops.misc import FrozenBatchNorm2d
@@ -304,6 +337,41 @@ class TorchBackendContractTest(unittest.TestCase):
         for name,p in self.backend.model.named_parameters():
             self.assertEqual(p.requires_grad,name.startswith('roi_heads.box_predictor.'))
         self.assertEqual(self.backend.model.roi_heads.box_predictor.cls_score.out_features,3)
+        self.optimizer.step.assert_not_called()
+
+    def test_diagnostics_follow_actual_batch_order_and_clear_on_failure(self):
+        t=self.torch
+        self.backend.roi_sampler.policy='negative_cap_3x'
+        targets=[{'image_id':t.tensor([3]),'sample_labels':t.tensor([1,2]+[0]*100)},
+                 {'image_id':t.tensor([1]),'sample_labels':t.tensor([2]+[0]*100)}]
+        self.backend.loss_and_grad(([None,None],targets))
+        d=self.backend.batch_diagnostics()
+        self.assertEqual(d['imageIds'],['frame-3','frame-1'])
+        self.assertTrue(d['samplingComplete'])
+        self.assertEqual([r['selectedNegative'] for r in d['images']],[6,3])
+        self.assertEqual(d['classificationDenominator'],12)
+        self.assertEqual(d['boxRegressionDenominator'],12)
+        with patch.object(self.backend.model,'forward',side_effect=RuntimeError('before sampler')):
+            with self.assertRaises(RuntimeError):self.backend.loss_and_grad(([None],targets[:1]))
+        d=self.backend.batch_diagnostics()
+        self.assertEqual(d['imageIds'],['frame-3']);self.assertFalse(d['samplingComplete'])
+        self.assertEqual(d['images'],[]);self.assertIsNone(d['classificationDenominator'])
+        self.optimizer.step.assert_not_called()
+
+    def test_explicit_cap_wires_only_roi_sampler_and_keeps_initializer(self):
+        from learning.cv_training import TorchBackend
+        from torchvision.models.detection._utils import BalancedPositiveNegativeSampler
+        with patch('torchvision.models.detection.fasterrcnn_mobilenet_v3_large_320_fpn',side_effect=lambda **kw:self.tiny_model_type()), \
+             patch('torch.load',return_value=self.mock_initial_state), \
+             patch('learning.cv_tensors.TorchCVDataset',return_value=self.mock_dataset), \
+             patch('torch.optim.SGD',return_value=self.optimizer):
+            capped=TorchBackend(replace(self.plan,roi_sampling='negative_cap_3x'))
+        self.assertEqual(capped.roi_sampler.policy,'negative_cap_3x')
+        self.assertIsInstance(capped.model.rpn.fg_bg_sampler,BalancedPositiveNegativeSampler)
+        self.assertEqual(capped.model.rpn.fg_bg_sampler.batch_size_per_image,256)
+        self.assertEqual(capped.model.rpn.fg_bg_sampler.positive_fraction,0.5)
+        for name,value in self.backend.model.state_dict().items():
+            self.torch.testing.assert_close(value,capped.model.state_dict()[name],rtol=0,atol=0)
         self.optimizer.step.assert_not_called()
     def test_loss_backward_produces_head_grads_without_optimizer_update(self):
         before={n:p.detach().clone() for n,p in self.backend.model.named_parameters()}
@@ -337,6 +405,8 @@ class TorchBackendContractTest(unittest.TestCase):
         self.assertIs(type(saved['provenance']['torch']),str)
         self.assertEqual(saved['provenance']['torch'],'2.14.1')
         self.assertEqual(saved['provenance']['result']['stepsCompleted'],2)
+        self.assertEqual(saved['provenance']['settings']['roiSampling']['policy'],'default')
+        self.assertEqual(len(saved['provenance']['samplingImplementationSha256']),64)
         self.optimizer.step.assert_not_called()
 
 

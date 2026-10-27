@@ -14,6 +14,7 @@ import threading
 import time
 
 from learning.cv_dataset import CVDataset, require
+from learning.cv_sampling import RecordedROISampler, sampling_settings
 
 MODEL = "fasterrcnn_mobilenet_v3_large_320_fpn"
 HEAD = "roi_heads.box_predictor."
@@ -30,6 +31,7 @@ class Plan:
     steps: int = 30
     seconds: int = 900
     seed: int = 20261027
+    roi_sampling: str = "default"
 
 
 def load_plan(path):
@@ -55,6 +57,7 @@ def load_plan(path):
         value = getattr(plan, key)
         require(type(value) is int and 1 <= value <= cap, f"{key} must be in 1..{cap}")
     require(type(plan.seed) is int and 0 <= plan.seed < 2**32, "invalid seed")
+    sampling_settings(plan.roi_sampling)
     return plan, hashlib.sha256(raw).hexdigest()
 
 
@@ -112,7 +115,14 @@ def run_loop(backend, plan, emit, deadline, *, clock=time.monotonic):
                 check()
                 if state["stepIntents"] >= plan.steps:
                     state["status"] = "step_limit"; publish("finished"); return state
-                losses = backend.loss_and_grad(batch)
+                state.update(epochIndex=epoch + 1, batchIndex=batches_seen)
+                state.pop("lastLosses", None); state.pop("lastBatch", None)
+                try:
+                    losses = backend.loss_and_grad(batch)
+                finally:
+                    diagnostics = getattr(backend, "batch_diagnostics", None)
+                    if diagnostics is not None:
+                        state["lastBatch"] = diagnostics()
                 require(bool(losses) and all(type(v) in (int, float) and math.isfinite(v)
                                             for v in losses.values()), "nonfinite/empty losses")
                 state["lastLosses"] = losses
@@ -170,6 +180,10 @@ class TorchBackend:
         self.model.load_state_dict(state, strict=True)
         features = self.model.roi_heads.box_predictor.cls_score.in_features
         self.model.roi_heads.box_predictor = FastRCNNPredictor(features, 3)
+        self.roi_sampler = RecordedROISampler(self.model.roi_heads.fg_bg_sampler, plan.roi_sampling)
+        self.model.roi_heads.fg_bg_sampler = self.roi_sampler
+        self.frame_ids = {f.image_id: f.id for f in self.dataset.frames}
+        self.current_batch_ids = []
         for name, parameter in self.model.named_parameters():
             parameter.requires_grad_(name.startswith(HEAD))
         self.model.train(); self.model.backbone.eval()
@@ -193,14 +207,29 @@ class TorchBackend:
 
     def loss_and_grad(self, batch):
         torch = self.torch
+        self.current_batch_ids = []
+        self.roi_sampler.last_stats = []
+        for target in batch[1]:
+            self.current_batch_ids.append(self.frame_ids[int(target["image_id"].item())])
         self.optimizer.zero_grad(set_to_none=True)
         losses = self.model(*batch)
+        require(len(self.roi_sampler.last_stats) == len(self.current_batch_ids),
+                "ROI sampling diagnostics missing or misaligned")
         require(bool(losses) and all(bool(torch.isfinite(v).all()) for v in losses.values()),
                 "nonfinite/empty losses")
         sum(losses.values()).backward()
         require(all(p.grad is not None and bool(torch.isfinite(p.grad).all()) for p in self.parameters),
                 "missing/nonfinite head gradients")
         return {k:float(v.detach()) for k,v in losses.items()}
+
+    def batch_diagnostics(self):
+        rows = self.roi_sampler.last_stats
+        complete = len(rows) == len(self.current_batch_ids) and bool(rows)
+        total = sum(row["selectedTotal"] for row in rows) if complete else None
+        return {"roiSampling": self.roi_sampler.policy, "imageIds": list(self.current_batch_ids),
+                "samplingComplete": complete,
+                "images": [dict(row, id=image_id) for row, image_id in zip(rows, self.current_batch_ids)],
+                "classificationDenominator": total, "boxRegressionDenominator": total}
 
     def step(self):
         self.optimizer.step()
@@ -240,8 +269,11 @@ def _worker(plan, output, deadline):
                           runtimeRequired={"torch": "2.14.1", "torchvision": "0.29.1"},
                           settings={"device": "cpu", "dtype": "float32", "batchSize": 2,
                                     "workers": 0, "threads": 4, "shuffle": True, "augmentation": False,
-                                    "optimizer": "SGD", "lr": 0.005, "momentum": 0.9, "weightDecay": 0.0005},
+                                    "optimizer": "SGD", "lr": 0.005, "momentum": 0.9, "weightDecay": 0.0005,
+                                    "roiSampling": sampling_settings(plan.roi_sampling)},
                           implementationSha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+                          samplingImplementationSha256=hashlib.sha256(
+                              Path(__file__).with_name("cv_sampling.py").read_bytes()).hexdigest(),
                           trainable="box_predictor_only", frozenSha256=backend.frozen_before)
         temporary = output / "checkpoint.pt.partial"
         backend.save(temporary, provenance)
