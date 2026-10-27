@@ -70,3 +70,29 @@ class RecordedROISampler:
                                             "gripper": int((selected == 2).sum())},
                 "negativeOnlyFallback": self.policy == "negative_cap_3x" and pos == 0})
         return positive_masks, negative_masks
+
+
+class RecordedRPNSampler:
+    """Record the native RPN masks without changing sampling or RNG consumption."""
+    def __init__(self, delegate):
+        require(delegate.batch_size_per_image == 256 and delegate.positive_fraction == 0.5,
+                "unexpected torchvision RPN sampler configuration")
+        self.delegate = delegate
+        self.batch_size_per_image = delegate.batch_size_per_image
+        self.positive_fraction = delegate.positive_fraction
+        self.last_stats = []
+
+    def __call__(self, labels_per_image):
+        import torch
+        self.last_stats = []
+        for labels in labels_per_image:
+            require(isinstance(labels, torch.Tensor) and labels.ndim == 1
+                    and labels.device.type == "cpu" and bool(((labels == -1) | (labels == 0) | (labels == 1)).all()),
+                    "invalid RPN labels")
+        positive, negative = self.delegate(labels_per_image)
+        for labels, pos_mask, neg_mask in zip(labels_per_image, positive, negative):
+            pos, neg = int(pos_mask.sum()), int(neg_mask.sum())
+            self.last_stats.append({"availablePositive": int((labels == 1).sum()),
+                "availableNegative": int((labels == 0).sum()), "ignored": int((labels == -1).sum()),
+                "selectedPositive": pos, "selectedNegative": neg, "selectedTotal": pos + neg})
+        return positive, negative

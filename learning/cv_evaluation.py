@@ -88,9 +88,10 @@ def summarize(rows):
 
 
 def evaluate(dataset, predictions, *, score_threshold, nms_threshold,
-             match_iou=0.5, tolerance=10, band=10):
+             match_iou=0.5, tolerance=10, band=10, image_reader=None):
     require(isinstance(dataset, CVDataset) and all(f.approved for f in dataset.frames),
             "evaluation requires an approved CVDataset")
+    require(image_reader is None or callable(image_reader), "image_reader must be callable")
     for name, value in (("score", score_threshold), ("nms", nms_threshold)):
         require(number(value) and 0 <= value <= 1, f"invalid {name} threshold")
     require(number(match_iou) and 0 < match_iou <= 1, "invalid match IoU")
@@ -109,7 +110,9 @@ def evaluate(dataset, predictions, *, score_threshold, nms_threshold,
         failed, reason = False, None
         grouped = {name: [] for name in CLASSES}
         try:
-            frame.read_image()  # Decode failures retain their expected denominators.
+            # Adapters may use another decoder with the same hash/size checks.
+            # Decode failures retain their expected denominators in either path.
+            frame.read_image() if image_reader is None else image_reader(frame)
             entry = entries.get(frame.id)
             require(entry is not None, "missing prediction record")
             require(entry.get("sourceSha256") == frame.sha256, "prediction source hash mismatch")

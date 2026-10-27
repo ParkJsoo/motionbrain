@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from learning.cv_training import execute, load_plan, preflight
+from learning.cv_training import FINISHED, execute, load_plan, preflight
 
 
 def main(argv=None):
@@ -27,7 +27,7 @@ def main(argv=None):
         else:
             result = execute(args.plan, confirmed=args.execute)
         print(json.dumps(result, ensure_ascii=False, allow_nan=False))
-        return 0 if args.command == 'check' or result['status'] in ('epoch_limit', 'step_limit') else 2
+        return 0 if args.command == 'check' or result['status'] in FINISHED else 2
     except (OSError, ValueError, TypeError, KeyError) as exc:
         print(json.dumps({'status':'error','reason':str(exc)}, ensure_ascii=False), file=sys.stderr)
         return 2

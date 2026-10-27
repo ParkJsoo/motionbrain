@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 import hashlib
+import copy
 import io
 import json
 import math
@@ -14,10 +15,13 @@ import threading
 import time
 
 from learning.cv_dataset import CVDataset, require
-from learning.cv_sampling import RecordedROISampler, sampling_settings
+from learning.cv_sampling import RecordedROISampler, RecordedRPNSampler, sampling_settings
 
 MODEL = "fasterrcnn_mobilenet_v3_large_320_fpn"
 HEAD = "roi_heads.box_predictor."
+DETECTION_HEADS = ("rpn.head.", "roi_heads.box_head.", HEAD)
+EVALUATION_STEPS = (0, 30, 100, 200, 300)
+FINISHED = ("epoch_limit", "step_limit", "fit_observed")
 
 
 @dataclass(frozen=True)
@@ -32,6 +36,7 @@ class Plan:
     seconds: int = 900
     seed: int = 20261027
     roi_sampling: str = "default"
+    mode: str = "box_predictor_only"
 
 
 def load_plan(path):
@@ -53,11 +58,16 @@ def load_plan(path):
         require(isinstance(value, str) and len(value) == 64
                 and all(c in "0123456789abcdef" for c in value), f"invalid {key}")
     plan = Plan(**doc)
-    for key, cap in (("epochs", 10), ("steps", 30), ("seconds", 900)):
+    require(type(plan.mode) is str and plan.mode in ("box_predictor_only", "detection_heads"),
+            "invalid training mode")
+    sanity = plan.mode == "detection_heads"
+    for key, cap in (("epochs", 100 if sanity else 10), ("steps", 300 if sanity else 30), ("seconds", 900)):
         value = getattr(plan, key)
         require(type(value) is int and 1 <= value <= cap, f"{key} must be in 1..{cap}")
     require(type(plan.seed) is int and 0 <= plan.seed < 2**32, "invalid seed")
     sampling_settings(plan.roi_sampling)
+    require(not sanity or plan.roi_sampling == "negative_cap_3x",
+            "detection_heads requires negative_cap_3x ROI sampling")
     return plan, hashlib.sha256(raw).hexdigest()
 
 
@@ -100,13 +110,48 @@ class BudgetExpired(Exception):
 def run_loop(backend, plan, emit, deadline, *, clock=time.monotonic):
     """Backend-independent control loop. A recorded intent may exceed completions."""
     state = {"status": "running", "stepIntents": 0, "stepsCompleted": 0, "epochsCompleted": 0}
+    sanity = plan.mode == "detection_heads"
+    if sanity:
+        state.update(observedSuccess=False, verifiedArtifact=False,
+                     evaluations=[{"step": step, "status": "not_reached"} for step in EVALUATION_STEPS])
     def check():
         if clock() >= deadline:
             raise BudgetExpired("wall-clock budget exhausted")
     def publish(event):
-        emit(dict(state, event=event))
+        emit(copy.deepcopy(dict(state, event=event)))
+    def evaluate_if_due():
+        if not sanity or state["stepsCompleted"] not in EVALUATION_STEPS:
+            return False
+        check()
+        row = next(r for r in state["evaluations"] if r["step"] == state["stepsCompleted"])
+        row["status"] = "running"
+        publish("state_eval_start")
+        try:
+            check()
+            result = backend.evaluate(state["stepsCompleted"], check)
+            require(isinstance(result, dict) and isinstance(result.get("metrics"), dict),
+                    "invalid evaluation summary")
+            require(type(result.get("observedSuccess")) is bool, "invalid evaluation success flag")
+            digest = result.get("modelStateSha256")
+            require(isinstance(digest, str) and len(digest) == 64
+                    and all(c in "0123456789abcdef" for c in digest), "invalid evaluation state digest")
+            row.update(result, status="completed", step=state["stepsCompleted"])
+            state["observedSuccess"] = result["observedSuccess"]
+            publish("state_eval_complete")
+            check()
+        except Exception as exc:
+            if row["status"] != "completed":
+                row.update(status="interrupted" if isinstance(exc, BudgetExpired) else "failed",
+                           error=f"{type(exc).__name__}: {exc}")
+            raise
+        if state["observedSuccess"]:
+            state["status"] = "fit_observed"; publish("fit_observed")
+            return True
+        return False
     try:
         publish("ready")
+        if evaluate_if_due():
+            return state
         for epoch in range(plan.epochs):
             check()
             batches_seen = 0
@@ -134,6 +179,8 @@ def run_loop(backend, plan, emit, deadline, *, clock=time.monotonic):
                 state["stepsCompleted"] += 1
                 publish("step_complete")
                 check()
+                if evaluate_if_due():
+                    return state
                 if state["stepIntents"] >= plan.steps:
                     state["status"] = "step_limit"; publish("finished"); return state
             require(batches_seen > 0, "empty training epoch")
@@ -168,6 +215,8 @@ class TorchBackend:
         require(torch.__version__.split("+")[0] == "2.14.1"
                 and torchvision.__version__.split("+")[0] == "0.29.1", "unvalidated runtime versions")
         self.torch = torch
+        self.sanity = plan.mode == "detection_heads"
+        self.plan = plan
         torch.set_num_threads(4); torch.manual_seed(plan.seed)
         torch.set_default_device("cpu"); torch.set_default_dtype(torch.float32)
         self.dataset = TorchCVDataset(plan.manifest, split="train_development_pilot")
@@ -182,10 +231,19 @@ class TorchBackend:
         self.model.roi_heads.box_predictor = FastRCNNPredictor(features, 3)
         self.roi_sampler = RecordedROISampler(self.model.roi_heads.fg_bg_sampler, plan.roi_sampling)
         self.model.roi_heads.fg_bg_sampler = self.roi_sampler
+        self.rpn_sampler = None
+        if self.sanity:
+            self.rpn_sampler = RecordedRPNSampler(self.model.rpn.fg_bg_sampler)
+            self.model.rpn.fg_bg_sampler = self.rpn_sampler
         self.frame_ids = {f.image_id: f.id for f in self.dataset.frames}
         self.current_batch_ids = []
+        prefixes = DETECTION_HEADS if self.sanity else (HEAD,)
         for name, parameter in self.model.named_parameters():
-            parameter.requires_grad_(name.startswith(HEAD))
+            parameter.requires_grad_(name.startswith(prefixes))
+        self.trainable_names = {name for name, p in self.model.named_parameters() if p.requires_grad}
+        if self.sanity:
+            require(all(any(name.startswith(prefix) for name in self.trainable_names)
+                        for prefix in DETECTION_HEADS), "missing detection head parameters")
         self.model.train(); self.model.backbone.eval()
         self.parameters = [p for p in self.model.parameters() if p.requires_grad]
         require(bool(self.parameters), "empty trainable head")
@@ -194,13 +252,31 @@ class TorchBackend:
             num_workers=0, collate_fn=detection_collate,
             generator=torch.Generator(device="cpu").manual_seed(plan.seed))
         self.frozen_before = self.frozen_digest()
+        self.last_gradient_norms = {}
+        if self.sanity:
+            self.check_scope()
 
     def frozen_digest(self):
+        if self.sanity:
+            from learning.cv_sanity import state_digest
+            return state_digest({name: value for name, value in self.model.state_dict().items()
+                                 if name not in self.trainable_names})
         digest = hashlib.sha256()
         for name, tensor in self.model.state_dict().items():
             if not name.startswith(HEAD):
                 digest.update(name.encode()); digest.update(tensor.detach().cpu().contiguous().numpy().tobytes())
         return digest.hexdigest()
+
+    def check_scope(self):
+        require({name for name, p in self.model.named_parameters() if p.requires_grad}
+                == self.trainable_names, "trainable scope changed")
+        expected = [p for name, p in self.model.named_parameters() if name in self.trainable_names]
+        actual = [p for group in self.optimizer.param_groups for p in group["params"]]
+        require(len(actual) == len(expected) and {id(p) for p in actual} == {id(p) for p in expected},
+                "optimizer parameter membership mismatch")
+        require(not any(module.training for module in self.model.backbone.modules()),
+                "frozen backbone must remain in evaluation mode")
+        require(self.frozen_digest() == self.frozen_before, "frozen parameters/buffers changed")
 
     def batches(self, epoch):
         return iter(self.loader)
@@ -209,10 +285,19 @@ class TorchBackend:
         torch = self.torch
         self.current_batch_ids = []
         self.roi_sampler.last_stats = []
+        self.last_gradient_norms = {}
+        if self.sanity:
+            self.rpn_sampler.last_stats = []
+            self.check_scope()
         for target in batch[1]:
             self.current_batch_ids.append(self.frame_ids[int(target["image_id"].item())])
         self.optimizer.zero_grad(set_to_none=True)
         losses = self.model(*batch)
+        if self.sanity:
+            require(set(losses) == {"loss_objectness", "loss_rpn_box_reg", "loss_classifier", "loss_box_reg"},
+                    "detection training requires all four losses")
+            require(len(self.rpn_sampler.last_stats) == len(self.current_batch_ids),
+                    "RPN sampling diagnostics missing or misaligned")
         require(len(self.roi_sampler.last_stats) == len(self.current_batch_ids),
                 "ROI sampling diagnostics missing or misaligned")
         require(bool(losses) and all(bool(torch.isfinite(v).all()) for v in losses.values()),
@@ -220,27 +305,78 @@ class TorchBackend:
         sum(losses.values()).backward()
         require(all(p.grad is not None and bool(torch.isfinite(p.grad).all()) for p in self.parameters),
                 "missing/nonfinite head gradients")
+        if self.sanity:
+            for prefix in DETECTION_HEADS:
+                total = sum(float(p.grad.detach().double().square().sum())
+                            for name, p in self.model.named_parameters() if name.startswith(prefix))
+                require(math.isfinite(total), "nonfinite group gradient norm")
+                self.last_gradient_norms[prefix] = math.sqrt(total)
+            self.check_scope()
         return {k:float(v.detach()) for k,v in losses.items()}
 
     def batch_diagnostics(self):
         rows = self.roi_sampler.last_stats
         complete = len(rows) == len(self.current_batch_ids) and bool(rows)
         total = sum(row["selectedTotal"] for row in rows) if complete else None
-        return {"roiSampling": self.roi_sampler.policy, "imageIds": list(self.current_batch_ids),
+        result = {"roiSampling": self.roi_sampler.policy, "imageIds": list(self.current_batch_ids),
                 "samplingComplete": complete,
                 "images": [dict(row, id=image_id) for row, image_id in zip(rows, self.current_batch_ids)],
                 "classificationDenominator": total, "boxRegressionDenominator": total}
+        if self.sanity:
+            rpn = self.rpn_sampler.last_stats
+            complete = len(rpn) == len(self.current_batch_ids) and bool(rpn)
+            denominator = sum(row["selectedTotal"] for row in rpn) if complete else None
+            result.update(gradientNorms=dict(self.last_gradient_norms), rpn={
+                "samplingComplete": complete,
+                "images": [dict(row, id=i) for row, i in zip(rpn, self.current_batch_ids)],
+                "objectnessDenominator": denominator, "boxRegressionDenominator": denominator,
+                "batchSizePerImage": 256, "positiveFractionCap": 0.5})
+        return result
 
     def step(self):
+        if self.sanity:
+            self.check_scope()
         self.optimizer.step()
         require(all(bool(self.torch.isfinite(p).all()) for p in self.parameters),
                 "nonfinite parameters after optimizer update")
+        if self.sanity:
+            self.check_scope()
+
+    def evaluate(self, step, check_deadline):
+        from learning.cv_sanity import evaluate_sanity, SanityEvaluationError
+        self.check_scope()
+        directory = self.output / "evaluations"
+        directory.mkdir(exist_ok=True)
+        path = directory / f"step-{step:06d}.json"
+        require(not path.exists(), "evaluation record already exists")
+        try:
+            result = evaluate_sanity(self, check_deadline)
+        except SanityEvaluationError as exc:
+            atomic_json(path, dict(exc.result, step=step))
+            raise exc.cause
+        atomic_json(path, dict(result, step=step))
+        self.check_scope()
+        return {"observedSuccess": result["observedSuccess"],
+                "modelStateSha256": result["modelStateSha256"],
+                "metrics": result["evaluation"]["metrics"],
+                "record": str(path.relative_to(self.output))}
 
     def save(self, path, provenance):
         require(self.frozen_digest() == self.frozen_before, "frozen parameters/buffers changed")
         with Path(path).open("xb") as stream:
             self.torch.save({"state_dict": self.model.state_dict(), "provenance": provenance}, stream)
             stream.flush(); os.fsync(stream.fileno())
+
+    def verify_checkpoint(self, path, provenance):
+        from learning.cv_sanity import state_digest
+        self.check_scope()
+        saved = self.torch.load(path, map_location="cpu", weights_only=True)
+        require(saved.get("provenance") == provenance, "checkpoint provenance mismatch")
+        require(state_digest(saved["state_dict"]) == state_digest(self.model.state_dict())
+                == provenance["modelStateSha256"], "checkpoint tensor state mismatch")
+        require(all(bool(self.torch.isfinite(t).all()) for t in saved["state_dict"].values()),
+                "nonfinite checkpoint tensors")
+        return provenance["modelStateSha256"]
 
 
 def _worker(plan, output, deadline):
@@ -258,10 +394,19 @@ def _worker(plan, output, deadline):
             stream.flush(); os.fsync(stream.fileno())
         atomic_json(output / "progress.json", state)
     try:
+        sanity = plan.mode == "detection_heads"
+        source_paths = [Path(__file__), Path(__file__).with_name("cv_sampling.py")]
+        if sanity:
+            source_paths += [Path(__file__).with_name(name) for name in
+                             ("cv_sanity.py", "cv_evaluation.py", "cv_tensors.py", "cv_dataset.py")]
+        source_hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in source_paths}
         provenance = preflight(plan)
+        initial_provenance = copy.deepcopy(provenance)
         backend = TorchBackend(plan)
+        if sanity:
+            backend.output = output
         state = run_loop(backend, plan, emit, deadline)
-        if state["status"] not in ("epoch_limit", "step_limit"):
+        if state["status"] not in FINISHED:
             return
         if time.monotonic() >= deadline:
             raise BudgetExpired("no budget remains for checkpoint")
@@ -274,14 +419,42 @@ def _worker(plan, output, deadline):
                           implementationSha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                           samplingImplementationSha256=hashlib.sha256(
                               Path(__file__).with_name("cv_sampling.py").read_bytes()).hexdigest(),
-                          trainable="box_predictor_only", frozenSha256=backend.frozen_before)
+                          trainable=plan.mode, frozenSha256=backend.frozen_before)
+        if sanity:
+            from learning.cv_sanity import state_digest
+            require(preflight(plan) == initial_provenance,
+                    "input provenance changed during execution")
+            require(source_hashes == {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in source_paths},
+                    "implementation changed during execution")
+            digest = state_digest(backend.model.state_dict())
+            current_eval = next((r for r in state["evaluations"]
+                                 if r["step"] == state["stepsCompleted"] and r["status"] == "completed"), None)
+            require(current_eval is None or current_eval["modelStateSha256"] == digest,
+                    "evaluated state differs from checkpoint state")
+            require(not state["observedSuccess"] or current_eval is not None,
+                    "success is not bound to final evaluated state")
+            provenance.update(modelStateSha256=digest, implementationHashes=source_hashes,
+                              evaluationStep=current_eval["step"] if current_eval else None)
+            if time.monotonic() >= deadline:
+                raise BudgetExpired("no budget remains for checkpoint validation")
         temporary = output / "checkpoint.pt.partial"
         backend.save(temporary, provenance)
         if time.monotonic() >= deadline:
             raise BudgetExpired("budget exhausted while saving checkpoint")
+        if sanity:
+            verified_digest = backend.verify_checkpoint(temporary, provenance)
+            require(verified_digest == digest, "verified checkpoint state mismatch")
+            if time.monotonic() >= deadline:
+                raise BudgetExpired("budget exhausted while verifying checkpoint")
         os.replace(temporary, output / "checkpoint.pt")
-        state.update(checkpoint="checkpoint.pt", checkpointSha256=hashlib.sha256(
-            (output / "checkpoint.pt").read_bytes()).hexdigest())
+        checkpoint_sha = hashlib.sha256((output / "checkpoint.pt").read_bytes()).hexdigest()
+        if sanity:
+            if time.monotonic() >= deadline:
+                raise BudgetExpired("budget exhausted while finalizing checkpoint")
+            state.update(verifiedArtifact=True, checkpointStateSha256=digest,
+                         checkpointEvaluationStep=provenance["evaluationStep"],
+                         outcome="fit_verified" if state["observedSuccess"] else "inconclusive_budget")
+        state.update(checkpoint="checkpoint.pt", checkpointSha256=checkpoint_sha)
         emit(dict(state, event="checkpoint_complete"))
     except Exception as exc:
         progress = output / "progress.json"
@@ -289,6 +462,8 @@ def _worker(plan, output, deadline):
             "stepIntents": 0, "stepsCompleted": 0, "epochsCompleted": 0}
         state.update(status="time_limit" if isinstance(exc, BudgetExpired) else "failed",
                      error=f"{type(exc).__name__}: {exc}", event="worker_failed")
+        if plan.mode == "detection_heads":
+            state.update(verifiedArtifact=False, outcome="incomplete")
         emit(state)
 
 
@@ -357,21 +532,36 @@ def execute(plan_path, *, confirmed=False):
             record["status"] = reason
         elif process is None or process.exitcode != 0:
             record.update(status="worker_exit", exitCode=process.exitcode if process else None)
-        elif record["status"] in ("epoch_limit", "step_limit") and not record.get("checkpoint"):
+        elif record["status"] in FINISHED and not record.get("checkpoint"):
             record["status"] = "checkpoint_incomplete"
         elif record["status"] in ("starting", "running"):
             record["status"] = "worker_incomplete"
         if error:
             record["error"] = error
-        if record["status"] in ("epoch_limit", "step_limit"):
+        if record["status"] in FINISHED:
             try:
                 require(record.get("checkpoint") == "checkpoint.pt", "invalid checkpoint path")
                 verified_bytes(output / "checkpoint.pt", record.get("checkpointSha256"))
+                if plan.mode == "detection_heads":
+                    require(record.get("verifiedArtifact") is True, "checkpoint safe reload not verified")
+                    require(record["status"] != "fit_observed" or record.get("observedSuccess") is True,
+                            "fit completion missing observation")
             except Exception as exc:
                 record.update(status="failed", error=f"checkpoint verification failed: {exc}")
         record["elapsedSeconds"] = time.monotonic() - started
-        if record["elapsedSeconds"] >= plan.seconds and record["status"] in ("epoch_limit", "step_limit"):
+        if record["elapsedSeconds"] >= plan.seconds and record["status"] in FINISHED:
             record["status"] = "time_limit"
+        if plan.mode == "detection_heads":
+            record.setdefault("observedSuccess", False)
+            record.setdefault("verifiedArtifact", False)
+            if record["status"] not in FINISHED:
+                record.update(verifiedArtifact=False, outcome="incomplete")
+                for evaluation in record.get("evaluations", []):
+                    if evaluation.get("status") == "running":
+                        evaluation.update(status="interrupted" if record["status"] in
+                                          ("time_limit", "interrupted") else "failed",
+                                          error="worker ended before evaluation completed",
+                                          termination=record["status"])
         record["trainingMayHaveStarted"] = record.get("stepIntents", 0) > 0
         atomic_json(output / "run.json", record)
     return record

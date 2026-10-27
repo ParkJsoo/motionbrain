@@ -7,8 +7,8 @@
 - 모델: `fasterrcnn_mobilenet_v3_large_320_fpn`. 다운로드 기능은 없으며 두 자동 가중치 옵션을 끄고, 로컬 state_dict를 SHA-256 검사 후 `weights_only=True`, CPU로 읽는다. 다운로드 없는 생성 경로의 backbone BatchNorm을 COCO 생성 경로와 같은 FrozenBatchNorm으로 바꾸고, 기존 91클래스 모델에 strict 로딩한 뒤 배경0·립밤1·집게2 predictor로 교체한다. 호환되는 파일이라는 사실만으로 출처·사용 권한이 인증되는 것은 아니다.
 - 입력: [승인 매니페스트와 tensor 어댑터](offline-cv.md)의 `train_development_pilot` 분할. 정확히 한 세션6장·상자10개·립밤 없음2장·집게 존재6장이어야 한다. 다른 분할의 데이터는 학습하지 않으며 전체 매니페스트의 누수 검사는 필터 전에 적용한다. 각 이미지의 해시는 사전 검사와 실제 읽기마다 확인한다.
 - 환경: Python에서 torch2.14.1, torchvision0.29.1, NumPy, Pillow가 필요하다. 자동 설치·업그레이드·MPS 전환은 없다. CPU/float32, CPU스레드4, batch2, shuffle, workers0, 증강없음으로 고정한다.
-- 업데이트: `roi_heads.box_predictor`만 학습 가능하게 하고 나머지는 동결한다. backbone은 eval 상태로 유지하여 BatchNorm 통계 변경도 막는다. SGD의 lr0.005·momentum0.9·weight_decay0.0005는 개발 진단을 위한 시작값이며 성능 보장값이 아니다.
-- 상한: 10epoch, optimizer 시도30회, 900초. 계획에서 더 작은 양의 정수로 줄일 수 있지만 늘릴 수 없다. 시간은 새 실행 디렉터리를 만든 뒤 시작하므로 import·해시 검사·입력 읽기·모델 초기화·저장도 포함한다.
+- 기본 업데이트(`mode` 생략 또는 `box_predictor_only`): `roi_heads.box_predictor`만 학습 가능하게 하고 나머지는 동결한다. backbone은 eval 상태로 유지하여 BatchNorm 통계 변경도 막는다. SGD의 lr0.005·momentum0.9·weight_decay0.0005는 개발 진단을 위한 시작값이며 성능 보장값이 아니다.
+- 기본 모드 상한: 10epoch, optimizer 시도30회, 900초. 계획에서 더 작은 양의 정수로 줄일 수 있지만 늘릴 수 없다. 시간은 새 실행 디렉터리를 만든 뒤 시작하므로 import·해시 검사·입력 읽기·모델 초기화·저장도 포함한다.
 
 ## 검토용 계획 파일
 
@@ -42,11 +42,45 @@ python tools/train_cv.py check --plan .local/cv-training/plan.json
 
 `"negative_cap_3x"`는 학습에서 ROI 배경 샘플을 줄이는 별도 실험 설정이다. 이미지별 양성은 최대128개이며, 음성은 **선택된 양성 수의3배·남은512개 예산·실제 음성 수 중 최솟값**만 선택한다. 양성이 없을 때는 배경을 최대32개 선택한다. 전부 무시 대상이거나 빈 후보여서 선택할 영역이 없으면 오류로 중단한다. 양성이 있는 경우에도 부족한 음성을 복제하거나 양성을 인위적으로 늘리지 않는다. 입력 라벨은 CPU int64의 배경0·립밤1·집게2·무시-1만 허용한다.
 
-이 설정의 목표는 배경 위주의 ROI 구성에서 대상의 학습 기여를 높이는 것이다. 샘플 수를 바꾸면 분류 손실뿐 아니라 상자 회귀 손실의 정규화 분모도 달라지므로, 변경 전후 총손실을 같은 성능 척도로 직접 비교하지 않는다. 동일 초기 사전학습 가중치·seed·학습 횟수·입력 및 평가 기준으로 비교하고, 기존에 학습한 checkpoint를 이어 학습한 결과와 혼동하지 않는다. 분류 회복과 실제 검출·상자 위치를 따로 확인한다. 동결한 RPN의 후보 부족이 자동으로 해결되지는 않는다.
+이 설정의 목표는 배경 위주의 ROI 구성에서 대상의 학습 기여를 높이는 것이다. 샘플 수를 바꾸면 분류 손실뿐 아니라 상자 회귀 손실의 정규화 분모도 달라지므로, 변경 전후 총손실을 같은 성능 척도로 직접 비교하지 않는다. 동일 초기 사전학습 가중치·seed·학습 횟수·입력 및 평가 기준으로 비교하고, 기존에 학습한 checkpoint를 이어 학습한 결과와 혼동하지 않는다. 분류 회복과 실제 검출·상자 위치를 따로 확인한다. 기본 모드에서 동결한 RPN의 후보 부족이 자동으로 해결되지는 않는다.
 
 각 업데이트의 이벤트에는 실제 이미지 순서, 이미지별 사용 가능/선택 양성·음성 수와 양성 클래스별 수를 `lastBatch`로 기록한다. 분류와 상자 회귀의 분모는 해당 배치에서 선택한 전체 ROI 수다. 샘플링 전에 실패하면 분모는 `null`, `samplingComplete`는 `false`이며 직전 배치의 손실·샘플 수를 재사용하지 않는다. sampler 호출 이후 역전파가 실패해도 확보한 샘플 수는 실패 기록에 남는다. checkpoint에는 정책과 샘플링 모듈 해시도 포함한다.
 
 샘플러·모의 모델 검사는 실제 추가 학습이나 정확도 개선을 증명하지 않는다. 계획에 이 설정을 넣는 것 자체도 실행 승인이 아니다.
+
+## 선택적 검출부 공동 학습
+
+`mode: "detection_heads"`는 같은6장에서 검출 경로 전체가 학습되는지 확인하는 별도 개발 모드다. 기본 모드의 학습 범위·상한·평가 없는 경로는 유지한다. 공동 모드에서는 `roi_sampling: "negative_cap_3x"`를 명시해야 한다.
+
+- 학습 범위: `rpn.head.*`(공유 합성곱·물체 점수·상자 보정), `roi_heads.box_head.*`, `roi_heads.box_predictor.*`.
+- 동결 범위: backbone(FPN 포함)과 나머지 모든 파라미터·buffer. 동결 backbone의 평가 상태와 optimizer의 정확한 파라미터 소속도 확인한다.
+- 초기값: 기본 모드와 동일한 원본 COCO 로딩·seed·새3클래스predictor 교체. 이전 학습 checkpoint를 이어 쓰는 기능은 없다.
+- RPN 샘플 선택은 기존256개/양성비율상한0.5 정책에 그대로 위임한다. 마스크와 난수 소비를 바꾸지 않고 실제 선택수만 기록한다. ROI 정책·입력 크기·앵커·추론 설정도 그대로다.
+- 한도: 최대100epoch·optimizer 시도300회·900초. 작은 양의 정수로 줄일 수 있다. 300회가 수렴을 보장하거나 일반화에 충분하다는 의미는 아니다.
+
+계획에 다음 필드를 지정한다. 전체 입력 경로·해시와 나머지 필드 형식은 기본 계획과 같다. 이 명시는 실제 실행 승인을 대신하지 않는다.
+
+```json
+{
+  "mode": "detection_heads",
+  "roi_sampling": "negative_cap_3x",
+  "epochs": 100,
+  "steps": 300,
+  "seconds": 900
+}
+```
+
+완료된 업데이트0·30·100·200·300에서 같은6장 전체를 평가한다. 실제 모델에는 이미지만 전달하고 정답은 출력 평가에만 사용한다. score0.5·NMS0.5·매칭IoU0.5·위치오차10px·방향경계10px(기준960×540)을 고정한다. 전체6장 처리실패0, 립밤TP4/FP0/FN0·집게TP6/FP0/FN0, 쌍·위치·방향 성공 각각4/4를 모두 관측한 첫 평가에서 추가 업데이트를 중단한다. GT 영역을 직접 넣은 분류 진단이나 손실 감소로 이를 대체하지 않는다.
+
+평가 전후 개별 모듈의 학습 상태와 Torch/Python/NumPy 및 데이터 로더 난수를 보존한다. 학습 데이터 순서를 평가가 소비하지 않는다. 이미지 디코딩은 설치된 Pillow tensor 경로를 사용하며 추가 OpenCV 설치를 요구하지 않는다. 기존 저장 예측 평가 CLI의 기본 OpenCV 경로는 유지한다. RPN 관측 코드는 원래 필터의 반환값을 그대로 사용하고 별도 단계 복원과 출력 일치를 확인한다.
+
+`evaluations/step-NNNNNN.json`에는 전체 예측·고정 평가 수치·RPN 단계별 후보 포함 범위와 점수 순위·평가한 tensor 상태 해시를 기록한다. 매 배치의 `lastBatch.rpn`에는 사용 가능·선택 양성/음성·무시 수와 실제 loss 분모를, `gradientNorms`에는 세 학습 모듈 그룹의 gradient 크기를 기록한다. RPN4개 loss가 아니라 **RPN2개와 ROI2개, 총4개 loss**를 모두 검증한다. RPN 후보가 detach되므로 ROI loss만으로 RPN을 학습했다고 해석하지 않는다.
+
+평가는 시도 횟수가 아닌 완료 업데이트 수를 기준으로 한다. 지정한 작은 epoch/step 한도나 시간 종료 때문에 도달하지 못한 평가 지점은 `not_reached`로 남는다. 예정 평가 사이에 끝난 checkpoint는 마지막 평가와 다른 가중치이며 `checkpointEvaluationStep`이 `null`이다. 이전 평가를 그 checkpoint의 평가 결과로 붙이지 않는다.
+
+관측 성공은 `fit_observed`/`observedSuccess`로, 같은 가중치의 안전 저장·재로딩 완료는 `verifiedArtifact`로 구분한다. 성공 평가 이후에도 저장·검증 시간은 전체 한도에 포함된다. 안전 로딩·입력/구현 해시·동결 상태·평가 시점의 tensor digest가 일치해야 `outcome: "fit_verified"`가 된다. 정상 제한 종료지만 목표 미달이면 `inconclusive_budget`이며, 모델 구조가 틀렸거나 학습이 불가능하다는 결론이 아니다. 실패·중단·시간 초과는 `incomplete`이고 실제 파일이 남아도 자동 성공 처리하지 않는다.
+
+mode/RNG 복원은 정상 및 처리 가능한 예외 경로에서 검사한다. 강제 종료에는 finally 실행을 보장할 수 없으므로 worker를 재사용하지 않는다. 새로운 예산·초기값·샘플링 정책을 자동으로 재시도하거나 평가 문턱을 조정하지 않는다. 학습 범위나 횟수가 다른 과거 실험과의 비교는 개발 관측이며 한 요인의 순수한 인과 효과나 독립 성능 개선이라고 부르지 않는다.
 
 ## 명시적 실행과 중단
 
@@ -64,20 +98,24 @@ python tools/train_cv.py run --plan .local/cv-training/plan.json --execute
 
 ## 산출물과 실패 해석
 
-- `run.json`: 최종 상태, 실제 적용 계획, 계획 해시, 완료/시도 횟수, 경과 시간. 종료된 `step_limit` 또는 `epoch_limit`만 정상 제한 종료다.
+- `run.json`: 최종 상태, 실제 적용 계획, 계획 해시, 완료/시도 횟수, 경과 시간. `step_limit`과 `epoch_limit`은 정상 제한 종료다. 공동 모드의 `fit_observed`는 목표 관측 종료이며 `verifiedArtifact`와 `outcome`을 함께 확인한다.
 - `events.jsonl`, `progress.json`: 실행 순서와 마지막 진행 상태. 갑작스러운 전원 종료·부모 강제 종료 시 최종 보고서가 남지 않을 수 있다. `starting`/`running`을 완료로 해석하지 않는다.
-- `checkpoint.pt`: 정상 제한 종료 후 동결된 파라미터·buffer 해시를 확인하고 최대1개를 저장한다. state_dict와 입력 해시·seed·고정 설정·개발용 결과를 포함하며 optimizer 상태를 저장하지 않는다. 런타임 버전은 일반 문자열로 저장하여 `torch.load(..., weights_only=True)`로 읽을 때 별도 사용자 정의 타입 허용이 필요하지 않게 한다. 재개 기능이 없다.
+- `checkpoint.pt`: 정상 제한 종료(공동 모드는 목표 관측 종료 포함) 후 동결된 파라미터·buffer 해시를 확인하고 최대1개를 저장한다. 공동 모드는 같은 시간 한도 안에서 안전 재로딩과 tensor/provenance 일치도 검사한다. state_dict와 입력 해시·seed·고정 설정·개발용 결과를 포함하며 optimizer 상태를 저장하지 않는다. 런타임 버전은 일반 문자열로 저장하여 `torch.load(..., weights_only=True)`로 읽을 때 별도 사용자 정의 타입 허용이 필요하지 않게 한다. 재개 기능이 없다.
 - `checkpoint.pt.partial`: 저장 도중 실패·종료되면 남을 수 있는 불완전 파일. 자동 삭제하지 않으며 최종 checkpoint로 쓰지 않는다. timeout 후 최종 파일이 남더라도 run 상태를 우선하고 성공 실험으로 채택하지 않는다.
 
 실패·중단도 실험 이력에 남긴다. `runConsumed`는 실행 시도 소비, `trainingMayHaveStarted`는 optimizer 시도 기록 여부다. 첫 업데이트 이전 실패와 실제 optimizer에 도달한 시도를 구분하며, 뒤의 시도는 학습 횟수 예산에 포함한다. 파일 경로·프레임 식별자·가중치와 checkpoint는 비공개 자료로 보관한다.
 
-이 도구는 validation/test 평가, AP, 동영상 추론, 예측 시각화, checkpoint 선택을 수행하지 않는다. 개발 자료 손실이 낮아져도 일반화 성능을 증명하지 못한다. 사전학습 원본 및 미세조정 가중치의 공개 배포 가능 여부도 실행 성공과 별도로 확인한다.
+이 도구는 validation/test 평가, AP, 동영상 추론, 예측 시각화, 여러 checkpoint 중 최적 모델 선택을 수행하지 않는다. 공동 모드의 중간 평가는 같은 학습6장에 한정한다. 개발 자료 손실이 낮아져도 일반화 성능을 증명하지 못한다. 사전학습 원본 및 미세조정 가중치의 공개 배포 가능 여부도 실행 성공과 별도로 확인한다.
 
 ## 소프트웨어 검증 범위
 
 ```sh
 python -m unittest discover -s tests -p 'test_cv_training.py' -v
 python -m unittest discover -s tests -p 'test_cv_sampling.py' -v
+python -m unittest discover -s tests -p 'test_cv_detection_training.py' -v
+python -m unittest discover -s tests -p 'test_cv_sanity.py' -v
 ```
 
 제어 흐름은 가짜 업데이트 카운터·작업 프로세스로 검증하고, 실제 잠자는 자식 프로세스로 시간 종료를 검사한다. 선택적 torch 검사는 작은 합성 모듈과 모의 optimizer를 사용하며 실제 optimizer.step을 호출하지 않는다. head만 학습 가능함, backbone 통계 동결, 비정상 손실 거부, 저장 전 동결 상태 검사를 확인한다. torch 없는 환경에서는 해당 검사를 명시적으로 건너뛴다. 이 결과를 실제 Faster R-CNN의 승인 영상 학습 성능으로 표현하지 않는다.
+
+공동 모드 검사는 모의 업데이트와 작은 합성 모듈·후보 상자를 사용한다. 평가 일정·조기 관측 성공·저장 실패·시간 초과·상태/난수 복구·전체 분모·RPN/ROI 학습 범위·실제 샘플 진단을 검증하며 실제 Faster R-CNN 생성·학습으로 간주하지 않는다.
