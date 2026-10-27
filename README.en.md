@@ -51,6 +51,7 @@ An existing static UI example, not the current device state.
 | [Data and learning pipeline (Korean)](docs/data-pipeline.md) | Action records, eligibility, splits and reproducible training/evaluation |
 | [Bounded CV development trainer (Korean)](docs/bounded-cv-training.md) | Explicit execution, local weights, step/time caps and failure records; development fitting is distinct from generalization evaluation |
 | [Offline lip-balm/gripper CV (Korean)](docs/offline-cv.md) | Approved data loader with an optional PyTorch input adapter, candidate previews, and detection/direction/relative-position evaluation of saved predictions |
+| [Saved-checkpoint evaluation runner (Korean)](docs/checkpoint-evaluation.md) | Variable numbers of approved images, strict model restoration, time limits and retained failure denominators; verified with synthetic tests, actual model evaluation remains a separate run |
 
 ## Local builds and checks
 
