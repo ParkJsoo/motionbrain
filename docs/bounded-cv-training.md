@@ -1,6 +1,6 @@
 # 제한된 CV 개발 학습 실행기
 
-`tools/train_cv.py`는 승인된 한 세션의 개발용 6장에 대해 실행 1회를 제한하는 선택적 도구다. **실행기 구현·모의 검증 완료와 실제 학습 완료는 다르다.** 현재 사전학습 가중치를 이용한 학습·정확도 검증은 하지 않았다. 가중치 사용 조건과 다운로드·학습 승인은 별도로 확인해야 한다.
+`tools/train_cv.py`는 승인된 한 세션의 개발용 6장에 대해 실행 1회를 제한하는 선택적 도구다. **실행기 검증·개발용 학습 완료와 일반화 성능 검증은 다르다.** 이 도구의 개발용 학습만으로 새로운 장면의 검출 정확도를 확인할 수 없다. 가중치 사용 조건과 다운로드·학습 승인은 별도로 확인해야 한다.
 
 ## 고정 범위
 
@@ -53,7 +53,7 @@ python tools/train_cv.py run --plan .local/cv-training/plan.json --execute
 
 - `run.json`: 최종 상태, 실제 적용 계획, 계획 해시, 완료/시도 횟수, 경과 시간. 종료된 `step_limit` 또는 `epoch_limit`만 정상 제한 종료다.
 - `events.jsonl`, `progress.json`: 실행 순서와 마지막 진행 상태. 갑작스러운 전원 종료·부모 강제 종료 시 최종 보고서가 남지 않을 수 있다. `starting`/`running`을 완료로 해석하지 않는다.
-- `checkpoint.pt`: 정상 제한 종료 후 동결된 파라미터·buffer 해시를 확인하고 최대1개를 저장한다. state_dict와 입력 해시·seed·고정 설정·개발용 결과를 포함하며 optimizer 상태를 저장하지 않는다. 재개 기능이 없다.
+- `checkpoint.pt`: 정상 제한 종료 후 동결된 파라미터·buffer 해시를 확인하고 최대1개를 저장한다. state_dict와 입력 해시·seed·고정 설정·개발용 결과를 포함하며 optimizer 상태를 저장하지 않는다. 런타임 버전은 일반 문자열로 저장하여 `torch.load(..., weights_only=True)`로 읽을 때 별도 사용자 정의 타입 허용이 필요하지 않게 한다. 재개 기능이 없다.
 - `checkpoint.pt.partial`: 저장 도중 실패·종료되면 남을 수 있는 불완전 파일. 자동 삭제하지 않으며 최종 checkpoint로 쓰지 않는다. timeout 후 최종 파일이 남더라도 run 상태를 우선하고 성공 실험으로 채택하지 않는다.
 
 실패·중단도 실험 이력에 남긴다. `runConsumed`는 실행 시도 소비, `trainingMayHaveStarted`는 optimizer 시도 기록 여부다. 첫 업데이트 이전 실패와 실제 optimizer에 도달한 시도를 구분하며, 뒤의 시도는 학습 횟수 예산에 포함한다. 파일 경로·프레임 식별자·가중치와 checkpoint는 비공개 자료로 보관한다.

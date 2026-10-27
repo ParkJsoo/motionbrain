@@ -236,7 +236,7 @@ def _worker(plan, output, deadline):
             return
         if time.monotonic() >= deadline:
             raise BudgetExpired("no budget remains for checkpoint")
-        provenance.update(plan=asdict(plan), result=state, torch=backend.torch.__version__,
+        provenance.update(plan=asdict(plan), result=state, torch=str(backend.torch.__version__),
                           runtimeRequired={"torch": "2.14.1", "torchvision": "0.29.1"},
                           settings={"device": "cpu", "dtype": "float32", "batchSize": 2,
                                     "workers": 0, "threads": 4, "shuffle": True, "augmentation": False,

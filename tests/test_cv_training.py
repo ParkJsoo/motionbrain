@@ -320,6 +320,25 @@ class TorchBackendContractTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'frozen'):self.backend.save(self.root/'final.pt',{})
         self.assertFalse((self.root/'final.pt').exists());self.optimizer.step.assert_not_called()
 
+    def test_worker_checkpoint_reloads_with_weights_only_and_plain_version(self):
+        from learning.cv_training import _worker
+        from torch.torch_version import TorchVersion
+        fake=FakeBackend()
+        fake.torch=type('Version',(),{'__version__':TorchVersion('2.14.1')})()
+        fake.frozen_before=self.backend.frozen_before
+        fake.save=self.backend.save
+        with patch('learning.cv_training.preflight',return_value={}), \
+             patch('learning.cv_training.TorchBackend',return_value=fake), \
+             patch('socket.create_connection'), patch('socket.socket.connect'), patch('urllib.request.urlopen'):
+            _worker(replace(self.plan,steps=2),str(self.root),time.monotonic()+30)
+        progress=json.loads((self.root/'progress.json').read_text())
+        self.assertEqual(progress['event'],'checkpoint_complete')
+        saved=self.torch.load(self.root/'checkpoint.pt',map_location='cpu',weights_only=True)
+        self.assertIs(type(saved['provenance']['torch']),str)
+        self.assertEqual(saved['provenance']['torch'],'2.14.1')
+        self.assertEqual(saved['provenance']['result']['stepsCompleted'],2)
+        self.optimizer.step.assert_not_called()
+
 
 if __name__ == '__main__':
     unittest.main()
