@@ -5,11 +5,12 @@
 ## 기능과 한계
 
 - `learning/cv_dataset.py`: 승인 라벨·이미지 해시·좌표·세션 분할 검사와 RGB 이미지/검출 target 로딩.
+- `learning/cv_tensors.py`: 선택적 PyTorch CPU tensor 어댑터와 가변 크기 배치 구성.
 - `learning/cv_evaluation.py`: 점수 문턱·클래스별 NMS 이후 검출의 TP/FP/FN, 두 대상 검출률, 상대벡터 오차·방향 일치와 경계별·세션별 결과.
 - `learning/cv_display.py`: 승인 라벨 또는 미확정 후보의 정적 박스·중심·연결선·방향 예시. 모델 출력으로 표시하지 않는다.
 - `tools/offline_cv.py`: 위 기능의 파일 입출력 명령.
 
-실제 모델 성능·동영상 처리·시간축 안정성·torch tensor 변환·COCO AP는 이 도구의 구현 범위가 아니다. 이미지 상의 가시 bbox 중심은 집게 입구·실제 거리·깊이·도달 가능성·접촉·파지 성공을 뜻하지 않는다. 합성 예측으로 얻은 수치는 계산 검증이며 학습 성과가 아니다.
+실제 모델 성능·동영상 처리·시간축 안정성·COCO AP는 이 도구의 구현 범위가 아니다. tensor 변환은 선택적 어댑터로 제공하며 모델 실행과 학습은 포함하지 않는다. 이미지 상의 가시 bbox 중심은 집게 입구·실제 거리·깊이·도달 가능성·접촉·파지 성공을 뜻하지 않는다. 합성 예측으로 얻은 수치는 계산 검증이며 학습 성과가 아니다.
 
 ## 승인 데이터 매니페스트
 
@@ -42,7 +43,7 @@
 - `absent`: `bbox_xyxy=null`, `bbox_valid=false`. 가림/잘림은 비적용 값으로 보존 가능하다.
 - unknown·미승인·상자 없는 present·중복/누락 클래스는 매니페스트 로딩을 중단한다. 배경이나 음성으로 바꾸지 않는다.
 
-`CVDataset(path)[index]`는 `(RGB uint8 H×W×3 배열, target 딕셔너리)`다. target은 `image_id`, `boxes`, `labels`, `area`, `iscrowd`를 포함한다. bbox 면적은 `(x1-x0)*(y1-y0)`, `iscrowd=0`이며 현재 클래스별 단일 인스턴스 계약이다. 두 클래스 모두 없는 사진도 허용하고 빈 목록을 반환한다. 향후 tensor 어댑터에서는 빈 상자를 `(0,4)`로 변환하고 float32/int64 자료형을 명시해야 한다. 이 구현은 tensor/학습 호환성을 검증한 것이 아니다.
+`CVDataset(path)[index]`는 `(RGB uint8 H×W×3 배열, target 딕셔너리)`다. target은 `image_id`, `boxes`, `labels`, `area`, `iscrowd`를 포함한다. bbox 면적은 `(x1-x0)*(y1-y0)`, `iscrowd=0`이며 현재 클래스별 단일 인스턴스 계약이다. 두 클래스 모두 없는 사진도 허용하고 빈 목록을 반환한다. 선택적 `TorchCVDataset`은 빈 상자를 `(0,4)`로 변환하고 float32/int64 자료형을 명시한다. 데이터 변환 검증과 실제 모델 학습·성능 검증은 별개다.
 
 이미지는 매 접근마다 해시와 디코딩을 검사하며 RGB 변환 외에 회전·미러·크롭·리사이즈를 하지 않는다. EXIF 자동회전을 끈 원본 좌표를 사용하므로 입력 방향은 라벨 계약과 일치해야 한다. 분할 검사는 `--split`으로 필터하기 전 전체 매니페스트에서 수행한다. 해시/세션 식별자가 같지 않은 근접중복이나 잘못된 세션 선언까지 자동 판별하지는 못한다.
 
@@ -119,3 +120,36 @@ python3 -m unittest discover -s tests -p test_offline_cv.py -v
 ```
 
 생성한 합성 이미지와 가짜 예측으로 라벨 미완료·좌표 오류·세션 누수·파일 변조·디코딩 실패·예측 누락·음성 실패·최고 score 선택·중복/NMS·방향 경계·후보 격리·기존 출력 보존을 검증한다. 실제 사진·사용자 라벨·개인 원본을 테스트 fixture로 공개하지 않는다.
+
+## 선택적 PyTorch 입력 어댑터
+
+`learning.cv_tensors.TorchCVDataset`은 기존 매니페스트의 승인·해시·좌표·세션/누수 그룹·분할 검사를 상속한다. 이미지마다 해시를 다시 검사하고 Pillow로 디코딩한다. OpenCV와 독립적으로 `torch`, `numpy`, `Pillow`가 필요하며 패키지 설치나 가중치 다운로드를 수행하지 않는다. 모듈 import와 매니페스트 검사는 torch 없이도 가능하고, 실제 항목 접근 때만 선택적 의존성을 불러온다.
+
+- 이미지: 원본 크기의 RGB `float32[3,H,W]`, 범위0–1, 연속 메모리, CPU. EXIF 회전·미러·리사이즈·증강·장치 이동을 하지 않는다.
+- 대상: `boxes=float32[N,4]`, `labels=int64[N]`, `area=float32[N]`, `iscrowd=int64[N]`, `image_id=int64[1]`. 클래스는 배경0 예약·립밤1·집게2를 유지하며 실제 target에는 배경상자를 넣지 않는다.
+- 두 대상이 모두 없으면 boxes는 `(0,4)`, labels/area/iscrowd는 `(0,)`다. 읽기 실패·미승인·unknown을 빈 target으로 바꾸지 않고 오류를 전달한다.
+- 8비트 `RGB`, `RGBA`, `L`만 허용한다. RGBA의 alpha는 합성하지 않고 버리며 L은 세 채널로 복제한다. 팔레트·16비트·CMYK·애니메이션은 거부한다. 해시와 크기가 맞아도 디코더 오류는 그대로 실패다.
+- float32 변환으로 폭/높이/면적이0 또는 비유한 값이 되는 상자, int64를 넘는 imageId를 거부한다. 면적은 변환된 상자에서 계산한다. 반환 tensor를 수정해도 다음 읽기나 원본 라벨에 영향을 주지 않는다.
+- Pillow와 OpenCV가 모든 압축 이미지에서 동일하게 디코딩된다고 가정하지 않는다. 사용하는 원본에서 색상·방향·좌표를 확인해야 한다.
+
+```python
+from torch.utils.data import DataLoader
+from learning.cv_tensors import TorchCVDataset, detection_collate
+
+# 실제 존재하는 승인 매니페스트와 분할을 지정한다.
+dataset = TorchCVDataset(".local/cv-data/manifest.json", split="train_development_pilot")
+loader = DataLoader(dataset, batch_size=2, shuffle=False, num_workers=0,
+                    collate_fn=detection_collate)
+images, targets = next(iter(loader))
+# 서로 다른 영상 크기/상자 개수를 보존하는 list 두 개다. 모델은 실행하지 않는다.
+```
+
+`detection_collate`는 이미지를 같은 크기로 강제 stack하지 않는다. 빈 배치는 오류다. 파일 읽기는 지연되므로 반복 중 실패가 나면 호출자가 실패를 기록해야 하며 이 어댑터가 프레임을 자동 생략하지 않는다. 세션·원본 해시·split은 `dataset.frames`, 매니페스트 해시는 `dataset.manifest_sha256`에 유지된다.
+
+검증 명령(이미 의존성이 있는 Python 사용):
+
+```sh
+python -m unittest discover -s tests -p 'test_cv_tensors.py' -v
+```
+
+torch가 없는 환경에서는 tensor 테스트가 명시적으로 건너뛰어지며 이를 변환 검증 통과로 세지 않는다. torchvision·모델·optimizer는 어댑터 테스트에 필요하지 않다. 이 모듈에는 학습 실행기나 체크포인트 저장 경로가 없다.

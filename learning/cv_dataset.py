@@ -140,8 +140,8 @@ def _frame(row, root, approved):
 class CVDataset:
     """Validated manifest, lazy image reads; items are (RGB ndarray, list target).
 
-    Empty boxes/labels remain empty lists. A future tensor adapter must explicitly
-    reshape empty boxes to (0, 4); no tensor/model code runs here.
+    Empty boxes/labels remain empty lists. The optional cv_tensors adapter
+    reshapes empty boxes to (0, 4); no tensor/model code runs here.
     """
     def __init__(self, manifest_path, *, split=None):
         self.manifest_path = Path(manifest_path).resolve()

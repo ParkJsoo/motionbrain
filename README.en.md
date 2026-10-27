@@ -49,7 +49,7 @@ An existing static UI example, not the current device state.
 | [PIN_MAP.en.md](PIN_MAP.en.md) | Motor/sensor wiring and boot-pin constraints |
 | [ROS2 hardware interface](ros2_ws/src/motionbrain_hardware_interface/README.en.md) | Dry-run, measured-state and M4 proposal modes |
 | [Data and learning pipeline (Korean)](docs/data-pipeline.md) | Action records, eligibility, splits and reproducible training/evaluation |
-| [Offline lip-balm/gripper CV (Korean)](docs/offline-cv.md) | Approved data loader, candidate previews, and detection/direction/relative-position evaluation of saved predictions |
+| [Offline lip-balm/gripper CV (Korean)](docs/offline-cv.md) | Approved data loader with an optional PyTorch input adapter, candidate previews, and detection/direction/relative-position evaluation of saved predictions |
 
 ## Local builds and checks
 

@@ -49,7 +49,7 @@ ESP32-CAM ── HTTP /capture ──> Raspberry Pi (인식·대시보드·ROS2)
 | [PIN_MAP.md](PIN_MAP.md) | 모터·센서 배선과 부팅 핀 제약 |
 | [ROS2 하드웨어 인터페이스](ros2_ws/src/motionbrain_hardware_interface/README.md) | dry-run·측정 상태·M4 제안 모드 |
 | [데이터·학습 파이프라인](docs/data-pipeline.md) | 행동 기록, 적격성, 분할, 학습·평가 재현 |
-| [립밤·집게 오프라인 CV](docs/offline-cv.md) | 승인 데이터 로더, 후보 표시, 저장 예측의 검출·방향·상대 위치 평가 |
+| [립밤·집게 오프라인 CV](docs/offline-cv.md) | 승인 데이터 로더·선택적 PyTorch 입력 어댑터, 후보 표시, 저장 예측의 검출·방향·상대 위치 평가 |
 
 ## 로컬 빌드와 검사
 
