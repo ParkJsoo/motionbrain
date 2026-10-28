@@ -103,6 +103,14 @@ async function test(name, fn) {await fn();passed++;console.log('PASS '+name);}
     [...c.timers.values()][0].f();assert.equal(c.run('frameBusy'),false);assert.equal(img.src,undefined);
     c.run('refreshFrame()');img.onload();assert.equal(c.document.getElementById('frameConnection').textContent,'VIDEO CONNECTED');
   });
+  await test('dashboard expired-frame HTTP error clears old image and recovers',async()=>{
+    const c=env();c.run(sources.dashboard);let detection;c.updateDetection=value=>{detection=value;};
+    const img=c.document.getElementById('cameraFrame');const state=c.document.getElementById('frameConnection');
+    c.run('refreshFrame()');img.onload();assert.equal(state.textContent,'VIDEO CONNECTED');
+    c.run('refreshFrame()');img.onerror();assert.equal(state.textContent,'VIDEO RECONNECTING');
+    assert.equal(img.src,undefined);assert.equal(detection.reason,'frame_unavailable');assert.equal(c.run('frameBusy'),false);
+    c.run('refreshFrame()');img.onload();assert.equal(state.textContent,'VIDEO CONNECTED');assert.equal(c.timers.size,0);
+  });
   await test('dashboard relocates after repeated failures without forwarding token/hash',async()=>{
     const c=env({motionbrainDashboardToken:'secret'});c.location.hash='#token=secret';c.run(sources.dashboard);c.run('configFailures=2');
     c.MotionBrainDiscovery.discover=async()=>({base:'http://192.168.1.40:8765',config});await c.run('recoverDashboard()');

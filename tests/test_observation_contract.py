@@ -183,7 +183,8 @@ class ObservationContractTest(unittest.TestCase):
         first = self.capture(frame=b"first")
         self.capture(2000, frame=b"second")
         self.assertEqual(self.state.frame_payload(first["sourceFrameId"])[0], b"first")
-        self.assertEqual(self.state.frame_payload()[0], b"second")
+        with patch.object(service.time, "monotonic", return_value=self.now):
+            self.assertEqual(self.state.frame_payload()[0], b"second")
         self.assertIsNone(self.state.frame_payload("missing"))
 
     def test_oversize_frame_rejected_before_inference(self):
@@ -214,7 +215,8 @@ class ObservationContractTest(unittest.TestCase):
             self.assertTrue(release.wait(2))
             return dict(self.live)
         with patch.object(service, "fetch_capture", return_value=(b"second", "image/jpeg", capture_headers(2000))), \
-             patch.object(service, "detect_frame", side_effect=detector):
+             patch.object(service, "detect_frame", side_effect=detector), \
+             patch.object(service.time, "monotonic", return_value=self.now):
             worker = threading.Thread(target=self.state.run_once)
             worker.start()
             try:
@@ -224,7 +226,8 @@ class ObservationContractTest(unittest.TestCase):
             finally:
                 release.set()
                 worker.join(2)
-        self.assertEqual(self.state.frame_payload()[0], b"second")
+        with patch.object(service.time, "monotonic", return_value=self.now):
+            self.assertEqual(self.state.frame_payload()[0], b"second")
 
     def test_exact_http_routes_and_missing_id_do_not_fallback(self):
         first = self.capture()

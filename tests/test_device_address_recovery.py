@@ -34,7 +34,7 @@ class DeviceAddressRecoveryTest(unittest.TestCase):
             subprocess.run([node,'--check',str(full)],check=True,capture_output=True,text=True)
             result = subprocess.run([node,str(ROOT/'tests/js/device_recovery_test.js'),str(path)],capture_output=True,text=True,timeout=30)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
-            self.assertIn('17 behavioral cases passed',result.stdout)
+            self.assertIn('18 behavioral cases passed',result.stdout)
 
     def test_publisher_uses_only_authenticated_metadata_request(self):
         calls=[]

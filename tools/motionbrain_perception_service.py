@@ -423,9 +423,16 @@ class PerceptionState:
     def frame_payload(self, frame_id: str | None = None) -> tuple[bytes, str] | None:
         with self.lock:
             if frame_id is not None:
+                # Explicit historical evidence remains readable until eviction.
                 record = self.observations.get(frame_id)
                 return None if record is None else (record[0], record[1])
-            if self.latest_frame is None:
+            if self.latest_frame is None or self.latest_detection is None:
+                return None
+            # Live image consumers treat HTTP 200 as a connected video feed.
+            # Use the original monotonic receive time, never a poll/retry time.
+            if not refresh_observation(
+                self.latest_detection, time.monotonic(), self.stale_seconds
+            )["fresh"]:
                 return None
             _, frame, content_type = self.latest_frame
             return frame, content_type
@@ -476,7 +483,7 @@ class PerceptionHandler(BaseHTTPRequestHandler):
             return
         frame_payload = self.server.state.frame_payload(frame_id)
         if frame_payload is None:
-            self.send_error_json(HTTPStatus.NOT_FOUND if frame_id is not None else HTTPStatus.SERVICE_UNAVAILABLE, "source_frame_not_cached" if frame_id is not None else "no_frame")
+            self.send_error_json(HTTPStatus.NOT_FOUND if frame_id is not None else HTTPStatus.SERVICE_UNAVAILABLE, "source_frame_not_cached" if frame_id is not None else "no_fresh_frame")
             return
 
         frame, content_type = frame_payload
