@@ -199,3 +199,23 @@ def load_candidate_frames(labels_path, capture_manifest_path, source_root):
                       leakageGroup=capture.get("leakageGroup"), split=capture.get("split"))
         frames.append(_frame(merged, Path(source_root).resolve(), False))
     return tuple(frames)
+
+
+def validate_mixed_inventory(frames):
+    """Two balanced six-frame sessions, kept together as development training data."""
+    require(len(frames) == 12 and len({f.id for f in frames}) == 12
+            and len({f.sha256 for f in frames}) == 12, "mixed training requires twelve unique frames")
+    require(all(f.approved and f.split == "train_development_pilot" for f in frames),
+            "mixed training requires approved development frames")
+    sessions = {f.session for f in frames}
+    require(len(sessions) == 2 and len({f.group for f in frames}) == 2,
+            "mixed training requires two distinct sessions and leakage groups")
+    groups = []
+    for session in sessions:
+        subset = [f for f in frames if f.session == session]
+        require(len(subset) == 6 and len({f.group for f in subset}) == 1,
+                "mixed training requires six frames per session in one group")
+        require([sum(f.boxes[i] is not None for f in subset) for i in range(2)] == [4, 6],
+                "each session requires four lip and six gripper targets")
+        groups.append(subset[0].group)
+    require(len(set(groups)) == 2, "mixed sessions must not share a leakage group")

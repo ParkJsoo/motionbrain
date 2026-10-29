@@ -1,4 +1,4 @@
-"""Fixed six-image development-fit evaluation, imported without an ML runtime.
+"""Bounded development-fit evaluation, imported without an ML runtime.
 
 This is training-data diagnosis, never held-out accuracy. Model forward receives
 images only. Ground truth is used after forward to summarize cached proposals.
@@ -10,7 +10,7 @@ import json
 import random
 import copy
 
-from learning.cv_dataset import CLASSES, COORDINATES, require
+from learning.cv_dataset import CLASSES, COORDINATES, require, validate_mixed_inventory
 from learning.cv_evaluation import evaluate, select_predictions
 from learning.cv_tensors import TorchCVDataset
 
@@ -40,9 +40,12 @@ def state_digest(state_dict):
     return digest.hexdigest()
 
 
-def _inventory(dataset):
+def _inventory(dataset, *, mixed_session=False):
     require(isinstance(dataset, TorchCVDataset), "sanity evaluation needs TorchCVDataset")
     frames = dataset.frames
+    if mixed_session:
+        validate_mixed_inventory(frames)
+        return
     require(len(frames) == 6 and len({f.id for f in frames}) == 6,
             "sanity evaluation requires exactly six unique frames")
     require(all(f.approved and f.split == "train_development_pilot" for f in frames),
@@ -53,14 +56,15 @@ def _inventory(dataset):
     require(len({f.sha256 for f in frames}) == 6, "sanity inventory has duplicate images")
 
 
-def _strict_success(evaluation):
+def _strict_success(evaluation, *, mixed_session=False):
     metrics = evaluation["metrics"]
-    return (metrics["frames"] == 6 and metrics["processingFailures"] == 0
+    count = 2 if mixed_session else 1
+    return (metrics["frames"] == 6 * count and metrics["processingFailures"] == 0
             and all(metrics["classes"][name]["tp"] == expected
                     and metrics["classes"][name]["fp"] == 0
                     and metrics["classes"][name]["fn"] == 0
-                    for name, expected in zip(CLASSES, (4, 6)))
-            and all(metrics[key]["count"] == metrics[key]["denominator"] == 4
+                    for name, expected in zip(CLASSES, (4 * count, 6 * count)))
+            and all(metrics[key]["count"] == metrics[key]["denominator"] == 4 * count
                     for key in ("pairCoverage", "positionSuccess", "directionSuccess")))
 
 
@@ -213,7 +217,7 @@ def evaluate_sanity(backend, check_deadline):
 
     model, dataset, torch = backend.model, backend.dataset, backend.torch
     result = {"schema": "motionbrain.cv_sanity_evaluation.v1", "status": "failed",
-              "scope": "same six development training images; no held-out/generalization claim",
+              "scope": "same development training images; no held-out/generalization claim",
               "observedSuccess": False, "modelStateSha256": None,
               "evaluation": None, "proposalDiagnostics": [],
               "predictions": {"schema": "motionbrain.cv_predictions.v1", "evidenceKind": "model",
@@ -232,7 +236,7 @@ def evaluate_sanity(backend, check_deadline):
     trace = None
     try:
         check_deadline()
-        _inventory(dataset)
+        _inventory(dataset, mixed_session=getattr(backend, "mixed_session", False))
         require(all(t.device.type == "cpu" for t in model.state_dict().values()), "sanity model must be on CPU")
         state = {name: value.detach().clone() for name, value in model.state_dict().items()}
         result["modelStateSha256"] = state_digest(state)
@@ -268,7 +272,8 @@ def evaluate_sanity(backend, check_deadline):
         check_deadline()
         require(result["evaluation"]["metrics"]["processingFailures"] == 0,
                 "sanity evaluation contains processing failures")
-        result["observedSuccess"] = _strict_success(result["evaluation"])
+        result["observedSuccess"] = _strict_success(result["evaluation"],
+                                                    mixed_session=getattr(backend, "mixed_session", False))
         result["status"] = "ok"
     except BaseException as exc:
         cause = exc

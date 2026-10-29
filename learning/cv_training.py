@@ -14,11 +14,12 @@ import signal
 import threading
 import time
 
-from learning.cv_dataset import CVDataset, require
+from learning.cv_dataset import CVDataset, require, validate_mixed_inventory
 from learning.cv_sampling import RecordedROISampler, RecordedRPNSampler, sampling_settings
 
 MODEL = "fasterrcnn_mobilenet_v3_large_320_fpn"
 HEAD = "roi_heads.box_predictor."
+DETECTION_MODES = ("detection_heads", "mixed_session_heads")
 DETECTION_HEADS = ("rpn.head.", "roi_heads.box_head.", HEAD)
 EVALUATION_STEPS = (0, 30, 100, 200, 300)
 FINISHED = ("epoch_limit", "step_limit", "fit_observed")
@@ -58,9 +59,9 @@ def load_plan(path):
         require(isinstance(value, str) and len(value) == 64
                 and all(c in "0123456789abcdef" for c in value), f"invalid {key}")
     plan = Plan(**doc)
-    require(type(plan.mode) is str and plan.mode in ("box_predictor_only", "detection_heads"),
+    require(type(plan.mode) is str and plan.mode in ("box_predictor_only", *DETECTION_MODES),
             "invalid training mode")
-    sanity = plan.mode == "detection_heads"
+    sanity = plan.mode in DETECTION_MODES
     for key, cap in (("epochs", 100 if sanity else 10), ("steps", 300 if sanity else 30), ("seconds", 900)):
         value = getattr(plan, key)
         require(type(value) is int and 1 <= value <= cap, f"{key} must be in 1..{cap}")
@@ -80,17 +81,21 @@ def verified_bytes(path, expected):
 def preflight(plan):
     dataset = CVDataset(plan.manifest, split="train_development_pilot")
     require(dataset.manifest_sha256 == plan.manifest_sha256, "manifest sha256 mismatch")
-    require(len(dataset) == 6, "pilot must contain exactly six approved frames")
-    require(len({f.session for f in dataset.frames}) == 1, "pilot must be one session")
-    require(sum(b is not None for f in dataset.frames for b in f.boxes) == 10,
-            "pilot must contain ten boxes")
-    require(sum(f.boxes[0] is None for f in dataset.frames) == 2
-            and all(f.boxes[1] is not None for f in dataset.frames), "pilot presence inventory mismatch")
+    if plan.mode == "mixed_session_heads":
+        validate_mixed_inventory(dataset.frames)
+    else:
+        require(len(dataset) == 6, "pilot must contain exactly six approved frames")
+        require(len({f.session for f in dataset.frames}) == 1, "pilot must be one session")
+        require(sum(b is not None for f in dataset.frames for b in f.boxes) == 10,
+                "pilot must contain ten boxes")
+        require(sum(f.boxes[0] is None for f in dataset.frames) == 2
+                and all(f.boxes[1] is not None for f in dataset.frames), "pilot presence inventory mismatch")
     for frame in dataset.frames:
         verified_bytes(frame.path, frame.sha256)
     verified_bytes(plan.weights, plan.weights_sha256)
     return {"manifestSha256": dataset.manifest_sha256, "frames": [f.id for f in dataset.frames],
-            "session": dataset.frames[0].session, "weightsSha256": plan.weights_sha256,
+            "session": dataset.frames[0].session if plan.mode != "mixed_session_heads" else None,
+            "sessions": sorted({f.session for f in dataset.frames}), "weightsSha256": plan.weights_sha256,
             "model": MODEL, "purpose": "train_development_only", "heldOutEvaluation": False}
 
 
@@ -110,7 +115,7 @@ class BudgetExpired(Exception):
 def run_loop(backend, plan, emit, deadline, *, clock=time.monotonic):
     """Backend-independent control loop. A recorded intent may exceed completions."""
     state = {"status": "running", "stepIntents": 0, "stepsCompleted": 0, "epochsCompleted": 0}
-    sanity = plan.mode == "detection_heads"
+    sanity = plan.mode in DETECTION_MODES
     if sanity:
         state.update(observedSuccess=False, verifiedArtifact=False,
                      evaluations=[{"step": step, "status": "not_reached"} for step in EVALUATION_STEPS])
@@ -204,6 +209,38 @@ def frozen_backbone_norms(module):
             frozen_backbone_norms(child)
 
 
+def restore_training_checkpoint(model, saved, frames, torch):
+    """Warm-start all three-class weights; never replace the trained predictor."""
+    from learning.cv_sanity import state_digest
+    require(isinstance(saved, dict) and isinstance(saved.get("state_dict"), dict)
+            and isinstance(saved.get("provenance"), dict), "training checkpoint required")
+    provenance = saved["provenance"]
+    require(provenance.get("model") == MODEL, "checkpoint model mismatch")
+    parent_ids = provenance.get("frames")
+    require(isinstance(parent_ids, list) and parent_ids
+            and len(parent_ids) == len(set(parent_ids))
+            and set(parent_ids) <= {f.id for f in frames}, "parent training frames must be retained")
+    parent_plan = provenance.get("plan", {})
+    parent_manifest = parent_plan.get("manifest")
+    require(isinstance(parent_manifest, str), "parent manifest missing")
+    verified_bytes(parent_manifest, provenance.get("manifestSha256"))
+    parent_data = CVDataset(parent_manifest, split="train_development_pilot")
+    require([f.id for f in parent_data.frames] == parent_ids, "parent frame inventory mismatch")
+    current = {f.id: f for f in frames}
+    for previous in parent_data.frames:
+        retained = current[previous.id]
+        require(all(getattr(previous, key) == getattr(retained, key)
+                    for key in ("sha256", "session", "group", "width", "height", "presence", "boxes")),
+                "parent images/labels/session must be retained unchanged")
+    digest = state_digest(saved["state_dict"])
+    require(digest == provenance.get("modelStateSha256"), "parent checkpoint state digest mismatch")
+    require(all(bool(torch.isfinite(t).all()) for t in saved["state_dict"].values()),
+            "nonfinite parent checkpoint")
+    model.load_state_dict(saved["state_dict"], strict=True)
+    require(state_digest(model.state_dict()) == digest, "warm-start state changed")
+    return digest
+
+
 class TorchBackend:
     def __init__(self, plan):
         import torch
@@ -215,20 +252,24 @@ class TorchBackend:
         require(torch.__version__.split("+")[0] == "2.14.1"
                 and torchvision.__version__.split("+")[0] == "0.29.1", "unvalidated runtime versions")
         self.torch = torch
-        self.sanity = plan.mode == "detection_heads"
+        self.sanity = plan.mode in DETECTION_MODES
+        self.mixed_session = plan.mode == "mixed_session_heads"
         self.plan = plan
         torch.set_num_threads(4); torch.manual_seed(plan.seed)
         torch.set_default_device("cpu"); torch.set_default_dtype(torch.float32)
         self.dataset = TorchCVDataset(plan.manifest, split="train_development_pilot")
         require(self.dataset.manifest_sha256 == plan.manifest_sha256, "manifest changed after preflight")
         self.model = fasterrcnn_mobilenet_v3_large_320_fpn(
-            weights=None, weights_backbone=None, num_classes=91)
+            weights=None, weights_backbone=None, num_classes=3 if self.mixed_session else 91)
         frozen_backbone_norms(self.model.backbone)
         state = torch.load(io.BytesIO(verified_bytes(plan.weights, plan.weights_sha256)),
                            map_location="cpu", weights_only=True)
-        self.model.load_state_dict(state, strict=True)
-        features = self.model.roi_heads.box_predictor.cls_score.in_features
-        self.model.roi_heads.box_predictor = FastRCNNPredictor(features, 3)
+        if self.mixed_session:
+            self.initial_state_sha = restore_training_checkpoint(self.model, state, self.dataset.frames, torch)
+        else:
+            self.model.load_state_dict(state, strict=True)
+            features = self.model.roi_heads.box_predictor.cls_score.in_features
+            self.model.roi_heads.box_predictor = FastRCNNPredictor(features, 3)
         self.roi_sampler = RecordedROISampler(self.model.roi_heads.fg_bg_sampler, plan.roi_sampling)
         self.model.roi_heads.fg_bg_sampler = self.roi_sampler
         self.rpn_sampler = None
@@ -394,7 +435,7 @@ def _worker(plan, output, deadline):
             stream.flush(); os.fsync(stream.fileno())
         atomic_json(output / "progress.json", state)
     try:
-        sanity = plan.mode == "detection_heads"
+        sanity = plan.mode in DETECTION_MODES
         source_paths = [Path(__file__), Path(__file__).with_name("cv_sampling.py")]
         if sanity:
             source_paths += [Path(__file__).with_name(name) for name in
@@ -403,6 +444,8 @@ def _worker(plan, output, deadline):
         provenance = preflight(plan)
         initial_provenance = copy.deepcopy(provenance)
         backend = TorchBackend(plan)
+        if plan.mode == "mixed_session_heads":
+            provenance["initialStateSha256"] = backend.initial_state_sha
         if sanity:
             backend.output = output
         state = run_loop(backend, plan, emit, deadline)
@@ -462,7 +505,7 @@ def _worker(plan, output, deadline):
             "stepIntents": 0, "stepsCompleted": 0, "epochsCompleted": 0}
         state.update(status="time_limit" if isinstance(exc, BudgetExpired) else "failed",
                      error=f"{type(exc).__name__}: {exc}", event="worker_failed")
-        if plan.mode == "detection_heads":
+        if plan.mode in DETECTION_MODES:
             state.update(verifiedArtifact=False, outcome="incomplete")
         emit(state)
 
@@ -542,7 +585,7 @@ def execute(plan_path, *, confirmed=False):
             try:
                 require(record.get("checkpoint") == "checkpoint.pt", "invalid checkpoint path")
                 verified_bytes(output / "checkpoint.pt", record.get("checkpointSha256"))
-                if plan.mode == "detection_heads":
+                if plan.mode in DETECTION_MODES:
                     require(record.get("verifiedArtifact") is True, "checkpoint safe reload not verified")
                     require(record["status"] != "fit_observed" or record.get("observedSuccess") is True,
                             "fit completion missing observation")
@@ -551,7 +594,7 @@ def execute(plan_path, *, confirmed=False):
         record["elapsedSeconds"] = time.monotonic() - started
         if record["elapsedSeconds"] >= plan.seconds and record["status"] in FINISHED:
             record["status"] = "time_limit"
-        if plan.mode == "detection_heads":
+        if plan.mode in DETECTION_MODES:
             record.setdefault("observedSuccess", False)
             record.setdefault("verifiedArtifact", False)
             if record["status"] not in FINISHED:
