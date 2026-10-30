@@ -4,7 +4,7 @@
 
 These are general repository reproduction steps. Device addresses, credentials and joint calibration belong to each installation. Passing builds/tests does not upload firmware or actuate motors.
 
-Current goals and stages are described in the [visual action learning design (Korean)](docs/visual-action-learning.md). Existing service setup, M4 execution and diagnostic CLIs follow the implementation guide below. The new iPhone action-linked collector and prediction-based controller are not implemented; these general operations commands are not an end-to-end procedure for the new experiment.
+Current goals and stages are described in the [visual action learning design (Korean)](docs/visual-action-learning.md). Existing service setup, M4 execution and diagnostic CLIs follow the implementation guide below. The new external camera action-linked collector and prediction-based controller are not implemented; these general operations commands are not an end-to-end procedure for the new experiment.
 
 ## Builds
 

@@ -10,7 +10,7 @@
 
 `motionbrain.prospective_evaluation_lock.v1` 잠금 파일에는 체크포인트 바이트 SHA-256과 전체 tensor 상태 SHA-256, 전처리·클래스·필터·운영점·실행환경·기존 소스 해시·학습 자료 목록을 기록한다. 체크포인트와 소스 경로는 저장소 루트 기준이다. `sourceFiles`에는 기존 데이터/학습/채점/표시 모듈과 실제 설치된 torchvision의 `faster_rcnn.py`, `rpn.py`, `roi_heads.py`, `transform.py`가 포함되어야 한다. 새 실행기 세 파일의 해시는 별도 실행 계획에 고정하므로 기존 잠금을 조용히 갱신하지 않는다.
 
-현재 지원 계약은 Faster R-CNN MobileNetV3 320, 배경0·립밤1·집게2다. `weights=None`, `weights_backbone=None`, 3클래스로 구성하고 backbone의 정규화를 `FrozenBatchNorm2d`로 바꾼 뒤 `weights_only=True`, CPU 안전 로딩과 `strict=True` 복원을 적용한다. 복원 후 predictor를 교체하지 않는다. 저장 tensor와 로딩 직후 전체 tensor의 해시를 각각 검사한다.
+현재 지원 계약은 Faster R-CNN MobileNetV3 320, 배경0·대상 물체1·집게2다. `weights=None`, `weights_backbone=None`, 3클래스로 구성하고 backbone의 정규화를 `FrozenBatchNorm2d`로 바꾼 뒤 `weights_only=True`, CPU 안전 로딩과 `strict=True` 복원을 적용한다. 복원 후 predictor를 교체하지 않는다. 저장 tensor와 로딩 직후 전체 tensor의 해시를 각각 검사한다.
 
 이미지는 Pillow RGB float32 CHW/255, EXIF 회전·미러·증강 없이 처리한다. 내부 resize 320/640, ImageNet 평균·표준편차, RPN 후보 상한150·score0.05·NMS0.7, ROI score0.05·NMS0.5·출력상한100의 실효값을 확인한다. 외부 score/NMS/IoU는 각각0.5, 상대 위치 오차와 방향 중립대는 960×540 기준10px다. 현재 지원 버전은 torch2.14.1·torchvision0.29.1·numpy2.2.6·Pillow12.2.0이며 이미 준비된 환경에서 사용한다. 버전·코드·기준 변경은 새 검토된 계약이 필요하다.
 

@@ -6,10 +6,10 @@ A personal robotics project integrating an ESP32-controlled five-axis DC arm, ST
 
 ## Current goal and status
 
-Record arm features and changes around commands from a fixed iPhone view, then learn `current observations and recent history + candidate command → next motion`. Kinematics and existing control provide structure; experience models friction, backlash and pose-dependent responses.
+Record arm features and changes around commands from a fixed external camera view, then learn `current observations and recent history + candidate command → next motion`. Kinematics and existing control provide structure; experience models friction, backlash and pose-dependent responses.
 
-- **Demonstrated:** M4 single-axis control, manually guided grasping and detector development training. All 12 images in the final detector result were training data; one duplicate lip-balm false positive remains.
-- **Next implementation:** a collector joining iPhone video with bounded commands and outcomes, arm-feature motion prediction, and command selection followed by re-observation.
+- **Demonstrated:** M4 single-axis control, manually guided grasping and detector development training. All 12 images in the final detector result were training data; one duplicate target object false positive remains.
+- **Next implementation:** a collector joining external camera video with bounded commands and outcomes, arm-feature motion prediction, and command selection followed by re-observation.
 - **Action-training readiness:** Eligible physical action transitions: 0. The new visual action model, autonomous approach and grasping remain unimplemented/unverified. Perfect still-image detection is not a prerequisite for the action pilot.
 
 [Goals, stages and evaluation (Korean)](docs/visual-action-learning.md) · [Research basis (Korean)](docs/research/visual-action-learning.md) · [Detector development results (Korean)](docs/evidence/2026-10-30-cv-development.md)
@@ -27,9 +27,9 @@ Record arm features and changes around commands from a fixed iPhone view, then l
 | Embedded control | Five-axis ESP32 PWM, STM32 UART teleoperation, state machine, deadman and sensor-fault gating | Electrical stop latency and certified functional safety are unverified |
 | M4 shoulder feedback | AS5600 target control; final no-added-load and 23.10g regressions each passed 11/11 | Fixed mount and limited range on 2026-06-28; no position feedback on the other four axes |
 | ROS2 integration | Typed messages, URDF/RViz, control guard, `ros2_control` | Physical writes validated only for operator-confirmed single M4 targets |
-| Observed manipulation | Lipbalm grasp/lift followed by two additional grasp/place cycles | An external observer selected manual commands from camera views; first repeat required correction; not a learned policy |
-| Detector development | Faster R-CNN fitting: on 12 training images, lip-balm TP8/FP1/FN0, gripper TP12/FP0/FN0, relative position/direction 8/8 | Training-set fit only. Final-model generalization and action learning unverified |
-| Action-learning foundation | Bounded commands and outcome logs, NumPy ridge/no-change baselines and session splits | iPhone action collector and new arm-feature model are planned; zero eligible physical action transitions |
+| Observed manipulation | Grasp/lift of a single target object type followed by two additional grasp/place cycles | An external observer selected manual commands from camera views; first repeat required correction; not a learned policy |
+| Detector development | Faster R-CNN fitting: on 12 training images, target object TP8/FP1/FN0, gripper TP12/FP0/FN0, relative position/direction 8/8 | Training-set fit for a single target object type only. Final-model generalization and action learning unverified |
+| Action-learning foundation | Bounded commands and outcome logs, NumPy ridge/no-change baselines and session splits | External camera action collector and new arm-feature model are planned; zero eligible physical action transitions |
 
 ## Existing architecture and research path
 
@@ -40,7 +40,7 @@ ESP32-CAM ── HTTP /capture ──> Raspberry Pi (perception / dashboard / RO
                                   └─ M4 proposal → operator confirmation → ESP32
 ```
 
-The iPhone-to-Mac observation/training path is distinct from the existing ESP32-CAM-to-Pi path. The new iPhone visual action model is not connected to the device-control architecture shown above.
+The observation/training path from an external camera to the Mac is distinct from the existing ESP32-CAM-to-Pi path. The new external camera visual action model is not connected to the device-control architecture shown above.
 
 - Legacy manual commands pass through the ESP32 `Dispatcher` and `SafetyGate`. Experimental `/actions` use a separate bounded executor that checks `SafetyGate` before driving outputs. Command acceptance is distinct from target attainment.
 - Direct camera `/stream` is disabled; images use `/capture` or Pi tracked frames.
@@ -62,7 +62,7 @@ The iPhone-to-Mac observation/training path is distinct from the existing ESP32-
 | [Visual action learning (Korean)](docs/visual-action-learning.md) | Current goals, stages and proposed observation contract, separated from existing implementation |
 | [Existing data and learning pipeline (Korean)](docs/data-pipeline.md) | Existing M4/object-box contract, eligibility, splits and CLI reproduction |
 | [Bounded CV development trainer (Korean)](docs/bounded-cv-training.md) | Explicit execution, local weights, step/time caps and failure records; development fitting is distinct from generalization evaluation |
-| [Offline lip-balm/gripper CV (Korean)](docs/offline-cv.md) | Approved data loader with an optional PyTorch input adapter, candidate previews, and detection/direction/relative-position evaluation of saved predictions |
+| [Offline target object/gripper CV (Korean)](docs/offline-cv.md) | Approved data loader with an optional PyTorch input adapter, candidate previews, and detection/direction/relative-position evaluation of saved predictions |
 | [Saved-checkpoint evaluation runner (Korean)](docs/checkpoint-evaluation.md) | Variable numbers of approved images, strict model restoration, time limits and retained failure denominators; software checks and actual model evaluation results are reported separately |
 
 ## Local builds and checks

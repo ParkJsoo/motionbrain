@@ -47,4 +47,4 @@ python3 -m unittest tests.test_optical_challenge
 
 `modelConsistent=true`와 종료 코드 0은 **입력한 합성 가정 사이의 모순이 검출되지 않았다는 뜻**이다. `modeledBoundsNs`는 가상 구간이다. 물리 출처는 입력으로 거부하며, `opticalExposureVerified`, `trainingEligible`, `controlEligible`, `executionAllowed`는 항상 false다. 이 출력은 기존 `opticalCalibration` 형식이 아니고 학습 수집기에 연결되지 않는다.
 
-기존 계약에서 요구하는 M4 물리 측정 시각·20ms 나이, 립밤 의미 앵커·15초 연결, 실제 출력/OFF 이력, 정착 영상의 비중첩과 전체 팔의 시각 정착, 실제 원본 저장 영수증은 별도 [수집 적격성 검사](data-pipeline.md)의 근거로 남는다. 이 도구의 통과가 실물 적격 전이의 확보를 뜻하지 않는다.
+기존 계약에서 요구하는 M4 물리 측정 시각·20ms 나이, 대상 물체 의미 앵커·15초 연결, 실제 출력/OFF 이력, 정착 영상의 비중첩과 전체 팔의 시각 정착, 실제 원본 저장 영수증은 별도 [수집 적격성 검사](data-pipeline.md)의 근거로 남는다. 이 도구의 통과가 실물 적격 전이의 확보를 뜻하지 않는다.
