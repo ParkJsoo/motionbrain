@@ -27,7 +27,7 @@ python3 -m unittest tests.test_ov2640_register_native tests.test_ov2640_register
 
 ## 읽는 값과 오류 보존
 
-| bank | 레지스터 | 용도 |
+| 레지스터 뱅크 | 레지스터 | 용도 |
 |---|---|---|
 | 센서 1 | `0A 0B 1C 1D` | 센서 식별 |
 | 센서 1 | `03 0C 11 12 13` | 모드·클록·자동 노출/밴딩 |

@@ -14,7 +14,7 @@
 | [Mac 카메라 계측](mac-direct-camera.md) | 영상·USB 시각 연결 도구와 계측 결과 |
 | [립밤·집게 오프라인 CV](offline-cv.md) | 저장 라벨·예측의 검출 및 상대 위치 채점 |
 | [제한된 CV 개발 학습](bounded-cv-training.md) | 단일·혼합 세션의 유한 학습 실행기 |
-| [저장 checkpoint 평가](checkpoint-evaluation.md) | 확정 이미지 집합의 모델 평가 실행기 |
+| [저장 체크포인트 평가](checkpoint-evaluation.md) | 확정 이미지 집합의 모델 평가 실행기 |
 | [OV2640 진단](ov2640-register-diagnostic.md) | 보류된 센서 전용 진단. 아이폰 행동 학습의 선행 단계가 아님 |
 | [ROS2 하드웨어 인터페이스](../ros2_ws/src/motionbrain_hardware_interface/README.md) | 추정·실측·확인형 M4 명령의 구현 범위 |
 

@@ -63,7 +63,7 @@ ESP32-CAM ── HTTP /capture ──> Raspberry Pi (인식·대시보드·ROS2)
 | [기존 데이터·학습 파이프라인](docs/data-pipeline.md) | 기존 M4·물체 박스 계약, 적격성, 분할과 CLI 재현 |
 | [제한된 CV 개발 학습 실행기](docs/bounded-cv-training.md) | 명시적 실행·로컬 가중치·횟수/시간 제한·실패 기록. 개발용 학습과 일반화 성능 검증 구분 |
 | [립밤·집게 오프라인 CV](docs/offline-cv.md) | 승인 데이터 로더·선택적 PyTorch 입력 어댑터, 후보 표시, 저장 예측의 검출·방향·상대 위치 평가 |
-| [저장 checkpoint 평가 실행기](docs/checkpoint-evaluation.md) | 가변 개수의 확정 이미지, 엄격한 모델 복원·시간 제한·실패 분모 보존. 소프트웨어 검사와 실제 모델 평가 결과를 구분 |
+| [저장 체크포인트 평가 실행기](docs/checkpoint-evaluation.md) | 가변 개수의 확정 이미지, 엄격한 모델 복원·시간 제한·실패 분모 보존. 소프트웨어 검사와 실제 모델 평가 결과를 구분 |
 
 ## 로컬 빌드와 검사
 

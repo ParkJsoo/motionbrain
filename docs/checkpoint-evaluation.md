@@ -1,14 +1,14 @@
-# 저장 checkpoint의 가변 이미지 평가
+# 저장 체크포인트의 가변 이미지 평가
 
 `tools/evaluate_cv.py`는 확정 라벨이 있는 매니페스트의 선택 분할 전체를 저장 모델로 한 번 추론하고, [기존 채점 규칙](offline-cv.md#계산-규칙)으로 검출·상대 위치·방향을 평가한다. 6장이나 특정 클래스 개수에 고정되지 않는다. 임의의 이미지 수·원본 크기·클래스 부재 조합과 여러 세션을 허용하며, 선택된 ID와 순서는 실행 전에 고정한다.
 
-소프트웨어 검증은 합성 이미지·가짜 프로세스·작은 tensor 모듈로 수행한다. 별도로 실제 checkpoint 복원과 새 촬영 세션의 사진 평가를 수행했으며, 조건·실패·이후 학습 편입 여부는 [인식 개발 결과](evidence/2026-10-30-cv-development.md)에 정리했다. 테스트 통과와 실제 모델 성능은 구분한다. 설치·다운로드·학습·촬영·장비 제어 기능은 없다.
+소프트웨어 검증은 합성 이미지·가짜 프로세스·작은 tensor 모듈로 수행한다. 별도로 실제 체크포인트 복원과 새 촬영 세션의 사진 평가를 수행했으며, 조건·실패·이후 학습 편입 여부는 [인식 개발 결과](evidence/2026-10-30-cv-development.md)에 정리했다. 테스트 통과와 실제 모델 성능은 구분한다. 설치·다운로드·학습·촬영·장비 제어 기능은 없다.
 
 ## 입력과 모델 복원
 
 입력은 [승인 데이터 계약](offline-cv.md#승인-데이터-매니페스트)을 따른다. 두 클래스의 존재·부재와 사람 승인 상태가 모두 필요하다. 미확정 라벨, 중복 이미지, 분할을 넘는 세션/누수 그룹은 실행 전에 거부한다. 원본은 공개 fixture에 포함하지 않는다.
 
-`motionbrain.prospective_evaluation_lock.v1` 잠금 파일에는 checkpoint 바이트 SHA-256과 전체 tensor 상태 SHA-256, 전처리·클래스·필터·운영점·실행환경·기존 소스 해시·학습 자료 목록을 기록한다. checkpoint와 소스 경로는 저장소 루트 기준이다. `sourceFiles`에는 기존 데이터/학습/채점/표시 모듈과 실제 설치된 torchvision의 `faster_rcnn.py`, `rpn.py`, `roi_heads.py`, `transform.py`가 포함되어야 한다. 새 실행기 세 파일의 해시는 별도 실행 계획에 고정하므로 기존 잠금을 조용히 갱신하지 않는다.
+`motionbrain.prospective_evaluation_lock.v1` 잠금 파일에는 체크포인트 바이트 SHA-256과 전체 tensor 상태 SHA-256, 전처리·클래스·필터·운영점·실행환경·기존 소스 해시·학습 자료 목록을 기록한다. 체크포인트와 소스 경로는 저장소 루트 기준이다. `sourceFiles`에는 기존 데이터/학습/채점/표시 모듈과 실제 설치된 torchvision의 `faster_rcnn.py`, `rpn.py`, `roi_heads.py`, `transform.py`가 포함되어야 한다. 새 실행기 세 파일의 해시는 별도 실행 계획에 고정하므로 기존 잠금을 조용히 갱신하지 않는다.
 
 현재 지원 계약은 Faster R-CNN MobileNetV3 320, 배경0·립밤1·집게2다. `weights=None`, `weights_backbone=None`, 3클래스로 구성하고 backbone의 정규화를 `FrozenBatchNorm2d`로 바꾼 뒤 `weights_only=True`, CPU 안전 로딩과 `strict=True` 복원을 적용한다. 복원 후 predictor를 교체하지 않는다. 저장 tensor와 로딩 직후 전체 tensor의 해시를 각각 검사한다.
 
@@ -74,4 +74,4 @@ python tools/evaluate_cv.py run --plan .local/cv-evaluation/plan.json --execute
 python -m unittest discover -s tests -p 'test_cv_checkpoint.py' -v
 ```
 
-기본 Python에서는 선택적 torch 테스트를 건너뛴다. 이미 의존성이 준비된 환경에서도 같은 명령을 실행해 합성 파일·작은 모듈로 복원/상태 변조·가변 분모·중단 경로를 검증한다. 실제 detector 생성은 테스트에서 대체하며 실제 checkpoint·사진을 사용하지 않는다.
+기본 Python에서는 선택적 torch 테스트를 건너뛴다. 이미 의존성이 준비된 환경에서도 같은 명령을 실행해 합성 파일·작은 모듈로 복원/상태 변조·가변 분모·중단 경로를 검증한다. 실제 detector 생성은 테스트에서 대체하며 실제 체크포인트·사진을 사용하지 않는다.
