@@ -156,6 +156,29 @@ static void unknownStop() {
   assert(!BoundedActions::beforeLegacyCommand(CommandType::MOTOR_RUN));
   dump(*result.record);
 }
+static void m2Pilot() {
+  const unsigned before = writes;
+  auto r = request("m2-up-1");
+  assert(BoundedActions::submit(r).code == bounded::SubmitCode::SafetyBlocked);
+  r.motor = 2; r.pwm = -120;
+  assert(BoundedActions::submit(r).code == bounded::SubmitCode::SafetyBlocked);
+  r.pwm = 181;
+  assert(BoundedActions::submit(r).code == bounded::SubmitCode::SafetyBlocked);
+  r.pwm = 180; r.durationMs = 1501;
+  assert(BoundedActions::submit(r).code == bounded::SubmitCode::SafetyBlocked);
+  assert(writes == before && BoundedActions::executor()->registry().count() == 0);
+  r.durationMs = 1500;
+  auto accepted = BoundedActions::submit(r);
+  assert(accepted.code == bounded::SubmitCode::Accepted);
+  nowMs = 50; BoundedActions::tick(); motorControl.update();
+  assert(motorControl.getSpeed(2) == 10);
+  for (int motor = 1; motor <= 5; ++motor)
+    if (motor != 2) assert(motorControl.getSpeed(motor) == 0);
+  nowMs = 1500; BoundedActions::tick(); motorControl.update();
+  assert(!BoundedActions::active() && !motorControl.hasPendingOutput());
+  assert(BoundedActions::submit(r).code == bounded::SubmitCode::Duplicate);
+  dump(*accepted.record);
+}
 int main(int argc, char** argv) {
   assert(argc == 2);
   motorControl.init(); systemState.state = SystemState::ARMED;
@@ -163,7 +186,8 @@ int main(int argc, char** argv) {
   if (!strcmp(argv[1], "disabled")) disabled();
   else {
     assert(BoundedActions::enabled());
-    if (!strcmp(argv[1], "pulse")) pulse();
+    if (!strcmp(argv[1], "pilot")) m2Pilot();
+    else if (!strcmp(argv[1], "pulse")) pulse();
     else if (!strcmp(argv[1], "guards")) guards();
     else if (!strcmp(argv[1], "shoulder")) shoulder();
     else if (!strcmp(argv[1], "unknown")) unknownStop();

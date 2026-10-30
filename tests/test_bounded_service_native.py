@@ -27,9 +27,10 @@ class BoundedServiceNativeTest(unittest.TestCase):
             sdk = subprocess.run(["xcrun", "--sdk", "macosx", "--show-sdk-path"],
                                  check=True, capture_output=True, text=True, timeout=30).stdout.strip()
             sdk_flags = ["-isysroot", sdk]
-        for enabled in (False, True):
-            binary = Path(cls.temp.name) / ("enabled" if enabled else "default")
+        for enabled in (False, True, "m2"):
+            binary = Path(cls.temp.name) / ("m2" if enabled == "m2" else "enabled" if enabled else "default")
             flags = ["-DMOTIONBRAIN_ENABLE_BOUNDED_ACTIONS=1"] if enabled else []
+            if enabled == "m2": flags += ["-DMOTIONBRAIN_M2_VISUAL_PILOT=1"]
             command = [compiler, "-std=c++11", "-Wall", "-Wextra", "-Werror", *sdk_flags, *flags]
             for path in ("tests/native/service_stubs", "tests/native/stubs", "src"):
                 command += ["-I", str(ROOT / path)]
@@ -46,6 +47,14 @@ class BoundedServiceNativeTest(unittest.TestCase):
                                 capture_output=True, text=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return [json.loads(line) for line in result.stdout.splitlines()]
+
+    def test_m2_profile_refuses_other_axes_direction_and_excess_budget(self):
+        status, record, output = self.run_case("pilot", enabled="m2")
+        self.assertEqual(status["profile"], "m2_up_pwm180_ms1500")
+        self.assertEqual(record["motor"], 2)
+        self.assertEqual(record["requestedPwm"], 180)
+        self.assertTrue(record["outputOff"])
+        self.assertEqual(record["elapsedMs"], 1500)
 
     def test_default_build_blocks_before_any_output_or_lease_mutation(self):
         status, = self.run_case("disabled", enabled=False)

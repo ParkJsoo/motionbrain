@@ -3,7 +3,9 @@ import json
 from pathlib import Path
 import tempfile
 import threading
+import time
 import unittest
+from unittest.mock import Mock
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -64,6 +66,26 @@ class ActionHTTPTest(unittest.TestCase):
         self.url=f'http://127.0.0.1:{self.server.server_port}'
     def port(self,enabled=True,**kwargs):
         return BoundedActionHTTP(self.url,clock=self.clock,writes_enabled=enabled,token_provider=lambda:TOKEN,**kwargs)
+    def test_pilot_requires_advertised_firmware_profile_before_post(self):
+        port=self.port(required_profile='m2_up_pwm180_ms1500')
+        with self.assertRaises(DeviceReadError):port.preflight(request())
+        self.assertFalse(any(m=='POST' for m,_,_ in self.requests))
+
+    def test_total_deadline_interrupts_dripping_post_and_all_read_paths(self):
+        port=self.port(timeout=.05,total_deadline=True)
+        def drip(*args,**kwargs):
+            for _ in range(100):time.sleep(.01)
+            return {}
+        response=Mock();response.__enter__=Mock(return_value=response);response.__exit__=Mock(return_value=False)
+        response.read.side_effect=drip;port.opener.open=Mock(return_value=response)
+        started=time.monotonic()
+        with self.assertRaises(DeviceReadError):port._post(port._request('/actions',request(),TOKEN))
+        self.assertLess(time.monotonic()-started,.4)
+        for name,call in [('lookup_action',lambda:port.lookup(request())),('outputs',port.outputs),('capability',lambda:port.preflight(request()))]:
+            setattr(port.reader,name,drip);started=time.monotonic()
+            with self.subTest(name=name),self.assertRaises(TimeoutError):call()
+            self.assertLess(time.monotonic()-started,.4)
+
     def test_default_disabled_rejects_all_writes_without_http(self):
         port=BoundedActionHTTP(self.url,token_provider=lambda:TOKEN)
         for call in (port.preflight,port.submit,port.cancel):

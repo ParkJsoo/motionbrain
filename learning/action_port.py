@@ -1,6 +1,6 @@
 """Default-disabled HTTP port for the experimental bounded-action API.
 
-No CLI enables this port. Runtime credentials stay in headers and are not stored
+Only the explicit pilot CLI enables this port. Runtime credentials stay in headers and are not stored
 in receipts. No redirects, proxies, retries, legacy /shoulder fallback or arm API.
 """
 from __future__ import annotations
@@ -8,6 +8,7 @@ from __future__ import annotations
 import urllib.error
 import urllib.parse
 import urllib.request
+from contextlib import nullcontext
 
 from learning.action_execution import canonical_request, finite
 from learning.artifacts import _decode_json
@@ -16,7 +17,7 @@ from learning.device_adapter import DeviceReadAdapter, DeviceReadError, ReadOnly
 
 class BoundedActionHTTP:
     def __init__(self, controller_url, *, token_provider=None, writes_enabled=False, timeout=1.0, clock=None,
-                 camera_url=None, perception_url=None):
+                 camera_url=None, perception_url=None, required_profile=None, total_deadline=False):
         if type(writes_enabled) is not bool:
             raise ValueError("writes_enabled_must_be_boolean")
         options = {} if clock is None else {"clock": clock}
@@ -25,11 +26,25 @@ class BoundedActionHTTP:
         self.reader = DeviceReadAdapter(self.transport)
         self.clock, self.host_clock_id = self.transport.clock, self.transport.host_clock_id
         self.writes_enabled, self.token_provider = writes_enabled, token_provider
+        self.required_profile = required_profile
+        if type(total_deadline) is not bool:
+            raise ValueError("total_deadline_must_be_boolean")
+        self.total_deadline = total_deadline
         self._prepared = None
         self._prepared_cancel = None
         self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
 
     def preflight(self, request):
+        with self._deadline(3):
+            return self._preflight(request)
+
+    def _deadline(self, requests=1):
+        # The live executor runs on the main thread. Bound the whole transaction,
+        # including a peer that keeps a socket alive by dripping response bytes.
+        from learning.controller_latency import deadline
+        return deadline(self.transport.timeout*requests) if self.total_deadline else nullcontext()
+
+    def _preflight(self, request):
         self._prepared = None
         r = canonical_request(request)
         if not self.writes_enabled:
@@ -40,6 +55,8 @@ class BoundedActionHTTP:
         prepared = self._request("/actions", r, token)
         prepared_cancel = self._request("/actions/cancel", {k:r[k] for k in ("bootId", "commandId")}, token)
         capability = self.reader.capability()
+        if self.required_profile is not None and capability.get("profile") != self.required_profile:
+            raise DeviceReadError("controller_profile_mismatch")
         if (capability["bootId"] != r["bootId"] or capability["enabled"] is not True
                 or capability["active"] is not False
                 or type(capability.get("recordCount")) is not int
@@ -83,6 +100,10 @@ class BoundedActionHTTP:
                      "Content-Type": "application/x-www-form-urlencoded"})
 
     def _post(self, request):
+        with self._deadline():
+            return self._post_with_socket_timeout(request)
+
+    def _post_with_socket_timeout(self, request):
         if not self.writes_enabled:
             raise DeviceReadError("bounded_action_writes_disabled")
         start = self.clock.monotonic()
@@ -115,13 +136,15 @@ class BoundedActionHTTP:
         return self._post(prepared[1])
 
     def lookup(self, request):
-        result = self.reader.lookup_action(request)
+        with self._deadline():
+            result = self.reader.lookup_action(request)
         if result.get("lookupStatus") != "matched_record":
             raise DeviceReadError("action_lookup_unverified")
         return result["record"]
 
     def outputs(self):
-        return self.reader.outputs()
+        with self._deadline():
+            return self.reader.outputs()
 
     def cancel(self, request):
         r = canonical_request(request)

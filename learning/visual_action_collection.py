@@ -18,6 +18,7 @@ from learning.artifacts import (ArtifactStore, StorageError, _decode_json, _read
 from learning.runner import KNOWN_TERMINAL
 
 SESSION_SCHEMA = "motionbrain.visual_action_session.v1"
+LIVE_SESSION_SCHEMA = "motionbrain.visual_action_session.v2"
 SUMMARY_SCHEMA = "motionbrain.visual_action_summary.v1"
 MAX_FRAME_BYTES = 32 * 1024 * 1024
 ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}\Z")
@@ -42,10 +43,11 @@ def validate_session(session):
               "mode", "cameraViewFixed", "width", "height", "rowBytes", "videoMirrored",
               "videoRotationAngle", "maxAttempts", "maxFrames", "maxDurationSeconds"}
     require(isinstance(session, dict) and set(session) == fields, "session_fields_required")
-    require(session["schemaVersion"] == SESSION_SCHEMA, "session_schema_mismatch")
+    require(session["schemaVersion"] in (SESSION_SCHEMA, LIVE_SESSION_SCHEMA), "session_schema_mismatch")
     for key in ("sessionId", "viewId", "streamId", "hostClockId", "sourceClockId"):
         identifier(session[key])
-    require(session["mode"] in ("synthetic", "offline_import"), "unsupported_collection_mode")
+    require((session["schemaVersion"] == SESSION_SCHEMA and session["mode"] in ("synthetic", "offline_import"))
+            or (session["schemaVersion"] == LIVE_SESSION_SCHEMA and session["mode"] == "live_observation"), "unsupported_collection_mode")
     require(type(session["cameraViewFixed"]) is bool and type(session["videoMirrored"]) is bool,
             "camera_flags_required")
     require(integer(session["width"], 1, 4096) and integer(session["height"], 1, 4096)
@@ -239,7 +241,7 @@ class _Timeline:
             else:
                 a["status"] = "recorded"
             a["trainingEligible"] = False
-        return {"schemaVersion": SUMMARY_SCHEMA, "sessionId": self.session["sessionId"],
+        return {"schemaVersion": ("motionbrain.visual_action_summary.v2" if self.session["schemaVersion"] == LIVE_SESSION_SCHEMA else SUMMARY_SCHEMA), "sessionId": self.session["sessionId"],
                 "mode": self.session["mode"], "attemptCount": len(attempts), "frameCount": len(self.frame_ids),
                 "attempts": attempts, "errors": copy.deepcopy(self.errors), "halted": self.halted,
                 "newActionsBlocked": self.halted or self.stop_after_attempt,

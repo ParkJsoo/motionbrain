@@ -11,6 +11,10 @@
 #endif
 
 enum class CommandType : uint8_t;
+#ifndef MOTIONBRAIN_M2_VISUAL_PILOT
+#define MOTIONBRAIN_M2_VISUAL_PILOT 0
+#endif
+
 namespace BoundedActions {
 bool beforeLegacyCommand(CommandType type);
 void init();

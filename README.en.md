@@ -9,7 +9,7 @@ A personal robotics project integrating an ESP32-controlled five-axis DC arm, ST
 Record arm features and changes around commands from a fixed external camera view, then learn `current observations and recent history + candidate command → next motion`. Kinematics and existing control provide structure; experience models friction, backlash and pose-dependent responses.
 
 - **Demonstrated:** M4 single-axis control, manually guided grasping and detector development training. All 12 images in the final detector result were training data; one duplicate target object false positive remains.
-- **Collection foundation:** the [visual action recording core (Korean)](docs/visual-action-collection.md) links commands and before/during/after frames from synthetic or saved inputs. Live producer integration, arm-feature tracking/prediction and command selection are next.
+- **Collection foundation:** the [visual action recording core (Korean)](docs/visual-action-collection.md) links commands and before/during/after frames. Continuous Mac capture, markerless point tracking and bounded M2 execution are software-tested; physical integration remains unverified. Prediction and command selection are next.
 - **Action-training readiness:** Eligible physical action transitions: 0. The new visual action model, autonomous approach and grasping remain unimplemented/unverified. Perfect still-image detection is not a prerequisite for the action pilot.
 
 [Goals, stages and evaluation (Korean)](docs/visual-action-learning.md) · [Research basis (Korean)](docs/research/visual-action-learning.md) · [Detector development results (Korean)](docs/evidence/2026-10-30-cv-development.md)

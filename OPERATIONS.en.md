@@ -4,7 +4,7 @@
 
 These are general repository reproduction steps. Device addresses, credentials and joint calibration belong to each installation. Passing builds/tests does not upload firmware or actuate motors.
 
-Current goals and stages are described in the [visual action learning design (Korean)](docs/visual-action-learning.md). Existing service setup, M4 execution and diagnostic CLIs follow the implementation guide below. The new [visual action collector (Korean)](docs/visual-action-collection.md) records and audits synthetic or saved inputs. Live camera/executor integration and prediction-based control remain unimplemented; these general operations commands are not an end-to-end procedure for the new experiment.
+Current goals and stages are described in the [visual action learning design (Korean)](docs/visual-action-learning.md). Existing service setup, M4 execution and diagnostic CLIs follow the implementation guide below. The new [visual action collector (Korean)](docs/visual-action-collection.md) audits synthetic or saved inputs and provides a separate finite live CLI. Mac camera/M2 execution integration is software-tested only; physical integration is unverified and prediction-based control is unimplemented. Follow that guide for observation without output, the separate firmware profile and explicit execution. These general operations commands are not an end-to-end procedure for the new experiment.
 
 ## Builds
 

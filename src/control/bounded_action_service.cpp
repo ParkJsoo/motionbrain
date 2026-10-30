@@ -121,6 +121,13 @@ void tick() {
 }
 bounded::SubmitResult submit(const bounded::Request& request) {
   if (!core || !enabled()) return {bounded::SubmitCode::SafetyBlocked, nullptr};
+#if MOTIONBRAIN_M2_VISUAL_PILOT
+  // Matches RobotArm::WRIST_UP_IS_FORWARD=true. Verify physical direction before use.
+  // This profile narrows /actions only; it does not replace legacy safety/ownership.
+  if (request.kind != bounded::Kind::Pulse || request.motor != 2 ||
+      request.pwm <= 0 || request.pwm > 180 || request.durationMs > 1500)
+    return {bounded::SubmitCode::SafetyBlocked, nullptr};
+#endif
   auto result = core->submit(request, millis());
   clearFinishedContext();
   return result;
@@ -128,6 +135,9 @@ bounded::SubmitResult submit(const bounded::Request& request) {
 void appendStatusJson(String& json) {
   json += "{\"schemaVersion\":\"motionbrain.bounded_action.v1\",\"enabled\":";
   json += enabled() ? "true" : "false";
+  json += ",\"profile\":\"";
+  json += MOTIONBRAIN_M2_VISUAL_PILOT ? "m2_up_pwm180_ms1500" : "general";
+  json += "\"";
   json += ",\"bootId\":\"";
   if (core) json += core->bootId();
   json += "\",\"active\":";
