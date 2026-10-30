@@ -84,6 +84,15 @@ class LiveSessionTest(unittest.TestCase):
         self.assertEqual(a['request']['motor'],2)
         self.assertTrue((self.root/'run/executor-result.json').exists())
         with self.assertRaises(ValueError):self.session.run(confirmed_request=self.p['request'])
+    def test_blocked_journal_does_not_start_camera_or_read_controller(self):
+        old={**self.p['request'],'commandId':'older'}
+        self.executor.propose(old)
+        self.executor.journal.save('older','outcome_unknown',{})
+        r=self.run_session()
+        self.assertIsNone(self.camera.started)
+        self.assertFalse(self.fake.posts)
+        self.assertEqual(self.fake.reads,0)
+        self.assertFalse(r['recordingComplete'])
     def test_disabled_controller_never_dispatches(self):
         self.fake.failure='preflight';r=self.run_session()
         self.assertEqual(self.fake.posts,[])

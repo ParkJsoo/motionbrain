@@ -22,6 +22,7 @@ def main(argv=None):
     modes=ap.add_mutually_exclusive_group()
     modes.add_argument('--execute',action='store_true')
     modes.add_argument('--observe-only',action='store_true',help='explicit new camera capture; never constructs a motor port')
+    modes.add_argument('--check-journal',action='store_true',help='offline readiness check before manual ARM; no camera or controller access')
     ap.add_argument('--confirm-plan-sha256')
     ap.add_argument('--controller-url')
     ap.add_argument('--output-dir',type=Path)
@@ -31,6 +32,13 @@ def main(argv=None):
     if hashlib.sha256(args.helper.read_bytes()).hexdigest()!=plan['helperSha256']:
         raise ValueError('camera_helper_hash_mismatch')
     digest=plan_digest(plan)
+    if args.check_journal or args.execute:
+        from learning.action_journal import read_journal
+        if args.journal is None:raise ValueError('journal_path_required')
+        check=read_journal(args.journal,command_id=plan['request']['commandId'])
+        if args.check_journal or not check['ready']:
+            print(json.dumps({'mode':'journal_readiness',**check},ensure_ascii=False,indent=2))
+            return 0 if check['ready'] else 2
     if not args.execute and not args.observe_only:
         print(json.dumps({'mode':'validate_only','planSha256':digest,'request':plan['request'],
                           'camera':plan['camera'],'motorCalls':0,'captureCalls':0,'automaticArm':False},indent=2))
@@ -68,6 +76,10 @@ def main(argv=None):
     args.journal.parent.mkdir(parents=True,exist_ok=True)
     executor=BoundedActionExecutor(args.journal.resolve(),port,ActionLimits(motor=2,max_duration_ms=1500,
                                    max_pwm=180,max_percent=0,min_degrees=0,max_degrees=0),max_polls=100)
+    # Recheck under the executor's exclusive journal lock (the offline check is advisory).
+    if not executor.journal.readiness(plan['request']['commandId'])['ready']:
+        executor.close()
+        raise ValueError('journal_changed_before_capture')
     camera=NativeCameraStream(args.output_dir/'native-camera',args.helper,c,tracker,
         host_clock_id=port.host_clock_id,on_fault=executor.request_stop)
     session=None

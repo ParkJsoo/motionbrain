@@ -112,6 +112,10 @@ python3 tools/run_visual_action_pilot.py --plan <plan.json> --helper <mac-camera
 python3 tools/run_visual_action_pilot.py --plan <plan.json> --helper <mac-camera-stream> \
   --observe-only --confirm-plan-sha256 <plan-sha256> --output-dir .local/visual-actions/observation-01
 
+# ARM 전에 같은 영속 저널과 새 계획 ID로 검사. 차단 시 촬영/ARM을 진행하지 않는다.
+python3 tools/run_visual_action_pilot.py --plan <plan.json> --helper <mac-camera-stream> \
+  --check-journal --journal .local/visual-actions/commands.sqlite
+
 # 런타임 인증정보는 MOTIONBRAIN_HTTP_TOKEN 환경변수로만 전달.
 python3 tools/run_visual_action_pilot.py --plan <plan.json> --helper <mac-camera-stream> \
   --execute --confirm-plan-sha256 <plan-sha256> --controller-url <controller-url> \
@@ -131,6 +135,33 @@ python3 tools/run_visual_action_pilot.py --plan <plan.json> --helper <mac-camera
 실물 연결 기록은 `motionbrain.visual_action_session.v2`, `mode=live_observation`으로 구별한다. 원본은 `native-camera/`, 검증한 호스트 수신 근거는 그 아래 `host-ingress/`, 수집기 원본·감사 로그는 기존 구조로 남긴다. `at`은 호스트 생산자가 프레임을 받아 처리하기 시작한 시각이며 저장 완료 시각이 아니다. stdout 읽기·native callback·PTS를 따로 보존한다. 전·중·후 구간은 호스트 수신 순서 기준이며 광학 노출이나 실제 드라이버 작동 경계로 해석하지 않는다. 수집기 원본 복사 때문에 디스크 사용은 네이티브 BGRA 한도의 약 두 배와 메타데이터 여유가 필요하다.
 
 무출력 관측은 행동 전이를 만들지 않고 원본과 `observation-result.json`만 남긴다. 실행 기록도 물리 정착은 자동 판정하지 않으며 `trainingEligible=false`, `controlEligible=false`를 유지한다. 저장 실패의 미완료 기록은 보존하고 별도 감사한다.
+
+## 실행 저널 준비 검사와 명시적 해소
+
+`--check-journal`은 제어기·카메라에 접근하지 않고 기존 저널을 읽는다. 결과 불명, 중단된 대기/예약, 이미 사용한 계획 ID가 있으면 종료코드 2와 차단 이유를 반환한다. ARM 전에 이 검사를 수행한다. `--execute`도 인증정보를 읽거나 카메라를 만들기 전에 검사하고, 독점 잠금을 얻은 뒤 다시 확인한다. 직접 `LiveActionSession`을 쓰는 경로도 촬영 시작 전에 검사한다. 저널 잠금·형식 검사 실패는 진행 불가로 처리한다. 존재하지 않는 파일은 최초 실행에만 빈 저널로 인식하므로, 기존 제어기에 새 경로를 지정해 차단을 우회하면 안 된다. 다른 호스트·직접 수동 입력은 파일 잠금으로 막을 수 없다.
+
+`outcome_unknown`은 원본 결과로 계속 보존한다. 제한 행동 저널에만 별도 `action_resolutions` 근거를 추가해 **미래의 새 ID**를 허용할 수 있다. 기존 ID·원본 실행 결과·영상·수집 감사는 바꾸지 않으며 학습 가능 판정도 올리지 않는다. 기존 ROS M4 저널의 정책은 바뀌지 않는다. 같은 부팅에서 일치하는 종료 응답과 완전한 출력 이력, IDLE·5축 OFF·센서 정상·다른 제어 입력 없음이 확인될 때만 지원한다. 이후 다른 행동이 기록됐거나 부팅이 바뀌었거나 출력 이력이 유실됐다면 이 절차로 해소하지 않는다. OFF는 드라이버 쓰기 근거이며 물리적 정착이나 전원 분리 증명이 아니다.
+
+관리 도구는 카메라·ARM·모터·취소·업로드를 호출하지 않는다. `status`는 읽기 전용이며 기존 `.local/` 저널만 받는다. `recover`는 정확히 검토한 상태 해시를 요구하고 중단된 `pending`/`validating`을 `not_sent`, `dispatching`을 `outcome_unknown`으로 기록한다. 원래 행과 새 행은 `action_history`에 함께 보존하며 결과 불명 차단은 유지한다. 실행 중 다른 결과 불명에 막힌 새 요청도 `not_sent` 이유를 즉시 영속화하여 나중에 다시 실행되지 않게 한다.
+
+```sh
+python3 tools/manage_action_journal.py --journal .local/visual-actions/commands.sqlite status
+# 중단된 대기/예약이 있는 경우에만, 출력된 snapshotSha256와 행 내용을 검토 후 적용
+python3 tools/manage_action_journal.py --journal .local/visual-actions/commands.sqlite recover \
+  --confirm-snapshot-sha256 <reviewed-snapshot-sha256>
+
+# 제어기 GET만 수행. 저널은 바꾸지 않고 새 비공개 디렉터리에 검토용 근거를 저장
+python3 tools/manage_action_journal.py --journal .local/visual-actions/commands.sqlite prepare \
+  --command-id <unknown-command-id> --controller-url <controller-url> \
+  --output-dir .local/visual-actions/resolution-01
+# 근거와 미래 새 ID 허용 범위를 명시적으로 확인한 후에만 적용
+python3 tools/manage_action_journal.py --journal .local/visual-actions/commands.sqlite resolve \
+  --evidence .local/visual-actions/resolution-01/resolution-evidence.json \
+  --confirm-sha256 <reviewed-evidence-sha256> --controller-url <controller-url>
+python3 tools/manage_action_journal.py --journal .local/visual-actions/commands.sqlite status
+```
+
+준비와 적용 때 각각 GET 5회를 수행한다. 요청별 전체 기한은 0.6초, 관측 묶음의 검증 한도는 4초이며 실패 시 자동 재시도하지 않는다. 준비·적용 각각 읽기 전후의 부팅 ID와 명령 수가 해당 종료 응답의 마지막 명령 번호와 일치해야 한다. 적용 직전 새로 읽은 종료 응답도 준비 근거와 같아야 한다. 해소·이력 테이블은 추가만 가능하며 수정·삭제를 거부한다. SHA-256은 검토한 내용과 행의 결합을 검사하며 출처 인증을 대신하지 않는다. 해소 후에도 새 실물 실행의 자세·여유 공간·현장 대기·횟수·촬영·출력 범위를 별도로 확인해야 한다.
 
 ## Rerun 로컬 재생
 

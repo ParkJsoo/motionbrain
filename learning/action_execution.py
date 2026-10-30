@@ -17,7 +17,7 @@ import time
 from pathlib import Path
 
 from learning.runner import _action_matches, KNOWN_TERMINAL
-from ros2_ws.src.motionbrain_ros_bridge.motionbrain_ros_bridge.m4_command_journal import M4CommandJournal
+from learning.action_journal import BoundedActionJournal
 
 SCHEMA = "motionbrain.host_bounded_action.v1"
 FIELDS = {"bootId", "commandId", "kind", "motor", "pwm", "durationMs", "targetDegrees", "percent"}
@@ -166,7 +166,7 @@ class BoundedActionExecutor:
         self.ttl, self.max_polls, self.poll_interval = ttl_seconds, max_polls, poll_interval
         self.lock, self.failed = threading.RLock(), False
         self.stop_requested = threading.Event()
-        self.journal = M4CommandJournal(str(journal_path), 10000)
+        self.journal = BoundedActionJournal(str(journal_path), 10000)
         try:
             for row in self.journal.records():
                 if row["request"].get("executorSchema") != SCHEMA:
@@ -225,7 +225,7 @@ class BoundedActionExecutor:
 
         The guard runs after journal reservation and all preflight I/O, immediately
         before the submit callback. It must revalidate observation/M4 freshness and
-        persistence, raising on failure. This method is not wired to a live CLI.
+        persistence, raising on failure. The finite pilot CLI supplies this guard.
         """
         with self.lock:
             if self.failed:
@@ -235,6 +235,8 @@ class BoundedActionExecutor:
                 if error:
                     if row and error == "proposal_already_consumed":
                         return {**copy.deepcopy(row["result"]), "replayed": True}
+                    if row and error in ("unresolved_outcome_unknown", "executor_busy"):
+                        return self._save(cid,"not_sent",self._result(cid,"not_sent",error))
                     return self._result(cid, "not_sent", error)
                 r = self.limits.validate(row["request"]["action"])
                 if canonical_request(confirmed_request) != r or not callable(dispatch_guard):

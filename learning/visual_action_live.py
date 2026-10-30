@@ -176,6 +176,8 @@ class LiveActionSession:
         interrupted = False
         try:
             self._record('begin',episodeId=self.session['sessionId'],startPoseId=self.plan['startPoseId'],request=self.plan['request'])
+            if not self.executor.journal.readiness(self.plan['request']['commandId'])['ready']:
+                raise ValueError('journal_not_ready_before_capture')
             self.camera.start()
             start = self.clock.monotonic()
             while True:
