@@ -8,7 +8,7 @@ An ESP32/STM32/camera/Raspberry Pi/ROS2 integration project that distinguishes s
 
 The low-cost DC arm cannot measure all joint positions or grasp force. Time-based actuation varies with load, inertia and friction. An AS5600 was added to the M4 shoulder; ESP32 handles outputs, STM32 handles sensing/teleoperation, and Pi handles perception and ROS2.
 
-- **Shared command boundary:** serial and HTTP inputs use `Dispatcher` and `SafetyGate` with state, sensor-fault and deadman checks. Web manual commands expire; the control loop stops outputs when it detects expiry. A physical stop-latency bound including blocking communication is unverified.
+- **Command boundaries:** legacy serial and web manual commands use `Dispatcher` and `SafetyGate` with state, sensor-fault and deadman checks. Experimental `/actions` use a separate bounded executor that checks `SafetyGate` and output state. Web manual commands expire; the control loop stops outputs when it detects expiry. A physical stop-latency bound including blocking communication is unverified.
 - **Measured versus estimated state:** M4 measured angles are distinguished from open-loop estimates for other joints in ROS2.
 - **Confirmed ROS2 writes:** `ros2_control` proposals are not forwarded automatically. A separate executor sends one M4 target after operator confirmation within the default 20-second validity window. This is not a 20-second motion duration.
 

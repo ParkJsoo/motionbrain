@@ -8,7 +8,7 @@ Current goals and stages are described in the [visual action learning design (Ko
 
 ## Builds
 
-ESP32 uses PlatformIO. Host tests require Python, NumPy and OpenCV. Replace `<...>` placeholders with installation-specific values. Run from the repository root:
+ESP32 uses PlatformIO. Host tests require Python, NumPy, OpenCV and Node.js (CI: Python 3.12 and Node.js 22). Native C++ checks require a C++ compiler and are skipped when it is unavailable. Replace `<...>` placeholders with installation-specific values. Run from the repository root:
 
 ```sh
 python3 -m venv .local/venv
@@ -114,6 +114,14 @@ The separate `esp32cam_register_diag` build observes 34 raw OV2640 registers at 
 ## Automatic UI recovery after IP changes
 
 Both the controller and Pi must be deployed with a version containing this feature. Merging or pushing source does not update running devices.
+
+On a fresh installation, starting only the three services does not enable periodic rediscovery. Review addresses, tokens and camera settings in `/etc/motionbrain/dashboard.env` and `perception.env`, then enable the timer separately on the Pi. Timer runs discover devices, apply the camera profile by default, and restart affected services when needed.
+
+```sh
+sudo systemctl enable --now motionbrain-dashboard-reconcile.timer
+systemctl status motionbrain-dashboard-reconcile.timer --no-pager
+systemctl list-timers motionbrain-dashboard-reconcile.timer --all
+```
 
 - The existing Pi `motionbrain-dashboard-reconcile.timer` rediscovers devices approximately every 60 seconds. It restarts affected services when addresses change and publishes a healthy dashboard endpoint to the controller. Unchanged configurations also renew the publication.
 - Publication uses the existing `MOTIONBRAIN_HTTP_TOKEN` to authenticate `POST /vision_endpoint?port=8765`. The host comes from the authenticated TCP peer's private IPv4 address, not an arbitrary supplied URL. The RAM-only lease expires after 180 seconds and does not change controller state or motor outputs. Tokens are absent from URLs and discovery responses.

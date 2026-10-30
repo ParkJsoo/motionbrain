@@ -8,7 +8,7 @@
 
 ## 빌드
 
-ESP32는 PlatformIO를 사용한다. 호스트 테스트에는 Python, NumPy, OpenCV가 필요하다. 아래 명령은 저장소 루트에서 실행한다. `<...>` 자리표시자는 각 환경의 실제 값으로 바꾼다.
+ESP32는 PlatformIO를 사용한다. 호스트 테스트에는 Python, NumPy, OpenCV와 Node.js(CI: Python 3.12·Node.js 22)가 필요하다. 네이티브 C++ 검사에는 C++ 컴파일러가 필요하며, 없으면 해당 검사는 건너뛴다. 아래 명령은 저장소 루트에서 실행한다. `<...>` 자리표시자는 각 환경의 실제 값으로 바꾼다.
 
 ```sh
 python3 -m venv .local/venv
@@ -114,6 +114,14 @@ python3 tools/archive_hardware_demo.py '.local/<source-phase>' 'datasets/<new-ar
 ## IP 변경 뒤 화면 자동 복구
 
 컨트롤러·Pi가 함께 이 기능을 포함한 버전으로 배포되어야 한다. 소스 병합이나 브랜치 푸시만으로 실행 중인 장치가 갱신되지는 않는다.
+
+새 설치에서는 서비스 세 개만 시작해도 아래 자동 재탐색이 활성화되지는 않는다. `/etc/motionbrain/dashboard.env`와 `perception.env`의 주소·토큰·카메라 설정을 검토한 뒤 Pi에서 타이머를 별도로 활성화한다. 타이머 실행은 장치 탐색을 수행하고 기본 설정에서는 카메라 프로필을 적용하며, 필요시 관련 서비스를 재시작한다.
+
+```sh
+sudo systemctl enable --now motionbrain-dashboard-reconcile.timer
+systemctl status motionbrain-dashboard-reconcile.timer --no-pager
+systemctl list-timers motionbrain-dashboard-reconcile.timer --all
+```
 
 - Pi의 기존 `motionbrain-dashboard-reconcile.timer`는 약 60초마다 장치를 재탐색한다. 주소가 달라지면 관련 서비스를 재시작하고, 정상 대시보드의 주소를 컨트롤러에 등록한다. 일치하는 상태에서도 등록을 갱신한다.
 - 등록은 기존 `MOTIONBRAIN_HTTP_TOKEN`으로 인증하는 `POST /vision_endpoint?port=8765`다. 호스트는 요청 본문의 임의 주소가 아니라 인증된 TCP 연결의 사설 IPv4 주소를 사용한다. 주소는 RAM에만 180초간 유효하며, 제어 상태·모터 출력에는 영향을 주지 않는다. 토큰은 URL·등록 응답에 포함하지 않는다.

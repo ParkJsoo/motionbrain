@@ -10,7 +10,7 @@ ESP32 기반 5축 DC 로봇팔에 STM32 센서·원격조작, ESP32-CAM, Raspber
 
 - **확인한 결과:** M4 단일축 제어·수동 관찰 파지·인식 개발 학습. 인식의 최종 12장은 모두 학습자료이며 립밤 중복 오탐 1건이 남았다.
 - **다음 구현:** 아이폰 영상과 제한된 모터 명령·결과를 연결하는 수집기, 팔 특징점 변화 예측, 후보 명령 선택과 재관찰.
-- **아직 없는 결과:** 학습 적격 실물 행동 전이 0건. 새 시각 행동 모델과 자율 접근·파지는 미구현·미검증이다. 정지사진 검출의 완성을 행동 파일럿의 선행 조건으로 삼지 않는다.
+- **학습 준비 상태:** 학습 적격 실물 행동 전이 0건. 새 시각 행동 모델과 자율 접근·파지는 미구현·미검증이다. 정지사진 검출의 완성을 행동 파일럿의 선행 조건으로 삼지 않는다.
 
 [목표·단계·평가 설계](docs/visual-action-learning.md) · [연구 근거](docs/research/visual-action-learning.md) · [인식 개발 결과](docs/evidence/2026-10-30-cv-development.md)
 
@@ -42,15 +42,13 @@ ESP32-CAM ── HTTP /capture ──> Raspberry Pi (인식·대시보드·ROS2)
 
 아이폰→Mac 영상·학습 경로는 기존 ESP32-CAM→Pi 경로와 구분한다. 위 그림은 기존 장치 제어 구성이고, 새 아이폰 시각 행동 모델은 아직 연결하지 않았다.
 
-- 물리 출력은 ESP32의 `Dispatcher`와 `SafetyGate`를 거친다. 호스트의 명령 접수를 목표 도달로 취급하지 않는다.
+- 기존 수동 명령은 ESP32의 `Dispatcher`와 `SafetyGate`를 거친다. 실험용 `/actions`는 별도 제한 실행기에서 `SafetyGate`를 확인하고 출력한다. 호스트의 명령 접수를 목표 도달로 취급하지 않는다.
 - 카메라 직접 `/stream`은 비활성화돼 있으며 `/capture` 또는 Pi 추적 프레임을 사용한다.
 - 전체 관절 폐루프 궤적 제어와 자동 집기는 구현하지 않았다. 간헐 HTTP 지연도 남아 있다.
 
-![제어 UI 예시](docs/assets/motionbrain-control-stream.png)
-
-기존 제어 UI의 정적 예시다. 현재 장치 상태를 표시하는 화면은 아니다.
-
 ## 코드와 문서
+
+[전체 문서·실험 증거·미디어 안내](docs/README.md)
 
 | 경로 | 내용 |
 | --- | --- |
@@ -69,7 +67,7 @@ ESP32-CAM ── HTTP /capture ──> Raspberry Pi (인식·대시보드·ROS2)
 
 ## 로컬 빌드와 검사
 
-Python 호스트 의존성은 `numpy`, `opencv-python-headless`이며 펌웨어 빌드에는 PlatformIO가 필요하다. ROS2와 서비스 설치는 [운영 안내](OPERATIONS.md)를 따른다.
+Python 호스트 의존성은 `numpy`, `opencv-python-headless`이며 브라우저 복구 회귀에는 Node.js(CI: 22)가 필요하다. 네이티브 C++ 검사를 실행하려면 C++ 컴파일러도 필요하며, 없으면 해당 검사는 건너뛴다. 펌웨어 빌드에는 PlatformIO가 필요하다. ROS2와 서비스 설치는 [운영 안내](OPERATIONS.md)를 따른다.
 
 ```sh
 python3 -m unittest discover -s tests

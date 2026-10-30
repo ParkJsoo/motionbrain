@@ -10,7 +10,7 @@ Record arm features and changes around commands from a fixed iPhone view, then l
 
 - **Demonstrated:** M4 single-axis control, manually guided grasping and detector development training. All 12 images in the final detector result were training data; one duplicate lip-balm false positive remains.
 - **Next implementation:** a collector joining iPhone video with bounded commands and outcomes, arm-feature motion prediction, and command selection followed by re-observation.
-- **Not yet demonstrated:** zero eligible physical action transitions. The new visual action model, autonomous approach and grasping remain unimplemented/unverified. Perfect still-image detection is not a prerequisite for the action pilot.
+- **Action-training readiness:** Eligible physical action transitions: 0. The new visual action model, autonomous approach and grasping remain unimplemented/unverified. Perfect still-image detection is not a prerequisite for the action pilot.
 
 [Goals, stages and evaluation (Korean)](docs/visual-action-learning.md) · [Research basis (Korean)](docs/research/visual-action-learning.md) · [Detector development results (Korean)](docs/evidence/2026-10-30-cv-development.md)
 
@@ -42,15 +42,13 @@ ESP32-CAM ── HTTP /capture ──> Raspberry Pi (perception / dashboard / RO
 
 The iPhone-to-Mac observation/training path is distinct from the existing ESP32-CAM-to-Pi path. The new iPhone visual action model is not connected to the device-control architecture shown above.
 
-- Physical outputs pass through the ESP32 `Dispatcher` and `SafetyGate`. Command acceptance is distinct from target attainment.
+- Legacy manual commands pass through the ESP32 `Dispatcher` and `SafetyGate`. Experimental `/actions` use a separate bounded executor that checks `SafetyGate` before driving outputs. Command acceptance is distinct from target attainment.
 - Direct camera `/stream` is disabled; images use `/capture` or Pi tracked frames.
 - Full-arm closed-loop trajectories and autonomous picking are not implemented. Intermittent HTTP latency remains unresolved.
 
-![Control UI example](docs/assets/motionbrain-control-stream.png)
-
-An existing static UI example, not the current device state.
-
 ## Code and documentation
+
+[Complete guide, evidence and media index (Korean)](docs/README.md)
 
 | Path | Contents |
 | --- | --- |
@@ -69,7 +67,7 @@ An existing static UI example, not the current device state.
 
 ## Local builds and checks
 
-Host Python dependencies are `numpy` and `opencv-python-headless`; firmware builds require PlatformIO. See [operations](OPERATIONS.en.md) for ROS2 and service setup.
+Host Python dependencies are `numpy` and `opencv-python-headless`; browser recovery regression tests also require Node.js (CI: 22). Native C++ checks require a C++ compiler and are skipped when it is unavailable. Firmware builds require PlatformIO. See [operations](OPERATIONS.en.md) for ROS2 and service setup.
 
 ```sh
 python3 -m unittest discover -s tests
