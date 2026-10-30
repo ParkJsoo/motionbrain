@@ -4,6 +4,8 @@
 
 `motionbrain_hardware_interface/MotionBrainHardwareInterface`는 `ros2_control`의 `SystemInterface` 플러그인이다. 전체 관절에 엔코더가 있다고 가정하지 않고, 추정 상태·M4 실측·실물 실행 제안을 구분한다.
 
+현재 [시각 행동 학습 계획](../../../docs/visual-action-learning.md)은 영상과 모터 명령의 결과를 학습하는 별도 연구 경로다. 이 플러그인이 새 시각 모델이나 센서 없는 축의 학습 제어를 이미 제공하는 것은 아니다. 아래 실물 쓰기 범위는 기존 M4 확인형 경로로 유지한다.
+
 ## 모드
 
 | `transport_mode` | 관절과 인터페이스 | 동작 |
