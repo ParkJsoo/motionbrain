@@ -9,6 +9,7 @@
 | 문서 | 역할 |
 | --- | --- |
 | [시각 행동 학습](visual-action-learning.md) | 현재 목표, 단계, 입력·정답·평가 설계 |
+| [시각 행동 수집기](visual-action-collection.md) | 합성·저장 자료의 행동 ID·영상 구간·실패 기록과 감사. 실물 연결은 다음 단계 |
 | [연구 근거](research/visual-action-learning.md) | 논문 6편의 실제 실험 조건과 적용 아이디어 |
 | [기존 행동 데이터 계약](data-pipeline.md) | 구현된 M4·물체 박스 데이터 검증과 학습 CLI |
 | [Mac 카메라 계측](mac-direct-camera.md) | 영상·USB 시각 연결 도구와 계측 결과 |

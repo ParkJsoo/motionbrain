@@ -9,7 +9,7 @@ A personal robotics project integrating an ESP32-controlled five-axis DC arm, ST
 Record arm features and changes around commands from a fixed external camera view, then learn `current observations and recent history + candidate command → next motion`. Kinematics and existing control provide structure; experience models friction, backlash and pose-dependent responses.
 
 - **Demonstrated:** M4 single-axis control, manually guided grasping and detector development training. All 12 images in the final detector result were training data; one duplicate target object false positive remains.
-- **Next implementation:** a collector joining external camera video with bounded commands and outcomes, arm-feature motion prediction, and command selection followed by re-observation.
+- **Collection foundation:** the [visual action recording core (Korean)](docs/visual-action-collection.md) links commands and before/during/after frames from synthetic or saved inputs. Live producer integration, arm-feature tracking/prediction and command selection are next.
 - **Action-training readiness:** Eligible physical action transitions: 0. The new visual action model, autonomous approach and grasping remain unimplemented/unverified. Perfect still-image detection is not a prerequisite for the action pilot.
 
 [Goals, stages and evaluation (Korean)](docs/visual-action-learning.md) · [Research basis (Korean)](docs/research/visual-action-learning.md) · [Detector development results (Korean)](docs/evidence/2026-10-30-cv-development.md)
@@ -29,7 +29,7 @@ Record arm features and changes around commands from a fixed external camera vie
 | ROS2 integration | Typed messages, URDF/RViz, control guard, `ros2_control` | Physical writes validated only for operator-confirmed single M4 targets |
 | Observed manipulation | Grasp/lift of a single target object type followed by two additional grasp/place cycles | An external observer selected manual commands from camera views; first repeat required correction; not a learned policy |
 | Detector development | Faster R-CNN fitting: on 12 training images, target object TP8/FP1/FN0, gripper TP12/FP0/FN0, relative position/direction 8/8 | Training-set fit for a single target object type only. Final-model generalization and action learning unverified |
-| Action-learning foundation | Bounded commands and outcome logs, NumPy ridge/no-change baselines and session splits | External camera action collector and new arm-feature model are planned; zero eligible physical action transitions |
+| Action-learning foundation | Bounded commands and outcome logs, NumPy ridge/no-change baselines and session splits | Recording core validated offline; live camera/executor integration and the new arm-feature model remain unimplemented; zero eligible physical action transitions |
 
 ## Existing architecture and research path
 
