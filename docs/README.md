@@ -12,6 +12,7 @@
 | [연구 근거](research/visual-action-learning.md) | 논문 6편의 실제 실험 조건과 적용 아이디어 |
 | [기존 행동 데이터 계약](data-pipeline.md) | 구현된 M4·물체 박스 데이터 검증과 학습 CLI |
 | [Mac 카메라 계측](mac-direct-camera.md) | 영상·USB 시각 연결 도구와 계측 결과 |
+| [화면 표식의 오프라인 시간 검증](optical-challenge-offline.md) | 기존 계약을 위한 선택적 합성 실험. 물리 노출 인증이나 새 행동 학습의 선행 조건이 아님 |
 | [립밤·집게 오프라인 CV](offline-cv.md) | 저장 라벨·예측의 검출 및 상대 위치 채점 |
 | [제한된 CV 개발 학습](bounded-cv-training.md) | 단일·혼합 세션의 유한 학습 실행기 |
 | [저장 체크포인트 평가](checkpoint-evaluation.md) | 확정 이미지 집합의 모델 평가 실행기 |
