@@ -105,21 +105,26 @@ class NativeCameraStream(FrameInbox):
     def _packet(self, receipt, read_at, ingress_at):
         i = self.count
         name = f'frame-{i:04d}'
-        if receipt.get('frameIndex') != i or receipt.get('metadataFile') != name+'.json' or receipt.get('imageFile') != name+'.bgra' or receipt.get('durable') is not True:
+        from learning.lossless_frame import ENCODING, SUFFIX
+        encoding = self.plan.get('storageEncoding', 'BGRA8')
+        if encoding not in ('BGRA8', ENCODING):
+            raise ValueError('camera_storage_encoding_invalid')
+        image_name = name + (SUFFIX if encoding == ENCODING else '.bgra')
+        if receipt.get('frameIndex') != i or receipt.get('metadataFile') != name+'.json' or receipt.get('imageFile') != image_name or receipt.get('durable') is not True:
             raise ValueError('camera_receipt_mismatch')
         meta_bytes = _read(self.root, name+'.json')
         m = _decode_json(meta_bytes)
         if hashlib.sha256(meta_bytes).hexdigest() != receipt.get('metadataSha256'):
             raise ValueError('camera_metadata_hash')
         p = self.plan
-        if (m.get('schemaVersion') != 'motionbrain.mac_camera_frame.v1' or m.get('sessionId') != p['sessionId']
+        if (m.get('schemaVersion') != ('motionbrain.mac_camera_frame.v2' if encoding == ENCODING else 'motionbrain.mac_camera_frame.v1') or m.get('sessionId') != p['sessionId']
                 or m.get('viewConfigurationId') != p['viewId'] or m.get('deviceUniqueId') != p['deviceId']
                 or m.get('sourceFrameId') != f"{p['sessionId']}:{i}" or m.get('frameIndex') != i
                 or (m.get('width'), m.get('height'), m.get('rowBytes')) != (p['width'], p['height'], p['width']*4)
                 or m.get('pixelFormat') != 'BGRA8' or m.get('videoMirrored') != p['videoMirrored']
                 or m.get('videoRotationAngle') != p['videoRotationAngle']
                 or m.get('timestampSemantics') != 'cmsamplebuffer_presentation_timestamp'
-                or m.get('clockDomain') != 'coremedia_host_clock' or m.get('imageFile') != name+'.bgra'):
+                or m.get('clockDomain') != 'coremedia_host_clock' or m.get('imageFile') != image_name):
             raise ValueError('camera_identity_or_format_changed')
         config = m.get('configurationSha256')
         encoded = m.get('actualConfigurationJson')
@@ -145,16 +150,21 @@ class NativeCameraStream(FrameInbox):
             raise ValueError('camera_stale')
         if not finite(receipt.get('persistenceMs')) or not 0 <= receipt['persistenceMs'] <= 250:
             raise ValueError('camera_storage_late')
-        pixels = self.pixels({'imageFile': name+'.bgra', 'sha256': m.get('imageSha256')})
+        storage = {}
+        if encoding == ENCODING:
+            if m.get('storageEncoding') != encoding or m.get('rawByteLength') != p['width']*p['height']*4:
+                raise ValueError('camera_compressed_format_invalid')
+            storage = {k: m.get(k) for k in ('storageEncoding', 'rawByteLength', 'pixelSha256', 'storedByteLength')}
+        pixels = self.pixels(dict(imageFile=image_name, sha256=m.get('imageSha256'), **storage))
         if receipt.get('imageSha256') != m.get('imageSha256'):
             raise ValueError('camera_receipt_image_hash')
-        self.total_bytes += len(pixels)
+        self.total_bytes += storage.get('storedByteLength', len(pixels))
         if self.total_bytes > p['maxBytes']:
             raise ValueError('camera_byte_budget')
         features = self.tracker.update(pixels)
-        packet = dict(frameId=m['sourceFrameId'], imageFile=name+'.bgra', sha256=m['imageSha256'],
+        packet = dict(frameId=m['sourceFrameId'], imageFile=image_name, sha256=m['imageSha256'],
                       pts={k: pts[k] for k in ('value', 'timescale', 'epoch')}, features=features,
-                      sourceEarliest=earliest, callbackHostSeconds=callback, stdoutReadAt=read_at)
+                      sourceEarliest=earliest, callbackHostSeconds=callback, stdoutReadAt=read_at, **storage)
         self.accept(packet, at=ingress_at)
         self.ingress_store.write_json(f'{i:04d}.json', self.latest)
         if self.tracker.fault:
@@ -162,6 +172,13 @@ class NativeCameraStream(FrameInbox):
 
     def pixels(self, packet):
         raw = _read(self.root, packet['imageFile'])
+        from learning.lossless_frame import ENCODING, decode
+        if self.plan.get('storageEncoding') == ENCODING:
+            if (packet.get('storageEncoding') != ENCODING or packet.get('rawByteLength') != self.plan['width']*self.plan['height']*4
+                    or type(packet.get('storedByteLength')) is not int or len(raw) != packet['storedByteLength']
+                    or hashlib.sha256(raw).hexdigest() != packet['sha256']):
+                raise ValueError('camera_compressed_pixels_invalid')
+            return decode(raw, packet['rawByteLength'], packet.get('pixelSha256'))
         if len(raw) != self.plan['width']*self.plan['height']*4 or hashlib.sha256(raw).hexdigest() != packet['sha256']:
             raise ValueError('camera_pixels_invalid')
         return raw
