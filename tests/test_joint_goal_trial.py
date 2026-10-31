@@ -5,7 +5,7 @@ from unittest.mock import Mock
 import numpy as np
 
 from learning.joint_action_selection import OfflineActionSelector, canonical_sha256
-from learning.joint_goal_trial import SingleGoalTrial, pre_action_state, validate_scope, window
+from learning.joint_goal_trial import SingleGoalTrial, pre_action_state, validate_scope, window, retain_queued_candidate
 from tests.test_joint_action_selection import fixture
 
 
@@ -128,6 +128,40 @@ class GoalTrialTests(unittest.TestCase):
         self.port.before_guard = change
         r = self.run_trial(); self.assertEqual(r['status'], 'failed')
         self.assertEqual(self.port.runs, 0); self.assertTrue(self.port.finalized)
+
+    def test_rank_flip_keeps_one_supported_improving_queued_pulse(self):
+        select = self.trial.selector.select
+        calls = 0
+        def reorder(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            decision = select(*args, **kwargs)
+            if calls == 2:
+                alternative = next(c for c in decision['candidates']
+                                   if c['direction']=='up' and c['durationMs']==900)
+                alternative.update(predictedEndDeg=10.1, predictedGoalErrorDeg=.1)
+                decision['selected'] = copy.deepcopy(alternative)
+            return decision
+        self.trial.selector.select = reorder
+        r = self.run_trial()
+        self.assertEqual(r['status'], 'measured', r['errors'])
+        decision = self.store.data['dispatch-decision.json']['decision']
+        self.assertEqual(decision['selected']['durationMs'], 700)
+        self.assertEqual(decision['bestCandidateAtDispatch']['durationMs'], 900)
+        self.assertEqual(self.port.runs, 1)
+        self.assertAlmostEqual(r['measurement']['predictedEndDeg'], 10.2)
+
+    def test_queued_pulse_that_loses_support_or_improvement_still_rejected(self):
+        decision = self.trial.selector.select(dict(angleDeg=6., velocityDegS=0.,valid=True,settled=True),10.)
+        for change in ({'eligible':False}, {'predictedGoalErrorDeg':4.},
+                       {'predictedGoalErrorDeg':5.}, {'predictedGoalErrorDeg':float('nan')}):
+            d = copy.deepcopy(decision)
+            next(c for c in d['candidates'] if c['direction']=='up' and c['durationMs']==700).update(change)
+            with self.assertRaises(ValueError): retain_queued_candidate(d, ('up',700))
+
+    def test_hold_or_abstain_cannot_keep_a_queued_pulse(self):
+        for status in ('hold','abstain'):
+            with self.assertRaises(ValueError): retain_queued_candidate({'status':status}, ('up',700))
 
     def test_camera_fault_before_run_is_not_retried(self):
         self.port.before_guard = lambda: setattr(self.camera, 'fault', 'tracking_lost')

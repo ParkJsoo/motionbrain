@@ -88,6 +88,30 @@ def latest_settled(records, now):
         raise ValueError('latest_observation_not_settled')
 
 
+def retain_queued_candidate(decision, key):
+    """Revalidate the one queued pulse, without chasing a new numerical argmin.
+
+    Ranking may change as the settled velocity estimate fluctuates. Do not alter
+    the queue or issue a second command: require the original pulse to remain
+    supported and strictly better than holding under the fresh observation.
+    """
+    if decision.get('status') != 'selected':
+        raise ValueError('queued_candidate_no_longer_actionable')
+    matches = [c for c in decision['candidates']
+               if (c['direction'], c['durationMs']) == key]
+    if (len(matches) != 1 or matches[0].get('eligible') is not True
+            or not finite(matches[0].get('predictedGoalErrorDeg'))
+            or matches[0]['predictedGoalErrorDeg'] >= decision['noChangeGoalErrorDeg']):
+        raise ValueError('queued_candidate_no_longer_improves_goal')
+    current = copy.deepcopy(decision)
+    current['bestCandidateAtDispatch'] = copy.deepcopy(current['selected'])
+    current['selected'] = copy.deepcopy(matches[0])
+    current['reason'] = 'queued_candidate_still_improves_goal'
+    if command_key(current) != key:
+        raise ValueError('queued_candidate_scope_changed')
+    return current
+
+
 class SingleGoalTrial:
     """Camera: start/check/samples/finish; port: preflight/execute/finalize.
 
@@ -163,8 +187,7 @@ class SingleGoalTrial:
                     if guard_calls != 1:
                         raise ValueError('dispatch_guard_single_use')
                     dispatch_at, current, final_decision = decide()
-                    if command_key(final_decision) != key:
-                        raise ValueError('candidate_changed_before_dispatch')
+                    final_decision = retain_queued_candidate(final_decision, key)
                     if not finite(self.camera.first_source_at) or dispatch_at-self.camera.first_source_at > 20:
                         raise ValueError('insufficient_capture_tail')
                     self.store.write_json('dispatch-decision.json', dict(at=dispatch_at,
