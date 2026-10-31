@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from learning.visual_action_examples import run_synthetic
+from learning.visual_action_collection import audit_collection
 from learning.visual_action_rerun import export_recording
 
 
@@ -31,3 +32,21 @@ class RerunExportTest(unittest.TestCase):
         target=self.root/'view.rrd';target.write_bytes(b'original')
         with self.assertRaises(FileExistsError):export_recording(self.root/'source',target,sdk=self.sdk)
         self.assertEqual(target.read_bytes(),b'original')
+    def test_preserved_but_rejected_frames_create_no_sink(self):
+        for scenario in ('corrupt_frame','missing_frame'):
+            with self.subTest(scenario=scenario):
+                source=self.root/scenario;run_synthetic(source,scenario)
+                audit=audit_collection(source)
+                self.assertTrue(audit['integrityOk'])
+                self.assertTrue(audit['summary']['errors'])
+                target=self.root/(scenario+'-rrd')/'view.rrd'
+                with self.assertRaisesRegex(ValueError,'validated_timeline_required'):
+                    export_recording(source,target,sdk=self.sdk)
+                self.sdk.RecordingStream.assert_not_called()
+                self.assertFalse(target.parent.exists())
+    def test_valid_failed_action_remains_replayable(self):
+        source=self.root/'unknown';run_synthetic(source,'unknown_result')
+        result=export_recording(source,self.root/'unknown-rrd/view.rrd',sdk=self.sdk)
+        self.assertFalse(result['recordingComplete'])
+        self.rec.save.assert_called_once()
+        self.rec.disconnect.assert_called_once()

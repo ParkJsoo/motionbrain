@@ -10,6 +10,10 @@ def export_recording(directory, output, *, sdk=None):
     audit=audit_collection(directory)
     if not audit['integrityOk'] or not audit['sessionClosed']:
         raise ValueError('closed_auditable_recording_required')
+    # Preserving rejected input bytes does not make them a valid timeline.
+    # Refuse before creating a sink instead of replaying a corrupt/missing frame.
+    if audit['summary']['errors']:
+        raise ValueError('validated_timeline_required')
     target=Path(output)
     if target.exists(): raise FileExistsError('rerun_output_already_exists')
     if target.suffix!='.rrd': raise ValueError('local_rrd_path_required')
