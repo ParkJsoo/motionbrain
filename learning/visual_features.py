@@ -34,15 +34,27 @@ class PointTracker:
         self.positions = np.array([[p['x'], p['y']] for p in points], np.float32).reshape(-1, 1, 2)
         self.initial = self.positions.copy()
         self.alive = np.ones(len(points), bool)
+        self.update_count = 0
+        self.reference_anchor = None
         self.previous = None
         self.fault = None
         self.settings = dict(winSize=(21, 21), maxLevel=3,
                              criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 30, .01), minEigThreshold=1e-4)
 
+    def anchor_references(self, gray):
+        """Pin background templates once, after first-frame registration only."""
+        if (self.reference_anchor is not None or self.update_count != 1 or self.fault or not self.alive.all()
+                or self.previous is None or gray.shape != (self.height,self.width)
+                or gray.dtype != self.np.uint8):
+            raise ValueError('healthy_single_reference_anchor_required')
+        self.reference_anchor = self.cv.GaussianBlur(gray,(0,0),1.)
+        self.reference_positions = self.initial.copy()
+
     def update(self, pixels):
         cv, np = self.cv, self.np
         if not isinstance(pixels, bytes) or len(pixels) != self.width*self.height*4:
             raise ValueError('tracking_frame_shape_mismatch')
+        self.update_count += 1
         gray = cv.cvtColor(np.frombuffer(pixels, np.uint8).reshape(self.height, self.width, 4), cv.COLOR_BGRA2GRAY)
         if self.previous is None:
             # Refuse textureless initial points; do not silently relocate point IDs.
@@ -51,7 +63,23 @@ class PointTracker:
                 x, y = np.rint(point).astype(int)
                 self.alive[i] = eigen[y, x] >= 1e-4
         else:
-            active = np.flatnonzero(self.alive)
+            # Fixed backgrounds are matched to the capture's first frame, never
+            # integrated through successive optical-flow estimates.
+            if self.reference_anchor is not None:
+                from learning.visual_registration import match_point
+                current = cv.GaussianBlur(gray,(0,0),1.)
+                for i,point in enumerate(self.points):
+                    if not point['reference'] or not self.alive[i]:continue
+                    try:
+                        q,_ = match_point(self.reference_anchor,current,
+                            self.reference_positions[i,0],background=True)
+                        if not 16<=q[0]<self.width-16 or not 16<=q[1]<self.height-16:
+                            raise ValueError('reference_outside_margin')
+                        self.positions[i,0] = q
+                    except ValueError:
+                        self.alive[i] = False
+            active = np.flatnonzero(self.alive & np.array([
+                self.reference_anchor is None or not p['reference'] for p in self.points]))
             if len(active):
                 p = self.positions[active]
                 q, f, error = cv.calcOpticalFlowPyrLK(self.previous, gray, p, None, **self.settings)
