@@ -12,6 +12,8 @@ ESP32 기반 5축 DC 로봇팔에 STM32 센서·원격조작, ESP32-CAM, Raspber
 - **수집·학습:** 별도 M2 반복 수집과 원본 심사로 32개 투영 방향 전이를 확보하고, [첫 행동 예측 모델](docs/evidence/2026-10-31-first-action-prediction.md)을 학습했다. 학습 16/검증 8/시험 8이며 시험 평균 절대오차는 영상상 상대 방향 0.665°, 방향 일치는 8/8이다.
 - **남은 범위:** 같은 날·같은 구도·M2의 초기 예측 결과다. [오프라인 행동 선택기](docs/offline-action-selection.md)는 저장 상태에서 후보 명령을 비교한다. [첫 모델 기반 목표 접근](docs/evidence/2026-10-31-first-model-goal-approach.md)에서는 M2 명령 1회로 영상상 목표 오차를 5.479°→0.967°로 줄여 지정한 1° 허용오차를 충족했다. 촬영을 시작한 시험 4개 중 앞선 3개는 구동 전 중단됐다. 실제 관절각 정확도·반복 성공률·다른 날짜/구도 일반화·파지는 미검증이다. 정지사진 검출의 완성을 행동 학습의 선행 조건으로 삼지 않는다.
 
+다음 중심 과제는 [현재 자세에서 이어지는 일괄 수집과 묶음 학습](docs/visual-action-learning.md#첫-성공-이후의-진행-계획)으로 경험을 늘리는 것이다.
+
 [목표·단계·평가 설계](docs/visual-action-learning.md) · [연구 근거](docs/research/visual-action-learning.md) · [인식 개발 결과](docs/evidence/2026-10-30-cv-development.md)
 
 ## 데모
