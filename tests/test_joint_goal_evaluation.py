@@ -159,6 +159,19 @@ class EvaluationTests(unittest.TestCase):
         t=dict(pose='low',policy='fixed700',goalDeg=10.)
         d=decide(Selector(),state,t);self.assertEqual(d['selected']['durationMs'],700)
         t['policy']='model';self.assertEqual(decide(Selector(),state,t)['selected']['durationMs'],900)
+    def test_observed_positioning_step_enters_band_without_reverse_pulse(self):
+        # Prior 2-degree band rejected 7.81 after a valid down pulse and oscillated.
+        self.assertEqual(positioning({'angleDeg':10.866751471424152},'high')['direction'],'down')
+        self.assertIsNone(positioning({'angleDeg':7.810630897947007},'high'))
+        self.assertIsNone(positioning({'angleDeg':7.493810708921842},'high'))
+    def test_observed_largest_step_fits_both_band_widths(self):
+        from learning.joint_goal_evaluation import POSES
+        step=3.564502592004146
+        for pose,(low,high) in POSES.items():
+            self.assertGreater(high-low,step)
+            self.assertIsNone(positioning({'angleDeg':low-.001+step},pose))
+            self.assertIsNone(positioning({'angleDeg':high+.001-step},pose))
+
     def test_positioning_envelope_and_in_pose_no_command(self):
         self.assertIsNone(positioning({'angleDeg':5.},'low'))
         with self.assertRaises(ValueError):positioning({'angleDeg':25.},'low')

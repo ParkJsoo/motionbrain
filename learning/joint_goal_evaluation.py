@@ -6,7 +6,8 @@ from learning.action_execution import finite
 from learning.joint_action_selection import canonical_sha256
 from learning.joint_goal_trial import pre_action_state, latest_settled, window, retain_queued_candidate
 
-POSES = {'low': (4., 6.), 'high': (8., 10.)}
+# Bands exceed the observed 550ms positioning steps; they are not exact poses.
+POSES = {'low': (3.2, 7.), 'high': (7., 10.7)}
 GOALS = {'low': 10., 'high': 4.}
 POLICIES = ('model', 'fixed700', 'hold')
 
