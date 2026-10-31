@@ -9,6 +9,7 @@
 | 문서 | 역할 |
 | --- | --- |
 | [시각 행동 학습](visual-action-learning.md) | 현재 목표, 단계, 입력·정답·평가 설계 |
+| [오프라인 행동 선택](offline-action-selection.md) | 저장 모델의 후보 순위·hold·abstain, 저장 상태 재생과 정책 평가 한계 |
 | [시각 행동 수집기](visual-action-collection.md) | 행동 ID·영상 구간·실패 기록·감사와 공개 단발 CLI의 계약. 별도 반복 실측 경로와 구분 |
 | [연구 근거](research/visual-action-learning.md) | 논문 6편의 실제 실험 조건과 적용 아이디어 |
 | [기존 행동 데이터 계약](data-pipeline.md) | 구현된 M4·물체 박스 데이터 검증과 학습 CLI |

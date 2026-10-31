@@ -10,7 +10,7 @@ Record arm features and changes around commands from a fixed external camera vie
 
 - **Demonstrated:** M4 single-axis control, manually guided grasping and detector development training. All 12 images in the final detector result were training data; one duplicate target object false positive remains.
 - **Collection and learning:** a separate M2 repeat-collection path and original-data audit produced 32 projected-orientation transitions for the [first action predictor (Korean)](docs/evidence/2026-10-31-first-action-prediction.md). The train/validation/test split is 16/8/8; test MAE is 0.665° in image-projected relative orientation, with direction agreement of 8/8.
-- **Remaining scope:** this is an initial same-day, same-view M2 prediction result. Physical joint-angle accuracy, other-day/view generalization, model-based action selection, autonomous approach and grasping remain unverified. Perfect still-image detection is not a prerequisite for action learning.
+- **Remaining scope:** this is an initial same-day, same-view M2 prediction result. The [offline action selector (Korean)](docs/offline-action-selection.md) compares candidate commands from saved states. Physical joint-angle accuracy, other-day/view generalization and physical goal approach/grasping with selected commands remain unverified. Perfect still-image detection is not a prerequisite for action learning.
 
 [Goals, stages and evaluation (Korean)](docs/visual-action-learning.md) · [Research basis (Korean)](docs/research/visual-action-learning.md) · [Detector development results (Korean)](docs/evidence/2026-10-30-cv-development.md)
 
