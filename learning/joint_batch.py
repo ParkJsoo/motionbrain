@@ -80,6 +80,29 @@ class BatchCollection(GoalEvaluation):
         choose(state,{},0)  # envelope check also applies immediately before dispatch
         return at,state
 
+    def dispatch_state(self):
+        """Wait only for transient settling; never repeat a command or hide a fault."""
+        seconds=self.scope.get('dispatchSettleWaitSeconds',0.)
+        started=self.clock.monotonic();deadline=started+seconds;checks=0
+        while True:
+            try:
+                at,state=self.fresh()
+                if at>deadline and checks:raise ValueError('dispatch_settle_deadline')
+                if checks:self.store.write_json(f'dispatch-wait-{self.serial:03d}.json',
+                    dict(startedAt=started,endedAt=at,checks=checks,maxSeconds=seconds))
+                return at,state
+            except ValueError as exc:
+                if not seconds or str(exc) not in ('invalid_or_unsettled_observation_window',
+                        'latest_observation_not_settled','insufficient_observation_window'):
+                    raise
+                if self.clock.monotonic()>=deadline:raise ValueError('dispatch_settle_deadline') from exc
+                # The live port verifies armed, zero output and boot identity on
+                # every wait iteration. Missing support fails before dispatch.
+                self.active_port.check_waiting(deadline)
+                remaining=deadline-self.clock.monotonic()
+                if remaining<=0:raise ValueError('dispatch_settle_deadline') from exc
+                self.clock.sleep(min(.1,remaining));checks+=1
+
     def trial(self,row):
         row['status']='failed';trial=row['trial']
         self.observe(self.clock.monotonic()+8)
@@ -88,7 +111,7 @@ class BatchCollection(GoalEvaluation):
         at=None
         def guard():
             nonlocal at,state
-            at,state=self.fresh()
+            at,state=self.dispatch_state()
             # No queue replacement/second command when the required inward direction changes.
             fresh_pulse=choose(state,self.condition_counts,self.counts['target']-1)
             if fresh_pulse!=pulse:raise ValueError('batch_candidate_changed')

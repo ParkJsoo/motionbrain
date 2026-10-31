@@ -41,3 +41,36 @@ class ResumeTests(unittest.TestCase):
  def test_no_reexecution_on_ambiguous_run_response(self):
   r=report();s=simulation();s.scope=make_scope('remaining',r);s.runner=RemainingCollection(s.scope,r,s.camera,s.port,s.store,clock=s.clock);s.failure='response'
   result=s.run();self.assertEqual(len(s.commands),1);self.assertEqual(result['summary']['unknown'],1)
+
+
+def second_report(first):
+ from learning.joint_batch_resume import RemainingCollection
+ s=simulation();scope=make_scope('prior',first);r=RemainingCollection(scope,first,s.camera,s.port,s.store,clock=s.clock)
+ rows=[]
+ for i,t in enumerate(r.scheduled_trials()):
+  yes=i<7;cancel=i==7;p=dict(direction='up',durationMs=550,pwmMagnitude=160)
+  a=[dict(executionStatus='not_dispatched',dispatchGuardPassed=False,offVerified=True)] if cancel else []
+  rows.append(dict(trial=t,executed=yes,executionStatus='executed' if yes else 'not_dispatched',
+   status='eligible' if yes else 'failed' if cancel else 'not_started',commandAttempts=a,pulse=p,execution=dict(offVerified=True)))
+ return dict(schemaVersion='motionbrain.m2_batch_result.v1',scopeClosed=True,finalIdleOffVerified=True,status='failed',completedCaptures=[0],trials=rows)
+
+
+class Resume94Tests(unittest.TestCase):
+ def test_94_disjoint_commands_and_whole_capture_splits(self):
+  from learning.joint_batch_resume import Remaining94Collection,make_scope94
+  first=report();second=second_report(first);s=simulation();s.scope=make_scope94('final94',first,second)
+  s.runner=Remaining94Collection(s.scope,first,second,s.camera,s.port,s.store,clock=s.clock)
+  self.assertEqual(sum(s.runner.condition_counts.values()),26)
+  r=s.run();self.assertEqual(r['status'],'completed',r['errors']);self.assertEqual(len(s.commands),94)
+  self.assertEqual(Counter(x['trial']['split'] for x in r['trials']),dict(train=48,validation=22,test=24))
+  self.assertEqual({x['trial']['id'] for x in r['trials']},{f'trial-{i:03d}' for i in range(27,121)})
+ def test_cancel_unknown_changed_schedule_or_executed_rejected(self):
+  from learning.joint_batch_resume import checkpoint94
+  for change in ('unknown','guard','off','schedule','executed'):
+   first=report();second=second_report(first);r=second['trials'][7]
+   if change=='unknown':r['executionStatus']='outcome_unknown'
+   elif change=='guard':r['commandAttempts'][0]['dispatchGuardPassed']=True
+   elif change=='off':r['commandAttempts'][0]['offVerified']=False
+   elif change=='schedule':r['trial']['split']='train'
+   else:r['executed']=True
+   with self.assertRaises(ValueError):checkpoint94(first,second)
