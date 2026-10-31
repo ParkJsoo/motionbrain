@@ -9,8 +9,8 @@ A personal robotics project integrating an ESP32-controlled five-axis DC arm, ST
 Record arm features and changes around commands from a fixed external camera view, then learn `current observations and recent history + candidate command → next motion`. Kinematics and existing control provide structure; experience models friction, backlash and pose-dependent responses.
 
 - **Demonstrated:** M4 single-axis control, manually guided grasping and detector development training. All 12 images in the final detector result were training data; one duplicate target object false positive remains.
-- **Collection foundation:** the [visual action recording core (Korean)](docs/visual-action-collection.md) links commands and before/during/after frames. Continuous Mac capture, markerless point tracking and bounded M2 execution are software-tested; physical integration remains unverified. Prediction and command selection are next.
-- **Action-training readiness:** Eligible physical action transitions: 0. The new visual action model, autonomous approach and grasping remain unimplemented/unverified. Perfect still-image detection is not a prerequisite for the action pilot.
+- **Collection and learning:** a separate M2 repeat-collection path and original-data audit produced 32 projected-orientation transitions for the [first action predictor (Korean)](docs/evidence/2026-10-31-first-action-prediction.md). The train/validation/test split is 16/8/8; test MAE is 0.665° in image-projected relative orientation, with direction agreement of 8/8.
+- **Remaining scope:** this is an initial same-day, same-view M2 prediction result. Physical joint-angle accuracy, other-day/view generalization, model-based action selection, autonomous approach and grasping remain unverified. Perfect still-image detection is not a prerequisite for action learning.
 
 [Goals, stages and evaluation (Korean)](docs/visual-action-learning.md) · [Research basis (Korean)](docs/research/visual-action-learning.md) · [Detector development results (Korean)](docs/evidence/2026-10-30-cv-development.md)
 
@@ -28,8 +28,8 @@ Record arm features and changes around commands from a fixed external camera vie
 | M4 shoulder feedback | AS5600 target control; final no-added-load and 23.10g regressions each passed 11/11 | Fixed mount and limited range on 2026-06-28; no position feedback on the other four axes |
 | ROS2 integration | Typed messages, URDF/RViz, control guard, `ros2_control` | Physical writes validated only for operator-confirmed single M4 targets |
 | Observed manipulation | Grasp/lift of a single target object type followed by two additional grasp/place cycles | An external observer selected manual commands from camera views; first repeat required correction; not a learned policy |
-| Detector development | Faster R-CNN fitting: on 12 training images, target object TP8/FP1/FN0, gripper TP12/FP0/FN0, relative position/direction 8/8 | Training-set fit for a single target object type only. Final-model generalization and action learning unverified |
-| Action-learning foundation | Bounded commands and outcome logs, NumPy ridge/no-change baselines and session splits | Recording core validated offline; live camera/executor integration and the new arm-feature model remain unimplemented; zero eligible physical action transitions |
+| Detector development | Faster R-CNN fitting: on 12 training images, target object TP8/FP1/FN0, gripper TP12/FP0/FN0, relative position/direction 8/8 | Training-set fit for a single target object type only; final-detector generalization remains unverified |
+| Action prediction | First linear/ridge candidates fitted on 32 physical M2 transitions with held-out groups | Same-day/view image-projected relative orientation; model-based physical control and generalization to other conditions remain unverified |
 
 ## Existing architecture and research path
 
@@ -40,7 +40,7 @@ ESP32-CAM ── HTTP /capture ──> Raspberry Pi (perception / dashboard / RO
                                   └─ M4 proposal → operator confirmation → ESP32
 ```
 
-The observation/training path from an external camera to the Mac is distinct from the existing ESP32-CAM-to-Pi path. The new external camera visual action model is not connected to the device-control architecture shown above.
+The external-camera-to-Mac observation/training path is distinct from the existing ESP32-CAM-to-Pi path. The diagram above shows existing device control. The new M2 action predictor has completed offline fitting/evaluation but is not connected to device control.
 
 - Legacy manual commands pass through the ESP32 `Dispatcher` and `SafetyGate`. Experimental `/actions` use a separate bounded executor that checks `SafetyGate` before driving outputs. Command acceptance is distinct from target attainment.
 - Direct camera `/stream` is disabled; images use `/capture` or Pi tracked frames.

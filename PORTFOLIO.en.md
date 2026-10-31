@@ -2,7 +2,7 @@
 
 [한국어](PORTFOLIO.md) · [Project and demo](README.en.md)
 
-An ESP32/STM32/camera/Raspberry Pi/ROS2 integration project that distinguishes sending a command from physically reaching a target. The strongest physical results are M4 single-axis feedback control and system integration. Detector development training is complete; a self-supervised action model linking observations and commands is now being designed. No learned-policy manipulation result has been demonstrated.
+An ESP32/STM32/camera/Raspberry Pi/ROS2 integration project that distinguishes sending a command from physically reaching a target. The strongest physical results are M4 single-axis feedback control and system integration. Following detector development training, the first M2 action predictor linking observations and commands has been fitted and evaluated. No learned-policy manipulation result has been demonstrated.
 
 ## Problem and design
 
@@ -45,7 +45,7 @@ Faster R-CNN was trained on 12 images of a single target object type from an ear
 
 The current goal is **learning the consequences of the arm's own actions and using those predictions to approach a target**. Fixed external camera observations, recent command history and available sensors condition predictions of arm-feature changes under candidate PWM/duration commands. Still-image detection remains an observation aid; joints without encoders can join the pilot when their motion is observable.
 
-Bounded commands, output records, NumPy ridge and no-change baselines already exist. Existing learning features describe an object box and M4. A new [visual action recording core (Korean)](docs/visual-action-collection.md) links before/during/after frames with commands and responses from synthetic or saved inputs, retaining failures and no-motion observations. Continuous Mac capture, markerless LK tracking and bounded positive M2 pulse integration are implemented and tested with synthetic inputs and doubles. Physical integration and moving-arm tracking remain unverified. **Eligible physical action transitions remain zero.** The new model and prediction-based control are planned. [Visual action design (Korean)](docs/visual-action-learning.md) · [Research basis (Korean)](docs/research/visual-action-learning.md)
+The [visual action recording core (Korean)](docs/visual-action-collection.md) connects before/during/after frames with commands and responses. A separate repeat-collection path produced 32 audited M2 projected-orientation transitions, split 16/8/8 for training/validation/test. Linear/ridge candidates were fitted; validation selected a linear model with test MAE 0.665° (no-change baseline 6.797°) and direction agreement 8/8. This is same-day/view 2D observation prediction, not physical joint-angle accuracy or model-based manipulation. It is distinct from eligibility under the existing object-box/M4 data contract. [Conditions, denominators, failures and evaluation (Korean)](docs/evidence/2026-10-31-first-action-prediction.md) · [Next stages (Korean)](docs/visual-action-learning.md)
 
 Earlier investigations studied camera/USB clock linkage and output evidence under fixed image/sensor-age contracts. Their measurements and failures remain in [Mac camera instrumentation (Korean)](docs/mac-direct-camera.md) and the [existing action-data contract (Korean)](docs/data-pipeline.md). The new slow-action/settled-observation approach needs a separate contract; old criteria are not silently relaxed and manual demonstrations are not promoted into action-training data.
 

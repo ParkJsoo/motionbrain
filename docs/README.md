@@ -9,7 +9,7 @@
 | 문서 | 역할 |
 | --- | --- |
 | [시각 행동 학습](visual-action-learning.md) | 현재 목표, 단계, 입력·정답·평가 설계 |
-| [시각 행동 수집기](visual-action-collection.md) | 합성·저장 자료의 행동 ID·영상 구간·실패 기록과 감사. 실물 연결은 다음 단계 |
+| [시각 행동 수집기](visual-action-collection.md) | 행동 ID·영상 구간·실패 기록·감사와 공개 단발 CLI의 계약. 별도 반복 실측 경로와 구분 |
 | [연구 근거](research/visual-action-learning.md) | 논문 6편의 실제 실험 조건과 적용 아이디어 |
 | [기존 행동 데이터 계약](data-pipeline.md) | 구현된 M4·물체 박스 데이터 검증과 학습 CLI |
 | [Mac 카메라 계측](mac-direct-camera.md) | 영상·USB 시각 연결 도구와 계측 결과 |
@@ -31,6 +31,7 @@
 | [2026-10-17 빈 HTTP 연결](evidence/2026-10-17-idle-http-client.md) | 초기 연결 대기 수정과 남은 통신 실패 |
 | [2026-10-17 관찰 기반 파지](evidence/2026-10-17-lipbalm-repetitions.md) | 수동 명령으로 수행한 파지와 반복·보정 |
 | [2026-10-30 인식 개발](evidence/2026-10-30-cv-development.md) | 학습 12장 결과, 남은 중복 오탐, 일반화 검증과의 구분 |
+| [2026-10-31 첫 행동 예측](evidence/2026-10-31-first-action-prediction.md) | M2 32개 전이, 논리 그룹 분할, 기준선 비교와 한계 |
 
 각 기록에는 조건·실패·분모·재현 한계를 남긴다. 비공개 원본 이미지·실행 응답은 이 공개 저장소에 포함하지 않는다.
 
