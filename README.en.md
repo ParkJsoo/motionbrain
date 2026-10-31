@@ -10,7 +10,7 @@ Record arm features and changes around commands from a fixed external camera vie
 
 - **Demonstrated:** M4 single-axis control, manually guided grasping and detector development training. All 12 images in the final detector result were training data; one duplicate target object false positive remains.
 - **Collection and learning:** a separate M2 repeat-collection path and original-data audit produced 32 projected-orientation transitions for the [first action predictor (Korean)](docs/evidence/2026-10-31-first-action-prediction.md). The train/validation/test split is 16/8/8; test MAE is 0.665° in image-projected relative orientation, with direction agreement of 8/8.
-- **Remaining scope:** this is an initial same-day, same-view M2 prediction result. The [offline action selector (Korean)](docs/offline-action-selection.md) compares candidate commands from saved states. Physical joint-angle accuracy, other-day/view generalization and physical goal approach/grasping with selected commands remain unverified. The single-goal trial connection has passed mock validation. Perfect still-image detection is not a prerequisite for action learning.
+- **Remaining scope:** this is an initial same-day, same-view M2 prediction result. The [offline action selector (Korean)](docs/offline-action-selection.md) compares candidate commands from saved states. The [first model-based goal approach (Korean)](docs/evidence/2026-10-31-first-model-goal-approach.md) used one M2 command to reduce projected goal error from 5.479° to 0.967°, within the specified 1° tolerance. Of four capture-started trials, the preceding three stopped before motor execution. Physical joint-angle accuracy, repeated success rate, other-day/view generalization and grasping remain unverified. Perfect still-image detection is not a prerequisite for action learning.
 
 [Goals, stages and evaluation (Korean)](docs/visual-action-learning.md) · [Research basis (Korean)](docs/research/visual-action-learning.md) · [Detector development results (Korean)](docs/evidence/2026-10-30-cv-development.md)
 
@@ -29,7 +29,7 @@ Record arm features and changes around commands from a fixed external camera vie
 | ROS2 integration | Typed messages, URDF/RViz, control guard, `ros2_control` | Physical writes validated only for operator-confirmed single M4 targets |
 | Observed manipulation | Grasp/lift of a single target object type followed by two additional grasp/place cycles | An external observer selected manual commands from camera views; first repeat required correction; not a learned policy |
 | Detector development | Faster R-CNN fitting: on 12 training images, target object TP8/FP1/FN0, gripper TP12/FP0/FN0, relative position/direction 8/8 | Training-set fit for a single target object type only; final-detector generalization remains unverified |
-| Action prediction | First linear/ridge candidates fitted on 32 physical M2 transitions with held-out groups | Same-day/view image-projected relative orientation; model-based physical control and generalization to other conditions remain unverified |
+| Action prediction | First linear/ridge candidates fitted on 32 physical M2 transitions with held-out groups | One model-selected command reached a projected goal tolerance in the same day/view; repeated success rate and generalization remain unverified |
 
 ## Existing architecture and research path
 
@@ -40,7 +40,7 @@ ESP32-CAM ── HTTP /capture ──> Raspberry Pi (perception / dashboard / RO
                                   └─ M4 proposal → operator confirmation → ESP32
 ```
 
-The external-camera-to-Mac observation/training path is distinct from the existing ESP32-CAM-to-Pi path. The diagram above shows existing device control. The new M2 action predictor has completed offline fitting/evaluation but is not connected to device control.
+The external-camera-to-Mac observation/training path is distinct from the existing ESP32-CAM-to-Pi path. The diagram above shows existing device control. Following offline fitting/evaluation, the new M2 action predictor was connected to a separate bounded executor for one goal-approach command. Continuous autonomous control is not implemented.
 
 - Legacy manual commands pass through the ESP32 `Dispatcher` and `SafetyGate`. Experimental `/actions` use a separate bounded executor that checks `SafetyGate` before driving outputs. Command acceptance is distinct from target attainment.
 - Direct camera `/stream` is disabled; images use `/capture` or Pi tracked frames.
