@@ -133,3 +133,7 @@ systemctl list-timers motionbrain-dashboard-reconcile.timer --all
 Recovery requires **a reachable controller address or working Pi hostname resolution**. If every device IP changes and all hostname resolution fails, a browser cannot locate the new network addresses. Restore networking/mDNS or enter a current address. The supported scope is a private IPv4 LAN with one MotionBrain setup, not IPv6-only networks, public proxies, or automatic selection among identically named devices. Service startup and discovery intervals mean recovery is not instantaneous.
 
 Run software verification with `python3 -m unittest discover -s tests`. Browser recovery tests require Node.js and use mocked HTTP and virtual timers. They are separate from physical DHCP changes, device reboots, image collection, and motor tests. The existing systemd installer also installs `publish_vision_endpoint.py`, using the existing authentication and timer configuration.
+
+## Supervised collection
+
+[Single-joint collection blocks and offline endpoint measurement (Korean)](docs/supervised-action-collection.md) separate image measurement from physical execution. Preparation and validation are offline; physical runs require explicit execution and onsite supervision. This new path has not yet been validated on hardware.
