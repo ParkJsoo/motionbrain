@@ -61,24 +61,42 @@ def validate_pulse(pulse):
 
 
 def response_json(raw, path):
-    def pairs(items):
+    class ObjectPairs(list):
+        pass
+
+    def normalize(value, *, root=False):
+        if not isinstance(value, ObjectPairs):
+            if isinstance(value, list):
+                return [normalize(item) for item in value]
+            return value
         result = {}
-        for key, value in items:
+        repeated_state = False
+        for key, item in value:
+            # This field is parser evidence, never controller-provided data.
+            if key == 'legacyStateValues':
+                raise ValueError('reserved_response_key')
+            item = normalize(item)
             if key in result:
-                # The legacy sequence endpoint repeats root state with a
-                # sequence meaning. Its nested sequence is checked separately.
-                if path == '/sequence' and key == 'state':
-                    result.setdefault('legacyStateValues', [result[key]]).append(value)
-                else:
+                # Firmware command replies repeat the same system state;
+                # sequence replies append a separate sequence state. Allow
+                # exactly these two root fields, never nested or conflicting
+                # command states. Keep both values as audit evidence.
+                if (not root or key != 'state' or repeated_state
+                        or not isinstance(result[key], str) or not isinstance(item, str)
+                        or path not in ('/command', '/sequence')
+                        or (path == '/command' and result[key] != item)):
                     raise ValueError('duplicate_response_key')
-            result[key] = value
+                result['legacyStateValues'] = [result[key], item]
+                repeated_state = True
+            result[key] = item
         return result
+
     def invalid_constant(value):
         raise ValueError('nonfinite_response')
-    value = json.loads(raw, object_pairs_hook=pairs, parse_constant=invalid_constant)
-    if not isinstance(value, dict):
+    value = json.loads(raw, object_pairs_hook=ObjectPairs, parse_constant=invalid_constant)
+    if not isinstance(value, ObjectPairs):
         raise ValueError('response_object_required')
-    return value
+    return normalize(value, root=True)
 
 
 class SequencePort:

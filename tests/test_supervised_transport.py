@@ -30,6 +30,10 @@ class Response:
     def read(self, size): return self.raw[:size]
 
 
+class RawResponse(Response):
+    def __init__(self, raw): self.raw = raw
+
+
 class Controller:
     def __init__(self, clock):
         self.clock = clock;self.requests = [];self.state = 'IDLE';self.queue = []
@@ -83,6 +87,10 @@ class Controller:
                 self.state = 'IDLE';self.running = False
                 for i in range(1, 6): self.append(i, 0)
                 if self.fail_stop: raise TimeoutError('lost STOP reply')
+            # web_server.cpp: sendCommandResult adds the state summary, then
+            # handleCommand appends the same root state a second time.
+            state = json.dumps(self.state).encode()
+            return RawResponse(b'{"success":true,"state":' + state + b',"state":' + state + b'}')
         return Response({'success': True})
 
 
@@ -247,6 +255,52 @@ class TransportTests(unittest.TestCase):
         self.assertEqual(parsed['legacyStateValues'], ['IDLE', 'IDLE'])
         for path in ('/status', '/actions'):
             with self.assertRaises(ValueError): response_json(b'{"state":"IDLE","state":"ARMED"}', path)
+
+    def test_legacy_arm_stop_roundtrip_retains_both_states(self):
+        port, device, store = self.setup_port()
+        result = port.execute(pulse(), lambda: None)
+        self.assertTrue(result['offVerified'])
+        self.assertTrue(port.finish())
+        responses = [v for k, v in store.rows.items() if k.endswith('-response.json')
+                     and 'legacyStateValues' in v['parsed']]
+        self.assertEqual([r['parsed']['legacyStateValues'] for r in responses],
+                         [['ARMED', 'ARMED'], ['IDLE', 'IDLE'], ['IDLE', 'IDLE']])
+        self.assertTrue(all(r['rawUtf8'].count('"state"') == 2 for r in responses))
+        self.assertEqual(sum(p == {'action': 'run'} for _, p in device.requests), 1)
+
+    def test_legacy_state_exception_rejects_ambiguity_and_nested_duplicates(self):
+        invalid = [
+            (b'{"state":"IDLE","state":"ARMED"}', '/command'),
+            (b'{"state":0,"state":0}', '/command'),
+            (b'{"state":"IDLE","state":"IDLE","state":"IDLE"}', '/command'),
+            (b'{"success":false,"success":true}', '/command'),
+            (b'{"nested":{"state":"IDLE","state":"IDLE"}}', '/command'),
+            (b'{"nested":[{"state":"IDLE","state":"IDLE"}]}', '/sequence'),
+            (b'{"state":"ARMED","state":"RUNNING","state":"IDLE"}', '/sequence'),
+            (b'{"legacyStateValues":["ARMED"],"state":"IDLE","state":"IDLE"}', '/command'),
+            (b'{"state":"IDLE","state":"IDLE","legacyStateValues":["ARMED"]}', '/command'),
+        ]
+        for raw, path in invalid:
+            with self.subTest(raw=raw, path=path), self.assertRaises(ValueError):
+                response_json(raw, path)
+        parsed = response_json(b'{"state":"ARMED","state":"RUNNING"}', '/sequence')
+        self.assertEqual(parsed['legacyStateValues'], ['ARMED', 'RUNNING'])
+
+    def test_conflicting_arm_reply_prevents_run_and_still_stops(self):
+        port, device, _ = self.setup_port();original = device.open
+        def conflict(request, timeout):
+            result = original(request, timeout)
+            if request.data == b'cmd=arm':
+                return RawResponse(b'{"success":true,"state":"IDLE","state":"ARMED"}')
+            return result
+        device.open = conflict
+        with self.assertRaisesRegex(ValueError, 'duplicate_response_key'):
+            port.execute(pulse(), lambda: None)
+        self.assertFalse(port.may_have_run)
+        self.assertFalse(any(p == {'action': 'run'} for _, p in device.requests))
+        self.assertEqual(sum(p == {'cmd': 'stop'} for _, p in device.requests), 1)
+        self.assertTrue(port.finish())
+        self.assertFalse(device.queue)
 
 
 if __name__ == '__main__': unittest.main()
