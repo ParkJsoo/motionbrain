@@ -1,4 +1,5 @@
 import copy
+import http.client
 import json
 import unittest
 import urllib.parse
@@ -144,6 +145,94 @@ class TransportTests(unittest.TestCase):
         wrong = pulse();wrong['expectedPwm'] = -153
         with self.assertRaises(ValueError): port.execute(wrong, lambda: None)
         self.assertEqual(device.requests, [])
+
+    def test_prearm_queue_disconnect_recovers_once_for_each_down_pulse(self):
+        port, device, store = self.setup_port()
+        original = device.open
+        failed = set()
+        timeouts = []
+        def disconnect(request, timeout):
+            if request.data is None and request.full_url.endswith('/sequence') and device.queue:
+                timeouts.append(timeout)
+                run_count = sum(p == {'action': 'run'} for _, p in device.requests)
+                if run_count not in failed:
+                    failed.add(run_count);device.clock.sleep(.29)
+                    raise http.client.RemoteDisconnected()
+            return original(request, timeout)
+        device.open = disconnect
+        for _ in range(2):
+            result = port.execute(pulse(direction='down', percent=63, ms=550), lambda: None)
+            self.assertTrue(result['offVerified'])
+            device.clock.sleep(3);port.check_idle()
+        self.assertEqual(len(failed), 2)
+        self.assertEqual(sum(p == {'action': 'run'} for _, p in device.requests), 2)
+        self.assertEqual(sum(n.endswith('-attempt-1-error.json') for n in store.rows), 2)
+        self.assertEqual(sum(n.endswith('-attempt-2-intent.json') for n in store.rows), 2)
+        self.assertAlmostEqual(timeouts[1], .51)
+        self.assertAlmostEqual(timeouts[3], .51)
+        self.assertFalse(device.queue);self.assertFalse(any(device.speeds.values()))
+
+    def test_repeated_prearm_disconnect_stops_before_arm_and_run(self):
+        port, device, store = self.setup_port();original = device.open;attempts = []
+        def disconnect(request, timeout):
+            if request.data is None and request.full_url.endswith('/sequence') and device.queue:
+                attempts.append(timeout);raise http.client.RemoteDisconnected()
+            return original(request, timeout)
+        device.open = disconnect
+        with self.assertRaises(http.client.RemoteDisconnected):
+            port.execute(pulse(direction='down'), lambda: None)
+        self.assertEqual(len(attempts), 2)
+        self.assertFalse(any(p in ({'cmd': 'arm'}, {'action': 'run'}) for _, p in device.requests))
+        self.assertFalse(device.queue);self.assertFalse(any(device.speeds.values()))
+        self.assertTrue(port.finish())
+
+    def test_disconnect_never_retries_writes_cleanup_or_unverified_reads(self):
+        cases = [('/sequence', {'action': 'run'}, {'run': True}, True, False),
+                 ('/command', {'cmd': 'arm'}, {}, True, False),
+                 ('/command', {'cmd': 'stop'}, {'emergency': True}, True, False),
+                 ('/sequence', None, {'emergency': True}, True, False),
+                 ('/sequence', None, {}, False, False),
+                 ('/sequence', None, {}, True, True),
+                 ('/status', None, {}, True, False)]
+        for path, payload, kwargs, off, ran in cases:
+            with self.subTest(path=path, payload=payload, kwargs=kwargs, off=off, ran=ran):
+                port, device, store = self.setup_port();attempts = []
+                port.off_verified = off;port.may_have_run = ran
+                def disconnect(request, timeout):
+                    attempts.append(request);raise http.client.RemoteDisconnected()
+                device.open = disconnect
+                with self.assertRaises(http.client.RemoteDisconnected):
+                    port._call(path, payload, **kwargs)
+                self.assertEqual(len(attempts), 1)
+
+    def test_queue_retry_does_not_extend_elapsed_budget(self):
+        port, device, store = self.setup_port();port.off_verified = True;attempts = []
+        def disconnect(request, timeout):
+            attempts.append(timeout);device.clock.sleep(.81)
+            raise http.client.RemoteDisconnected()
+        device.open = disconnect
+        with self.assertRaises(http.client.RemoteDisconnected): port._call('/sequence')
+        self.assertEqual(len(attempts), 1)
+
+    def test_retry_evidence_failure_blocks_second_request(self):
+        port, device, store = self.setup_port();port.off_verified = True;attempts = []
+        def disconnect(request, timeout):
+            attempts.append(timeout);store.broken = True
+            raise http.client.RemoteDisconnected()
+        device.open = disconnect
+        with self.assertRaises(OSError): port._call('/sequence')
+        self.assertEqual(len(attempts), 1);self.assertTrue(port.evidence_failed)
+
+    def test_queue_invalid_json_and_timeout_are_not_retried(self):
+        for error in (ValueError('malformed'), TimeoutError('deadline')):
+            port, device, store = self.setup_port();port.off_verified = True;attempts = []
+            def fail(request, timeout):
+                attempts.append(timeout)
+                if isinstance(error, ValueError): return RawResponse(b'{bad')
+                raise error
+            device.open = fail
+            with self.assertRaises(type(error)): port._call('/sequence')
+            self.assertEqual(len(attempts), 1)
 
     def test_run_timeout_is_unknown_without_resend(self):
         port, device, _ = self.setup_port()

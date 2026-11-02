@@ -6,6 +6,7 @@ sequence timer limits the requested step; actual ramp-down is recorded separatel
 from __future__ import annotations
 
 import copy
+import http.client
 import json
 import math
 import time
@@ -165,9 +166,32 @@ class SequencePort:
                 if run:
                     self.last_dispatch_before = self.clock.monotonic()
                     self.may_have_run = True
-                with self.opener.open(request, timeout=self.timeout) as response:
-                    raw = response.read(65537)
-                    code = response.status
+                started = self.clock.monotonic()
+                for attempt in range(2):
+                    remaining = self.timeout - (self.clock.monotonic() - started)
+                    if remaining <= 0:
+                        raise TimeoutError('request_deadline')
+                    try:
+                        with self.opener.open(request, timeout=remaining) as response:
+                            raw = response.read(65537)
+                            code = response.status
+                        break
+                    except http.client.RemoteDisconnected:
+                        # Only the pre-ARM, verified-OFF queue read may recover
+                        # once. Both attempts share the existing alarm/budget;
+                        # writes, active-output polling and cleanup never retry.
+                        if (attempt or path != '/sequence' or payload is not None
+                                or run or emergency or self.may_have_run
+                                or not self.off_verified or self.evidence_failed):
+                            raise
+                        remaining = self.timeout - (self.clock.monotonic() - started)
+                        if remaining <= 0:
+                            raise
+                        self._save(name + '-attempt-1-error.json', {
+                            'error': 'RemoteDisconnected', 'endedAt': self.clock.monotonic()})
+                        self._save(name + '-attempt-2-intent.json', {
+                            **event, 'startedAt': self.clock.monotonic(),
+                            'attempt': 2, 'sharedTimeoutSeconds': self.timeout})
                 if run:
                     self.last_dispatch_after = self.clock.monotonic()
             if len(raw) > 65536 or code != 200:
