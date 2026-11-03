@@ -204,6 +204,8 @@ public:
   // externally serialized; this is not a lock or an electrical OFF proof.
   // One lease owns every motor. IDs are never reused during this object's life.
   bool finiteProfileReady() const;
+  bool finiteProfileOwned() const;
+  void invalidateFiniteProfileLease();
   bool acquireFiniteProfileLease(uint32_t ordinal, uint32_t& lease);
   bool finiteProfileLeaseMatches(uint32_t lease) const;
   bool finiteProfileLeaseSealed(uint32_t lease) const;

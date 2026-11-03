@@ -1,3 +1,4 @@
+#include "control/finite_profile_legacy_guard.h"
 #include "control/bounded_action_service.h"
 #include <esp_system.h>
 #include "control/command.h"
@@ -30,6 +31,9 @@ public:
     return safetyGate.allows(command, result);
   }
   bool idle() const override {
+    // Core checks existing IDs first. Only a new admission may revoke a finite
+    // owner; old duplicate/conflicting requests must remain read-only.
+    if (!FiniteProfileLegacy::allowed(CommandType::MOTOR_RUN)) return false;
     return !motorControl.hasPendingOutput() && motionSequence.getState() != SequenceState::RUNNING &&
       !angleController.isActive() && !shoulderAngleController.isActive() &&
       !teleopAdapter.isControlActive() && !teleopAdapter.isDeadmanHeld();

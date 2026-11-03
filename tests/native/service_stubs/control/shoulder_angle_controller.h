@@ -7,6 +7,8 @@ extern MotorControl motorControl;
 enum class ShoulderAngleStopReason { NONE, MANUAL_STOP, TARGET_REACHED, SENSOR_ERROR };
 class ShoulderAngleController {
 public:
+  bool ready = true;
+  bool isReady() const { return ready; }
   bool active = false;
   unsigned starts = 0;
   unsigned cancels = 0;

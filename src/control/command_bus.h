@@ -15,6 +15,8 @@ public:
   bool enqueue(const Command& command);
   bool dequeue(Command& command);
   bool isEmpty() const;
+  // Pending motion/state changes; lights and routine dry-run cannot drive motors.
+  bool hasPendingControlCommand() const;
   bool isFull() const;
   uint8_t size() const;
 

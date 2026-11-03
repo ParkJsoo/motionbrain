@@ -1,3 +1,4 @@
+#include "control/finite_profile_legacy_guard.h"
 #include "control/command_bus.h"
 
 CommandBus::CommandBus()
@@ -12,6 +13,7 @@ uint32_t CommandBus::allocateId() {
 }
 
 bool CommandBus::enqueue(const Command& command) {
+  if (!FiniteProfileLegacy::allowed(command.type)) return false;
   if (isFull()) {
     return false;
   }
@@ -43,4 +45,19 @@ bool CommandBus::isFull() const {
 
 uint8_t CommandBus::size() const {
   return count_;
+}
+
+bool CommandBus::hasPendingControlCommand() const {
+  for (uint8_t i = 0; i < count_; ++i) {
+    switch (queue_[(head_ + i) % MAX_PENDING].type) {
+      case CommandType::LIGHT_ON:
+      case CommandType::LIGHT_OFF:
+      case CommandType::LIGHT_TOGGLE:
+      case CommandType::ROUTINE_DRY_RUN:
+        break;
+      default:
+        return true;
+    }
+  }
+  return false;
 }

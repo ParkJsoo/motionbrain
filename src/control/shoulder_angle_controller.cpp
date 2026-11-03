@@ -1,3 +1,5 @@
+#include "control/finite_profile_legacy_guard.h"
+#include "control/command.h"
 #include "control/shoulder_angle_controller.h"
 
 #include <math.h>
@@ -163,6 +165,11 @@ bool ShoulderAngleController::isActive() const {
 
 bool ShoulderAngleController::startAbsolute(float targetDegrees, uint8_t percent,
                                             char* message, size_t messageSize) {
+  if (!FiniteProfileLegacy::allowed(CommandType::SHOULDER_ANGLE_RUN)) {
+    if (message != nullptr && messageSize > 0)
+      snprintf(message, messageSize, "Finite-profile output owner holds control");
+    return false;
+  }
   if (message != nullptr && messageSize > 0) {
     message[0] = '\0';
   }

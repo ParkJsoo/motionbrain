@@ -1,3 +1,5 @@
+#include "control/command.h"
+#include "control/finite_profile_legacy_guard.h"
 #include "motion_sequence.h"
 #include "control/angle_controller.h"
 #include "control/shoulder_angle_controller.h"
@@ -105,6 +107,7 @@ void MotionSequence::update() {
  */
 bool MotionSequence::addCommand(MotionJoint joint, MotionDirection direction,
                                 uint8_t speed, uint32_t durationMs) {
+  if (!FiniteProfileLegacy::allowed(CommandType::SEQUENCE_ADD)) return false;
   // COMPLETED 또는 STOPPED 후 첫 add 시 자동 clear — 새 시퀀스 시작 의도
   if (state_ == SequenceState::COMPLETED || state_ == SequenceState::STOPPED) {
     clear();
@@ -135,6 +138,7 @@ bool MotionSequence::addCommand(MotionJoint joint, MotionDirection direction,
 }
 
 bool MotionSequence::addBaseAngleCommand(MotionDirection direction, uint8_t speed, float targetDegrees) {
+  if (!FiniteProfileLegacy::allowed(CommandType::SEQUENCE_ADD)) return false;
   if (state_ == SequenceState::COMPLETED || state_ == SequenceState::STOPPED) {
     clear();
   }
@@ -175,6 +179,7 @@ bool MotionSequence::addBaseAngleCommand(MotionDirection direction, uint8_t spee
  * 시퀀스 실행 시작
  */
 bool MotionSequence::run() {
+  if (!FiniteProfileLegacy::allowed(CommandType::SEQUENCE_RUN)) return false;
   if (count_ == 0) {
     DebugLog::warn("MotionSequence: no commands to run");
     return false;

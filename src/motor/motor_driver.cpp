@@ -469,6 +469,17 @@ bool MotorControl::hasPendingOutput() const {
 }
 
 #if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
+bool MotorControl::finiteProfileOwned() const {
+  return finiteLease_ != 0; // A sealed lease still owns the quiet interval.
+}
+
+void MotorControl::invalidateFiniteProfileLease() {
+  // Repeated admission/dispatch guards revoke once without flooding the trace.
+  // Explicit stop APIs still write OFF on every call.
+  if (finiteLease_ != 0 && (!finiteLeaseSealed_ || hasPendingOutput()))
+    sealFiniteProfileAndStop();
+}
+
 bool MotorControl::finiteProfileReady() const {
   if (!finiteInitialized_ || finiteLease_ != 0 || finiteLeaseCounter_ == UINT32_MAX ||
       hasPendingOutput() || getCurrentState() != SystemState::ARMED ||

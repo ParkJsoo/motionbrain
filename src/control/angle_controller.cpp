@@ -1,3 +1,5 @@
+#include "control/finite_profile_legacy_guard.h"
+#include "control/command.h"
 #include "control/angle_controller.h"
 
 #include <math.h>
@@ -125,6 +127,11 @@ bool AngleController::isActive() const {
 
 bool AngleController::startRelative(MotionDirection direction, float targetDegrees, uint8_t percent,
                                     char* message, size_t messageSize) {
+  if (!FiniteProfileLegacy::allowed(CommandType::BASE_ANGLE_RUN)) {
+    if (message != nullptr && messageSize > 0)
+      snprintf(message, messageSize, "Finite-profile output owner holds control");
+    return false;
+  }
   if (message != nullptr && messageSize > 0) {
     message[0] = '\0';
   }

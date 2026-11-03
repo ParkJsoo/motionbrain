@@ -479,6 +479,12 @@ void MotionBrainWebServer::expireManualLeases() {
 }
 
 void MotionBrainWebServer::extendManualLease(uint8_t motorId) {
+#if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
+  if (motorControl_ != nullptr && motorControl_->finiteProfileOwned()) {
+    motorControl_->invalidateFiniteProfileLease();
+    return;
+  }
+#endif
   if (motorId < 1 || motorId > MANUAL_LEASE_MOTOR_COUNT) {
     return;
   }
@@ -494,6 +500,13 @@ void MotionBrainWebServer::clearManualLease(uint8_t motorId) {
   const uint8_t index = motorId - 1;
   manualLeaseActive_[index] = false;
   manualLeaseUntilMs_[index] = 0;
+}
+
+bool MotionBrainWebServer::hasManualControlLeases() const {
+  // Raw ownership flags include expired leases awaiting their OFF callback.
+  for (uint8_t i = 0; i < MANUAL_LEASE_MOTOR_COUNT; ++i)
+    if (manualLeaseActive_[i]) return true;
+  return false;
 }
 
 void MotionBrainWebServer::clearAllManualLeases() {

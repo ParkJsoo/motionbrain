@@ -15,7 +15,8 @@ namespace finite_profile {
 
 // Trusted, nonblocking, externally serialized context. controllersIdle includes
 // sequence, angle/shoulder controllers, teleop/deadman, manual leases and queued
-// work that could resume output. No production implementation exists yet.
+// work that could resume output. ServiceEnvironment reads the firmware singleton
+// graph; all calls and producer hooks still require external serialization.
 class DriverEnvironment {
 public:
   virtual ~DriverEnvironment() {}

@@ -1,3 +1,5 @@
+#include "control/finite_profile_legacy_guard.h"
+#include "control/command.h"
 #include "control/guarded_routine_executor.h"
 
 #include <stdio.h>
@@ -222,6 +224,14 @@ GuardedRoutineExecutorReport GuardedRoutineExecutor::describe(
 bool GuardedRoutineExecutor::begin(const GuardedRoutinePlan& plan,
                                    GuardedRoutineExecutorReport& report,
                                    MotionSequence* motionSequence) {
+  if (!FiniteProfileLegacy::allowed(CommandType::ROUTINE_RUN)) {
+    report = GuardedRoutineExecutorReport();
+    report.attempted = true;
+    report.enabled = isEnabled();
+    report.state = GuardedRoutineExecutorState::BLOCKED;
+    strlcpy(report.detail, "Finite-profile output owner holds control", sizeof(report.detail));
+    return false;
+  }
   report = describe(plan, true, motionSequence);
   publishReport(report, &plan, report.state);
   return report.sequenceStarted;

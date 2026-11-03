@@ -210,6 +210,13 @@ void TeleopAdapter::processInput() {
 }
 
 void TeleopAdapter::updateControl() {
+#if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
+  if (motorControl_ != nullptr && motorControl_->finiteProfileOwned()) {
+    resetOutputCache();
+    controlActive_ = false;
+    return;
+  }
+#endif
   uint32_t now = millis();
   if (isConnected()) {
     handleFreshFrame(now);
@@ -452,6 +459,11 @@ bool TeleopAdapter::parseTeleopLine(const char* line, TeleopFrame& outFrame) con
 }
 
 void TeleopAdapter::handleFrame(const TeleopFrame& frame, uint32_t now) {
+#if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
+  // Observe every frame, even if a later frame clears deadman before the next tick.
+  if (frame.deadman && motorControl_ != nullptr)
+    motorControl_->invalidateFiniteProfileLease();
+#endif
   bool firstPacket = (packetsReceived_ == 0);
 
   lastFrame_ = frame;

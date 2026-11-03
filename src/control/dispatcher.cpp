@@ -1,3 +1,4 @@
+#include "control/finite_profile_legacy_guard.h"
 #include "control/dispatcher.h"
 #include "control/bounded_action_service.h"
 
@@ -243,6 +244,11 @@ bool Dispatcher::commandExtendsTimeout(CommandType type) const {
 }
 
 bool Dispatcher::execute(const Command& command, CommandResult& result) {
+  if (!FiniteProfileLegacy::allowed(command.type)) {
+    setResult(result, command.id, false, "Finite-profile output owner holds control");
+    recordCommandResult(command, result);
+    return false;
+  }
   const char* missingDependency = nullptr;
   if (!hasDependenciesFor(command.type, &missingDependency)) {
     setResult(result, command.id, false, "Dispatcher missing %s", missingDependency);

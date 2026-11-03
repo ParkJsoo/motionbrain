@@ -1,5 +1,10 @@
 #include "system_init.h"
 #include "debug/debug_log.h"
+#if defined(MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER) && MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
+#include "motor/motor_driver.h"
+extern MotorControl motorControl;
+extern SystemStateManager systemState;
+#endif
 
 /**
  * SystemStateManager 생성자
@@ -63,6 +68,13 @@ bool SystemStateManager::transitionTo(SystemState newState) {
   
   // 3. 상태 전환 실행
   SystemState oldState = currentState_;  // 로그용으로 이전 상태 저장
+#if defined(MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER) && MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
+  // The driver consults this production singleton. Invalidate synchronously,
+  // before the state/log/timeout changes, so DISARM->ARM between ticks cannot
+  // revive a reserved or running lease. Unrelated managers do not own it.
+  if (this == &systemState && oldState == SystemState::ARMED && newState != SystemState::ARMED)
+    motorControl.invalidateFiniteProfileLease();
+#endif
   currentState_ = newState;
   
   // 4. 타임아웃 타이머 리셋 (상태 전환 시 명령 수신으로 간주)

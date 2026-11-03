@@ -81,6 +81,7 @@ public:
    */
   bool isActive() const;
   void clearManualControlLeases() { clearAllManualLeases(); }
+  bool hasManualControlLeases() const;
 
 private:
   // ESP32 WebServer 객체 (포트 80으로 명시적 초기화)
