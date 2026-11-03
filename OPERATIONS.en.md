@@ -10,6 +10,8 @@ The separate `esp32dev_m2_finite_trial` build for [finite output profiles (Korea
 
 [Stationary repeatability diagnostics (Korean)](docs/stationary-repeatability.md) compared three initial recordings with uncontrolled lighting against three recordings after the operator confirmed the room light was on, using unchanged settings. The existing short windows passed quality checks in 1/9 and 9/9 pairs, respectively, but the later no-command observations still had a maximum before/after difference of 0.360°. Stable lighting and framing take priority; neither the two-second windows nor the brightness-threshold change was adopted as the default measurement. This same-session diagnostic provides neither independent physical immobility ground truth nor independent-test performance.
 
+Firmware with four fixed profiles (up/down × peak PWM 40/50) has been uploaded. The first pilot recording stopped before ARM because the pre-observation range of 0.699484° exceeded the 0.5° criterion. There were zero motor commands and zero eligible transitions; the other three conditions were not attempted. A separate follow-up read confirmed IDLE and zero software outputs. Physical motion under the four profiles on this boot remains unverified. [Denominators and proposed follow-up (Korean)](docs/finite-output-profile.md#네-조건-펌웨어-업로드와-첫-사전-계측-거부).
+
 ## Builds
 
 ESP32 uses PlatformIO. Host tests require Python, NumPy, OpenCV and Node.js (CI: Python 3.12 and Node.js 22). Native C++ checks require a C++ compiler and are skipped when it is unavailable. Replace `<...>` placeholders with installation-specific values. Run from the repository root:
