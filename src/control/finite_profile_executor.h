@@ -125,7 +125,10 @@ public:
   // Adapters may deliver scheduled callbacks explicitly; tick dispatches only
   // the single next due event. No catch-up or arbitrary output method exists.
   Result event(const char* bootId, const char* commandId, uint32_t expectedEpoch, uint8_t index);
-  Result cancel(const char* bootId, const char* commandId, uint32_t expectedEpoch);
+  // A driver adapter may have observed a write outside this core's receipt.
+  // Only a matching live owner can mark its trace incomplete; never past IDs.
+  Result cancel(const char* bootId, const char* commandId, uint32_t expectedEpoch,
+                bool traceIncomplete = false);
   Result release(const char* bootId, const char* commandId, uint32_t quietEpoch);
   Result retryOff(const char* bootId, const char* commandId);
   const Record* find(const char* bootId, const char* commandId) const;

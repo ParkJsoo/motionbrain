@@ -37,6 +37,14 @@ MotorControl::MotorControl() {
  * 모터 제어 모듈 초기화
  */
 bool MotorControl::init() {
+#if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
+  if (finiteLease_ != 0) {
+    sealFiniteProfileAndStop();
+    return false;
+  }
+  // Initialization cannot reset lease generation or silently rewrite outputs.
+  if (finiteInitialized_) return false;
+#endif
   DebugLog::info("=== Motor Control Initialization (Phase 1-5: TB6612FNG) ===");
   DebugLog::info("Number of motors: %d", NUM_MOTORS);
   DebugLog::info("Number of drivers: %d", NUM_DRIVERS);
@@ -106,6 +114,10 @@ bool MotorControl::init() {
   
   DebugLog::motor("INIT", "TB6612FNG initialized - all motors stopped (PWM=0, direction pins=LOW)");
   DebugLog::info("Motor control ready (Phase 1-5: Step 1 - Power connection only)");
+
+#if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
+  finiteInitialized_ = true;
+#endif
   
   return true;
 }
@@ -144,6 +156,9 @@ bool MotorControl::forward(uint8_t motorId) {
  * 모터 정방향 구동 (속도 비율 지정)
  */
 bool MotorControl::forward(uint8_t motorId, uint8_t percent) {
+#if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
+  if (finiteLease_ != 0) return false;
+#endif
   // 모터 ID 유효성 검사
   if (!isValidMotorId(motorId)) {
     DebugLog::error("Invalid motor ID: %d (valid range: 1-%d for M1~M5)", motorId, NUM_MOTORS);
@@ -189,6 +204,9 @@ bool MotorControl::reverse(uint8_t motorId) {
  * 모터 역방향 구동 (속도 비율 지정)
  */
 bool MotorControl::reverse(uint8_t motorId, uint8_t percent) {
+#if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
+  if (finiteLease_ != 0) return false;
+#endif
   // 모터 ID 유효성 검사
   if (!isValidMotorId(motorId)) {
     DebugLog::error("Invalid motor ID: %d (valid range: 1-%d for M1~M5)", motorId, NUM_MOTORS);
@@ -231,6 +249,13 @@ bool MotorControl::reverse(uint8_t motorId, uint8_t percent) {
  * 개별 모터 속도 설정
  */
 bool MotorControl::setSpeed(uint8_t motorId, int16_t speed) {
+#if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
+  if (finiteLease_ != 0) {
+    if (speed != 0 || !isValidMotorId(motorId)) return false;
+    sealFiniteProfileAndStop();
+    return true;
+  }
+#endif
   // 모터 ID 유효성 검사
   if (!isValidMotorId(motorId)) {
     DebugLog::error("Invalid motor ID: %d (valid range: 1-%d for M1~M5)", motorId, NUM_MOTORS);
@@ -267,6 +292,13 @@ bool MotorControl::setSpeed(uint8_t motorId, int16_t speed) {
  * 모든 모터 속도 설정 (동일한 속도)
  */
 bool MotorControl::setSpeedAll(int16_t speed) {
+#if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
+  if (finiteLease_ != 0) {
+    if (speed != 0) return false;
+    sealFiniteProfileAndStop();
+    return true;
+  }
+#endif
   // 안전 검사: ARMED 상태에서만 허용
   if (!checkSafety("setSpeedAll")) {
     return false;
@@ -301,6 +333,13 @@ bool MotorControl::stop(uint8_t motorId) {
     DebugLog::error("Invalid motor ID: %d (valid range: 1-%d for M1~M5)", motorId, NUM_MOTORS);
     return false;
   }
+
+#if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
+  if (finiteLease_ != 0) {
+    sealFiniteProfileAndStop();
+    return true;
+  }
+#endif
   
   // 정지 명령은 모든 상태에서 허용 (안전 최우선)
   uint8_t index = motorIdToIndex(motorId);
@@ -315,6 +354,12 @@ bool MotorControl::stop(uint8_t motorId) {
  * 모든 모터 정지 (점진적 정지)
  */
 bool MotorControl::stopAll() {
+#if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
+  if (finiteLease_ != 0) {
+    sealFiniteProfileAndStop();
+    return true;
+  }
+#endif
   // 정지 명령은 모든 상태에서 허용 (안전 최우선)
   for (uint8_t i = 0; i < NUM_MOTORS; i++) {
     targetSpeed_[i] = 0;
@@ -334,6 +379,13 @@ bool MotorControl::hardStop(uint8_t motorId) {
     return false;
   }
 
+#if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
+  if (finiteLease_ != 0) {
+    sealFiniteProfileAndStop();
+    return true;
+  }
+#endif
+
   forceMotorOutputOff(motorId);
   DebugLog::motor("hardStop", "M%d: forced stop - PWM=0, direction pins=LOW", motorId);
   return true;
@@ -343,6 +395,9 @@ bool MotorControl::hardStop(uint8_t motorId) {
  * 모든 모터 즉시 정지
  */
 void MotorControl::hardStopAll() {
+#if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
+  if (finiteLease_ != 0) finiteLeaseSealed_ = true;
+#endif
   for (uint8_t i = 0; i < NUM_MOTORS; i++) {
     forceMotorOutputOff(indexToMotorId(i));
   }
@@ -413,11 +468,122 @@ bool MotorControl::hasPendingOutput() const {
   return false;
 }
 
+#if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
+bool MotorControl::finiteProfileReady() const {
+  if (!finiteInitialized_ || finiteLease_ != 0 || finiteLeaseCounter_ == UINT32_MAX ||
+      hasPendingOutput() || getCurrentState() != SystemState::ARMED ||
+      safetyMonitor.isMotionBlocked()) return false;
+  for (uint8_t i = 0; i < NUM_DRIVERS; ++i) {
+    if (driverError_[i]) return false;
+  }
+  return true;
+}
+
+bool MotorControl::acquireFiniteProfileLease(uint32_t ordinal, uint32_t& lease) {
+  lease = 0;
+  if (ordinal == 0 || !finiteProfileReady()) return false;
+  finiteLease_ = ++finiteLeaseCounter_; // Counter cannot wrap: Ready rejects MAX.
+  finiteLeaseSealed_ = false;
+  actionOrdinal_ = ordinal;
+  lease = finiteLease_;
+  return true;
+}
+
+bool MotorControl::finiteProfileLeaseMatches(uint32_t lease) const {
+  return finiteInitialized_ && lease != 0 && lease == finiteLease_;
+}
+
+bool MotorControl::finiteProfileLeaseSealed(uint32_t lease) const {
+  return !finiteProfileLeaseMatches(lease) || finiteLeaseSealed_;
+}
+
+bool MotorControl::finiteProfileAllowed(uint32_t lease) const {
+  if (!finiteProfileLeaseMatches(lease) || finiteLeaseSealed_ ||
+      getCurrentState() != SystemState::ARMED || safetyMonitor.isMotionBlocked()) return false;
+  for (uint8_t i = 0; i < NUM_DRIVERS; ++i) {
+    if (driverError_[i]) return false;
+  }
+  return true;
+}
+
+bool MotorControl::finiteProfileSoftwareOff(uint32_t lease) const {
+  // Software state only; there is no electrical or mechanical feedback here.
+  return finiteProfileLeaseMatches(lease) && !hasPendingOutput();
+}
+
+void MotorControl::sealFiniteProfileAndStop() {
+  finiteLeaseSealed_ = true;
+  for (uint8_t i = 0; i < NUM_MOTORS; ++i)
+    forceMotorOutputOff(indexToMotorId(i));
+}
+
+bool MotorControl::applyFiniteProfile(uint32_t lease, uint8_t motorId,
+                                      int16_t pwm, uint32_t& writtenAt) {
+  if (!finiteProfileLeaseMatches(lease)) return false;
+  if (motorId != MOTOR_2 || pwm < -255 || pwm > 255) {
+    sealFiniteProfileAndStop();
+    return false;
+  }
+  // Planned zero is a DriverWrite, distinct from a forced safety/cancel OFF.
+  // It remains possible after safety changes, but can never reopen the lease.
+  if (pwm != 0 && !finiteProfileAllowed(lease)) {
+    sealFiniteProfileAndStop();
+    return false;
+  }
+  if (pwm == 0) finiteLeaseSealed_ = true;
+  const uint8_t index = motorIdToIndex(MOTOR_2);
+  if (pwm != 0) {
+    digitalWrite(PIN_BIN1_1, pwm > 0 ? HIGH : LOW);
+    digitalWrite(PIN_BIN2_1, pwm < 0 ? HIGH : LOW);
+  }
+  ledcWrite(PWM_CHANNEL_M2, static_cast<uint8_t>(pwm < 0 ? -pwm : pwm));
+  writtenAt = millis();
+  outputLog_.append(writtenAt, actionOrdinal_, MOTOR_2, pwm, bounded::OutputReason::DriverWrite);
+  if (pwm == 0) {
+    finiteM2OffWriteAt_ = writtenAt;
+    digitalWrite(PIN_BIN1_1, LOW);
+    digitalWrite(PIN_BIN2_1, LOW);
+  }
+  currentSpeed_[index] = pwm;
+  targetSpeed_[index] = pwm;
+  enabled_[index] = pwm != 0;
+  lastUpdateTime_[index] = writtenAt;
+  systemState.resetTimeout();
+  return true;
+}
+
+bool MotorControl::stopFiniteProfile(uint32_t lease, uint32_t& writtenAt) {
+  // A stale owner's safety request must not interrupt a newer owner.
+  if (!finiteProfileLeaseMatches(lease)) return false;
+  sealFiniteProfileAndStop();
+  // The profile controls M2. Its OFF timestamp is distinct from completion of
+  // the later M3-M5 safety writes and the subsequent software-OFF proof.
+  writtenAt = finiteM2OffWriteAt_;
+  return true;
+}
+
+bool MotorControl::releaseFiniteProfileLease(uint32_t lease) {
+  if (!finiteProfileSoftwareOff(lease)) return false;
+  finiteLeaseSealed_ = true;
+  finiteLease_ = 0;
+  actionOrdinal_ = 0;
+  return true;
+}
+#endif
+
 /**
  * 모터 제어 업데이트 (주기적으로 호출)
  * 점진적 속도 변경 처리
  */
 void MotorControl::update() {
+#if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
+  if (finiteLease_ != 0) {
+    // This lease owns explicit writes; legacy ramp processing must never run.
+    if (!finiteLeaseSealed_ && !finiteProfileAllowed(finiteLease_))
+      sealFiniteProfileAndStop();
+    return;
+  }
+#endif
   // 시스템 상태 확인: ARMED 상태가 아니면 모든 모터 정지
   SystemState currentState = getCurrentState();
   if (currentState != SystemState::ARMED) {
@@ -532,6 +698,13 @@ uint8_t MotorControl::indexToMotorId(uint8_t index) const {
  * 개별 모터 제어 (내부 헬퍼)
  */
 bool MotorControl::setMotorSpeedInternal(uint8_t motorId, int16_t speed) {
+#if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
+  if (finiteLease_ != 0) {
+    if (speed != 0 || !isValidMotorId(motorId)) return false;
+    sealFiniteProfileAndStop();
+    return true;
+  }
+#endif
   if (!isValidMotorId(motorId)) {
     return false;
   }
@@ -628,8 +801,15 @@ void MotorControl::forceMotorOutputOff(uint8_t motorId) {
   lastUpdateTime_[index] = 0;
 
   ledcWrite(PWM_CHANNELS[index], 0);
+#if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
+  const uint32_t writtenAt = millis();
+  if (motorId == MOTOR_2) finiteM2OffWriteAt_ = writtenAt;
+  outputLog_.append(writtenAt, actionOrdinal_, motorId, 0,
+                    bounded::OutputReason::ForcedOff);
+#else
   outputLog_.append(millis(), actionOrdinal_, motorId, 0,
                     bounded::OutputReason::ForcedOff);
+#endif
 
   uint8_t driverId = getDriverId(motorId);
   uint8_t motorIndex = getMotorIndexInDriver(motorId);

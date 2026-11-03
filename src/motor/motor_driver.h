@@ -6,6 +6,15 @@
 #include "system/system_init.h"
 #include "applied_output_log.h"
 
+#ifndef MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
+#define MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER 0
+#endif
+#if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
+#if !defined(MOTIONBRAIN_ENABLE_FINITE_PROFILE_CORE) || !MOTIONBRAIN_ENABLE_FINITE_PROFILE_CORE
+#error "Finite profile driver requires MOTIONBRAIN_ENABLE_FINITE_PROFILE_CORE=1"
+#endif
+#endif
+
 // 전방 선언 (순환 참조 방지)
 class SystemStateManager;
 
@@ -51,6 +60,10 @@ public:
    * 생성자
    */
   MotorControl();
+#if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
+  MotorControl(const MotorControl&) = delete;
+  MotorControl& operator=(const MotorControl&) = delete;
+#endif
   
   /**
    * 모터 제어 모듈 초기화
@@ -177,11 +190,40 @@ public:
 
   // Applied signed PWM writes, not measured shaft speed. Ordinal 0 is legacy/
   // unowned output; the bounded executor owns attribution while an action runs.
-  void setActionOrdinal(uint32_t ordinal) { actionOrdinal_ = ordinal; }
+  void setActionOrdinal(uint32_t ordinal) {
+#if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
+    if (finiteLease_ != 0) return;
+#endif
+    actionOrdinal_ = ordinal;
+  }
   const bounded::AppliedOutputLog& outputLog() const { return outputLog_; }
   bool hasPendingOutput() const;
 
+#if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
+  // Offline adapter boundary only. All calls (including legacy calls) must be
+  // externally serialized; this is not a lock or an electrical OFF proof.
+  // One lease owns every motor. IDs are never reused during this object's life.
+  bool finiteProfileReady() const;
+  bool acquireFiniteProfileLease(uint32_t ordinal, uint32_t& lease);
+  bool finiteProfileLeaseMatches(uint32_t lease) const;
+  bool finiteProfileLeaseSealed(uint32_t lease) const;
+  bool finiteProfileAllowed(uint32_t lease) const;
+  bool finiteProfileSoftwareOff(uint32_t lease) const;
+  bool applyFiniteProfile(uint32_t lease, uint8_t motorId, int16_t pwm, uint32_t& writtenAt);
+  // Returns M2's PWM-zero write time; the call also completes the other OFF writes.
+  bool stopFiniteProfile(uint32_t lease, uint32_t& writtenAt);
+  bool releaseFiniteProfileLease(uint32_t lease);
+#endif
+
 private:
+#if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
+  bool finiteInitialized_ = false;
+  uint32_t finiteLease_ = 0;
+  uint32_t finiteLeaseCounter_ = 0;
+  uint32_t finiteM2OffWriteAt_ = 0;
+  bool finiteLeaseSealed_ = false;
+  void sealFiniteProfileAndStop();
+#endif
   uint32_t actionOrdinal_ = 0;
   bounded::AppliedOutputLog outputLog_;
   // TB6612FNG 핀 정의

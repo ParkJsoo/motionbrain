@@ -395,7 +395,8 @@ void Executor::tick() {
   }
 }
 
-Result Executor::cancel(const char* bootId, const char* commandId, uint32_t expectedEpoch) {
+Result Executor::cancel(const char* bootId, const char* commandId, uint32_t expectedEpoch,
+                        bool traceIncomplete) {
   if (!validIdentity(bootId, commandId)) return Result(Code::Invalid);
   if (strcmp(bootId_, bootId) != 0) return Result(Code::BootMismatch);
   Slot* slot = lookup(commandId);
@@ -409,6 +410,7 @@ Result Executor::cancel(const char* bootId, const char* commandId, uint32_t expe
     return Result(Code::Accepted);
   }
   if (owner_ != slot) return Result(Code::Rejected, &slot->record);
+  if (traceIncomplete) slot->record.traceComplete = false;
   finish(State::Cancelled, Reason::Cancelled);
   return Result(Code::Accepted, &slot->record);
 }
