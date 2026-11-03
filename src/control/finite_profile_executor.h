@@ -19,7 +19,7 @@ enum class Proof { Pending, Confirmed, Failed };
 enum class State { Reserved, Running, Stopping, Completed, Cancelled, Expired, Failed, OutcomeUnknown };
 enum class Reason {
   None, NominalEnd, Cancelled, ReservationExpired, SafetyChanged,
-  DeadlineMissed, WriteFailed, EventOrder, OffUnconfirmed, TokenFailure, OffStateChanged
+  DeadlineMissed, WriteFailed, EventOrder, OffUnconfirmed, TokenFailure, OffStateChanged, ScheduleFailed
 };
 enum class Code {
   Accepted, Duplicate, Conflict, Invalid, Disabled, BootMismatch, EpochMismatch,
@@ -122,6 +122,9 @@ public:
   PrepareResult prepare(const Request& request);
   Result execute(const char* bootId, const char* commandId, uint32_t expectedEpoch, const Token& token);
   void tick();
+  // Maintenance only: safety/deadline failures may issue OFF, never a planned PWM.
+  void poll();
+  Result scheduleFailed(const char* bootId, const char* commandId, uint32_t expectedEpoch);
   // Adapters may deliver scheduled callbacks explicitly; tick dispatches only
   // the single next due event. No catch-up or arbitrary output method exists.
   Result event(const char* bootId, const char* commandId, uint32_t expectedEpoch, uint8_t index);
@@ -167,6 +170,7 @@ private:
   bool probeOff(Proof& proof, uint32_t& checkedAt);
   void latchUnknown();
   void expireReservation();
+  void maintainNonRunning();
 };
 
 } // namespace finite_profile

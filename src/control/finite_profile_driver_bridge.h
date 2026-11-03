@@ -38,6 +38,8 @@ public:
   PrepareResult prepare(const Request& request);
   Result execute(const char* bootId, const char* commandId, uint32_t epoch, const Token& token);
   void tick();
+  void poll();
+  Result scheduleFailed(const char* bootId, const char* commandId, uint32_t epoch);
   Result event(const char* bootId, const char* commandId, uint32_t epoch, uint8_t index);
   Result cancel(const char* bootId, const char* commandId, uint32_t epoch);
   Result release(const char* bootId, const char* commandId, uint32_t quietEpoch);

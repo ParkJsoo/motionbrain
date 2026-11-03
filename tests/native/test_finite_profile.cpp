@@ -550,6 +550,20 @@ static void quiet_release() {
 }
 
 static void unknown_off() {
+  Fixture schedule;
+  const Record* pending = schedule.start(); schedule.tick(pending->plannedStartAt);
+  schedule.port.proof = Proof::Pending; schedule.port.clock += 1;
+  schedule.executor.cancel("boot-A", "action-1", pending->request.expectedEpoch);
+  assert(pending->state == State::Stopping);
+  const auto originalDecisionAt = pending->decisionAt;
+  const auto originalStopReason = pending->reason;
+  assert(schedule.executor.scheduleFailed("boot-A", "action-1", pending->request.expectedEpoch + 1).code == Code::EpochMismatch);
+  assert(pending->state == State::Stopping);
+  schedule.executor.scheduleFailed("boot-A", "action-1", pending->request.expectedEpoch);
+  assert(pending->state == State::OutcomeUnknown && schedule.executor.blocked());
+  assert(pending->decisionAt == originalDecisionAt && pending->reason == originalStopReason);
+  assert(schedule.executor.scheduleFailed("boot-A", "action-1", pending->request.expectedEpoch).code == Code::Duplicate);
+  assert(pending->decisionAt == originalDecisionAt && pending->reason == originalStopReason);
   Fixture f;
   const Record* r = f.start(); f.tick(r->plannedStartAt);
   f.port.proof = Proof::Pending; f.port.clock += 1;

@@ -377,7 +377,7 @@ void Executor::finish(State state, Reason reason) {
   confirmOff();
 }
 
-void Executor::tick() {
+void Executor::maintainNonRunning() {
   if (!owner_) return;
   if (owner_->record.state == State::Reserved) {
     if (!port_.idle()) {
@@ -387,12 +387,48 @@ void Executor::tick() {
     else expireReservation();
     return;
   }
-  Record& record = owner_->record;
-  if (record.state == State::Stopping) {
-    confirmOff();
-  } else if (record.state == State::Running) {
+  if (owner_->record.state == State::Stopping) confirmOff();
+}
+
+void Executor::tick() {
+  maintainNonRunning();
+  if (owner_ && owner_->record.state == State::Running) {
+    const Record& record = owner_->record;
     event(bootId_, record.request.commandId, record.request.expectedEpoch, record.nextEventIndex);
   }
+}
+
+void Executor::poll() {
+  maintainNonRunning();
+  if (!owner_ || owner_->record.state != State::Running) return;
+  const Record& record = owner_->record;
+  if (!port_.allowed()) {
+    finish(State::Failed, Reason::SafetyChanged);
+    return;
+  }
+  const Profile& profile = record.request.profile;
+  const uint32_t due = profile.startLeadMs + profile.points[record.nextEventIndex].offsetMs;
+  if (port_.now() - record.executeAcceptedAt > due + profile.maxLatenessMs)
+    finish(State::Failed, Reason::DeadlineMissed);
+}
+
+Result Executor::scheduleFailed(const char* bootId, const char* commandId, uint32_t expectedEpoch) {
+  if (!validIdentity(bootId, commandId)) return Result(Code::Invalid);
+  if (strcmp(bootId_, bootId) != 0) return Result(Code::BootMismatch);
+  Slot* slot = lookup(commandId);
+  if (!slot) return Result(Code::NotFound);
+  Record& record = slot->record;
+  if (expectedEpoch != record.request.expectedEpoch) return Result(Code::EpochMismatch, &record);
+  if (terminal(record.state)) return Result(Code::Duplicate, &record);
+  if (owner_ != slot) return Result(Code::Rejected, &record);
+  if (record.state == State::Stopping) {
+    // Confirmation cannot be scheduled; preserve the original stop reason/time.
+    latchUnknown();
+  } else {
+    if (expectedEpoch != epoch_) return Result(Code::EpochMismatch, &record);
+    finish(State::Failed, Reason::ScheduleFailed);
+  }
+  return Result(Code::Accepted, &record);
 }
 
 Result Executor::cancel(const char* bootId, const char* commandId, uint32_t expectedEpoch,

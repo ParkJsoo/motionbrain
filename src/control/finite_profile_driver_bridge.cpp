@@ -116,6 +116,11 @@ Result DriverBridge::execute(const char* bootId, const char* commandId, uint32_t
   return result;
 }
 void DriverBridge::tick() { beforeCall(); executor_.tick(); afterCall(); }
+void DriverBridge::poll() { beforeCall(); executor_.poll(); afterCall(); }
+Result DriverBridge::scheduleFailed(const char* bootId, const char* commandId, uint32_t epoch) {
+  beforeCall(); Result result = executor_.scheduleFailed(bootId, commandId, epoch);
+  afterCall(); return result;
+}
 Result DriverBridge::event(const char* bootId, const char* commandId, uint32_t epoch, uint8_t index) {
   beforeCall();
   Result result = bindingFailed_ ? Result(Code::Rejected, find(bootId, commandId)) :
