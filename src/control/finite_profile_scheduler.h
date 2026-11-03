@@ -65,6 +65,7 @@ public:
   const Record* find(const char* bootId, const char* commandId) const;
   const DriverOutputEvidence* outputEvidence(const char* bootId, const char* commandId) const;
   uint32_t epoch() const { return bridge_.epoch(); }
+  size_t count() const { return bridge_.count(); }
   uint32_t leaseId() const { return bridge_.leaseId(); }
   bool idle() const { return !generationExhausted_ && bridge_.idle(); }
   bool blocked() const { return generationExhausted_ || bridge_.blocked(); }

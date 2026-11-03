@@ -2162,6 +2162,16 @@ void MotionBrainWebServer::handleFiniteProfileStatus() {
     json += ",\"suppressedSerialLogs\":"; json += DebugLog::suppressedDuringFiniteOutput();
     json += ",\"profile\":";
     finite_profile::appendProfileJson(json, *finite_profile::runtime::profile());
+    json += ",\"profiles\":[";
+    for (size_t i = 0; i < finite_profile::runtime::profileCount(); ++i) {
+      if (i) json += ',';
+      finite_profile::appendProfileJson(json, *finite_profile::runtime::profileAt(i));
+    }
+    json += "]";
+    json += ",\"coreRecordsUsed\":"; json += static_cast<unsigned>(finite_profile::runtime::coreRecordsUsed());
+    json += ",\"driverRecordsUsed\":"; json += static_cast<unsigned>(finite_profile::runtime::driverRecordsUsed());
+    json += ",\"coreRecordCapacity\":"; json += static_cast<unsigned>(finite_profile::MAX_RECORDS);
+    json += ",\"driverRecordCapacity\":"; json += static_cast<unsigned>(finite_profile::DriverEvidenceStore::CAPACITY);
     json += '}';
   } else {
     const String boot = server_.arg("bootId"), id = server_.arg("commandId");
@@ -2203,9 +2213,9 @@ void MotionBrainWebServer::handleFiniteProfile() {
   finite_profile::Result result;
   String extra;
   if (operation == "prepare") {
-    const auto* profile = finite_profile::runtime::profile();
-    if (server_.arg("profileId") != profile->profileId ||
-        server_.arg("catalogHash") != profile->catalogHash) {
+    const auto* profile = finite_profile::runtime::findProfile(
+        server_.arg("profileId").c_str(), server_.arg("catalogHash").c_str());
+    if (!profile) {
       sendErrorJson(400, "profile_not_in_trusted_catalog"); return;
     }
     finite_profile::Request request;

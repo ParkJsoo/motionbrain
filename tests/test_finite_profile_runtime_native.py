@@ -80,6 +80,15 @@ class FiniteProfileRuntimeNativeTest(unittest.TestCase):
     def test_teleop_ownership_at_due_stops_before_next_nonzero_event(self):
         self.run_case("due_teleop")
 
+    def test_catalog_is_owned_bounded_and_exactly_selected(self):
+        self.run_case("catalog")
+
+    def test_four_signed_profiles_keep_exact_schedule_and_closed_evidence(self):
+        self.run_case("four_profiles")
+
+    def test_cancelled_reservations_consume_both_record_stores(self):
+        self.run_case("capacity")
+
     def test_runtime_requires_scheduler(self):
         result = subprocess.run([*self.command, "-DMOTIONBRAIN_ENABLE_FINITE_PROFILE_RUNTIME=1",
                                  "-c", str(ROOT/"src/control/finite_profile_runtime.cpp"),

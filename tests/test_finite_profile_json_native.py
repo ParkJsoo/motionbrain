@@ -40,7 +40,15 @@ uint32_t millis();
 #include <cstring>
 #include "control/finite_profile_json.h"
 #include "control/finite_profile_trial_catalog.h"
-int main() {
+int main(int argc, char**) {
+  if (argc == 2) {
+    for (size_t i=0; i<finite_profile::TRIAL_PROFILE_COUNT; ++i) {
+      const auto profile=finite_profile::trialProfile(i);
+      String json; finite_profile::appendProfileJson(json, profile);
+      std::cout << json.value << "\n" << finite_profile::canonicalProfile(profile) << "__END__\n";
+    }
+    return 0;
+  }
   auto p = finite_profile::trialProfile();
   finite_profile::Record r;
   strcpy(r.request.bootId, "boot1"); strcpy(r.request.commandId, "trial1");
@@ -78,6 +86,12 @@ int main() {
         output = subprocess.check_output([str(folder / "test")], text=True).splitlines()
         cls.record, cls.evidence, cls.missing = map(json.loads, output[:3])
         cls.canonical = "\n".join(output[3:]) + "\n"
+        catalog = subprocess.check_output([str(folder / "test"), "catalog"], text=True)
+        cls.catalog = []
+        for chunk in catalog.split("__END__\n"):
+            if chunk:
+                profile, canonical = chunk.split("\n", 1)
+                cls.catalog.append((json.loads(profile), canonical))
 
     def test_requested_schedule_and_actual_writes_remain_distinct(self):
         r = self.record
@@ -110,6 +124,20 @@ int main() {
         self.assertEqual(p["maxLatenessMs"], 20)
         self.assertEqual(p["points"], [{"offsetMs": i * 50, "pwm": pwm}
                          for i, pwm in enumerate([10, 20, 30, 40, 30, 20, 10, 0])])
+
+    def test_four_catalog_entries_have_independent_canonical_hashes_and_integrals(self):
+        self.assertEqual(len(self.catalog), 4)
+        self.assertEqual(self.catalog[0][0], self.record['requestedProfile'])
+        self.assertEqual(len({p['profileId'] for p,_ in self.catalog}), 4)
+        for i, (profile, canonical) in enumerate(self.catalog):
+            source = ''.join(line+'\n' for line in canonical.splitlines() if not line.startswith('catalogHash='))
+            self.assertEqual(hashlib.sha256(source.encode()).hexdigest(), profile['catalogHash'])
+            n, sign = (4 if i<2 else 5), (1 if i%2==0 else -1)
+            expected = list(range(10, n*10+1, 10)) + list(range((n-1)*10,-1,-10))
+            self.assertEqual(profile['direction'], sign)
+            self.assertEqual(profile['points'], [dict(offsetMs=j*50,pwm=pwm*sign) for j,pwm in enumerate(expected)])
+            area = sum(p['pwm']*(q['offsetMs']-p['offsetMs']) for p,q in zip(profile['points'],profile['points'][1:]))
+            self.assertEqual(area, sign*(8000 if n==4 else 12500))
 
 
 if __name__ == "__main__":

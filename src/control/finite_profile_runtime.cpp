@@ -39,15 +39,18 @@ private:
   bool armed_;
 };
 struct RuntimeState {
-  Profile profile;
+  Profile profiles[MAX_RUNTIME_PROFILES];
+  size_t profileCount;
+  MotorControl& motor;
   char boot[33];
   ServiceEnvironment environment;
   LoopScheduler timer;
   ScheduledDriver scheduled;
-  RuntimeState(MotorControl& driver, const Profile& supplied, const char* bootId,
+  RuntimeState(MotorControl& driver, const Profile* supplied, size_t count, const char* bootId,
                ServiceEnvironment::TokenIssuer issuer)
-      : profile(supplied), boot{}, environment(issuer), timer(),
-        scheduled(driver, environment, timer, bootId, &profile, 1) {
+      : profiles{}, profileCount(count), motor(driver), boot{}, environment(issuer), timer(),
+        scheduled(driver, environment, timer, bootId, supplied, count) {
+    for (size_t i = 0; i < count; ++i) profiles[i] = supplied[i];
     strcpy(boot, bootId);
   }
 };
@@ -57,10 +60,20 @@ RuntimeState* state = nullptr;
 bool enabled() { return true; }
 bool init(MotorControl& driver, const Profile& trustedProfile, const char* boot,
           ServiceEnvironment::TokenIssuer issuer) {
-  if (state || !issuer || !validIdentifier(boot, 33) || !validProfile(trustedProfile)) return false;
+  return init(driver, &trustedProfile, 1, boot, issuer);
+}
+bool init(MotorControl& driver, const Profile* trustedProfiles, size_t count, const char* boot,
+          ServiceEnvironment::TokenIssuer issuer) {
+  if (state || !issuer || !validIdentifier(boot, 33) || !trustedProfiles ||
+      !count || count > MAX_RUNTIME_PROFILES) return false;
+  for (size_t i = 0; i < count; ++i) {
+    if (!validProfile(trustedProfiles[i])) return false;
+    for (size_t j = 0; j < i; ++j)
+      if (strcmp(trustedProfiles[i].profileId, trustedProfiles[j].profileId) == 0) return false;
+  }
   // Allocate once at explicit boot initialization. Static DRAM is scarce on
   // ESP32; failure leaves every public pointer unavailable and produces no IO.
-  RuntimeState* instance = new (std::nothrow) RuntimeState(driver, trustedProfile, boot, issuer);
+  RuntimeState* instance = new (std::nothrow) RuntimeState(driver, trustedProfiles, count, boot, issuer);
   if (!instance) return false;
   if (!instance->scheduled.initialized()) { delete instance; return false; }
   // Firmware-boot lifetime: intentionally no automatic teardown/reinitialization.
@@ -78,7 +91,21 @@ void update() {
 bool motionPending() { return state && state->scheduled.executionPending(); }
 const char* bootId() { return state ? state->boot : ""; }
 ScheduledDriver* driver() { return state ? &state->scheduled : nullptr; }
-const Profile* profile() { return state ? &state->profile : nullptr; }
+const Profile* profile() { return profileAt(0); }
+size_t profileCount() { return state ? state->profileCount : 0; }
+const Profile* profileAt(size_t index) {
+  return state && index < state->profileCount ? &state->profiles[index] : nullptr;
+}
+const Profile* findProfile(const char* id, const char* hash) {
+  if (!state || !id || !hash) return nullptr;
+  for (size_t i = 0; i < state->profileCount; ++i) {
+    const Profile& candidate = state->profiles[i];
+    if (strcmp(id, candidate.profileId) == 0 && strcmp(hash, candidate.catalogHash) == 0) return &candidate;
+  }
+  return nullptr;
+}
+size_t coreRecordsUsed() { return state ? state->scheduled.count() : 0; }
+size_t driverRecordsUsed() { return state ? state->motor.finiteProfileEvidenceCount() : 0; }
 }
 }
 #else
@@ -90,6 +117,11 @@ bool motionPending() { return false; }
 const char* bootId() { return ""; }
 ScheduledDriver* driver() { return nullptr; }
 const Profile* profile() { return nullptr; }
+size_t profileCount() { return 0; }
+const Profile* profileAt(size_t) { return nullptr; }
+const Profile* findProfile(const char*, const char*) { return nullptr; }
+size_t coreRecordsUsed() { return 0; }
+size_t driverRecordsUsed() { return 0; }
 }
 }
 #endif

@@ -192,8 +192,9 @@ void setup() {
   
 #if MOTIONBRAIN_ENABLE_FINITE_PROFILE_RUNTIME
   const auto* boundedCore = BoundedActions::executor();
+  const finite_profile::TrialCatalog finiteCatalog;
   if (!boundedCore || !finite_profile::runtime::init(motorControl,
-      finite_profile::trialProfile(), boundedCore->bootId(), issueFiniteToken))
+      finiteCatalog.profiles, finite_profile::TRIAL_PROFILE_COUNT, boundedCore->bootId(), issueFiniteToken))
     DebugLog::error("Finite profile runtime unavailable");
 #endif
 

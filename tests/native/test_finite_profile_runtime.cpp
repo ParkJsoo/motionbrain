@@ -1,6 +1,7 @@
 #include <new>
 #include <cstdlib>
 #include "control/finite_profile_runtime.h"
+#include "control/finite_profile_trial_catalog.h"
 #include "motor/motor_driver.h"
 // Real environment, bridge, driver and bounded service; other services are fakes.
 #include "control/finite_profile_service_environment.h"
@@ -51,6 +52,9 @@ static void disabled() {
   assert(!finite_profile::runtime::enabled());
   finite_profile::runtime::update();
   assert(!finite_profile::runtime::motionPending());
+  assert(finite_profile::runtime::profileCount()==0 && finite_profile::runtime::profileAt(0)==nullptr);
+  assert(finite_profile::runtime::findProfile("anything","anything")==nullptr);
+  assert(finite_profile::runtime::coreRecordsUsed()==0 && finite_profile::runtime::driverRecordsUsed()==0);
   assert(finite_profile::runtime::driver()==nullptr && finite_profile::runtime::profile()==nullptr);
   assert(!strcmp(finite_profile::runtime::bootId(),"") && tokenCalls==0 && totalWrites==0);
 }
@@ -171,6 +175,78 @@ static void safety_at_due(bool teleopUnsafe) {
   assert(nonzeroWrites==1 && motorControl.getSpeed(2)==0);
 }
 
+static void catalog_initialization() {
+  assert(motorControl.init()); systemState.state=SystemState::ARMED;
+  TrialCatalog catalog;
+  assert(!runtime::init(motorControl,nullptr,4,"catalog-boot",issuer));
+  assert(!runtime::init(motorControl,catalog.profiles,0,"catalog-boot",issuer));
+  assert(!runtime::init(motorControl,catalog.profiles,5,"catalog-boot",issuer));
+  const auto original=catalog.profiles[1]; catalog.profiles[1]=catalog.profiles[0];
+  assert(!runtime::init(motorControl,catalog.profiles,4,"catalog-boot",issuer));
+  catalog.profiles[1]=original;
+  assert(runtime::init(motorControl,catalog.profiles,4,"catalog-boot",issuer));
+  assert(runtime::profileCount()==4 && runtime::profile()==runtime::profileAt(0));
+  for(size_t i=0;i<4;++i) {
+    assert(sameProfile(*runtime::profileAt(i),trialProfile(i)));
+    assert(runtime::findProfile(catalog.profiles[i].profileId,catalog.profiles[i].catalogHash)==runtime::profileAt(i));
+  }
+  catalog.profiles[1].points[0].pwm=-200;
+  assert(runtime::profileAt(1)->points[0].pwm==-10);
+  assert(runtime::profileAt(4)==nullptr && !validProfile(trialProfile(4)));
+  assert(runtime::findProfile(nullptr,"hash")==nullptr && runtime::findProfile("id",nullptr)==nullptr);
+  assert(runtime::findProfile("unknown",runtime::profile()->catalogHash)==nullptr);
+  assert(runtime::findProfile(runtime::profile()->profileId,runtime::profileAt(1)->catalogHash)==nullptr);
+  assert(runtime::findProfile("","")==nullptr);
+  assert(runtime::coreRecordsUsed()==0 && runtime::driverRecordsUsed()==0 && nonzeroWrites==0 && totalWrites==5);
+}
+
+static void four_profiles() {
+  assert(motorControl.init()); systemState.state=SystemState::ARMED; BoundedActions::init();
+  const TrialCatalog catalog;
+  assert(runtime::init(motorControl,catalog.profiles,4,BoundedActions::executor()->bootId(),issuer));
+  for(size_t n=0;n<4;++n) {
+    const auto* selected=runtime::findProfile(catalog.profiles[n].profileId,catalog.profiles[n].catalogHash);
+    Request request;strcpy(request.bootId,runtime::bootId());strcpy(request.commandId,selected->profileId);
+    request.expectedEpoch=runtime::driver()->epoch();request.profile=*selected;
+    // Matching ID/hash cannot authorize caller-supplied alternate points.
+    request.profile.points[0].pwm*=2;
+    assert(!runtime::driver()->prepare(request).granted && runtime::coreRecordsUsed()==n);
+    request.profile=*selected;
+    const auto prepared=runtime::driver()->prepare(request);const Record* record=execute(prepared);
+    for(size_t i=0;i<selected->count;++i) {
+      nowMs=record->plannedStartAt+selected->points[i].offsetMs;runtime::update();
+      assert(motorControl.getSpeed(2)==selected->points[i].pwm);
+    }
+    assert(record->state==State::Completed && record->timingConformant && record->traceComplete);
+    const auto* evidence=runtime::driver()->outputEvidence(runtime::bootId(),request.commandId);
+    assert(evidence && evidence->count==selected->count+5 && evidence->captureComplete);
+    for(size_t i=0;i<selected->count;++i) {
+      assert(evidence->entries[i].pwm==selected->points[i].pwm);
+      assert(evidence->entries[i].atMs==record->plannedStartAt+selected->points[i].offsetMs);
+    }
+    assert(runtime::driver()->release(runtime::bootId(),request.commandId,record->quietEpoch).code==Code::Accepted);
+    assert(evidence->closed && runtime::driver()->idle());
+    assert(runtime::coreRecordsUsed()==n+1 && runtime::driverRecordsUsed()==n+1);
+  }
+  assert(nonzeroWrites==32);
+}
+
+static void capacity_accounting() {
+  assert(motorControl.init());systemState.state=SystemState::ARMED;BoundedActions::init();
+  const TrialCatalog catalog;
+  assert(runtime::init(motorControl,catalog.profiles,4,BoundedActions::executor()->bootId(),issuer));
+  for(size_t i=0;i<MAX_RECORDS;++i) {
+    const std::string id="reserved-"+std::to_string(i);
+    Request request;strcpy(request.bootId,runtime::bootId());strcpy(request.commandId,id.c_str());
+    request.expectedEpoch=runtime::driver()->epoch();request.profile=*runtime::profileAt(i%4);
+    const auto prepared=runtime::driver()->prepare(request);assert(prepared.granted);
+    assert(runtime::driver()->cancel(runtime::bootId(),id.c_str(),request.expectedEpoch).code==Code::Accepted);
+    assert(runtime::driver()->idle() && runtime::coreRecordsUsed()==i+1 && runtime::driverRecordsUsed()==i+1);
+  }
+  assert(!prepare("capacity-extra").granted);
+  assert(runtime::coreRecordsUsed()==32 && runtime::driverRecordsUsed()==32 && nonzeroWrites==0);
+}
+
 #endif
 int main(int argc,char**argv) {
   assert(argc==2);
@@ -187,6 +263,10 @@ int main(int argc,char**argv) {
   else if(!strcmp(argv[1],"allocation"))allocation_failure();
   else if(!strcmp(argv[1],"due_safety"))safety_at_due(false);
   else if(!strcmp(argv[1],"due_teleop"))safety_at_due(true);
+  else if(!strcmp(argv[1],"catalog"))catalog_initialization();
+  else if(!strcmp(argv[1],"four_profiles"))four_profiles();
+  else if(!strcmp(argv[1],"capacity"))capacity_accounting();
 #endif
   else return 2;
+  return 0;
 }
