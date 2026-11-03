@@ -2,7 +2,7 @@
 
 [동작 학습 설계](../visual-action-learning.md)
 
-검토 기준일은 2026-10-30이다. 로봇이 자신의 움직임과 명령을 연결해 배우는 연구를 중심으로, 논문의 실험 조건과 MotionBrain에 적용할 아이디어를 구분한다. 아래 구현 방향은 프로젝트의 설계 제안이며 해당 논문의 성능을 재현했다는 의미가 아니다.
+초기 검토는 2026-10-30이며, 2026-11-03에 소규모 수집과 불확실성 관련 외부 문헌을 추가 확인했다. 로봇이 자신의 움직임과 명령을 연결해 배우는 연구를 중심으로, 논문의 실험 조건과 MotionBrain에 적용할 아이디어를 구분한다. 아래 구현 방향은 프로젝트의 설계 제안이며 해당 논문의 성능을 재현했다는 의미가 아니다.
 
 ## 명령에 따른 움직임 관계
 
@@ -51,6 +51,16 @@ MotionBrain에서는 기구학이나 간단한 영상 제어로 기본 움직임
 로봇의 형태와 기구학을 학습한 자기 모델로 움직임 계획과 몸체 변화 대응을 연구했다. 공개 자료에는 고정 RGB 카메라와 관절 엔코더를 사용했다고 명시돼 있다. [논문 공개본](https://arxiv.org/abs/2311.12151) · [저자 코드](https://github.com/H-Y-H-Y-H/SelfSimRobot) · [데이터 설명](https://zenodo.org/records/14539921)
 
 장기적으로 팔 전체의 공간 점유와 자세별 이동 가능성을 다루는 참고다. 현재 모든 관절각을 측정하지 못하는 MotionBrain에 곧바로 적용되는 카메라 전용 학습법으로 소개하지 않는다. 첫 2D 행동 모델 이후 시각 자세 추정과 결합할 후보로 둔다.
+
+## 소규모 수집에서 가져올 판단 (2026-11-03)
+
+**Deisenroth·Rasmussen·Fox, Learning to Control a Low-Cost Manipulator using Data-Efficient Reinforcement Learning, RSS 2011.** 자세 피드백이 없는 저가 로봇팔에서 깊이 카메라 관측과 확률 동작 모델로 제어를 학습했다. 초록·하드웨어·모델 절을 확인했다. 팔은 목표 서보 구성을 펄스 폭으로 명령하며, 물체를 집게에 미리 넣고 시작·목표 위치를 고정한다. MotionBrain의 직접 DC PWM·단일 RGB 영상과 다르므로 출력값이나 필요한 시도 수를 옮기지 않는다. 현재 상태와 명령에서 상태 변화를 배우되 관측·동작 불확실성을 함께 다룬다는 구조를 참고한다. [원논문](https://www.roboticsproceedings.org/rss07/p08.pdf)
+
+**Sukhija 외, Optimistic Active Exploration of Dynamical Systems, NeurIPS 2023 — OPAX.** 초록·문제 설정·가정 절을 확인했다. 잘 보정된 확률 동작 모델의 불확실성을 사용해 정보 획득을 목표로 탐색하며, 로봇 시뮬레이션에서 평가했다. 현재 MotionBrain에는 이 전제를 확인한 불확실성 모델이 없으므로 자동 탐색기를 바로 도입하지 않는다. 적은 수집에서도 서로 다른 후보의 반응을 구별할 수 있어야 한다는 설계 동기로만 사용한다. [원논문](https://proceedings.neurips.cc/paper_files/paper/2023/file/77b5aaf2826c95c98e5eb4ab830073de-Paper-Conference.pdf)
+
+**Memmel 외, ASID: Active Exploration for System Identification in Robotic Manipulation, ICLR 2024.** 학회 공식 초록을 확인했다. 초기 시뮬레이터로 탐색을 설계하고 소량의 실물 자료로 시뮬레이터를 보정한다. 현재 팔의 검증된 시뮬레이터를 전제할 수 없어 알고리즘을 직접 채택하지 않는다. 실물 시도 수보다 얻을 정보와 후속 제어 목적을 함께 고려할 근거로 참고한다. 본문 PDF는 열람 도구의 크기 제한으로 확인하지 못했으므로 세부 성능 비교에 사용하지 않았다. [학회 초록·원문 링크](https://proceedings.iclr.cc/paper_files/paper/2024/hash/ae8afec5dabb07091d8f85128250f2ff-Abstract-Conference.html)
+
+이 문헌들은 현재 측정 흔들림을 없애거나 특정 PWM의 이동·안전을 보장하지 않는다. 첫 묶음에서는 단순한 기준선과 소수 후보의 반응을 먼저 비교하고, 작은 신경망·가우시안 프로세스·자동 정보성 탐색의 추가는 별도 자료에서 이득을 확인할 후속 선택으로 둔다. 실행 전 예정 프로파일과 실행 뒤 실제 드라이버 기록도 구분한다. 새 수집 범위는 [유한 출력 프로파일 설계](../finite-output-profile.md#학습용-첫-수집-설계)에서 관리한다.
 
 ## 적용 계획
 
