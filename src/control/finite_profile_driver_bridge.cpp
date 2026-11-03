@@ -6,7 +6,7 @@ namespace finite_profile {
 DriverBridge::DriverBridge(MotorControl& driver, DriverEnvironment& environment,
                            const char* bootId, const Profile* catalog, size_t catalogCount)
     : driver_(driver), environment_(environment), lease_(0), bindingFailed_(false),
-      ownerRecord_(nullptr), port_(*this), executor_(port_, bootId, catalog, catalogCount) {}
+      ownerRecord_(nullptr), capturedRecords_{}, capturedLeases_{}, port_(*this), executor_(port_, bootId, catalog, catalogCount) {}
 
 DriverBridge::~DriverBridge() {
   // Losing the owner must not release a reservation/quiet lock to legacy code.
@@ -88,6 +88,19 @@ PrepareResult DriverBridge::prepare(const Request& request) {
       result.granted = false;
       result.token = Token();
       result.code = Code::Rejected;
+    } else if (!driver_.bindFiniteProfileEvidence(lease_, request.bootId,
+                                                  request.commandId, request.expectedEpoch)) {
+      // No grant escapes until a dedicated capture slot is reserved. Acquisition
+      // wrote nothing; cancel while zero/idle, then release only our own lease.
+      // Existing evidence is never evicted to make this admission succeed.
+      executor_.cancel(request.bootId, request.commandId, request.expectedEpoch);
+      result.granted = false;
+      result.token = Token();
+      result.code = Code::Rejected;
+    } else {
+      const size_t index = executor_.count() - 1;
+      capturedRecords_[index] = result.record;
+      capturedLeases_[index] = lease_;
     }
   }
   afterCall();
@@ -123,6 +136,17 @@ Result DriverBridge::retryOff(const char* bootId, const char* commandId) {
 }
 const Record* DriverBridge::find(const char* bootId, const char* commandId) const {
   return executor_.find(bootId, commandId);
+}
+
+const DriverOutputEvidence* DriverBridge::outputEvidence(const char* bootId, const char* commandId) const {
+  const Record* record = find(bootId, commandId);
+  if (!record) return nullptr;
+  // A rejected bind after wrapper recreation must not expose an older capture
+  // just because boot/command/epoch were reused by the new core instance.
+  for (size_t i = 0; i < MAX_RECORDS; ++i) {
+    if (capturedRecords_[i] == record) return driver_.finiteProfileEvidence(capturedLeases_[i]);
+  }
+  return nullptr;
 }
 
 } // namespace finite_profile

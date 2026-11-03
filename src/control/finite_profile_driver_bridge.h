@@ -43,6 +43,8 @@ public:
   Result release(const char* bootId, const char* commandId, uint32_t quietEpoch);
   Result retryOff(const char* bootId, const char* commandId);
   const Record* find(const char* bootId, const char* commandId) const;
+  // Actual writes are distinct from the core planned-event receipts.
+  const DriverOutputEvidence* outputEvidence(const char* bootId, const char* commandId) const;
   uint32_t epoch() const { return executor_.epoch(); }
   uint32_t leaseId() const { return lease_; }
   bool blocked() const { return bindingFailed_ || executor_.blocked(); }
@@ -70,6 +72,8 @@ private:
   uint32_t lease_;
   bool bindingFailed_;
   const Record* ownerRecord_;
+  const Record* capturedRecords_[MAX_RECORDS];
+  uint32_t capturedLeases_[MAX_RECORDS];
   OutputPort port_;
   Executor executor_;
   void beforeCall();

@@ -14,6 +14,7 @@
 #error "Finite profile driver requires MOTIONBRAIN_ENABLE_FINITE_PROFILE_CORE=1"
 #endif
 #endif
+#include "finite_profile_output_evidence.h"
 
 // 전방 선언 (순환 참조 방지)
 class SystemStateManager;
@@ -207,6 +208,12 @@ public:
   bool finiteProfileOwned() const;
   void invalidateFiniteProfileLease();
   bool acquireFiniteProfileLease(uint32_t ordinal, uint32_t& lease);
+  bool bindFiniteProfileEvidence(uint32_t lease, const char* bootId,
+                                 const char* commandId, uint32_t requestEpoch);
+  const finite_profile::DriverOutputEvidence* findFiniteProfileEvidence(
+      const char* bootId, const char* commandId) const;
+  const finite_profile::DriverOutputEvidence* finiteProfileEvidence(uint32_t lease) const;
+  size_t finiteProfileEvidenceCount() const;
   bool finiteProfileLeaseMatches(uint32_t lease) const;
   bool finiteProfileLeaseSealed(uint32_t lease) const;
   bool finiteProfileAllowed(uint32_t lease) const;
@@ -224,10 +231,13 @@ private:
   uint32_t finiteLeaseCounter_ = 0;
   uint32_t finiteM2OffWriteAt_ = 0;
   bool finiteLeaseSealed_ = false;
+  finite_profile::DriverEvidenceStore finiteEvidence_;
   void sealFiniteProfileAndStop();
 #endif
   uint32_t actionOrdinal_ = 0;
   bounded::AppliedOutputLog outputLog_;
+  uint32_t recordActualWrite(uint8_t motorId, int16_t pwm,
+                             bounded::OutputReason reason, uint32_t ordinal);
   // TB6612FNG 핀 정의
   // TB6612FNG #1 (모터 M1, M2)
   static const uint8_t PIN_AIN1_1 = 16;     // 모터 A 방향 1

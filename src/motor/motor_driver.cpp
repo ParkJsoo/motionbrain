@@ -90,15 +90,15 @@ bool MotorControl::init() {
   
   // 3. 모든 PWM 출력을 0으로 설정 (5개 모터만)
   ledcWrite(PWM_CHANNEL_M1, 0);  // M1: 그리퍼
-  outputLog_.append(millis(), 0, MOTOR_1, 0, bounded::OutputReason::ForcedOff);
+  recordActualWrite(MOTOR_1, 0, bounded::OutputReason::ForcedOff, 0);
   ledcWrite(PWM_CHANNEL_M2, 0);  // M2: 손목
-  outputLog_.append(millis(), 0, MOTOR_2, 0, bounded::OutputReason::ForcedOff);
+  recordActualWrite(MOTOR_2, 0, bounded::OutputReason::ForcedOff, 0);
   ledcWrite(PWM_CHANNEL_M3, 0);  // M3: 팔꿈치
-  outputLog_.append(millis(), 0, MOTOR_3, 0, bounded::OutputReason::ForcedOff);
+  recordActualWrite(MOTOR_3, 0, bounded::OutputReason::ForcedOff, 0);
   ledcWrite(PWM_CHANNEL_M4, 0);  // M4: 어깨
-  outputLog_.append(millis(), 0, MOTOR_4, 0, bounded::OutputReason::ForcedOff);
+  recordActualWrite(MOTOR_4, 0, bounded::OutputReason::ForcedOff, 0);
   ledcWrite(PWM_CHANNEL_M5, 0);  // M5: 베이스
-  outputLog_.append(millis(), 0, MOTOR_5, 0, bounded::OutputReason::ForcedOff);
+  recordActualWrite(MOTOR_5, 0, bounded::OutputReason::ForcedOff, 0);
   
   // 5. 모든 방향 핀을 LOW로 설정
   digitalWrite(PIN_AIN1_1, LOW);
@@ -468,6 +468,18 @@ bool MotorControl::hasPendingOutput() const {
   return false;
 }
 
+uint32_t MotorControl::recordActualWrite(uint8_t motorId, int16_t pwm,
+                                        bounded::OutputReason reason, uint32_t ordinal) {
+  const uint32_t writtenAt = millis();
+  // The ring may deduplicate or overwrite; command evidence must see each write.
+  outputLog_.append(writtenAt, ordinal, motorId, pwm, reason);
+#if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
+  finiteEvidence_.append(finiteLease_, ordinal, writtenAt, motorId, pwm, reason);
+  if (motorId == MOTOR_2 && pwm == 0) finiteM2OffWriteAt_ = writtenAt;
+#endif
+  return writtenAt;
+}
+
 #if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
 bool MotorControl::finiteProfileOwned() const {
   return finiteLease_ != 0; // A sealed lease still owns the quiet interval.
@@ -499,6 +511,23 @@ bool MotorControl::acquireFiniteProfileLease(uint32_t ordinal, uint32_t& lease) 
   lease = finiteLease_;
   return true;
 }
+
+bool MotorControl::bindFiniteProfileEvidence(uint32_t lease, const char* bootId,
+                                            const char* commandId, uint32_t requestEpoch) {
+  if (!finiteProfileAllowed(lease) || !finiteProfileSoftwareOff(lease)) return false;
+  return finiteEvidence_.bind(bootId, commandId, requestEpoch, lease, actionOrdinal_, millis());
+}
+
+const finite_profile::DriverOutputEvidence* MotorControl::findFiniteProfileEvidence(
+    const char* bootId, const char* commandId) const {
+  return finiteEvidence_.find(bootId, commandId);
+}
+
+const finite_profile::DriverOutputEvidence* MotorControl::finiteProfileEvidence(uint32_t lease) const {
+  return finiteEvidence_.find(lease);
+}
+
+size_t MotorControl::finiteProfileEvidenceCount() const { return finiteEvidence_.count(); }
 
 bool MotorControl::finiteProfileLeaseMatches(uint32_t lease) const {
   return finiteInitialized_ && lease != 0 && lease == finiteLease_;
@@ -537,7 +566,7 @@ bool MotorControl::applyFiniteProfile(uint32_t lease, uint8_t motorId,
   }
   // Planned zero is a DriverWrite, distinct from a forced safety/cancel OFF.
   // It remains possible after safety changes, but can never reopen the lease.
-  if (pwm != 0 && !finiteProfileAllowed(lease)) {
+  if (pwm != 0 && (!finiteProfileAllowed(lease) || !finiteEvidence_.canWriteNonzero(lease))) {
     sealFiniteProfileAndStop();
     return false;
   }
@@ -548,10 +577,8 @@ bool MotorControl::applyFiniteProfile(uint32_t lease, uint8_t motorId,
     digitalWrite(PIN_BIN2_1, pwm < 0 ? HIGH : LOW);
   }
   ledcWrite(PWM_CHANNEL_M2, static_cast<uint8_t>(pwm < 0 ? -pwm : pwm));
-  writtenAt = millis();
-  outputLog_.append(writtenAt, actionOrdinal_, MOTOR_2, pwm, bounded::OutputReason::DriverWrite);
+  writtenAt = recordActualWrite(MOTOR_2, pwm, bounded::OutputReason::DriverWrite, actionOrdinal_);
   if (pwm == 0) {
-    finiteM2OffWriteAt_ = writtenAt;
     digitalWrite(PIN_BIN1_1, LOW);
     digitalWrite(PIN_BIN2_1, LOW);
   }
@@ -575,6 +602,7 @@ bool MotorControl::stopFiniteProfile(uint32_t lease, uint32_t& writtenAt) {
 
 bool MotorControl::releaseFiniteProfileLease(uint32_t lease) {
   if (!finiteProfileSoftwareOff(lease)) return false;
+  finiteEvidence_.close(lease, millis());
   finiteLeaseSealed_ = true;
   finiteLease_ = 0;
   actionOrdinal_ = 0;
@@ -781,8 +809,7 @@ bool MotorControl::setMotorSpeedInternal(uint8_t motorId, int16_t speed) {
 
   // PWM 출력 — PWM_CHANNELS[] 배열 사용 (산술 의존 없음, emergencyStop/update와 동일 패턴)
   ledcWrite(PWM_CHANNELS[index], pwmValue);
-  outputLog_.append(millis(), actionOrdinal_, motorId, speed,
-                    bounded::OutputReason::DriverWrite);
+  recordActualWrite(motorId, speed, bounded::OutputReason::DriverWrite, actionOrdinal_);
   
   // 상태 업데이트
   currentSpeed_[index] = speed;
@@ -812,15 +839,7 @@ void MotorControl::forceMotorOutputOff(uint8_t motorId) {
   lastUpdateTime_[index] = 0;
 
   ledcWrite(PWM_CHANNELS[index], 0);
-#if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
-  const uint32_t writtenAt = millis();
-  if (motorId == MOTOR_2) finiteM2OffWriteAt_ = writtenAt;
-  outputLog_.append(writtenAt, actionOrdinal_, motorId, 0,
-                    bounded::OutputReason::ForcedOff);
-#else
-  outputLog_.append(millis(), actionOrdinal_, motorId, 0,
-                    bounded::OutputReason::ForcedOff);
-#endif
+  recordActualWrite(motorId, 0, bounded::OutputReason::ForcedOff, actionOrdinal_);
 
   uint8_t driverId = getDriverId(motorId);
   uint8_t motorIndex = getMotorIndexInDriver(motorId);
