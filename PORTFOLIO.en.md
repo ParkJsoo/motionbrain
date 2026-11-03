@@ -55,4 +55,4 @@ Software checks run in [PlatformIO/Python](https://github.com/ParkJsoo/motionbra
 
 - The other four joints lack position feedback; full-arm trajectory control and force sensing are absent.
 - Electrical cutoff, deadman latency, power transients and long-term reliability still require instrumentation.
-- Next, expand data through batch collection from observed current states, then train on batches and evaluate on newly held-out data. Multi-step goal approach and contact/grasping require separate evaluation.
+- Under a new settled-endpoint contract, 17 transitions were used to [train pre-execution and retrospective output models (Korean)](docs/supervised-action-collection.md#실제-출력-이력을-반영한-오프라인-학습-2026-11-03). Evaluation was exploratory within one development group, and the pre-execution model did not beat the direction-mean baseline. Next, evaluate pre-execution prediction on a separate capture group. Multi-step goal approach and contact/grasping require separate evaluation.
