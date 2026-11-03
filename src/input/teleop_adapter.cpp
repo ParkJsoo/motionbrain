@@ -203,8 +203,10 @@ void TeleopAdapter::update() {
   updateControl();
 }
 
-void TeleopAdapter::processInput() {
-  while (serial_ != nullptr && serial_->available() > 0) {
+void TeleopAdapter::processInput(uint16_t maxBytes) {
+  uint16_t processed = 0;
+  while (serial_ != nullptr && serial_->available() > 0 &&
+         (maxBytes == 0 || processed++ < maxBytes)) {
     processIncomingByte(static_cast<char>(serial_->read()));
   }
 }

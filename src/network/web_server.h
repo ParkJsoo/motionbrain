@@ -164,6 +164,8 @@ private:
    */
   void handleBase();
   void handleShoulder();
+  void handleFiniteProfile();
+  void handleFiniteProfileStatus();
   void handleAction();
   void handleActionStatus();
   void handleActionCancel();

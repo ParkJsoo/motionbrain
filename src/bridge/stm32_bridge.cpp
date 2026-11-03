@@ -120,7 +120,7 @@ bool Stm32Bridge::init() {
   return true;
 }
 
-void Stm32Bridge::update() {
+void Stm32Bridge::update(uint16_t maxBytes) {
   if (simulationMode_ == SensorSimulationMode::AUTO) {
     uint32_t now = millis();
     if (lastSimulatedEmitMs_ == 0 || (now - lastSimulatedEmitMs_) >= simulatedPacketPeriodMs_) {
@@ -129,7 +129,9 @@ void Stm32Bridge::update() {
     return;
   }
 
-  while (serial_ != nullptr && serial_->available() > 0) {
+  uint16_t processed = 0;
+  while (serial_ != nullptr && serial_->available() > 0 &&
+         (maxBytes == 0 || processed++ < maxBytes)) {
     processIncomingByte(static_cast<char>(serial_->read()));
   }
 }

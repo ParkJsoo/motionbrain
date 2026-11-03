@@ -42,8 +42,8 @@ struct ScheduledExecuteResult {
       : execution(result), scheduling(status) {}
 };
 
-// Offline adapter only: no global instance, loop, HTTP or RTOS wiring. The
-// private bridge prevents callers from mixing event dispatch with legacy tick.
+// Scheduler adapter; optional loop/HTTP wiring lives in finite_profile_runtime.
+// The private bridge prevents mixing event dispatch with legacy tick.
 // A deterministic fake scheduler proves policy, not wall-clock responsiveness.
 class ScheduledDriver final {
 public:
@@ -70,6 +70,9 @@ public:
   bool blocked() const { return generationExhausted_ || bridge_.blocked(); }
   bool initialized() const { return bridge_.initialized(); }
   bool hasScheduledWake() const { return armed_; }
+  bool executionPending() const {
+    return owner_ && (owner_->state == State::Running || owner_->state == State::Stopping);
+  }
 private:
   MotorControl& driver_;
   SchedulerPort& scheduler_;

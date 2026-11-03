@@ -2,6 +2,8 @@
 #include <memory>
 #include <new>
 #include "control/bounded_action_service.h"
+#include "control/finite_profile_runtime.h"
+#include "control/finite_profile_json.h"
 #include "control/numeric_validation.h"
 #include "web_server.h"
 #include "wifi_latency.h"
@@ -118,6 +120,10 @@ bool MotionBrainWebServer::init(SystemStateManager* systemState, MotorControl* m
   server_.on("/vision_endpoint", HTTP_GET, [this]() { this->handleVisionEndpoint(); });
   server_.on("/vision_endpoint", HTTP_POST, [this]() { this->handleVisionEndpointPublish(); });
   server_.on("/status", HTTP_GET, [this]() { this->handleStatus(); });
+#if MOTIONBRAIN_ENABLE_FINITE_PROFILE_RUNTIME
+  server_.on("/finite_profile", HTTP_POST, [this]() { this->handleFiniteProfile(); });
+  server_.on("/finite_profile", HTTP_GET, [this]() { this->handleFiniteProfileStatus(); });
+#endif
   server_.on("/actions", HTTP_POST, [this]() { this->handleAction(); });
   server_.on("/actions", HTTP_GET, [this]() { this->handleActionStatus(); });
   server_.on("/actions/cancel", HTTP_POST, [this]() { this->handleActionCancel(); });
@@ -2138,3 +2144,112 @@ void MotionBrainWebServer::handleM4Diagnostics() {
   }
   server_.send(200, "application/json", body.get());
 }
+
+#if MOTIONBRAIN_ENABLE_FINITE_PROFILE_RUNTIME
+void MotionBrainWebServer::handleFiniteProfileStatus() {
+  if (!requireCommandAuth()) return;
+  sendNoStoreHeaders(server_);
+  auto* driver = finite_profile::runtime::driver();
+  if (!driver || !driver->initialized()) { sendErrorJson(503, "finite_profile_unavailable"); return; }
+  String json;
+  if (!server_.hasArg("commandId")) {
+    json = "{\"enabled\":true,\"bootId\":\"";
+    json += finite_profile::runtime::bootId();
+    json += "\",\"epoch\":"; json += driver->epoch();
+    json += ",\"idle\":"; json += driver->idle() ? "true" : "false";
+    json += ",\"blocked\":"; json += driver->blocked() ? "true" : "false";
+    json += ",\"freeHeap\":"; json += ESP.getFreeHeap();
+    json += ",\"suppressedSerialLogs\":"; json += DebugLog::suppressedDuringFiniteOutput();
+    json += ",\"profile\":";
+    finite_profile::appendProfileJson(json, *finite_profile::runtime::profile());
+    json += '}';
+  } else {
+    const String boot = server_.arg("bootId"), id = server_.arg("commandId");
+    const auto* record = driver->find(boot.c_str(), id.c_str());
+    if (!record) { sendErrorJson(404, "outcome_unknown_record_not_found"); return; }
+    json = "{\"record\":"; finite_profile::appendRecordJson(json, *record);
+    json += ",\"actualOutput\":";
+    finite_profile::appendEvidenceJson(json, driver->outputEvidence(boot.c_str(), id.c_str()));
+    json += '}';
+  }
+  server_.send(200, "application/json", json);
+}
+
+void MotionBrainWebServer::handleFiniteProfile() {
+  if (!requireCommandAuth()) return;
+  sendNoStoreHeaders(server_);
+  auto* driver = finite_profile::runtime::driver();
+  if (!driver || !driver->initialized()) { sendErrorJson(503, "finite_profile_unavailable"); return; }
+  const String boot = server_.arg("bootId"), id = server_.arg("commandId");
+  long epoch = 0;
+  if (boot.length() >= 33 || id.length() >= 129 ||
+      !finite_profile::validIdentifier(boot.c_str(), 33) ||
+      !finite_profile::validIdentifier(id.c_str(), 129) ||
+      !NumericValidation::integer(server_.arg("epoch").c_str(), 1, 2147483647L, epoch)) {
+    sendErrorJson(400, "invalid_finite_identity_or_epoch"); return;
+  }
+  const String operation = server_.arg("operation");
+  // Do not silently ignore a caller's alternate PWM, duration or duplicate field.
+  for (int i = 0; i < server_.args(); ++i) {
+    const String name = server_.argName(i);
+    const bool common = name == "operation" || name == "bootId" || name == "commandId" || name == "epoch";
+    const bool specific = (operation == "prepare" && (name == "profileId" || name == "catalogHash")) ||
+        (operation == "execute" && name == "token");
+    if (!common && !specific) { sendErrorJson(400, "unexpected_finite_field"); return; }
+    for (int prior = 0; prior < i; ++prior) {
+      if (server_.argName(prior) == name) { sendErrorJson(400, "duplicate_finite_field"); return; }
+    }
+  }
+  finite_profile::Result result;
+  String extra;
+  if (operation == "prepare") {
+    const auto* profile = finite_profile::runtime::profile();
+    if (server_.arg("profileId") != profile->profileId ||
+        server_.arg("catalogHash") != profile->catalogHash) {
+      sendErrorJson(400, "profile_not_in_trusted_catalog"); return;
+    }
+    finite_profile::Request request;
+    strlcpy(request.bootId, boot.c_str(), sizeof(request.bootId));
+    strlcpy(request.commandId, id.c_str(), sizeof(request.commandId));
+    request.expectedEpoch = static_cast<uint32_t>(epoch);
+    request.profile = *profile;
+    const auto prepared = driver->prepare(request);
+    result = finite_profile::Result(prepared.code, prepared.record);
+    if (prepared.granted) {
+      extra = ",\"token\":\"";
+      const char* digits = "0123456789abcdef";
+      for (uint8_t b : prepared.token.bytes) { extra += digits[b >> 4]; extra += digits[b & 15]; }
+      extra += '"';
+    }
+  } else if (operation == "execute") {
+    const String rawToken = server_.arg("token");
+    if (rawToken.length() != 32) { sendErrorJson(400, "invalid_execution_token"); return; }
+    finite_profile::Token token;
+    for (size_t i = 0; i < 32; ++i) {
+      const char c = rawToken[i];
+      const int value = c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : -1;
+      if (value < 0) { sendErrorJson(400, "invalid_execution_token"); return; }
+      token.bytes[i / 2] = static_cast<uint8_t>((token.bytes[i / 2] << 4) | value);
+    }
+    const auto executed = driver->execute(boot.c_str(), id.c_str(), static_cast<uint32_t>(epoch), token);
+    result = executed.execution;
+    extra = ",\"scheduling\":\"";
+    extra += executed.scheduling == finite_profile::ScheduleStatus::Armed ? "Armed" :
+        executed.scheduling == finite_profile::ScheduleStatus::Failed ? "Failed" : "NotRequested";
+    extra += '"';
+  } else if (operation == "cancel") {
+    result = driver->cancel(boot.c_str(), id.c_str(), static_cast<uint32_t>(epoch));
+  } else if (operation == "release") {
+    result = driver->release(boot.c_str(), id.c_str(), static_cast<uint32_t>(epoch));
+  } else {
+    sendErrorJson(400, "invalid_finite_operation"); return;
+  }
+  // Keep execute response small; no large evidence formatting before first PWM.
+  // If sending stalls beyond the fixed start deadline, runtime poll fails OFF.
+  String json = "{\"code\":\"";
+  json += finite_profile::codeName(result.code); json += '"';
+  json += extra; json += '}';
+  server_.send(result.code == finite_profile::Code::Accepted ||
+      result.code == finite_profile::Code::Duplicate ? 200 : 409, "application/json", json);
+}
+#endif

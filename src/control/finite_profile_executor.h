@@ -97,7 +97,7 @@ struct PrepareResult {
       : code(value), record(receipt), granted(false), token() {}
 };
 
-// Pure synchronous adapter; no production implementation exists. All public
+// Synchronous port contract implemented by DriverBridge. All public
 // Executor calls must be externally serialized. Ports must never re-enter the
 // Executor. No lock, RTOS scheduling or electrical OFF guarantee is implemented.
 // apply/stop report the actual driver-write timestamp, not the later receipt time.

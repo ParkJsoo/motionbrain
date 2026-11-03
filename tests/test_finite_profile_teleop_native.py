@@ -55,5 +55,8 @@ class FiniteProfileTeleopNativeTest(unittest.TestCase):
     def test_denied_control_does_not_pollute_output_cache(self):
         self.run_case("cache")
 
+    def test_uart_budget_bounds_bytes_without_losing_deadman_edge(self):
+        self.run_case("budget")
+
 if __name__ == "__main__":
     unittest.main()

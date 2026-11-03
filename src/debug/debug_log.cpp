@@ -1,8 +1,20 @@
 #include "debug_log.h"
 #include <stdarg.h>
+#include "control/finite_profile_runtime.h"
+#include <limits.h>
 
 // 정적 멤버 변수 초기화
 bool DebugLog::initialized_ = false;
+uint32_t DebugLog::finiteSuppressed_ = 0;
+bool DebugLog::suppressFiniteOutput() {
+#if MOTIONBRAIN_ENABLE_FINITE_PROFILE_RUNTIME
+  if (finite_profile::runtime::motionPending()) {
+    if (finiteSuppressed_ != UINT32_MAX) ++finiteSuppressed_;
+    return true;
+  }
+#endif
+  return false;
+}
 
 /**
  * 로그 시스템 초기화
@@ -38,6 +50,7 @@ const char* DebugLog::levelToString(LogLevel level) {
  * 기본 로그 함수
  */
 void DebugLog::log(LogLevel level, const char* format, ...) {
+  if (suppressFiniteOutput()) return;
   if (!initialized_) {
     init();  // 자동 초기화
   }
@@ -55,6 +68,7 @@ void DebugLog::log(LogLevel level, const char* format, ...) {
  * 내부 va_list 기반 로그 (이중 포맷 방지)
  */
 void DebugLog::vlog(LogLevel level, const char* format, va_list args) {
+  if (suppressFiniteOutput()) return;
   if (!initialized_) {
     init();
   }
@@ -107,6 +121,7 @@ void DebugLog::error(const char* format, ...) {
  * 상태 변화 로그
  */
 void DebugLog::stateChange(const char* from, const char* to, const char* reason) {
+  if (suppressFiniteOutput()) return;
   if (!initialized_) {
     init();
   }
@@ -122,6 +137,7 @@ void DebugLog::stateChange(const char* from, const char* to, const char* reason)
  * 명령 실행 로그
  */
 void DebugLog::command(const char* command, bool success, const char* message) {
+  if (suppressFiniteOutput()) return;
   if (!initialized_) {
     init();
   }
@@ -145,6 +161,7 @@ void DebugLog::command(const char* command, bool success, const char* message) {
  * 안전 관련 로그
  */
 void DebugLog::safety(const char* event, const char* details) {
+  if (suppressFiniteOutput()) return;
   if (!initialized_) {
     init();
   }
@@ -160,6 +177,7 @@ void DebugLog::safety(const char* event, const char* details) {
  * 모터 제어 로그 (동작 이름만)
  */
 void DebugLog::motor(const char* action) {
+  if (suppressFiniteOutput()) return;
   if (!initialized_) {
     init();
   }
@@ -171,6 +189,7 @@ void DebugLog::motor(const char* action) {
  * 모터 제어 로그 (printf 스타일)
  */
 void DebugLog::motor(const char* action, const char* format, ...) {
+  if (suppressFiniteOutput()) return;
   if (!initialized_) {
     init();
   }

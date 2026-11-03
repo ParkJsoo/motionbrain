@@ -142,6 +142,30 @@ static void blocked_cache() {
   nowMs += 50; motorControl.update(); assert(motorControl.getSpeed(1) == 10);
   assertMatches(motorControl);
 }
+static void bounded_input_budget() {
+  init();uint32_t lease=0;assert(motorControl.acquireFiniteProfileLease(41,lease));
+  Serial1.append(frame(true,1)+frame(false,2));
+  assert(Serial1.available()>128);
+  unsigned calls=0;bool sawFirstFrame=false;
+  while(Serial1.available()) {
+    const int before=Serial1.available();
+    teleop.processInput(128);++calls;
+    const int consumed=before-Serial1.available();
+    assert(consumed==(before<128?before:128));
+    if(teleop.getPacketsReceived()==1) {
+      sawFirstFrame=true;
+      assert(teleop.isDeadmanHeld() && motorControl.finiteProfileLeaseSealed(lease));
+    }
+    teleop.updateControl();
+    assert(!teleop.isControlActive() && !motorControl.hasPendingOutput());
+  }
+  assert(calls>1 && sawFirstFrame && teleop.getPacketsReceived()==2);
+  assert(!teleop.isDeadmanHeld() && teleop.getParseErrors()==0);
+  assert(motorControl.finiteProfileLeaseSealed(lease));
+  for(const auto& w:writes)assert(w.signedPwm==0);
+  assertMatches(motorControl);
+}
+
 #endif
 int main(int argc, char** argv) {
   assert(argc == 2);
@@ -149,6 +173,7 @@ int main(int argc, char** argv) {
 #if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
   else if (!strcmp(argv[1], "reserved") || !strcmp(argv[1], "running") || !strcmp(argv[1], "quiet")) transient(argv[1]);
   else if (!strcmp(argv[1], "cache")) blocked_cache();
+  else if (!strcmp(argv[1], "budget")) bounded_input_budget();
 #endif
   else return 2;
 }

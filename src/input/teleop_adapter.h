@@ -71,7 +71,7 @@ public:
             CommandBus* commandBus,
             Dispatcher* dispatcher);
   void update();
-  void processInput();
+  void processInput(uint16_t maxBytes = 0);
   void updateControl();
 
   void resetOutputCache();

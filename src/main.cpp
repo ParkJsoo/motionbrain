@@ -1,4 +1,7 @@
 #include <Arduino.h>
+#include <esp_system.h>
+#include "control/finite_profile_runtime.h"
+#include "control/finite_profile_trial_catalog.h"
 #include "system/system_init.h"
 #include "motor/motor_driver.h"        // MotorControl 사용
 #include "motion/robot_arm.h"          // RobotArm 사용 (Phase 2-A)
@@ -51,6 +54,13 @@ WifiProvisioningConfig wifiConfig;
 bool homeWifiMode = false;
 
 namespace {
+#if MOTIONBRAIN_ENABLE_FINITE_PROFILE_RUNTIME
+bool issueFiniteToken(finite_profile::Token& token) {
+  esp_fill_random(token.bytes, sizeof(token.bytes));
+  return true;
+}
+#endif
+
 
 void buildFallbackApCredentials(char* ssid, size_t ssidSize, char* password, size_t passwordSize) {
   const uint64_t mac = ESP.getEfuseMac();
@@ -180,6 +190,13 @@ void setup() {
     DebugLog::info("Access dashboard at: http://%s", wifiAP.getIP().toString().c_str());
   }
   
+#if MOTIONBRAIN_ENABLE_FINITE_PROFILE_RUNTIME
+  const auto* boundedCore = BoundedActions::executor();
+  if (!boundedCore || !finite_profile::runtime::init(motorControl,
+      finite_profile::trialProfile(), boundedCore->bootId(), issueFiniteToken))
+    DebugLog::error("Finite profile runtime unavailable");
+#endif
+
   DebugLog::info("Boot complete - system is in %s state", systemState.getStateString());
   DebugLog::info("=== MotionBrain Core Ready: 5-axis control + web UI ===");
   eventLog.push("system", "BOOT_COMPLETE", EventSeverity::INFO, systemState.getStateString());
@@ -199,20 +216,25 @@ void loop() {
   // 상태 머신 업데이트 (타임아웃 체크)
   systemState.update();
 
-  // STM32 센서 브리지 업데이트
-  stm32Bridge.update();
+  // The finite runtime and all safety/driver calls share this one loop task.
+  const bool finiteWindow = finite_profile::runtime::motionPending();
+
+  // Bound UART work during the short finite execution window.
+  stm32Bridge.update(finiteWindow ? 128 : 0);
 
   // 유선 handheld teleop 입력 수신. 출력 적용은 safety 평가 이후에 수행한다.
-  teleopAdapter.processInput();
+  teleopAdapter.processInput(finiteWindow ? 128 : 0);
 
   // 센서 기반 safety 평가
   const SensorSnapshot& safetySnapshot = getActiveSafetySnapshot();
   safetyMonitor.update(safetySnapshot);
+  finite_profile::runtime::update();
   BoundedActions::tick();
 
   // M4 AS5600 절대각 갱신 및 폐루프 제어. 모터 출력 업데이트 전에
   // 실행해 목표 도달/센서 고장 시 즉시 M4를 차단한다.
-  shoulderAngleSensor.update(motorControl.getSpeed(MotorControl::MOTOR_4));
+  // M4 I2C diagnostics can block; the finite catalog owns M2 only.
+  if (!finiteWindow) shoulderAngleSensor.update(motorControl.getSpeed(MotorControl::MOTOR_4));
   BoundedActions::tick();
   shoulderAngleController.update();
 
@@ -241,13 +263,15 @@ void loop() {
   GuardedRoutineExecutor::update();
   
   // 시리얼 명령 처리
-  serialCommand.update();
+  if (!finite_profile::runtime::motionPending()) serialCommand.update();
   
   // Wi-Fi AP 업데이트 (클라이언트 접속 상태 확인)
-  wifiAP.update();
+  if (!finite_profile::runtime::motionPending()) wifiAP.update();
   
   // 웹 서버 업데이트 (HTTP 요청 처리)
-  webServer.update();
+  // Never deliver an output after potentially blocking HTTP handling.
+  // The next loop refreshes UART input and safety before the sole runtime tick.
+  if (!finite_profile::runtime::motionPending()) webServer.update();
   BoundedActions::tick();
   
   // 최소 딜레이 (CPU 부하 완화 + 웹 서버 응답성 개선)

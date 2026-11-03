@@ -22,7 +22,7 @@ public:
   Stm32Bridge();
 
   bool init();
-  void update();
+  void update(uint16_t maxBytes = 0);
 
   const SensorSnapshot& getSnapshot() const;
   bool isConnected() const;

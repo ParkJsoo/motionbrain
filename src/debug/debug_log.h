@@ -27,6 +27,8 @@ enum class LogLevel {
  */
 class DebugLog {
 public:
+  // Count synchronous UART messages omitted during a finite output window.
+  static uint32_t suppressedDuringFiniteOutput() { return finiteSuppressed_; }
   /**
    * 로그 시스템 초기화
    * @param baudRate 시리얼 통신 속도 (기본값: 115200)
@@ -113,6 +115,8 @@ private:
    * 초기화 여부
    */
   static bool initialized_;
+  static uint32_t finiteSuppressed_;
+  static bool suppressFiniteOutput();
 };
 
 #endif // DEBUG_LOG_H
