@@ -28,9 +28,22 @@ class RecordingPort(SequencePort):
     def __init__(self, *args, observer, **kwargs):
         super().__init__(*args, **kwargs)
         self.observer = observer
+        self._observed_path = None
+        self._observed_payload = None
+
+    def _save(self, path, value, emergency=False):
+        super()._save(path, value, emergency)
+        # Only successfully persisted retry evidence enters the viewer. These
+        # attempts are also kept as immutable raw files by the base transport.
+        if path.endswith(('-attempt-1-error.json', '-attempt-2-intent.json')):
+            self.observer(dict(kind='http_retry', at=value.get('endedAt', value.get('startedAt')),
+                               path=self._observed_path, payload=copy.deepcopy(self._observed_payload),
+                               attempt=1 if path.endswith('-error.json') else 2,
+                               evidenceFile=path, detail=copy.deepcopy(value)))
 
     def _call(self, path, payload=None, **kwargs):
         started = self.clock.monotonic()
+        self._observed_path, self._observed_payload = path, payload
         try:
             result = super()._call(path, payload, **kwargs)
         except BaseException as exc:
@@ -196,7 +209,7 @@ class ManualCollection:
                 self.finish()
                 return
             self.camera.check()
-            self.port.check_idle()
+            self.port.check_idle(allow_quiet_disconnect_retry=True)
             self.last_poll = self.clock.monotonic()
         except Exception:
             self.current['error'] = 'recording_or_controller_monitor_failed'
@@ -328,8 +341,16 @@ class ManualCollection:
             # its original request intent. No missing response becomes success.
             prefix = path.name.split('-attempt-')[0].removesuffix('-error.json')
             intent = _decode_json(_read(directory, prefix + '-intent.json'))
-            events.append(dict(kind='http_error', at=error['endedAt'], requestStartedAt=intent['startedAt'],
-                               path=intent['path'], payload=intent['payload'], error=error['error']))
+            if '-attempt-' in path.name:
+                events.append(dict(kind='http_retry', at=error['endedAt'], path=intent['path'],
+                                   payload=intent['payload'], attempt=1, evidenceFile=path.name, detail=error))
+            else:
+                events.append(dict(kind='http_error', at=error['endedAt'], requestStartedAt=intent['startedAt'],
+                                   path=intent['path'], payload=intent['payload'], error=error['error']))
+        for path in sorted(directory.glob('http-*-attempt-2-intent.json')):
+            intent = _decode_json(_read(directory, path.name))
+            events.append(dict(kind='http_retry', at=intent['startedAt'], path=intent['path'],
+                               payload=intent['payload'], attempt=2, evidenceFile=path.name, detail=intent))
         for path in sorted(directory.glob('command-*.json')):
             events.append(_decode_json(_read(directory, path.name)))
         events.sort(key=lambda event: event['at'])

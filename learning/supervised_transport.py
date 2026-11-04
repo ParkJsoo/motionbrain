@@ -135,6 +135,7 @@ class SequencePort:
         self.last_dispatch_before = None
         self.last_dispatch_after = None
         self.last_off_at = None
+        self._quiet_retry_off_proof = False
 
     def _save(self, path, value, emergency=False):
         try:
@@ -144,7 +145,7 @@ class SequencePort:
             if not emergency:
                 raise
 
-    def _call(self, path, payload=None, *, emergency=False, run=False):
+    def _call(self, path, payload=None, *, emergency=False, run=False, quiet_disconnect_retry=False):
         if path not in ('/status', '/sequence', '/actions', '/action_outputs', '/command', '/motor'):
             raise ValueError('unsupported_endpoint')
         self.serial += 1
@@ -177,12 +178,17 @@ class SequencePort:
                             code = response.status
                         break
                     except http.client.RemoteDisconnected:
-                        # Only the pre-ARM, verified-OFF queue read may recover
-                        # once. Both attempts share the existing alarm/budget;
-                        # writes, active-output polling and cleanup never retry.
-                        if (attempt or path != '/sequence' or payload is not None
-                                or run or emergency or self.may_have_run
-                                or not self.off_verified or self.evidence_failed):
+                        # Both permitted read recoveries share this request's
+                        # alarm/budget. Quiet recovery is scoped to an explicitly
+                        # opted-in check_idle with a prior OFF proof; that proof
+                        # never substitutes for validating the fresh responses.
+                        queue_read = (path == '/sequence' and not self.may_have_run
+                                      and self.off_verified)
+                        quiet_read = (quiet_disconnect_retry and self._quiet_retry_off_proof
+                                      and path in ('/status', '/action_outputs')
+                                      and self._active_pulse is None)
+                        if (attempt or payload is not None or run or emergency
+                                or self.evidence_failed or not (queue_read or quiet_read)):
                             raise
                         remaining = self.timeout - (self.clock.monotonic() - started)
                         if remaining <= 0:
@@ -329,19 +335,30 @@ class SequencePort:
             raise
         return snapshot
 
-    def check_idle(self):
-        """Read-only quiet-window check; caller controls the polling frequency."""
-        # A prior OFF proof (including a previous finish) cannot certify a new
-        # quiet window. A new failure must permit bounded emergency cleanup.
+    def check_idle(self, *, allow_quiet_disconnect_retry=False):
+        """Read-only quiet-window check; caller controls the polling frequency.
+
+        Only the manual session's idle monitor opts into one disconnect recovery.
+        Finalization and existing collection paths retain single-attempt reads.
+        """
+        # A prior OFF proof enables transport recovery, never certification of a
+        # new quiet window. A failed fresh read still permits emergency cleanup.
+        self._quiet_retry_off_proof = (allow_quiet_disconnect_retry is True
+                                      and self.off_verified and self._active_pulse is None
+                                      and not self.evidence_failed)
         self._finished = False
         self.off_verified = False
-        status = self._call('/status')
-        self._check_status(status, 'IDLE')
-        self._consume(self._call('/action_outputs'), quiet=True)
-        if self.last_outputs != {i: 0 for i in range(1, 6)}:
-            raise ValueError('driver_off_not_proven')
-        self.off_verified = True
-        return status
+        try:
+            status = self._call('/status', quiet_disconnect_retry=self._quiet_retry_off_proof)
+            self._check_status(status, 'IDLE')
+            self._consume(self._call('/action_outputs',
+                                    quiet_disconnect_retry=self._quiet_retry_off_proof), quiet=True)
+            if self.last_outputs != {i: 0 for i in range(1, 6)}:
+                raise ValueError('driver_off_not_proven')
+            self.off_verified = True
+            return status
+        finally:
+            self._quiet_retry_off_proof = False
 
     def _stop_and_clear(self, *, restore_default, emergency):
         errors = []

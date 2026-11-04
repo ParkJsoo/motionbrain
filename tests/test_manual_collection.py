@@ -41,7 +41,7 @@ class Port:
         Port.instances.append(self)
     def _call(self, path): return {'bootId': 'a'*32}
     def preflight(self): return {}
-    def check_idle(self):
+    def check_idle(self, *, allow_quiet_disconnect_retry=False):
         if self.fail_idle: raise ValueError('idle_failure')
     def execute(self, pulse, tick):
         self.executions.append(pulse)
@@ -204,6 +204,31 @@ class ManualCollectionTests(unittest.TestCase):
         self.assertTrue(result['finalIdleOffVerified'])
         self.assertEqual(result['phase'], 'failed')
         self.assertEqual(result['error'], 'evidence_persistence_failed')
+
+    def test_quiet_retry_is_visible_in_live_and_interrupted_replay(self):
+        from tests.test_supervised_transport import Controller
+        import http.client
+        self.start(); events = []
+        port = RecordingPort('http://127.0.0.1', 'secret', 'boot', self.manager.store,
+                             observer=events.append, clock=self.clock)
+        device = Controller(self.clock); port.opener = device
+        port.preflight(); original=device.open; attempts=[]
+        def disconnect(request, timeout):
+            if request.full_url.endswith('/action_outputs'):
+                attempts.append(timeout)
+                if len(attempts)==1: raise http.client.RemoteDisconnected()
+            return original(request, timeout)
+        device.open=disconnect
+        port.check_idle(allow_quiet_disconnect_retry=True)
+        retries=[event for event in events if event['kind']=='http_retry']
+        self.assertEqual([event['attempt'] for event in retries], [1, 2])
+        self.assertTrue(all(event['path']=='/action_outputs' for event in retries))
+        self.assertEqual(retries[0]['detail']['error'], 'RemoteDisconnected')
+        sid=self.manager.current['sessionId']
+        # View as an interrupted session, without altering any saved artifacts.
+        other=self.make()
+        replay=other.session(sid)
+        self.assertEqual([event for event in replay['events'] if event['kind']=='http_retry'], retries)
 
     def test_path_traversal_rejected(self):
         with self.assertRaises(ValueError): self.manager.session('../outside')

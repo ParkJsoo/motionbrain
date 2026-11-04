@@ -234,6 +234,109 @@ class TransportTests(unittest.TestCase):
             with self.assertRaises(type(error)): port._call('/sequence')
             self.assertEqual(len(attempts), 1)
 
+    def test_opted_in_quiet_disconnect_recovers_once_with_prior_off(self):
+        for path in ('/status', '/action_outputs'):
+            with self.subTest(path=path):
+                port, device, store = self.setup_port();port.preflight()
+                # Previous RUN history is not erased to enable quiet recovery.
+                port.may_have_run = True
+                original = device.open;attempts = []
+                def disconnect(request, timeout):
+                    if request.full_url.endswith(path):
+                        attempts.append(timeout)
+                        if len(attempts) == 1:
+                            device.clock.sleep(.29)
+                            raise http.client.RemoteDisconnected()
+                    return original(request, timeout)
+                device.open = disconnect
+                port.check_idle(allow_quiet_disconnect_retry=True)
+                self.assertTrue(port.off_verified);self.assertTrue(port.may_have_run)
+                self.assertFalse(port._quiet_retry_off_proof)
+                self.assertEqual(len(attempts), 2)
+                self.assertAlmostEqual(attempts[1], .51)
+                self.assertEqual(sum(n.endswith('-attempt-1-error.json') for n in store.rows), 1)
+                self.assertEqual(sum(n.endswith('-attempt-2-intent.json') for n in store.rows), 1)
+                self.assertTrue(all(payload is None for _, payload in device.requests))
+
+    def test_quiet_retry_requires_explicit_monitor_prior_off_and_no_active_pulse(self):
+        for optin, off, active, broken in ((False, True, None, False),
+                (True, False, None, False), (True, True, pulse(), False),
+                (True, True, None, True)):
+            with self.subTest(optin=optin, off=off, active=active, broken=broken):
+                port, device, _ = self.setup_port();port.preflight();attempts = []
+                port.off_verified=off;port._active_pulse=active;port.evidence_failed=broken
+                def disconnect(request, timeout):
+                    attempts.append(request);raise http.client.RemoteDisconnected()
+                device.open = disconnect
+                with self.assertRaises(http.client.RemoteDisconnected):
+                    port.check_idle(allow_quiet_disconnect_retry=optin)
+                self.assertEqual(len(attempts), 1)
+                self.assertFalse(port.off_verified);self.assertFalse(port._quiet_retry_off_proof)
+
+    def test_quiet_retry_scope_never_enables_writes_emergency_or_other_endpoints(self):
+        for path, payload, options in (
+                ('/status', None, {}), # no scoped prior proof
+                ('/action_outputs', None, {'emergency':True}),
+                ('/command', {'cmd':'arm'}, {}),
+                ('/sequence', {'action':'run'}, {'run':True}),
+                ('/actions', None, {})):
+            with self.subTest(path=path, options=options):
+                port, device, _ = self.setup_port();attempts=[]
+                port._quiet_retry_off_proof = path != '/status'
+                def disconnect(request, timeout):
+                    attempts.append(request);raise http.client.RemoteDisconnected()
+                device.open = disconnect
+                with self.assertRaises(http.client.RemoteDisconnected):
+                    port._call(path, payload, quiet_disconnect_retry=True, **options)
+                self.assertEqual(len(attempts), 1)
+
+    def test_quiet_retry_second_disconnect_and_exhausted_budget_fail(self):
+        for elapsed, count in ((.1, 2), (.81, 1)):
+            port, device, _ = self.setup_port();port.preflight();attempts=[]
+            def disconnect(request, timeout):
+                attempts.append(timeout);device.clock.sleep(elapsed)
+                raise http.client.RemoteDisconnected()
+            device.open=disconnect
+            with self.assertRaises(http.client.RemoteDisconnected):
+                port.check_idle(allow_quiet_disconnect_retry=True)
+            self.assertEqual(len(attempts), count)
+            self.assertFalse(port.off_verified);self.assertFalse(port._quiet_retry_off_proof)
+
+    def test_quiet_retry_does_not_accept_changed_boot_gap_or_nonzero_output(self):
+        for changed in ('boot', 'gap', 'nonzero', 'unsafe_status'):
+            with self.subTest(changed=changed):
+                port, device, _ = self.setup_port();port.preflight();original=device.open;attempts=[]
+                path = '/status' if changed == 'unsafe_status' else '/action_outputs'
+                def disconnect(request, timeout):
+                    if request.full_url.endswith(path):
+                        attempts.append(timeout)
+                        if len(attempts)==1:
+                            if changed=='boot': device.boot='other'
+                            elif changed=='gap':
+                                for _ in range(130): device.append(1, 0)
+                            elif changed=='nonzero': device.append(1, 20)
+                            else: device.sensor_age=151
+                            raise http.client.RemoteDisconnected()
+                    return original(request, timeout)
+                device.open=disconnect
+                with self.assertRaises(ValueError): port.check_idle(allow_quiet_disconnect_retry=True)
+                self.assertEqual(len(attempts), 2);self.assertFalse(port.off_verified)
+
+    def test_quiet_retry_store_failure_timeout_and_invalid_response_do_not_retry(self):
+        for mode in ('storage', 'timeout', 'malformed'):
+            with self.subTest(mode=mode):
+                port, device, store = self.setup_port();port.preflight();attempts=[]
+                def fail(request, timeout):
+                    attempts.append(timeout)
+                    if mode=='storage':
+                        store.broken=True;raise http.client.RemoteDisconnected()
+                    if mode=='timeout': raise TimeoutError()
+                    return RawResponse(b'{bad')
+                device.open=fail
+                with self.assertRaises((OSError, ValueError)):
+                    port.check_idle(allow_quiet_disconnect_retry=True)
+                self.assertEqual(len(attempts), 1);self.assertFalse(port.off_verified)
+
     def test_run_timeout_is_unknown_without_resend(self):
         port, device, _ = self.setup_port()
         def lose_response(controller): raise TimeoutError('lost RUN response')
