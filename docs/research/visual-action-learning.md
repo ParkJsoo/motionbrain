@@ -62,6 +62,14 @@ MotionBrain에서는 기구학이나 간단한 영상 제어로 기본 움직임
 
 이 문헌들은 현재 측정 흔들림을 없애거나 특정 PWM의 이동·안전을 보장하지 않는다. 첫 묶음에서는 단순한 기준선과 소수 후보의 반응을 먼저 비교하고, 작은 신경망·가우시안 프로세스·자동 정보성 탐색의 추가는 별도 자료에서 이득을 확인할 후속 선택으로 둔다. 실행 전 예정 프로파일과 실행 뒤 실제 드라이버 기록도 구분한다. 새 수집 범위는 [유한 출력 프로파일 설계](../finite-output-profile.md#학습용-첫-수집-설계)에서 관리한다.
 
+## 불확실성을 포함한 동작 학습 (2026-11-04)
+
+**Chua 외, Deep Reinforcement Learning in a Handful of Trials using Probabilistic Dynamics Models, NeurIPS 2018 — PETS.** 원논문 초록·도입·확률 모델 및 불확실성 구분 절을 새로 확인했다. 상태와 행동에서 다음 상태의 분포를 예측하고, 관측·동작 잡음과 자료 부족으로 인한 모델 불확실성을 구분한다. 분포 출력과 모델 앙상블을 결합한다는 구조를 참고하되, 한 표본으로 신경망이나 앙상블을 적합할 근거로 사용하지 않는다. 논문에서도 적은 자료에서 표현력이 큰 모델의 과적합을 다룬다. [원논문](https://papers.neurips.cc/paper/7725-deep-reinforcement-learning-in-a-handful-of-trials-using-probabilistic-dynamics-models.pdf)
+
+**Amadio 외, Model-Based Policy Search Using Monte Carlo Gradient Estimation with Real Systems Application, IEEE Transactions on Robotics 2022 — MC-PILCO.** 원논문 초록·부분 관측 상태의 추정 절·실물 실험의 필터 논의를 새로 확인했다. 실제 실행의 인과적 상태 추정과 오프라인 추정을 구분하고, 정책 학습에서 관측 장치와 온라인 추정기의 특성을 함께 모델링한다. 노이즈를 줄이는 필터도 지연과 왜곡을 만들어 학습·실행의 불일치를 일으킬 수 있다는 반례가 중요하다. 논문의 장치·표본 수·성공률을 MotionBrain 성능으로 옮기지 않는다. [원논문](https://arxiv.org/html/2101.12115v4)
+
+MotionBrain에는 완벽한 계측을 기다리기보다 줄일 수 있는 검출 변동을 제한적으로 개선하고, 남는 변동을 확률 동작 모델에 반영한다는 가설로 적용한다. 방법 이름이 머신러닝·딥러닝·강화학습이라고 해서 실제 움직임과 측정 오차가 자동으로 분리되는 것은 아니다. 현재 영상·예정 명령에서 다음 상태를 배우는 지도 동작 모델을 먼저 만들고, 그 예측을 목표 접근의 명령 선택에 연결한다. 시범 행동 자료를 전제로 하는 모방학습이나 보상 기반 정책 학습은 별도 선택이다. [저장 영상 비교와 다음 관측 계약](../finite-output-profile.md#관측-변동-축소-실험과-남는-불확실성)
+
 ## 적용 계획
 
 논문별 아이디어를 적용할 순서와 평가 기준은 [동작 학습 설계의 단계](../visual-action-learning.md#단계와-판단-기준)에서 관리한다.
