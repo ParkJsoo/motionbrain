@@ -71,7 +71,9 @@ def frame_png(manager, session_id, index):
 
 
 class CollectionServer(HTTPServer):
-    allow_reuse_address = False
+    # Permit a clean restart while old accepted connections are in TIME_WAIT.
+    # SO_REUSEADDR does not allow a second active listener on this address.
+    allow_reuse_address = True
 
     def __init__(self, address, manager):
         if address[0] != '127.0.0.1':

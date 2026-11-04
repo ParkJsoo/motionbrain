@@ -107,5 +107,36 @@ class FrameReplayTests(unittest.TestCase):
                 strict_json(raw)
 
 
+
+class ServerRestartTests(unittest.TestCase):
+    def test_clean_restart_reuses_port_but_active_listener_is_exclusive(self):
+        manager = Mock()
+        manager.status.return_value = {'phase': 'idle'}
+        first = CollectionServer(('127.0.0.1', 0), manager)
+        port = first.server_port
+        thread = threading.Thread(target=first.serve_forever, kwargs={'poll_interval': .01})
+        thread.start()
+        try:
+            with self.assertRaises(OSError):
+                CollectionServer(('127.0.0.1', port), manager)
+            client = http.client.HTTPConnection('127.0.0.1', port, timeout=2)
+            try:
+                client.request('GET', '/api/state')
+                response = client.getresponse()
+                self.assertEqual(response.status, 200)
+                response.read()
+            finally:
+                client.close()
+        finally:
+            first.shutdown(); thread.join(2); first.server_close()
+        second = CollectionServer(('127.0.0.1', port), manager)
+        try:
+            self.assertNotEqual(first.ui_token, second.ui_token)
+            manager.start.assert_not_called()
+            manager.pulse.assert_not_called()
+        finally:
+            second.server_close()
+
+
 if __name__ == '__main__':
     unittest.main()
