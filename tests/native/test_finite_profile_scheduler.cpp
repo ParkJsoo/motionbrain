@@ -123,7 +123,8 @@ static void nominal() {
   assert(evidence->requestEpoch==r->request.expectedEpoch && evidence->lease==lease);
   assert(evidence->ordinal!=0 && evidence->openedAt==r->preparedAt);
   assert(evidence->captureComplete && evidence->dropped==0);
-  assert(evidence->count==f.accepted.count+5 && evidence->totalWrites==f.accepted.count+5);
+  const uint32_t expectedWrites = static_cast<uint32_t>(f.accepted.count) + 5U;
+  assert(evidence->count == expectedWrites && evidence->totalWrites == expectedWrites);
   for(uint8_t i=0;i<evidence->count;++i) {
     const auto& actual=evidence->entries[i];
     assert(actual.sequence==static_cast<uint32_t>(i)+1);
@@ -199,7 +200,10 @@ static void registration_delay() {
   assert(result.scheduling==ScheduleStatus::Failed);
   assert(p.record->state==State::Failed && p.record->reason==Reason::DeadlineMissed);
   assert(p.record->plannedStartAt==20 && p.record->plannedOffAt==170);
-  for(const auto&w:writes)assert(w.signedPwm==0);assertMatches(f.driver);
+  for (const auto& w : writes) {
+    assert(w.signedPwm == 0);
+  }
+  assertMatches(f.driver);
 }
 static void recreated_wrapper() {
   MotorControl driver;driver.init();systemState.state=SystemState::ARMED;Environment env;FakeScheduler timer;Profile p=profile();
