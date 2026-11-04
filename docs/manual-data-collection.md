@@ -167,3 +167,7 @@ python3 tools/evaluate_manual_collection.py \
 `learning.manual_action_selection.rank_actions(model, image, target_delta_deg, candidates)`는 고정된 다조건 영상·명령 모델의 지원 명령만 예측한다. 명령 전 BGRA 영상과 음수 아래 방향의 목표 센서 변화량을 받아 각 예측의 목표 잔차 절댓값을 비교한다. 정지(변화량 0)를 자동 포함하며 동률에는 정지를 먼저, 나머지는 입력 순서를 따른다. `rank_predictions(predictions, target_delta_deg)`는 사전에 고정한 명령별 평균 등에서 계산한 `command`와 `predictedDeltaDeg` 목록을 같은 기준으로 비교한다. 각 후보의 예측·잔차와 선택 결과를 반환한다.
 
 이 계산은 오프라인 전용이고 제어 허용 상태를 변경하지 않는다. 같은 시점에 실제로 실행하지 않은 후보의 결과는 관측되지 않았으므로 순위나 선택이 실제로 가장 좋았다는 증거가 아니다. 센서 변화량 목표는 물체 거리나 파지 성공으로 검증된 값이 아니며, 이 함수만으로 물체 접근·집기를 실행하지 않는다.
+
+## 물체·집게 상대 전이의 오프라인 재사용
+
+센서 라벨과 별도로 `build_visual_session`에서 기존 단일 명령의 영상·출력·시각 근거를 재감사할 수 있다. 물체와 양 턱의 프레임 주석을 연결하는 [상대 상태 학습·선택](relative-action-selection.md)은 별도 CLI이며 수집 UI의 자동 제어로 연결되지 않는다. 관측 계약과 학습·평가 그룹을 분리하고 가림·구도 변경·미지원 명령은 보류한다.

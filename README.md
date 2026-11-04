@@ -22,6 +22,8 @@ M4 수치는 같은 날·같은 장치의 순차 자세에서 센서 라벨과 �
 
 [최신 M4 평가·실패 분모](docs/evidence/2026-11-04-m4-action-prediction.md) · [M2 단발 목표 접근과 한계](docs/evidence/2026-10-31-first-model-goal-approach.md) · [학습 목표·설계](docs/visual-action-learning.md)
 
+[상대 상태 개발 경로](docs/relative-action-selection.md)는 수동 영상 주석으로 M4 전이 2건의 예측·후보 계산을 연결했다. 독립 평가·자동 상태 추정·실물 집기는 미검증이다.
+
 ## 시스템 구성
 
 ```text

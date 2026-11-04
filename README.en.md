@@ -22,6 +22,8 @@ The M4 figures compare predictions with sensor labels from sequential poses on o
 
 [Latest M4 evaluation and failure denominators (Korean)](docs/evidence/2026-11-04-m4-action-prediction.md) · [M2 single-command goal approach and limits (Korean)](docs/evidence/2026-10-31-first-model-goal-approach.md) · [Learning goals and design (Korean)](docs/visual-action-learning.md)
 
+The [relative-state development path (Korean)](docs/relative-action-selection.md) connects manual image annotations to prediction and candidate ranking on two M4 transitions. Independent evaluation, automatic state estimation and physical grasping remain unverified.
+
 ## Architecture
 
 ```text

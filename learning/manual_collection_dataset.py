@@ -213,20 +213,21 @@ def frame_ref(frame):
         'sourceLatest','stdoutReadAt','persistenceMs')}
 
 
-def build_session(root, expected_hash):
+def _visual_session(root, expected_hash):
     ev=Evidence(root); raw=ev.raw('session.json')
     require(digest(raw)==expected_hash,'session_hash_mismatch')
     s=_decode_json(raw);plan=ev.json('plan.json')
     require(s.get('schemaVersion')=='motionbrain.manual_collection.v1' and s.get('phase')=='completed'
             and s.get('error') is None and s.get('finalIdleOffVerified') is True,'completed_session_required')
     require(s.get('datasetEligible') is False and s.get('trainingPerformed') is False,'original_flags_changed')
-    require(plan.get('sessionId')==s.get('sessionId') and plan.get('joint')==s.get('joint')=='shoulder', 'session_plan_identity')
+    require(plan.get('sessionId')==s.get('sessionId') and plan.get('joint')==s.get('joint') and s.get('joint') in PROFILES, 'session_plan_identity')
     commands=[e for e in s['events'] if e.get('kind')=='command'];results=[e for e in s['events'] if e.get('kind')=='result']
     require(len(commands)==len(results)==1,'single_command_required')
     command=ev.json('command-001-intent.json');result=ev.json('command-001-result.json')
     require(commands[0]==command and results[0]==result and command['commandId']==result['commandId'], 'command_artifact_changed')
     require(len(list(ev.root.glob('command-*')))==2,'command_artifact_count')
     pulse=validate_pulse(command['pulse']);receipt=result['receipt']
+    require(pulse['joint']==s['joint'], 'session_command_joint_mismatch')
     sign,cap,duration=PROFILES[pulse['joint']]['directions'][pulse['direction']]
     require(pulse['percent']<=cap and pulse['durationMs']<=duration and pulse['expectedPwm']*sign>0,'profile_limit')
     require(receipt.get('offVerified') is True,'receipt_off_required')
@@ -237,18 +238,34 @@ def build_session(root, expected_hash):
     statuses,outputs,boot=audit_http(ev,s,command,receipt)
     pre=[command['at']+x for x in POLICY['preSeconds']];post=[receipt['offAt']+x for x in POLICY['postSeconds']]
     before_frames=select_frames(frames,pre,command['at']);after_frames=select_frames(frames,post)
-    before=sensor_window(statuses,pre);after=sensor_window(statuses,post)
     input_frame=before_frames[-1];target_frame=min(after_frames,key=lambda f:abs((f['sourceEarliest']+f['sourceLatest'])/2-statistics.mean(post)))
     # The only prospective fields are a bound image and the intended command.
     inputs=dict(image=frame_ref(input_frame),command={k:pulse[k] for k in ('joint','direction','percent','durationMs')})
     row=dict(sessionId=s['sessionId'],status='eligible',inputs=inputs,
-        targets=dict(image=frame_ref(target_frame),sensorBefore=before,sensorAfter=after,
-                     sensorDeltaDeg=after['medianDeg']-before['medianDeg']),
+        targets=dict(image=frame_ref(target_frame)),
         evidence=dict(commandId=command['commandId'],commandAt=command['at'],dispatchHostBracket=[receipt['dispatchBefore'],receipt['dispatchAfter']],
             offReceiptAt=receipt['offAt'],controllerBootId=boot,actualOutputTrace=receipt['outputTrace'],
             preFrameIds=[f['frameIndex'] for f in before_frames],postFrameIds=[f['frameIndex'] for f in after_frames],
             auditedFrames=len(frames),cameraIdentity=identity,sourceHashes=ev.hashes),
         originalDatasetEligible=False,trainingPerformed=False,controlEligible=False)
+    return row, statuses, pre, post
+
+
+def build_visual_session(root, expected_hash):
+    """Audit one allowed single-joint image transition without a sensor label.
+
+    Keeps the existing camera chronology, OFF evidence and fixed windows.
+    Multi-pulse sessions are refused rather than silently split into examples.
+    """
+    return _visual_session(root, expected_hash)[0]
+
+
+def build_session(root, expected_hash):
+    row, statuses, pre, post = _visual_session(root, expected_hash)
+    require(row['inputs']['command']['joint']=='shoulder', 'session_plan_identity')
+    before=sensor_window(statuses,pre);after=sensor_window(statuses,post)
+    row['targets'].update(sensorBefore=before,sensorAfter=after,
+                          sensorDeltaDeg=after['medianDeg']-before['medianDeg'])
     return row
 
 
