@@ -142,4 +142,6 @@ Run software verification with `python3 -m unittest discover -s tests`. Browser 
 
 ## Supervised collection
 
+The [manual joint data collection console (Korean)](docs/manual-data-collection.md) runs on the Mac and records/replays video, commands, actual driver outputs, and sensor responses for one selected joint among M1–M5. It reuses the bounded execution and camera paths; M4 retains its existing downward-only restriction. Starting the server does not start capture or motion. Hardware validation of the new console and automatic training remain incomplete.
+
 [Single-joint collection blocks and offline endpoint measurement (Korean)](docs/supervised-action-collection.md) separate image measurement from physical execution. Preparation and validation are offline; physical runs require explicit execution and onsite supervision. This new path has not yet been validated on hardware.

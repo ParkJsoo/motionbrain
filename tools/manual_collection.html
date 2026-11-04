@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MotionBrain · 데이터 수집</title>
+<style>
+:root{color-scheme:dark;--bg:#080b10;--panel:#111821;--line:#263241;--muted:#9aaabd;--text:#e6edf3;--cyan:#38bdf8;--red:#ef4444}
+*{box-sizing:border-box}body{margin:0;padding:24px;font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--text)}main{max-width:1280px;margin:auto}header{display:flex;align-items:center;justify-content:space-between;gap:20px;border-bottom:1px solid var(--line);padding-bottom:20px;margin-bottom:20px}.kicker{color:var(--cyan);letter-spacing:2px;font-size:11px;font-weight:800}h1{font-size:28px;margin:3px 0}h2{font-size:16px;margin:0 0 16px}h3{font-size:13px;margin:0 0 8px}p{margin:8px 0}.muted,small{color:var(--muted)}.badge{border:1px solid var(--line);border-radius:30px;padding:7px 12px;white-space:nowrap}.grid{display:grid;grid-template-columns:340px minmax(0,1fr);gap:16px}.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:20px;min-width:0}.full{grid-column:1/-1}.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.row>*{min-width:0}.between{justify-content:space-between}label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px}input,select,button{font:inherit;border:1px solid #334155;border-radius:6px;color:var(--text);background:#0e141c;padding:10px;min-height:42px}input,select{width:100%}input[type=checkbox]{width:18px;min-height:18px;flex:none}input[type=range]{padding:0}button{background:#1d2836;font-weight:700;cursor:pointer;touch-action:manipulation}button:hover:enabled{border-color:var(--cyan)}button:disabled{opacity:.4;cursor:not-allowed}button.primary{background:#0b3b54;border-color:#25759b}button.stop{background:#4c1d1d;border-color:#9d3737}.field{margin-bottom:16px}.columns{display:grid;grid-template-columns:1fr 1fr;gap:12px}.controls{display:grid;grid-template-columns:1fr 1fr;gap:8px}.check{display:flex;align-items:flex-start;gap:9px;font-size:12px;line-height:1.6}.check input{margin-top:3px}.note{font-size:12px;color:var(--muted)}.feed{position:relative;min-height:260px;aspect-ratio:16/9;background:#05080d;display:flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:7px;overflow:hidden}.feed img{width:100%;height:100%;object-fit:contain;position:absolute;inset:0}.feed img[hidden]{display:none}.placeholder{padding:20px;color:var(--muted);text-align:center}.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px}.metric{border:1px solid var(--line);background:#0e141c;border-radius:6px;padding:11px}.metric span{display:block;font-size:11px;color:var(--muted)}.metric strong{font-size:16px;overflow-wrap:anywhere}.notice{min-height:24px;margin:14px 0;font-size:13px;color:#b8ddf5}.notice.error{color:#fca5a5}.review{display:grid;grid-template-columns:230px minmax(0,1fr);gap:20px}.session-list{display:flex;flex-direction:column;gap:7px;max-height:470px;overflow:auto}.session-list button{text-align:left;overflow-wrap:anywhere;font-size:12px}.session-list button.selected{border-color:var(--cyan);background:#173348}.session-list small{display:block}.timeline{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;margin:14px 0}.data-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px}.scroll{overflow:auto;max-height:235px}table{width:100%;border-collapse:collapse;font-size:12px}th,td{text-align:left;padding:7px;border-bottom:1px solid var(--line);white-space:nowrap}th{color:var(--muted);font-weight:500}details{border-top:1px solid var(--line);margin-top:14px;padding-top:12px}summary{cursor:pointer;color:var(--muted)}pre{font-size:11px;overflow:auto;max-height:320px;white-space:pre-wrap;overflow-wrap:anywhere}.empty{color:var(--muted);font-size:12px}.quality{font-size:12px;color:#fcd34d;overflow-wrap:anywhere}[hidden]{display:none!important}button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid var(--cyan);outline-offset:3px}
+@media(max-width:850px){body{padding:14px}.grid{grid-template-columns:1fr}.review{grid-template-columns:1fr}.session-list{max-height:160px}.data-grid{grid-template-columns:1fr}header{align-items:flex-start}h1{font-size:23px}.feed{min-height:200px}.metrics{gap:6px}.metric{padding:8px}.metric strong{font-size:14px}}
+</style>
+</head>
+<body><main>
+<header><div><div class="kicker">MOTIONBRAIN</div><h1>데이터 수집</h1><p class="muted">한 관절씩 조작하고, 영상과 실행 기록을 함께 확인합니다.</p></div><span id="phase" class="badge">연결 확인 중</span></header>
+<div class="grid">
+<section class="card" aria-labelledby="control-title"><h2 id="control-title">수집 및 조작</h2>
+<div class="field"><label for="joint">대상 관절</label><select id="joint" disabled></select></div>
+<div class="field"><label for="pose">시작 자세·하중 메모</label><input id="pose" maxlength="200" placeholder="예: 팔을 낮춘 자세, 추가 하중 없음" disabled></div>
+<label class="check field"><input type="checkbox" id="onsite" disabled><span>장치 연결과 모터 전원, 선택한 관절의 이동 여유를 현재 확인했습니다.</span></label>
+<div class="controls field"><button class="primary" id="start" disabled>수집 시작</button><button id="finish" disabled>완료·저장</button></div>
+<p class="note" id="recording-limit">수집 시작 시 카메라가 켜집니다. 기록마다 관절 하나를 지정합니다.</p>
+<hr style="border:0;border-top:1px solid var(--line);margin:20px 0">
+<div class="field"><label for="direction">방향</label><select id="direction" disabled></select></div>
+<div class="columns"><div class="field"><label for="percent">요청 출력 (%)</label><input id="percent" type="number" min="1" step="1" value="20" disabled></div><div class="field"><label for="duration">요청 시간 (ms)</label><input id="duration" type="number" min="100" step="1" value="250" disabled></div></div>
+<p id="limits" class="note"></p><p id="command-budget" class="note"></p>
+<div class="controls"><button class="primary" id="pulse" disabled>한 번 조작<button class="stop" id="stop" disabled>수집 중단</button></div>
+<p class="note">한 번 누르면 지정한 시간만 요청합니다. 길게 누르거나 반복 전송하지 않습니다. 중단 요청은 진행 중인 짧은 동작 처리가 끝난 뒤 처리될 수 있습니다.</p>
+</section>
+<section class="card" aria-labelledby="live-title"><div class="row between"><h2 id="live-title">현재 촬영</h2><small id="live-session">수집 대기</small></div><div class="feed"><span id="live-empty" class="placeholder">수집을 시작하면 저장 중인 최신 프레임을 보여줍니다.</span><img id="live-frame" alt="현재 수집 중인 최신 카메라 프레임" hidden></div><div class="metrics"><div class="metric"><span>저장 프레임</span><strong id="frame-count">0</strong></div><div class="metric"><span>컨트롤러</span><strong id="controller-state">—</strong></div><div class="metric"><span>M4 센서 각도</span><strong id="live-angle">—</strong></div></div><p class="note">미리보기는 저장된 프레임을 표시합니다. 다른 관절의 개별 각도 센서가 없으면 해당 값은 기록에 생성하지 않습니다.</p><div id="message" role="status" aria-live="polite" class="notice"></div></section>
+<section class="card full" aria-labelledby="review-title"><div class="row between"><h2 id="review-title">저장 기록 다시 보기</h2><button id="refresh">목록 새로고침</button></div><div class="review"><aside><div id="session-list" class="session-list"><p class="empty">저장 기록을 불러오는 중입니다.</p></div></aside><div><div class="row between"><strong id="review-name">기록을 선택하세요</strong><small id="review-phase"></small></div><p id="review-quality" class="quality"></p><div class="feed"><span id="replay-empty" class="placeholder">왼쪽 목록에서 기록을 선택하면 영상과 이력을 확인할 수 있습니다.</span><img id="replay-frame" alt="선택한 기록의 저장 프레임" hidden></div><div class="timeline"><span class="row"><button id="play" disabled>재생</button><button id="all-events" disabled>전체 이력</button></span><input id="timeline" type="range" min="0" max="0" value="0" aria-label="저장 영상 프레임" disabled><span id="frame-time">—</span></div><p id="sensor-at-frame" class="note">선택한 프레임 시각까지 수신한 최근 센서값을 표시합니다.</p><p class="note">영상은 카메라 시각을 호스트 시계에 대응시킵니다. 아래 이력의 시각은 호스트 수신·기록 시각이며, 출력의 장치 ms는 별도 시계입니다. 같은 시각에 정확히 발생했다는 뜻은 아닙니다.</p><div class="data-grid"><div><h3>명령 이력</h3><div class="scroll"><table><thead><tr><th>기록 시각</th><th>관절·방향</th><th>요청</th></tr></thead><tbody id="commands"></tbody></table></div></div><div><h3>실제 출력 이력</h3><div class="scroll"><table><thead><tr><th>순번</th><th>관절</th><th>PWM</th><th>장치 ms</th></tr></thead><tbody id="outputs"></tbody></table></div><p class="note">드라이버에 적용한 소프트웨어 출력 기록입니다.</p></div></div><details><summary>선택 시각까지의 기록 원문</summary><pre id="raw-events">[]</pre></details></div></div></section>
+</div></main>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const jointNames = {gripper:'M1 · 그리퍼',wrist:'M2 · 손목',elbow:'M3 · 팔꿈치',shoulder:'M4 · 어깨',base:'M5 · 베이스'};
+const directionNames = {open:'벌리기',close:'오므리기',up:'위',down:'아래',left:'왼쪽',right:'오른쪽'};
+const phaseNames = {idle:'대기',starting:'촬영 준비',recording:'수집 중',ready:'수집 중',active:'수집 중',closing:'저장 중',finishing:'저장 중',completed:'완료',closed:'종료',partial:'부분 기록',failed:'실패',interrupted:'중단',off_unverified:'출력 정지 미확인'};
+let config = null, state = {}, mutationBusy = false, stopPending = false, disconnected = false, session = null, playbackTimer = null, playing = false, lastLiveKey = '', readBusy = false, sessionGeneration = 0;
+const finite = value => typeof value === 'number' && Number.isFinite(value);
+const active = () => ['starting','recording','ready','active','closing','finishing'].includes(state.phase);
+const editable = () => ['recording','ready','active'].includes(state.phase);
+const text = value => value === undefined || value === null ? '—' : String(value);
+function notice(message, error=false){$('message').textContent=message;$('message').classList.toggle('error',error);}
+async function request(path, options={}){
+  const response = await fetch(path,{cache:'no-store',...options});
+  const data = await response.json();
+  if(!response.ok) throw new Error(data.error || data.reason || '요청 처리 실패');
+  return data;
+}
+function post(path, body){return request(path,{method:'POST',headers:{'Content-Type':'application/json','X-Collection-Token':config.token},body:JSON.stringify(body)});}
+function selectedLimits(){const profile=config?.profiles?.[$('joint').value];return profile?.directions?.[$('direction').value];}
+function updateLimits(){
+  const limits=selectedLimits();if(!limits){$('limits').textContent='허용된 방향이 없습니다.';return;}
+  const maxPercent=Array.isArray(limits)?limits[1]:limits.maxPercent;
+  const maxDuration=Array.isArray(limits)?limits[2]:limits.maxDurationMs;
+  $('percent').max=maxPercent;$('duration').max=maxDuration;
+  $('percent').value=Math.min(Number($('percent').value)||20,maxPercent);
+  $('duration').value=Math.min(Number($('duration').value)||250,maxDuration);
+  $('limits').textContent=`현재 요청 상한: ${maxPercent}% · ${maxDuration} ms`+($('joint').value==='shoulder'?' · M4는 아래 방향만 허용됩니다.':'');
+}
+function chooseJoint(){
+  $('direction').replaceChildren();
+  const directions=config?.profiles?.[$('joint').value]?.directions || {};
+  for(const key of Object.keys(directions)){const option=document.createElement('option');option.value=key;option.textContent=directionNames[key]||key;$('direction').append(option);}
+  updateLimits();updateControls();
+}
+function commandBudget(){return config?.profiles?.[$('joint').value]?.maxCommands ?? config?.maxCommandsByJoint?.[$('joint').value] ?? ($('joint').value==='shoulder'?1:20);}
+function updateControls(){
+  const locked=!config || mutationBusy || stopPending || disconnected;
+  for(const id of ['joint','pose','onsite'])$(id).disabled=locked||active();
+  $('start').disabled=locked||active()||!$('onsite').checked||!$('pose').value.trim();
+  $('finish').disabled=locked||!editable();
+  for(const id of ['direction','percent','duration','pulse'])$(id).disabled=locked||!editable()||Boolean(state.busy);
+  $('pulse').disabled=$('pulse').disabled||(state.commandCount??0)>=commandBudget();
+  $('command-budget').textContent=`한 기록 최대 ${commandBudget()}회 · 현재 ${active()?(state.commandCount??0):0}회 요청`+((state.commandCount??0)>=commandBudget()&&active()?' · 완료·저장 후 다음 기록을 시작하세요.':'');
+  $('stop').disabled=!config||stopPending||(!active()&&!mutationBusy);
+  $('phase').textContent=disconnected?'연결 확인 필요':(phaseNames[state.phase]||state.phase||'대기');
+}
+function angleLabel(status){
+  const sensor=status?.shoulderAngle;
+  if(!sensor || sensor.available===false || sensor.sensorConnected===false)return '센서값 없음';
+  if(!finite(sensor.angleDeg))return '각도 미확인';
+  return `${sensor.angleDeg.toFixed(2)}°`+(sensor.sensorFresh===false?' · 오래된 값':'');
+}
+function paintState(next){
+  state=next;
+  if(state.joint && config?.profiles[state.joint] && $('joint').value!==state.joint && active()){$('joint').value=state.joint;chooseJoint();}
+  $('frame-count').textContent=text(state.frameCount ?? 0);
+  $('controller-state').textContent=text(state.latestStatus?.state);
+  $('live-angle').textContent=angleLabel(state.latestStatus);
+  $('live-session').textContent=state.sessionId||'수집 대기';
+  const index=state.lastFrameIndex ?? ((state.frameCount??0)-1);
+  if(state.sessionId && index>=0){
+    const key=`${state.sessionId}:${index}`;
+    if(key!==lastLiveKey){lastLiveKey=key;$('live-frame').src=`/api/frame?session=${encodeURIComponent(state.sessionId)}&index=${index}`;$('live-frame').hidden=false;$('live-empty').hidden=true;}
+  }else{lastLiveKey='';$('live-frame').hidden=true;$('live-empty').hidden=false;}
+  if(state.error)notice(`수집 상태: ${state.error}`,true);
+  updateControls();
+}
+async function refreshState(){
+  if(readBusy||mutationBusy||stopPending)return;
+  readBusy=true;
+  try{paintState(await request('/api/state'));disconnected=false;updateControls();}
+  catch(error){disconnected=true;notice(`상태 확인 실패: ${error.message}. 조작 요청을 다시 보내지 않습니다.`,true);updateControls();}
+  finally{readBusy=false;}
+}
+async function stopCollection(reason='사용자가 수집 중단을 요청했습니다.'){
+  if(!config||stopPending)return;
+  stopPending=true;notice(reason);updateControls();
+  try{await post('/api/stop',{});notice('수집 중단 처리가 끝났습니다. 종료 상태와 저장 기록을 확인하세요.');}
+  catch(error){disconnected=true;notice(`중단 응답을 확인하지 못했습니다: ${error.message}. 장치의 출력 정지 여부를 확인하세요.`,true);}
+  finally{stopPending=false;updateControls();if(!mutationBusy){await refreshState();await refreshSessions();}}
+}
+async function mutate(path, body, success){
+  if(mutationBusy||stopPending||!config)return;
+  mutationBusy=true;updateControls();
+  try{await post(path,body);notice(success);if(path==='/api/finish')$('onsite').checked=false;}
+  catch(error){disconnected=true;notice(`요청 결과 미확인 또는 거절: ${error.message}. 자동 재전송하지 않습니다.`,true);await stopCollection('추가 동작을 막고 수집 중단을 요청합니다.');}
+  finally{mutationBusy=false;updateControls();await refreshState();if(path!=='/api/pulse')await refreshSessions();}
+}
+function frameTime(frame){return finite(frame?.sourceLatest)?frame.sourceLatest:frame?.sourceEarliest;}
+function sessionOrigin(record){const first=record?.frames?.[0];return finite(first?.sourceEarliest)?first.sourceEarliest:(record?.events?.find(event=>finite(event.at))?.at??0);}
+function eventsAt(record,time){return (record?.events||[]).filter(event=>finite(event.at)&&event.at<=time);}
+function displayTime(at){return finite(at)?`${(at-sessionOrigin(session)).toFixed(3)} s`:'—';}
+function addRow(target,values){const row=document.createElement('tr');for(const value of values){const cell=document.createElement('td');cell.textContent=text(value);row.append(cell);}target.append(row);}
+function paintEvidence(at){
+  const events=eventsAt(session,at),commands=$('commands'),outputs=$('outputs');commands.replaceChildren();outputs.replaceChildren();
+  const seen=new Set();let status=null,statusAt=null;
+  for(const event of events){
+    if(event.kind==='command'){const pulse=event.pulse||{};addRow(commands,[displayTime(event.at),`${jointNames[pulse.joint]||pulse.joint||session.joint} · ${directionNames[pulse.direction]||pulse.direction||'—'}`,`${text(pulse.percent)}% / ${text(pulse.durationMs)} ms`]);}
+    if(event.kind==='http'&&event.path==='/status'){status=event.response;statusAt=event.at;}
+    if(event.kind==='http'&&event.path==='/action_outputs'){
+      for(const output of event.response?.entries||[]){
+        if(!Number.isInteger(session.outputBaselineSequence)||!Number.isInteger(output.sequence)||output.sequence<=session.outputBaselineSequence)continue;
+        const key=JSON.stringify([output.sequence,output.motor,output.atMs,output.pwm]);if(seen.has(key))continue;seen.add(key);
+        addRow(outputs,[output.sequence,`M${text(output.motor)}`,output.pwm,output.atMs]);
+      }
+    }
+  }
+  if(!commands.children.length)addRow(commands,['명령 기록 없음','','']);
+  if(!outputs.children.length)addRow(outputs,[Number.isInteger(session.outputBaselineSequence)?'수집 시작 후 출력 기록 없음':'기준 순번 미확인 · 원문 참고','','','']);
+  $('sensor-at-frame').textContent=status?`최근 수신 M4 각도: ${angleLabel(status)} · 호스트 수신 ${displayTime(statusAt)} · 선택 프레임과 ${Math.max(0,at-statusAt).toFixed(3)} s 차이`:'이 프레임 시각까지 수신한 센서 기록이 없습니다.';
+  $('raw-events').textContent=JSON.stringify(events,null,2);
+}
+function paintFrame(index){
+  if(!session)return;
+  const frames=session.frames||[],frame=frames[index];
+  if(!frame){$('replay-frame').hidden=true;$('replay-empty').hidden=false;$('replay-empty').textContent='저장된 영상 프레임이 없습니다. 원문에서 실패·중단 기록을 확인하세요.';paintEvidence(Infinity);return;}
+  $('timeline').value=index;$('replay-frame').src=`/api/frame?session=${encodeURIComponent(session.sessionId)}&index=${frame.frameIndex??index}`;$('replay-frame').hidden=false;$('replay-empty').hidden=true;
+  $('frame-time').textContent=`${index+1}/${frames.length} · ${displayTime(frameTime(frame))}`;
+  paintEvidence(frameTime(frame));
+}
+function pausePlayback(){playing=false;if(playbackTimer!==null)clearTimeout(playbackTimer);playbackTimer=null;$('play').textContent='재생';}
+function stepPlayback(){
+  if(!playing||!session)return;
+  const frames=session.frames||[],index=Number($('timeline').value);
+  if(index>=frames.length-1){pausePlayback();return;}
+  const delta=frameTime(frames[index+1])-frameTime(frames[index]);
+  playbackTimer=setTimeout(()=>{paintFrame(index+1);stepPlayback();},Math.max(1,finite(delta)?delta*1000:125));
+}
+async function loadSession(id){
+  pausePlayback();const generation=++sessionGeneration;
+  try{
+    const record=await request(`/api/session?id=${encodeURIComponent(id)}`);if(generation!==sessionGeneration)return;
+    session=record;$('review-name').textContent=`${jointNames[record.joint]||record.joint||''} · ${record.sessionId}`;$('review-phase').textContent=phaseNames[record.phase]||record.phase||'';
+    $('review-quality').textContent=record.error?`오류: ${record.error}`:record.phase==='completed'?'저장 완료는 학습 적격 판정을 뜻하지 않습니다.':'부분 기록과 실패 사유를 포함해 확인하세요.';
+    const frames=record.frames||[];$('timeline').max=Math.max(0,frames.length-1);$('timeline').disabled=!frames.length;$('play').disabled=frames.length<2;$('all-events').disabled=false;
+    for(const button of $('session-list').querySelectorAll('button'))button.classList.toggle('selected',button.dataset.id===id);
+    paintFrame(0);
+  }catch(error){notice(`기록을 읽지 못했습니다: ${error.message}`,true);}
+}
+async function refreshSessions(){
+  try{
+    const data=await request('/api/sessions');const list=Array.isArray(data)?data:data.sessions||[];$('session-list').replaceChildren();
+    if(!list.length){const empty=document.createElement('p');empty.className='empty';empty.textContent='아직 저장한 수집 기록이 없습니다.';$('session-list').append(empty);return;}
+    for(const item of list){const button=document.createElement('button');button.type='button';button.dataset.id=item.sessionId;button.textContent=`${jointNames[item.joint]||item.joint||''} · ${phaseNames[item.phase]||item.phase||''}`;const detail=document.createElement('small');detail.textContent=item.sessionId;button.append(detail);button.classList.toggle('selected',session?.sessionId===item.sessionId);button.addEventListener('click',()=>loadSession(item.sessionId));$('session-list').append(button);}
+  }catch(error){notice(`기록 목록 확인 실패: ${error.message}`,true);}
+}
+$('joint').addEventListener('change',chooseJoint);$('direction').addEventListener('change',updateLimits);$('onsite').addEventListener('change',updateControls);$('pose').addEventListener('input',updateControls);
+$('start').addEventListener('click',()=>{if(!$('onsite').checked||!$('pose').value.trim())return;mutate('/api/start',{joint:$('joint').value,poseContext:$('pose').value.trim(),onsiteConfirmed:true},'촬영을 시작했습니다. 화면과 선택 관절을 확인한 뒤 한 번씩 조작하세요.');});
+$('pulse').addEventListener('click',()=>{if(!$('percent').reportValidity()||!$('duration').reportValidity())return;mutate('/api/pulse',{joint:$('joint').value,direction:$('direction').value,percent:Number($('percent').value),durationMs:Number($('duration').value)},'한 번의 조작 처리가 끝났습니다. 기록을 이어가거나 완료·저장할 수 있습니다.');});
+$('finish').addEventListener('click',()=>mutate('/api/finish',{},'기록을 저장했습니다. 목록에서 영상과 실행 이력을 확인하세요.'));
+$('stop').addEventListener('click',()=>stopCollection());$('refresh').addEventListener('click',refreshSessions);
+$('all-events').addEventListener('click',()=>{pausePlayback();paintEvidence(Infinity);$('sensor-at-frame').textContent='전체 이력 보기 · 영상 종료 뒤 수신한 출력 정지·센서·종료 기록도 포함합니다.';});
+$('timeline').addEventListener('input',()=>{pausePlayback();paintFrame(Number($('timeline').value));});
+$('play').addEventListener('click',()=>{if(playing){pausePlayback();return;}if(Number($('timeline').value)>=(session?.frames?.length||0)-1)paintFrame(0);playing=true;$('play').textContent='일시 정지';stepPlayback();});
+for(const id of ['live-frame','replay-frame'])$(id).addEventListener('error',()=>{notice('영상 프레임을 읽지 못했습니다. 원본 기록과 서버 상태를 확인하세요.',true);$(id).hidden=true;});
+document.addEventListener('visibilitychange',()=>{if(document.hidden){pausePlayback();if(active())stopCollection('화면이 숨겨져 수집 중단을 요청합니다.');}});
+window.addEventListener('pagehide',()=>{if(config&&active())fetch('/api/stop',{method:'POST',keepalive:true,headers:{'Content-Type':'application/json','X-Collection-Token':config.token},body:'{}'}).catch(()=>{});});
+async function initialize(){
+  try{
+    config=await request('/api/config');
+    for(const [key,profile] of Object.entries(config.profiles||{})){const option=document.createElement('option');option.value=key;option.textContent=jointNames[key]||`M${profile.motor} · ${key}`;$('joint').append(option);}
+    if(config.profiles?.shoulder)$('joint').value='shoulder';chooseJoint();
+    $('recording-limit').textContent=`수집 시작 시 카메라가 켜집니다. 한 기록은 최대 ${config.maxSessionSeconds||60}초이며, 대상 관절은 기록 종료 후 변경합니다.`;
+    await refreshState();await refreshSessions();
+  }catch(error){disconnected=true;notice(`초기화 실패: ${error.message}. 페이지를 다시 열어 상태를 확인하세요.`,true);updateControls();}
+  setInterval(refreshState,750);
+}
+initialize();
+</script></body></html>

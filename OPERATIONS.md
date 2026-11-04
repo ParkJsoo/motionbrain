@@ -142,4 +142,6 @@ systemctl list-timers motionbrain-dashboard-reconcile.timer --all
 
 ## 현장 감독 수집
 
+[관절별 수동 데이터 수집 화면](docs/manual-data-collection.md)은 Mac에서 M1~M5 중 한 관절씩 선택해 영상·명령·실제 출력·센서 응답을 저장하고 다시 확인한다. 기존 단발 실행·촬영기를 재사용하며 M4는 기존 아래 방향 제한을 유지한다. 서버 실행만으로 촬영·구동하지 않고, 새 화면의 실물 검증·자동 학습은 미완료다.
+
 [단일 관절 자동 묶음 수집과 사후 측정](docs/supervised-action-collection.md)은 정밀 추적과 실물 실행을 분리한 소프트웨어 경로다. 기본 명령은 오프라인 계획 검증이며, 새 실물 구동은 명시적인 실행 모드와 현장 감독이 필요하다. 신규 경로의 실물 검증은 아직 완료하지 않았다.
