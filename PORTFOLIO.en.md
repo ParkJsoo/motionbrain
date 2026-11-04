@@ -1,58 +1,65 @@
 # MotionBrain Portfolio
 
-[한국어](PORTFOLIO.md) · [Project and demo](README.en.md)
+[한국어](PORTFOLIO.md) · [Project overview and setup](README.en.md) · [Evidence index (Korean)](docs/README.md)
 
-An ESP32/STM32/camera/Raspberry Pi/ROS2 integration project that distinguishes sending a command from physically reaching a target. The strongest physical results are M4 single-axis feedback control and system integration. Following detector development training, the first M2 action predictor linking observations and commands has been fitted and evaluated. One M2 command selected using the learned predictor reached the specified image-projected goal tolerance. Learned grasping and continuous manipulation remain unverified.
+**A personal robotics project that learns motion from images and commands, then compares predicted outcomes to approach a goal.** On a five-axis DC arm, it connects control and instrumentation to a collection UI, raw-data validation, dataset construction, prediction training/evaluation and limited candidate selection.
 
-## Problem and design
+The current results are a physical-data pipeline and bounded motion-prediction experiments. Learned grasping that derives object/gripper state from images and coordinates alignment, closing and lifting is not complete. This document focuses on engineering decisions, problem solving and measured outcomes.
 
-The low-cost DC arm cannot measure all joint positions or grasp force. Time-based actuation varies with load, inertia and friction. An AS5600 was added to the M4 shoulder; ESP32 handles outputs, STM32 handles sensing/teleoperation, and Pi handles perception and ROS2.
+## 1. Connecting physical robot records to training data
 
-- **Command boundaries:** legacy serial and web manual commands use `Dispatcher` and `SafetyGate` with state, sensor-fault and deadman checks. Experimental `/actions` use a separate bounded executor that checks `SafetyGate` and output state. Web manual commands expire; the control loop stops outputs when it detects expiry. A physical stop-latency bound including blocking communication is unverified.
-- **Measured versus estimated state:** M4 measured angles are distinguished from open-loop estimates for other joints in ROS2.
-- **Confirmed ROS2 writes:** `ros2_control` proposals are not forwarded automatically. A separate executor sends one M4 target after operator confirmation within the default 20-second validity window. This is not a 20-second motion duration.
+Requested PWM and duration can differ from actual output history, and communication failures can leave execution uncertain. Only the M4 shoulder has an angle sensor; other joint angles cannot be presented as measurements. Saving only video or successful runs would hide these distinctions.
 
-Implementation: [controller](src/control/), [ROS2 hardware interface](ros2_ws/src/motionbrain_hardware_interface/README.en.md), [command journal](ros2_ws/src/motionbrain_ros_bridge/motionbrain_ros_bridge/m4_command_journal.py).
+The implemented path addresses them as follows:
 
-## Case 1 — Correcting false M4 target success
+- **Collection and replay:** select one of M1–M5, request a bounded pulse, and preserve lossless frames, command intent, driver outputs and sensor responses. Completed, failed and interrupted sessions remain replayable.
+- **Execution evidence:** journal intent before dispatch and check boot identity, output sequence and all-axis output state. Uncertain commands are not automatically resent; restarting the server does not erase an incomplete journal.
+- **Datasets and evaluation:** successful storage is separate from training eligibility. The M4 path audits raw hashes, image/sensor windows and execution evidence before building datasets, and checks overlap between training and subsequent evaluation data.
 
-The initial controller did not recheck settled error after cutting output: a 234° request stopped at 235.37° but returned success. Settled-error validation, bounded correction and `TARGET_MISSED` were added.
+Pre-action models use only pre-command images and planned commands. Actual outputs and later sensor values serve execution checks, labels and retrospective analysis, preventing future-information leakage into inputs. Driver records are software PWM values, not electrical waveform measurements. The collection UI supports all joints; the dataset/training path connected to this UI is limited to M4 downward motion.
 
-At 23.10g, no-load inertia compensation and PWM ramp timing caused a short upward move to fail. Upward correction duration increased from 250 to 500ms; the internal success window tightened to ±0.40° to allow for a sensor step after stopping. The external ±0.50° acceptance criterion remained unchanged.
+Implementation: [collection state management](learning/manual_collection.py) · [transport and command journal](learning/supervised_transport.py) · [dataset audit](learning/manual_collection_dataset.py). [Usage, failures and validation scope (Korean)](docs/manual-data-collection.md)
 
-| Final regression condition (2026-06-28) | Result | Mean / maximum absolute error |
-| --- | ---: | ---: |
-| No added load | 11/11 | 0.132° / 0.36° |
-| 23.10g | 11/11 | 0.155° / 0.31° |
+## 2. Comparing visual prediction against baselines
 
-These results use the same fixed mount and a 230–245° validation range. They do not establish whole-arm accuracy or performance under other loads/battery conditions. [Conditions, failures and final results](docs/evidence/2026-06-28-m4-shoulder-closed-loop.en.md)
+On 2026-11-04, the experiment covered six M4 downward conditions: 20/25/30% output × 350/500ms requested duration. Models were **trained and frozen on 18 records**, three per condition, then **evaluated without retraining on 18 newly collected records** after repositioning. Image features are an 8×4 grayscale reduction of the entire frame; labels are before/after sensor-angle changes.
 
-A separate ROS2 physical-path test moved from 248.20° toward 250.00° and ended at 249.96°. Duplicate confirmation and disarmed requests were not forwarded. This is single-axis target validation, not trajectory tracking. [2026-07-13 results](docs/evidence/2026-07-13-m4-physical-ros2-control.en.md)
+| Frozen comparison on the new 18 records | Mean absolute error (MAE) |
+| --- | ---: |
+| No change | 2.154° |
+| Overall training mean | 0.624° |
+| Per-command training mean | **0.367°** |
+| Command-only ridge | 0.595° |
+| Image-and-command ridge | 0.605° |
 
-## Case 2 — Status delays caused by an empty HTTP connection
+**Adding these coarse image features did not demonstrate an improvement.** The per-command mean performed better, so a small prediction error was not treated as evidence of visual understanding or autonomous control. The next focus is representing object/gripper relative position and pose changes, then testing whether those observations improve on command-only baselines before increasing model size.
 
-Status checks intermittently failed around actuation. Instead of replaying uncertain commands, an empty TCP connection and queued request reproduced one failure path. Arduino WebServer's 5000ms initial-byte wait was identified; a project-local adapter now releases only initial connections with no readable data after 100ms.
+This is same-day, single-device retrospective replay over sequential poses. The new batch had 18 attempts, 18 completions and 18 eligible records with 1,935 frames, but followed four batches stopped before motion; their failures and unstarted slots remain recorded. The result does not establish cross-day/load generalization, sensor accuracy, calibrated prediction intervals or control success rates.
 
-The same queued GET changed from a reset after 1198.4ms to a successful 39.4ms response. A later status request still timed out at about 830ms on another path, so this is not a complete communication fix. [Reproduction, correction and residual failure (Korean)](docs/evidence/2026-10-17-idle-http-client.md)
+[Conditions, denominators, failures and complete comparison (Korean)](docs/evidence/2026-11-04-m4-action-prediction.md) · [Training implementation](learning/manual_collection_learning.py) · [Candidate comparison](learning/manual_action_selection.py)
 
-## Observed grasping and learning status
+## 3. How far prediction has been connected to action selection
 
-On 2026-10-17, an external observer selected manual commands from external camera views to grasp and lift a small cylindrical target object. Two additional grasp/lift/place cycles followed; the first required one extra close correction. Twenty-one command/output steps and 37 images were preserved privately. [Demonstration and limits (Korean)](docs/evidence/2026-10-17-lipbalm-repetitions.md)
+A separate M2 experiment split 32 image-projected relative-orientation transitions into 16 training, eight validation and eight test records. The validation-selected linear model achieved test MAE **0.665°**, compared with 6.797° for no change. These are small logical groups from the same day/view, not measurements of physical joint-angle accuracy.
 
-## From detector development to action learning
+One M2 command selected by comparing model predictions reduced image-projected goal error from **5.479° to 0.967°**. Of four trials that started capture, the preceding three stopped before motion. This demonstrates a single observation–prediction–selection–bounded-execution connection, not a repeated policy result or grasp success rate.
 
-Faster R-CNN was trained on 12 images of a single target object type from an earlier and a new capture session. Final training-set results were target object TP8/FP1/FN0, gripper TP12/FP0/FN0, and relative position/direction 8/8 each. The four detector-training runs total 460 updates; the remaining duplicate false positive and training-set scope are retained. Before the additional training, the old model detected target object TP0/4 and gripper TP0/6 on the new six images. Those images were subsequently used for training, so they are not a held-out evaluation of the final model. [Data, criteria and results (Korean)](docs/evidence/2026-10-30-cv-development.md)
+M4 also has an offline function comparing predicted candidates against a target change. However, it does not derive that sensor-change target automatically from object location, and is not a visual grasping policy. The 32 M2 transitions, a separate set of 17 settled M2 transitions and the new M4 records use different observation contracts and are not automatically mixed.
 
-The current goal is **learning the consequences of the arm's own actions and using those predictions to approach a target**. Fixed external camera observations, recent command history and available sensors condition predictions of arm-feature changes under candidate PWM/duration commands. Still-image detection remains an observation aid; joints without encoders can join the pilot when their motion is observable.
+[First M2 prediction evaluation (Korean)](docs/evidence/2026-10-31-first-action-prediction.md) · [Single goal approach (Korean)](docs/evidence/2026-10-31-first-model-goal-approach.md) · [Selector contract (Korean)](docs/offline-action-selection.md)
 
-The [visual action recording core (Korean)](docs/visual-action-collection.md) connects before/during/after frames with commands and responses. A separate repeat-collection path produced 32 audited M2 projected-orientation transitions, split 16/8/8 for training/validation/test. Linear/ridge candidates were fitted; validation selected a linear model with test MAE 0.665° (no-change baseline 6.797°) and direction agreement 8/8. This is same-day/view 2D observation prediction, not physical joint-angle accuracy or model-based manipulation. It is distinct from eligibility under the existing object-box/M4 data contract. An [offline selector (Korean)](docs/offline-action-selection.md) compares candidates using the saved model. A separate [first model-based goal approach (Korean)](docs/evidence/2026-10-31-first-model-goal-approach.md) reduced goal error from 5.479° to 0.967°, with prediction error −0.330°. The preceding three of four capture-started trials stopped before motor execution; the single executed command does not establish a policy success rate. [Conditions, denominators, failures and evaluation (Korean)](docs/evidence/2026-10-31-first-action-prediction.md) · [Next stages (Korean)](docs/visual-action-learning.md)
+## 4. Control and communication work supporting learning experiments
 
-Earlier investigations studied camera/USB clock linkage and output evidence under fixed image/sensor-age contracts. Their measurements and failures remain in [Mac camera instrumentation (Korean)](docs/mac-direct-camera.md) and the [existing action-data contract (Korean)](docs/data-pipeline.md). The new slow-action/settled-observation approach needs a separate contract; old criteria are not silently relaxed and manual demonstrations are not promoted into action-training data.
+**Correcting false target success.** M4 control initially ignored inertial motion after output cutoff, returning success at 235.37° for a 234° target. Settled-error checks, bounded correction and `TARGET_MISSED` were added. Final regressions passed 11/11 each with no added load and with 23.10g, at mean absolute errors of 0.132° and 0.155°, using a fixed mount and a 230–245° range. These do not establish accuracy for the other four axes or the whole workspace. [2026-06-28 measurements, failures and corrections](docs/evidence/2026-06-28-m4-shoulder-closed-loop.en.md)
 
-## Validation and remaining work
+**Separating communication failure stages.** On 2026-11-04, status requests were instrumented across address lookup, connection, headers and body. One path closed the connection after a 100ms first-byte wait before TCP could recover; another exceeded 0.8s while reassembling the response body. Subsequent changes adjusted the first-byte wait and reduced collection responses, but intermittent timeouts remain. Commands were not automatically resent to improve completion rates. [Diagnostic evidence (Korean)](docs/evidence/2026-11-04-http-response-gap.md) · [Subsequent collection-path changes (Korean)](docs/manual-data-collection.md)
 
-Software checks run in [PlatformIO/Python](https://github.com/ParkJsoo/motionbrain/actions/workflows/platformio.yml) and [ROS2](https://github.com/ParkJsoo/motionbrain/actions/workflows/ros2.yml) CI. Hardware results are limited to the dated conditions above. Raw photographs and device-specific operations records are not part of the public documentation.
+The control foundation includes ESP32 PWM/state guards, STM32 sensing/teleoperation, M4 AS5600 feedback and ROS2 integration. Physical ROS2 writes were validated only for an operator-confirmed single M4 target, not whole-arm trajectory tracking. [ROS2 physical validation](docs/evidence/2026-07-13-m4-physical-ros2-control.en.md)
 
-- The other four joints lack position feedback; full-arm trajectory control and force sensing are absent.
-- Electrical cutoff, deadman latency, power transients and long-term reliability still require instrumentation.
-- Under a new settled-endpoint contract, 17 transitions were used to [train pre-execution and retrospective output models (Korean)](docs/supervised-action-collection.md#실제-출력-이력을-반영한-오프라인-학습-2026-11-03). Evaluation was exploratory within one development group, and the pre-execution model did not beat the direction-mean baseline. Next, evaluate pre-execution prediction on a separate capture group. Multi-step goal approach and contact/grasping require separate evaluation.
+## Validation scope and next work
+
+Software regressions and firmware builds run in [PlatformIO/Python CI](https://github.com/ParkJsoo/motionbrain/actions/workflows/platformio.yml); ROS2 builds and tests run in [ROS2 CI](https://github.com/ParkJsoo/motionbrain/actions/workflows/ros2.yml). Physical results retain their dated conditions and denominators separately.
+
+Earlier [manual grasp demonstrations (Korean)](docs/evidence/2026-10-17-lipbalm-repetitions.md) and [12-image detector development training (Korean)](docs/evidence/2026-10-30-cv-development.md) are supporting experiments. The manual demonstrations are not learned-policy results; detector results evaluate the final model on its training images.
+
+The core remaining work is to connect visual object/gripper state to action prediction, implement and evaluate repeated action selection and reobservation, then separately test grasp/lift successes and failures under bounded conditions. Whole-arm position/force feedback, an electrical emergency-stop latency bound, learned continuous manipulation and generalization to other environments are not established.

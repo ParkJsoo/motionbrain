@@ -2,74 +2,45 @@
 
 [English](README.en.md) · [포트폴리오](PORTFOLIO.md) · [빌드·운영](OPERATIONS.md)
 
-ESP32 기반 5축 DC 로봇팔에 STM32 센서·원격조작, ESP32-CAM, Raspberry Pi와 ROS2 Jazzy를 연결한 개인 로보틱스 프로젝트다. 모터 제어와 호스트 판단을 분리하고, 실제 센서 피드백과 실패 기록으로 구현을 검증한다. 현재 연구 방향은 **카메라와 모터 명령으로 자신의 움직임을 학습하고, 그 예측으로 목표에 접근하는 시각 행동 학습**이다.
+**영상과 명령으로 로봇팔의 움직임을 학습하고, 예측한 결과를 비교해 목표에 접근하는 개인 로보틱스 프로젝트**다. ESP32 기반 5축 DC 로봇팔에서 영상·명령·실제 출력·센서를 함께 기록하고, 데이터 검증부터 학습·평가·후보 명령 선택까지 연결한다.
 
-## 현재 목표와 진행 상태
+현재는 제한된 한 관절의 동작 예측과 단발 목표 접근을 검증한 단계다. 물체와 집게의 영상상 위치를 이용해 정렬·파지·들기를 이어가는 학습 기반 조작은 아직 완성하지 않았다.
 
-고정 외부 카메라 영상에서 팔의 특징점과 명령 전후 변화를 기록하고, `현재 영상·최근 이력 + 후보 명령 → 다음 움직임`을 학습한다. 기구학과 기존 제어를 활용하면서 실제 마찰·유격·자세별 반응을 경험으로 보완하는 방향이다.
+## 목표와 현재 범위
 
-- **확인한 결과:** M4 단일축 제어·수동 관찰 파지·인식 개발 학습. 인식의 최종 12장은 모두 학습자료이며 대상 물체 중복 오탐 1건이 남았다.
-- **수집·학습:** 별도 M2 반복 수집과 원본 심사로 32개 투영 방향 전이를 확보하고, [첫 행동 예측 모델](docs/evidence/2026-10-31-first-action-prediction.md)을 학습했다. 학습 16/검증 8/시험 8이며 시험 평균 절대오차는 영상상 상대 방향 0.665°, 방향 일치는 8/8이다.
-- **남은 범위:** 같은 날·같은 구도·M2의 초기 예측 결과다. [오프라인 행동 선택기](docs/offline-action-selection.md)는 저장 상태에서 후보 명령을 비교한다. [첫 모델 기반 목표 접근](docs/evidence/2026-10-31-first-model-goal-approach.md)에서는 M2 명령 1회로 영상상 목표 오차를 5.479°→0.967°로 줄여 지정한 1° 허용오차를 충족했다. 촬영을 시작한 시험 4개 중 앞선 3개는 구동 전 중단됐다. 실제 관절각 정확도·반복 성공률·다른 날짜/구도 일반화·파지는 미검증이다. 정지사진 검출의 완성을 행동 학습의 선행 조건으로 삼지 않는다.
+목표하는 흐름은 `현재 영상 상태 + 후보 명령 → 변화 예측 → 목표와 비교 → 실행 → 재관측`이다. 첫 과제는 작은 물체에 접근해 잡고 드는 것이다. 현재 구현과 실측은 다음 범위에 한정된다.
 
-신규 OFF 후 정착 계약의 M2 전이 17개로 [실행 전 예측과 실제 출력 기반 사후 설명을 분리해 학습](docs/supervised-action-collection.md#실제-출력-이력을-반영한-오프라인-학습-2026-11-03)했다. 동일 development 그룹 내부 탐색 MAE는 각각 1.353°·0.607°이며, 실행 전 모델은 방향별 평균 기준선 1.105°보다 나빴다. 사후 점수는 명령 선택 성능이 아니고 독립 시험 자료는 없다. 위의 과거 32개·0.665°와 별도 계약이다. [모델·기준선·평가 규칙을 고정](docs/supervised-action-collection.md#새-그룹-평가를-위한-모델-고정)했으며 다음 중심 과제는 별도 수집 그룹에서 실행 전 예측을 검증하는 것이다.
+| 단계 | 현재 구현·검증 |
+| --- | --- |
+| 수집·재생 | Mac 로컬 UI에서 M1~M5 중 한 관절씩 선택. 영상·예정 명령·실제 드라이버 출력·센서와 실패 기록을 저장하고 재생 |
+| 데이터셋 | 수동 수집 기록의 학습용 변환·검증은 M4 대상. 명령 전 영상과 예정 명령을 입력으로, 센서 변화량을 정답으로 사용 |
+| 학습·평가 | M4 아래 방향 6조건, 학습 18건 이후 모델을 고정하고 새 18건 평가. 명령별 평균 MAE **0.367°**, 영상·명령 ridge **0.605°**. 현재 영상 표현의 이득은 확인되지 않음 |
+| 후보 선택 | 지원하는 명령과 정지의 예측 잔차를 비교하는 오프라인 선택기. 별도 M2 실험에서는 모델 선택 명령 한 번의 영상상 목표 접근 확인 |
+| 남은 연결 | 물체·집게 상태 추정, 목표에 맞는 행동 선택과 재관측을 연결한 반복 제어, 학습 기반 집기·들기 평가 |
 
-[목표·단계·평가 설계](docs/visual-action-learning.md) · [연구 근거](docs/research/visual-action-learning.md) · [인식 개발 결과](docs/evidence/2026-10-30-cv-development.md)
+M4 수치는 같은 날·같은 장치의 순차 자세에서 센서 라벨과 비교한 결과다. 다른 날짜·하중의 일반화, 센서 자체 정확도 또는 집기 성능을 뜻하지 않는다. 실제 PWM과 출력 기간은 사후 기록이며 실행 전 예측 입력에 넣지 않는다. 서로 다른 관절·관측 계약의 자료는 자동 혼합하지 않는다.
 
-## 데모
+[최신 M4 평가·실패 분모](docs/evidence/2026-11-04-m4-action-prediction.md) · [M2 단발 목표 접근과 한계](docs/evidence/2026-10-31-first-model-goal-approach.md) · [학습 목표·설계](docs/visual-action-learning.md)
 
-![유선 원격조작 시연](https://raw.githubusercontent.com/ParkJsoo/motionbrain/demo-ready-20260608/docs/assets/demo/motionbrain-demo.gif)
-
-[MP4](https://raw.githubusercontent.com/ParkJsoo/motionbrain/demo-ready-20260608/docs/assets/demo/motionbrain-demo.mp4) · 2026-06-08 고정 태그의 원격조작 시연. 자율 파지 영상이 아니다.
-
-## 구현과 검증 범위
-
-| 범위 | 확인한 결과 | 한계 |
-| --- | --- | --- |
-| 임베디드 제어 | ESP32 5축 PWM, STM32 UART 원격조작, 상태 머신·데드맨·센서 고장 차단 | 전기적 정지 지연과 기능 안전 인증은 미검증 |
-| M4 어깨 피드백 | AS5600 목표각 제어. 최종 무부하·23.10g 회귀 각각 11/11 통과 | 2026-06-28의 고정 장착·제한 범위 결과. 나머지 네 축 위치 피드백 없음 |
-| ROS2 연결 | 타입이 정의된 메시지, URDF/RViz, 제어 가드, `ros2_control` | 실물 쓰기는 작업자 확인형 M4 단일 목표만 검증 |
-| 관찰 기반 조작 | 단일 종류의 대상 물체 파지·들기 후 추가 잡기·놓기 2회 | 외부 화면을 보고 수동 명령을 선택한 시연. 첫 반복은 보정 필요, 학습 정책 아님 |
-| 인식 개발 | Faster R-CNN 개발 학습: 학습 12장 대상 물체 TP8/FP1/FN0·집게 TP12/FP0/FN0, 상대 위치·방향 8/8 | 단일 종류의 대상 물체에 대한 학습자료 적합성 결과. 최종 검출기의 미학습 일반화는 미검증 |
-| 행동 예측 | M2 실물 32개 전이로 첫 선형·릿지 후보 학습과 보류 그룹 평가 | 같은 날·구도에서 모델 선택 명령 1회의 목표 접근 확인. 반복 성공률·다른 조건의 일반화는 미검증 |
-
-## 기존 시스템과 연구 경로
+## 시스템 구성
 
 ```text
-STM32 (IMU·원격조작) ── UART ──> ESP32 (명령·안전 상태·PWM) ──> DC 모터 5축
-                                   ↑ AS5600: M4 어깨만 피드백
-ESP32-CAM ── HTTP /capture ──> Raspberry Pi (인식·대시보드·ROS2)
-                                   └─ M4 제안 → 작업자 확인 → ESP32
+iPhone 외부 카메라 ──> Mac 수집 UI ──> 영상·명령·출력·센서 기록
+                           │                     │
+                     한 관절 제한 명령       검증 → 학습·평가
+                           ↓                     ↓
+STM32 센서·원격조작 ──> ESP32 ──> DC 모터 5축   오프라인 후보 비교
+                           ↑
+                     AS5600: M4 각도
+
+ESP32-CAM ──> Raspberry Pi 인식·대시보드·ROS2 (기존 통합 경로)
 ```
 
-외부 카메라→Mac 영상·학습 경로는 기존 ESP32-CAM→Pi 경로와 구분한다. 위 그림은 기존 장치 제어 구성이다. 새 M2 행동 예측 모델은 오프라인 학습·평가 뒤 별도 제한 실행기에 연결해 단일 명령의 목표 접근을 확인했다. 연속 자율 제어는 구현하지 않았다.
+후보 비교 결과를 모든 관절의 자동 제어로 연결한 구조는 아니다. ESP32는 명령·출력·정지 상태를 관리하고, 호스트는 수집과 학습·평가를 담당한다. M4에만 각도 센서가 있으며 다른 네 축에는 위치 피드백이 없다. 기존 ROS2 경로는 작업자 확인형 M4 단일 목표 실행을 검증했다.
 
-- 기존 수동 명령은 ESP32의 `Dispatcher`와 `SafetyGate`를 거친다. 실험용 `/actions`는 별도 제한 실행기에서 `SafetyGate`를 확인하고 출력한다. 호스트의 명령 접수를 목표 도달로 취급하지 않는다.
-- 카메라 직접 `/stream`은 비활성화돼 있으며 `/capture` 또는 Pi 추적 프레임을 사용한다.
-- 전체 관절 폐루프 궤적 제어와 자동 집기는 구현하지 않았다. 간헐 HTTP 지연도 남아 있다.
+## 시작하기
 
-## 코드와 문서
-
-[전체 문서·실험 증거·미디어 안내](docs/README.md)
-
-| 경로 | 내용 |
-| --- | --- |
-| `src/`, `firmware/` | ESP32 제어기·카메라 및 STM32 펌웨어 |
-| `ros2_ws/src/` | 메시지, 브리지, 제어 가드, 모델, 하드웨어 인터페이스 |
-| `learning/`, `tools/` | 인식, 데이터 계약, 오프라인 학습·평가, 운영 도구 |
-| [PORTFOLIO.md](PORTFOLIO.md) | 설계 선택, 실패 분석, 조건이 명시된 실측 결과 |
-| [OPERATIONS.md](OPERATIONS.md) | 빌드, 서비스 설정, 상태 점검과 진단 |
-| [PIN_MAP.md](PIN_MAP.md) | 모터·센서 배선과 부팅 핀 제약 |
-| [ROS2 하드웨어 인터페이스](ros2_ws/src/motionbrain_hardware_interface/README.md) | dry-run·측정 상태·M4 제안 모드 |
-| [시각 행동 학습](docs/visual-action-learning.md) | 현재 목표·단계·새 관측 계약 설계와 기존 구현 구분 |
-| [기존 데이터·학습 파이프라인](docs/data-pipeline.md) | 기존 M4·물체 박스 계약, 적격성, 분할과 CLI 재현 |
-| [제한된 CV 개발 학습 실행기](docs/bounded-cv-training.md) | 명시적 실행·로컬 가중치·횟수/시간 제한·실패 기록. 개발용 학습과 일반화 성능 검증 구분 |
-| [대상 물체·집게 오프라인 CV](docs/offline-cv.md) | 승인 데이터 로더·선택적 PyTorch 입력 어댑터, 후보 표시, 저장 예측의 검출·방향·상대 위치 평가 |
-| [저장 체크포인트 평가 실행기](docs/checkpoint-evaluation.md) | 가변 개수의 확정 이미지, 엄격한 모델 복원·시간 제한·실패 분모 보존. 소프트웨어 검사와 실제 모델 평가 결과를 구분 |
-
-## 로컬 빌드와 검사
-
-Python 호스트 의존성은 `numpy`, `opencv-python-headless`이며 브라우저 복구 회귀에는 Node.js(CI: 22)가 필요하다. 네이티브 C++ 검사를 실행하려면 C++ 컴파일러도 필요하며, 없으면 해당 검사는 건너뛴다. 펌웨어 빌드에는 PlatformIO가 필요하다. ROS2와 서비스 설치는 [운영 안내](OPERATIONS.md)를 따른다.
+호스트 검사는 Python 3.12 기준으로 `numpy`, `opencv-python-headless`, Node.js(CI: 22), C++ 컴파일러를 사용한다. 선택적 PyTorch 검사는 관련 의존성이 없으면 건너뛰며, 펌웨어 빌드에는 PlatformIO가 필요하다.
 
 ```sh
 python3 -m unittest discover -s tests
@@ -77,7 +48,29 @@ pio run
 pio run -d firmware/esp32cam
 ```
 
-[PlatformIO/Python CI](https://github.com/ParkJsoo/motionbrain/actions/workflows/platformio.yml) · [ROS2 CI](https://github.com/ParkJsoo/motionbrain/actions/workflows/ros2.yml). 빌드·테스트 결과는 커밋별로 확인하며 실물 성능과 구분한다.
+위 명령은 검사·빌드이며 펌웨어 업로드나 모터 구동을 하지 않는다. 원본 수집 자료와 모델 가중치는 공개 저장소에 포함하지 않으므로 실제 실험 수치의 재평가에는 해당 자료가 필요하다.
+
+- **수집·재생·데이터셋·학습:** [관절별 수동 수집 안내](docs/manual-data-collection.md)
+- **설치·펌웨어·서비스·ROS2:** [운영 안내](OPERATIONS.md), [배선](PIN_MAP.md), [ROS2 하드웨어 인터페이스](ros2_ws/src/motionbrain_hardware_interface/README.md)
+- **검증 결과:** [PlatformIO/Python CI](https://github.com/ParkJsoo/motionbrain/actions/workflows/platformio.yml), [ROS2 CI](https://github.com/ParkJsoo/motionbrain/actions/workflows/ros2.yml). 소프트웨어 검사와 실물 성능은 구분한다.
+
+실물 수집 전에는 현재 연결·카메라·이동 여유를 확인해야 한다. 간헐 HTTP 지연이 남아 있으며, 수집 UI의 중단 요청은 물리적 즉시 비상 정지를 보장하지 않는다. 실행 조건과 종료 확인 절차는 수집 안내에 명시했다.
+
+## 코드와 문서
+
+| 경로 | 역할 |
+| --- | --- |
+| `learning/`, `tools/` | 수집·재생, 데이터 검증, 인식·동작 예측, 평가와 후보 선택 |
+| `src/`, `firmware/` | ESP32 모터 제어, 카메라 및 STM32 펌웨어 |
+| `ros2_ws/src/` | 메시지·브리지·제어 가드·URDF·하드웨어 인터페이스 |
+| [포트폴리오](PORTFOLIO.md) | 해결한 문제, 설계 판단, 결과와 한계 |
+| [문서·실험 증거 색인](docs/README.md) | 현재 사용법과 날짜별 실측 근거 |
+
+## 기존 원격조작 데모
+
+![유선 원격조작 시연](https://raw.githubusercontent.com/ParkJsoo/motionbrain/demo-ready-20260608/docs/assets/demo/motionbrain-demo.gif)
+
+[MP4](https://raw.githubusercontent.com/ParkJsoo/motionbrain/demo-ready-20260608/docs/assets/demo/motionbrain-demo.mp4) · 2026-06-08 고정 태그의 원격조작 영상이다. 현재 학습 모델의 집기 시연은 아니다.
 
 ## 라이선스
 

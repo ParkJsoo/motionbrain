@@ -9,7 +9,7 @@
 | 문서 | 역할 |
 | --- | --- |
 | [시각 행동 학습](visual-action-learning.md) | 목표, 현재 단계와 과거 수집 계획의 구분 |
-| [관절별 수동 수집](manual-data-collection.md) | 현재 수집 화면, 영상·명령·출력·센서 기록, M4 데이터셋·학습·고정 모델 평가 |
+| [관절별 수동 수집](manual-data-collection.md) | 수집 화면·재생, M4 데이터셋 변환·학습·평가 사용법 |
 | [현장 감독 수집](supervised-action-collection.md) | 기존 M2 정착 전후 17개 자료와 개발 평가 계약 |
 | [유한 출력 프로파일](finite-output-profile.md) | M2 고정 출력 구현·실물 시운전과 계측 거부·불확실성 검토 |
 | [무명령 관측 반복성](stationary-repeatability.md) | 관측창·조명 조건 비교와 측정 변동 해석의 한계 |
@@ -39,6 +39,7 @@
 | [2026-10-31 첫 행동 예측](evidence/2026-10-31-first-action-prediction.md) | M2 32개 전이, 논리 그룹 분할, 기준선 비교와 한계 |
 | [2026-10-31 첫 모델 목표 접근](evidence/2026-10-31-first-model-goal-approach.md) | 모델 선택 M2 명령 단발의 목표 오차 변화와 반복 검증 한계 |
 | [2026-11-04 HTTP 응답 지연](evidence/2026-11-04-http-response-gap.md) | 연결 종료·본문 재조립 지연의 구분과 수정 범위 |
+| [2026-11-04 M4 행동 예측 평가](evidence/2026-11-04-m4-action-prediction.md) | 학습 18건·후속 18건, 명령별 평균과 영상 모델 비교, 중단 분모·평가 한계 |
 
 각 기록에는 조건·실패·분모·재현 한계를 남긴다. 비공개 원본 이미지·실행 응답은 이 공개 저장소에 포함하지 않는다.
 
