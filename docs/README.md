@@ -8,7 +8,11 @@
 
 | 문서 | 역할 |
 | --- | --- |
-| [시각 행동 학습](visual-action-learning.md) | 현재 목표, 단계, 입력·정답·평가 설계 |
+| [시각 행동 학습](visual-action-learning.md) | 목표, 현재 단계와 과거 수집 계획의 구분 |
+| [관절별 수동 수집](manual-data-collection.md) | 현재 수집 화면, 영상·명령·출력·센서 기록, M4 데이터셋·학습·고정 모델 평가 |
+| [현장 감독 수집](supervised-action-collection.md) | 기존 M2 정착 전후 17개 자료와 개발 평가 계약 |
+| [유한 출력 프로파일](finite-output-profile.md) | M2 고정 출력 구현·실물 시운전과 계측 거부·불확실성 검토 |
+| [무명령 관측 반복성](stationary-repeatability.md) | 관측창·조명 조건 비교와 측정 변동 해석의 한계 |
 | [오프라인 행동 선택](offline-action-selection.md) | 저장 모델의 후보 순위·hold·abstain, 저장 상태 재생과 정책 평가 한계 |
 | [시각 행동 수집기](visual-action-collection.md) | 행동 ID·영상 구간·실패 기록·감사와 공개 단발 CLI의 계약. 별도 반복 실측 경로와 구분 |
 | [연구 근거](research/visual-action-learning.md) | 논문 6편의 실제 실험 조건과 적용 아이디어 |
@@ -33,6 +37,8 @@
 | [2026-10-17 관찰 기반 파지](evidence/2026-10-17-lipbalm-repetitions.md) | 수동 명령으로 수행한 파지와 반복·보정 |
 | [2026-10-30 인식 개발](evidence/2026-10-30-cv-development.md) | 학습 12장 결과, 남은 중복 오탐, 일반화 검증과의 구분 |
 | [2026-10-31 첫 행동 예측](evidence/2026-10-31-first-action-prediction.md) | M2 32개 전이, 논리 그룹 분할, 기준선 비교와 한계 |
+| [2026-10-31 첫 모델 목표 접근](evidence/2026-10-31-first-model-goal-approach.md) | 모델 선택 M2 명령 단발의 목표 오차 변화와 반복 검증 한계 |
+| [2026-11-04 HTTP 응답 지연](evidence/2026-11-04-http-response-gap.md) | 연결 종료·본문 재조립 지연의 구분과 수정 범위 |
 
 각 기록에는 조건·실패·분모·재현 한계를 남긴다. 비공개 원본 이미지·실행 응답은 이 공개 저장소에 포함하지 않는다.
 
