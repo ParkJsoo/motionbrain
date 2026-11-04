@@ -542,6 +542,25 @@ class CompactTransportTests(unittest.TestCase):
         for i in range(129): device.append(i % 5 + 1, 0)
         with self.assertRaisesRegex(ValueError, 'gap'): port.check_idle()
 
+    def test_missing_axis_history_fails_closed_until_explicit_all_axis_stop(self):
+        port, device, _ = self.setup_port()
+        # A long manual M4 movement can evict every earlier M1/M2/M3/M5
+        # driver write from the retained ring, even when status says IDLE.
+        for _ in range(128): device.append(4, 0)
+        with self.assertRaisesRegex(ValueError, 'driver_off_not_proven'):
+            port.preflight()
+        self.assertFalse(port.off_verified)
+        self.assertTrue(all(body is None for _, body in device.requests))
+
+        # Only a distinct explicitly issued STOP records a fresh OFF for each
+        # axis. It is not an automatic retry or part of the failed preflight.
+        port._call('/command', {'cmd': 'stop'})
+        fresh, _, _ = self.setup_port()
+        fresh.opener = port.opener
+        fresh.preflight()
+        self.assertTrue(fresh.off_verified)
+        self.assertEqual(fresh.last_outputs, {i: 0 for i in range(1, 6)})
+
     def test_quiet_later_page_nonzero_rejected(self):
         port, device, _ = self.setup_port();port.preflight()
         for _ in range(8): device.append(4, 0)
