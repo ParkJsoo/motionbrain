@@ -25,7 +25,7 @@ The M4 figures compare predictions with sensor labels from sequential poses on o
 ## Architecture
 
 ```text
-iPhone external camera → Mac collection UI → image/command/output/sensor records
+External camera → Mac collection UI → image/command/output/sensor records
                               │                          │
                      bounded single-joint command   validation → training/evaluation
                               ↓                          ↓
