@@ -79,7 +79,8 @@ class RelativeTests(unittest.TestCase):
     def test_visual_adapter_does_not_require_sensor_and_legacy_still_does(self):
         r = row(9, 2.)
         r['inputs'] = {'command': {'joint': 'gripper'}}
-        with patch.object(dataset, '_visual_session', return_value=(r, [], [0, 1], [2, 3])):
+        r['evidence'] = {}
+        with patch.object(dataset, '_visual_session', return_value=(r, [], [0, 1], [2, 3], [0, 4])):
             with patch.object(dataset, 'sensor_window', side_effect=AssertionError('sensor read')):
                 self.assertEqual(dataset.build_visual_session('/tmp', 'hash'), r)
             with self.assertRaisesRegex(ValueError, 'session_plan_identity'):

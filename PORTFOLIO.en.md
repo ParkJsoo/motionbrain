@@ -48,7 +48,7 @@ M4 also has an offline function comparing predicted candidates against a target 
 
 [First M2 prediction evaluation (Korean)](docs/evidence/2026-10-31-first-action-prediction.md) · [Single goal approach (Korean)](docs/evidence/2026-10-31-first-model-goal-approach.md) · [Selector contract (Korean)](docs/offline-action-selection.md)
 
-The [offline relative-state path (Korean)](docs/relative-action-selection.md) connects manual object/jaw annotations on two M4 transitions to change prediction and candidate ranking. With no separate evaluation data, this verifies development plumbing only; it does not establish automatic perception or grasping.
+The [offline relative-state path (Korean)](docs/relative-action-selection.md) connects manual object/jaw annotations on two M4 transitions to change prediction and candidate ranking. Gripper-camera transitions use a separate coordinate and timing contract. With no separate evaluation data, this verifies development plumbing only; it does not establish automatic perception or grasping.
 
 ## 4. Control and communication work supporting learning experiments
 

@@ -30,6 +30,14 @@ python3 tools/replay_relative_actions.py \
 
 매니페스트 최상위는 `records` 배열과 `evaluationGroups` 배열이다. 평가자료가 없으면 후자는 빈 배열로 두고 개발 학습만 확인한다. 선택을 시험하려면 `query={state,target,commands,context}`를 추가한다. `context`는 모델의 전체 관측 계약과 일치해야 한다. 출력은 새 디렉터리의 `model.json`, `report.json`이며 원본·주석·모델은 `.local/`에 둔다. 실제 출력·센서값·사후 영상은 선택 질의에 넣지 않는다.
 
+## 집게 위 카메라 자료의 연결
+
+외부 카메라로 전체 팔·물체 배치를 확인하면서, 양 턱이 구별되는 집게 위 카메라의 상태로 별도 모델을 만들 수 있다. 두 카메라 좌표를 합산하거나 동일 프레임으로 취급하지 않는다. 매니페스트 기록에 `observationCamera=gripper`, `gripperObservationRoot`(저장소 기준 상대 경로)를 추가하면 [결합기](../learning/gripper_camera_dataset.py)가 원래 외부 영상·출력 감사를 유지한 채 ESP32-CAM의 사전·사후 주석 프레임을 연결한다.
+
+별도 수집 기록은 `esp32-before.jpg/json`, `esp32-after.jpg/json`이다. JSON은 `sessionId`, `hostClockId`(수집 세션 ID), `clockDomain=python_monotonic`, `requestStartedAt`, `receivedAt`, `persistedAt`, `sha256`, 원본 `headers`를 보존한다. `fresh=1`의 요청 뒤 캡처 근거·부팅 ID·프레임 ID·시각 증가·실제 JPEG 복원 해시를 검사한다. 카메라의 `first_dma_buffer` 시각은 정확한 노출 시각을 보증하지 않는다.
+
+이 카메라의 관측 계약은 외부 영상의 센서 라벨창과 다르다. 사전 요청은 명령 전 최대 40초 이내, 저장 완료는 명령 전 0.1초 이전이어야 한다. 사후 요청은 OFF 확인 후 3초 이후이고 저장 완료는 30초 이내다. 두 요청·저장은 단일 명령의 전체 출력 이력과 외부 촬영 감사 구간 안에 있어야 한다. 이 넓은 창은 영상 검토와 별도 HTTP 촬영 시간을 허용하기 위한 것으로 정착·상태 불변·정확한 동시 촬영을 뜻하지 않는다. 전용 정책을 모델의 관측 계약에 저장하며 외부 카메라 자료와 혼합하지 않는다. 실제 모델에 두 영상을 함께 입력해 성능이 좋아지는지는 별도 비교가 필요하다.
+
 ## 2026-11-04 저장자료 개발 확인
 
 접근 완료 기록 3개를 재감사하고 프레임을 복원했다. 같은 구도·명령(M4 아래 20%·350ms)의 2개 전이만 근사 수동 주석에 적격이었다. 나머지 1개는 구도 변경·턱 중첩으로 보류했다. 두 전이의 상대 y 변화는 −19px, −16px였다. 점별 약 ±4px는 분석가의 근사 표시 수준이며 측정 정확도나 신뢰구간이 아니다.

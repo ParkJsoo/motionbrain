@@ -248,7 +248,7 @@ def _visual_session(root, expected_hash):
             preFrameIds=[f['frameIndex'] for f in before_frames],postFrameIds=[f['frameIndex'] for f in after_frames],
             auditedFrames=len(frames),cameraIdentity=identity,sourceHashes=ev.hashes),
         originalDatasetEligible=False,trainingPerformed=False,controlEligible=False)
-    return row, statuses, pre, post
+    return row, statuses, pre, post, [frames[0]['sourceEarliest'], s['endedAt']]
 
 
 def build_visual_session(root, expected_hash):
@@ -257,11 +257,13 @@ def build_visual_session(root, expected_hash):
     Keeps the existing camera chronology, OFF evidence and fixed windows.
     Multi-pulse sessions are refused rather than silently split into examples.
     """
-    return _visual_session(root, expected_hash)[0]
+    row, _, _, _, bounds = _visual_session(root, expected_hash)
+    row['evidence']['cameraHostBounds'] = bounds
+    return row
 
 
 def build_session(root, expected_hash):
-    row, statuses, pre, post = _visual_session(root, expected_hash)
+    row, statuses, pre, post, _ = _visual_session(root, expected_hash)
     require(row['inputs']['command']['joint']=='shoulder', 'session_plan_identity')
     before=sensor_window(statuses,pre);after=sensor_window(statuses,post)
     row['targets'].update(sensorBefore=before,sensorAfter=after,

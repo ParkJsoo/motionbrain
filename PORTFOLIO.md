@@ -48,7 +48,7 @@ M4에도 목표 변화량과 후보 예측을 비교하는 오프라인 함수�
 
 [첫 M2 예측 평가](docs/evidence/2026-10-31-first-action-prediction.md) · [단발 목표 접근](docs/evidence/2026-10-31-first-model-goal-approach.md) · [선택기 계약](docs/offline-action-selection.md)
 
-[상대 상태 오프라인 경로](docs/relative-action-selection.md)에서는 물체·양턱 수동 주석과 M4 전이 2건으로 변화 예측·후보 계산을 연결했다. 별도 평가자료가 없어 개발 구현 확인으로 한정하며 자동 인식·집기 성과는 아니다.
+[상대 상태 오프라인 경로](docs/relative-action-selection.md)에서는 물체·양턱 수동 주석과 M4 전이 2건으로 변화 예측·후보 계산을 연결했다. 집게 위 카메라 전이도 별도 좌표·시각 계약으로 연결한다. 별도 평가자료가 없어 개발 구현 확인으로 한정하며 자동 인식·집기 성과는 아니다.
 
 ## 4. 학습 실험을 지탱하는 제어·통신 문제 해결
 

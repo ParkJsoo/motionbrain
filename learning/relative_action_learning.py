@@ -199,6 +199,13 @@ def load_manifest(manifest, root):
         # output OFF, and post window. No sensor value becomes an input.
         try:
             row = build_visual_session(path, item['sessionSha256'])
+            if item.get('observationCamera', 'external') == 'gripper':
+                from learning.gripper_camera_dataset import bind_gripper_pair
+                camera_root = (root/item['gripperObservationRoot']).resolve()
+                require(camera_root.is_relative_to(root), 'gripper_path_outside_manifest_root')
+                row = bind_gripper_pair(row, camera_root)
+            else:
+                require(item.get('observationCamera', 'external') == 'external', 'unknown_observation_camera')
             rows.append(annotated_transition(row, item['annotation']))
         except (ValueError, KeyError, TypeError, OSError, StorageError) as exc:
             rejected.append(dict(sessionId=item.get('annotation', {}).get('sessionId'), reason=str(exc)))
