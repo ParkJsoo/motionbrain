@@ -1,3 +1,4 @@
+#include "network/output_page.h"
 #include "control/finite_profile_legacy_guard.h"
 #include "control/bounded_action_service.h"
 #include <esp_system.h>
@@ -170,15 +171,24 @@ void appendRecordJson(String& json, const bounded::Record& r) {
   json += ",\"targetReached\":"; json += r.targetReached ? "true" : "false";
   json += ",\"taskSuccess\":null,\"visuallySettled\":null}";
 }
-void appendOutputJson(String& json) {
+void appendOutputJson(String& json, bool paged, uint32_t after, size_t limit) {
   const auto& log = motorControl.outputLog();
   json += "{\"bootId\":\""; if (core) json += core->bootId();
   json += "\",\"evidence\":\"driver_write\",\"clockDomain\":\"controller_boot_millis\",\"dropped\":";
   json += log.dropped();
+  const auto page = collection_http::outputPage(log, after, limit);
+  if (paged) {
+    json += ",\"oldestSequence\":"; json += page.oldest;
+    json += ",\"latestSequence\":"; json += page.latest;
+    json += ",\"gap\":"; json += page.gap ? "true" : "false";
+    json += ",\"hasMore\":"; json += page.hasMore ? "true" : "false";
+  }
   json += ",\"entries\":[";
-  for (size_t i = 0; i < log.count(); ++i) {
+  const size_t begin = paged ? page.begin : 0;
+  const size_t end = paged ? page.end : log.count();
+  for (size_t i = begin; i < end; ++i) {
     const auto* entry = log.at(i);
-    if (i) json += ',';
+    if (i != begin) json += ',';
     json += "{\"sequence\":"; json += entry->sequence;
     json += ",\"atMs\":"; json += entry->atMs;
     json += ",\"actionOrdinal\":"; json += entry->actionOrdinal;

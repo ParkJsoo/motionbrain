@@ -78,7 +78,7 @@ class ManualCollection:
         # SequencePort owns immutable HTTP intent/response files, including failures.
         # This in-memory projection is written with the final session report.
         self.current['events'].append(copy.deepcopy(event))
-        if event.get('kind') == 'http' and event.get('path') == '/status':
+        if event.get('kind') == 'http' and event.get('path') in ('/status', '/collection_status'):
             self.current['latestStatus'] = copy.deepcopy(event['response'])
 
     def _journal(self):
@@ -134,7 +134,7 @@ class ManualCollection:
         self.camera = self.port = None
         try:
             self.port = self.port_factory(self.controller_url, self.token, 'discovering', self.store,
-                                          observer=self._event, clock=self.clock)
+                                          observer=self._event, clock=self.clock, compact_reads=True)
             capability = self.port._call('/actions')
             boot = capability.get('bootId')
             if not isinstance(boot, str) or len(boot) != 32 or any(c not in '0123456789abcdef' for c in boot):
@@ -355,8 +355,9 @@ class ManualCollection:
             events.append(_decode_json(_read(directory, path.name)))
         events.sort(key=lambda event: event['at'])
         baseline = next((event['response']['entries'][-1]['sequence'] for event in events
-                         if event.get('kind') == 'http' and event.get('path') == '/action_outputs'
-                         and event.get('response', {}).get('entries')), None)
+                         if event.get('kind') == 'http' and event.get('path', '').split('?')[0] == '/action_outputs'
+                         and event.get('response', {}).get('entries')
+                         and event['response'].get('hasMore', False) is False), None)
         return dict(schemaVersion=SCHEMA, sessionId=sid, joint=plan['joint'], phase='interrupted',
                     error='missing_terminal_record_no_replay', frames=frames, events=events,
                     outputBaselineSequence=baseline,

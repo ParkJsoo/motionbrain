@@ -118,3 +118,13 @@ test('output replay excludes old ring history and preserves it only in raw evide
   run('session.outputBaselineSequence=null;paintEvidence(Infinity)');
   assert.match(element('outputs').children[0].children[0].textContent,/기준 순번 미확인/);
 });
+
+test('compact status and paged output paths remain visible in replay', () => {
+  const {run,element}=environment();
+  run(`session={sessionId:'compact',joint:'shoulder',outputBaselineSequence:5,frames:[{sourceEarliest:1}],events:[
+    {kind:'http',path:'/collection_status',at:2,response:{shoulderAngle:{available:true,angleDeg:224,sensorFresh:true}}},
+    {kind:'http',path:'/action_outputs?after=5&limit=8',at:2,response:{entries:[{sequence:6,motor:4,pwm:-51,atMs:100}]}}
+  ]};paintEvidence(Infinity)`);
+  assert.equal(element('outputs').children[0].children[2].textContent,'-51');
+  assert.match(element('sensor-at-frame').textContent,/224/);
+});

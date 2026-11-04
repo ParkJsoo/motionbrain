@@ -133,6 +133,7 @@ private:
    * JSON 형식으로 현재 상태 반환
    */
   void handleStatus();
+  void handleCollectionStatus();
 
   /**
    * GET /events 처리

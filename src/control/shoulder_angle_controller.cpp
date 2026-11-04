@@ -324,6 +324,47 @@ bool ShoulderAngleController::manualDirectionAllowed(bool directionUp,
   return allowed;
 }
 
+void ShoulderAngleController::appendCollectionStatusJson(String& json) const {
+  const bool available = isReady();
+  const bool connected = available && sensor_->isI2cConnected();
+  const bool fresh = available && sensor_->isI2cFresh(SENSOR_STALE_MS);
+  const bool sensorReady = available && sensor_->isReadyForMotion(SENSOR_STALE_MS);
+  const float angleDegrees = connected ? sensor_->getI2cDegrees() : 0.0f;
+
+  json += "\"shoulderAngle\":{";
+  json += "\"available\":";
+  json += available ? "true" : "false";
+  json += ",\"sensorConnected\":";
+  json += connected ? "true" : "false";
+  json += ",\"sensorFresh\":";
+  json += fresh ? "true" : "false";
+  json += ",\"sensorReady\":";
+  json += sensorReady ? "true" : "false";
+  json += ",\"raw\":";
+  json += String(connected ? sensor_->getI2cRawAngle() : 0);
+  json += ",\"rawDeg\":";
+  json += String(connected ? sensor_->getI2cRawDegrees() : 0.0f, 2);
+  json += ",\"angleDeg\":";
+  json += String(angleDegrees, 2);
+  json += ",\"ageMs\":";
+  json += String(available ? sensor_->getI2cAgeMs() : 0);
+  json += ",\"active\":";
+  json += active_ ? "true" : "false";
+  json += ",\"manualDownBoundaryDeg\":";
+  json += String(SOFT_MIN_DEGREES + DOWN_STOP_LEAD_DEGREES, 2);
+  json += ",\"manualUpBoundaryDeg\":";
+  json += String(SOFT_MAX_DEGREES - UP_STOP_LEAD_DEGREES, 2);
+  json += ",\"manualGuardBlocked\":";
+  json += manualGuardBlocked_ ? "true" : "false";
+  json += ",\"manualCalibrationUnlock\":";
+#if defined(MOTIONBRAIN_M4_CALIBRATION_UNLOCK) && MOTIONBRAIN_M4_CALIBRATION_UNLOCK
+  json += "true";
+#else
+  json += "false";
+#endif
+  json += "}";
+}
+
 void ShoulderAngleController::appendShoulderStatusJson(String& json) const {
   const bool available = isReady();
   const bool connected = available && sensor_->isI2cConnected();

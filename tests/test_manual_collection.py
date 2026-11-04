@@ -31,7 +31,7 @@ class Camera:
 
 class Port:
     instances = []
-    def __init__(self, url, token, boot_id, store, *, observer, clock):
+    def __init__(self, url, token, boot_id, store, *, observer, clock, compact_reads=False):
         self.observer, self.clock = observer, clock
         self.boot_id = boot_id
         self.last_sequence = 12
@@ -204,6 +204,18 @@ class ManualCollectionTests(unittest.TestCase):
         self.assertTrue(result['finalIdleOffVerified'])
         self.assertEqual(result['phase'], 'failed')
         self.assertEqual(result['error'], 'evidence_persistence_failed')
+
+    def test_interrupted_paged_baseline_uses_completed_initial_drain(self):
+        self.start()
+        for index, (has_more, sequence) in enumerate(((True, 8), (False, 12)), 1):
+            self.manager.store.write_json(f'http-{index:06d}-intent.json',
+                dict(path=f'/action_outputs?after={0 if index == 1 else 8}&limit=8',
+                     payload=None, startedAt=100.+index))
+            self.manager.store.write_json(f'http-{index:06d}-response.json',
+                dict(receivedAt=100.+index, parsed=dict(hasMore=has_more,
+                     entries=[dict(sequence=sequence)])))
+        replay = self.make().session(self.manager.current['sessionId'])
+        self.assertEqual(replay['outputBaselineSequence'], 12)
 
     def test_quiet_retry_is_visible_in_live_and_interrupted_replay(self):
         from tests.test_supervised_transport import Controller

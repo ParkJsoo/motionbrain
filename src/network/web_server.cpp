@@ -7,6 +7,7 @@
 #include "control/numeric_validation.h"
 #include "web_server.h"
 #include "wifi_latency.h"
+#include "output_page.h"
 
 #include <string.h>
 
@@ -120,6 +121,7 @@ bool MotionBrainWebServer::init(SystemStateManager* systemState, MotorControl* m
   server_.on("/vision_endpoint", HTTP_GET, [this]() { this->handleVisionEndpoint(); });
   server_.on("/vision_endpoint", HTTP_POST, [this]() { this->handleVisionEndpointPublish(); });
   server_.on("/status", HTTP_GET, [this]() { this->handleStatus(); });
+  server_.on("/collection_status", HTTP_GET, [this]() { this->handleCollectionStatus(); });
 #if MOTIONBRAIN_ENABLE_FINITE_PROFILE_RUNTIME
   server_.on("/finite_profile", HTTP_POST, [this]() { this->handleFiniteProfile(); });
   server_.on("/finite_profile", HTTP_GET, [this]() { this->handleFiniteProfileStatus(); });
@@ -900,6 +902,56 @@ void MotionBrainWebServer::handleRoot() {
  * JSON 형식으로 현재 상태 반환
  * 주의: CSRF 헤더 불필요 — GET은 읽기 전용이므로 상태 변경 없음
  */
+void MotionBrainWebServer::handleCollectionStatus() {
+  if (!systemState_ || !motorControl_) { sendErrorJson(503, "collection_status_unavailable"); return; }
+  sendNoStoreHeaders(server_);
+  String json; json.reserve(1200);
+  json = "{\"schemaVersion\":\"collection.v1\",\"uptimeMs\":";
+  json += millis();
+  json += ",\"state\":\""; json += systemState_->getStateString();
+  json += "\",\"motorEnabled\":"; json += motorControl_->isEnabled() ? "true" : "false";
+  json += ",\"motors\":{";
+  for (uint8_t i=1; i<=MotorControl::NUM_MOTORS; ++i) {
+    if (i>1) json += ',';
+    json += "\"M"; json += i; json += "\":{\"speed\":"; json += motorControl_->getSpeed(i);
+    json += ",\"enabled\":"; json += motorControl_->isEnabled(i) ? "true" : "false";
+    json += '}';
+  }
+  json += '}';
+  const bool useStm32Sensor = stm32Bridge.isSimulationEnabled() || stm32Bridge.isConnected() ||
+                              !teleopAdapter.hasEmbeddedSafetySnapshot();
+  const SensorSnapshot& snapshot = useStm32Sensor
+                                 ? stm32Bridge.getSnapshot()
+                                 : teleopAdapter.getEmbeddedSafetySnapshot();
+  const uint32_t sensorAgeMs = useStm32Sensor
+                             ? stm32Bridge.getLastPacketAgeMs()
+                             : teleopAdapter.getEmbeddedSafetyAgeMs();
+  const bool sensorConnected = useStm32Sensor
+                             ? stm32Bridge.isConnected()
+                             : (teleopAdapter.getEmbeddedSafetyAgeMs() <= SafetyMonitor::SENSOR_STALE_MS);
+  json += ",\"sensor\":{\"connected\":"; json += sensorConnected ? "true" : "false";
+  json += ",\"simulated\":"; json += stm32Bridge.isSimulationEnabled() ? "true" : "false";
+  json += ",\"imuOk\":"; json += snapshot.imuOk ? "true" : "false";
+  json += ",\"blocked\":"; json += safetyMonitor.isMotionBlocked() ? "true" : "false";
+  json += ",\"faultLatched\":"; json += safetyMonitor.hasLatchedFault() ? "true" : "false";
+  json += ",\"lastUpdateMs\":"; json += sensorAgeMs;
+  json += ",\"gyroX\":"; json += String(snapshot.gyroX, 2);
+  json += ",\"gyroY\":"; json += String(snapshot.gyroY, 2);
+  json += ",\"gyroZ\":"; json += String(snapshot.gyroZ, 2);
+  json += ",\"roll\":"; json += String(snapshot.roll, 2);
+  json += ",\"pitch\":"; json += String(snapshot.pitch, 2);
+  json += ",\"distCm\":"; json += String(snapshot.distanceCm, 2);
+  json += ",\"vibe\":"; json += String(snapshot.vibe, 2);
+  json += "},\"teleop\":{\"deadman\":"; json += teleopAdapter.isDeadmanHeld() ? "true" : "false";
+  json += ",\"controlActive\":"; json += teleopAdapter.isControlActive() ? "true" : "false";
+  json += "},\"baseAngle\":{\"active\":"; json += angleController.isActive() ? "true" : "false";
+  json += "},";
+  shoulderAngleController.appendCollectionStatusJson(json);
+  json += '}';
+  if (json.length() > 1200) { sendErrorJson(503, "collection_status_too_large"); return; }
+  server_.send(200, "application/json", json);
+}
+
 void MotionBrainWebServer::handleStatus() {
   if (systemState_ == nullptr) {
     sendErrorJson(500, "SystemStateManager not initialized");
@@ -2127,8 +2179,17 @@ void MotionBrainWebServer::handleActionCancel() {
 }
 
 void MotionBrainWebServer::handleActionOutputs() {
+  sendNoStoreHeaders(server_);
+  const bool paged = server_.hasArg("after") || server_.hasArg("limit");
+  uint32_t after=0, limit=8;
+  if (paged && ((!server_.hasArg("after")) ||
+      !collection_http::unsignedArgument(server_.arg("after").c_str(), after) ||
+      (server_.hasArg("limit") && !collection_http::unsignedArgument(server_.arg("limit").c_str(), limit)) ||
+      limit<1 || limit>8)) {
+    sendErrorJson(400, "invalid_output_page"); return;
+  }
   String json;
-  BoundedActions::appendOutputJson(json);
+  BoundedActions::appendOutputJson(json, paged, after, limit);
   server_.send(200, "application/json", json);
 }
 

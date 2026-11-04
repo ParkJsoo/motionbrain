@@ -107,7 +107,7 @@ class SequencePort:
     its response. An exception never authorizes a resend. ``finish`` performs
     bounded cleanup once and caches its result, including a failed result.
     """
-    def __init__(self, url, token, boot_id, store, *, clock=time, timeout=.8):
+    def __init__(self, url, token, boot_id, store, *, clock=time, timeout=.8, compact_reads=False):
         self.url = validate_target(url)
         if (not isinstance(token, str) or not token
                 or not all(33 <= ord(c) <= 126 for c in token)):
@@ -118,6 +118,8 @@ class SequencePort:
             raise ValueError('bounded_timeout_required')
         self.token, self.boot_id, self.store = token, boot_id, store
         self.clock, self.timeout = clock, timeout
+        self.compact_reads = compact_reads
+        self._last_output_time = None
         self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
         self.serial = 0
         self.last_sequence = None
@@ -145,9 +147,15 @@ class SequencePort:
             if not emergency:
                 raise
 
-    def _call(self, path, payload=None, *, emergency=False, run=False, quiet_disconnect_retry=False):
-        if path not in ('/status', '/sequence', '/actions', '/action_outputs', '/command', '/motor'):
+    def _call(self, path, payload=None, *, emergency=False, run=False, quiet_disconnect_retry=False, request_timeout=None):
+        endpoint = urllib.parse.urlsplit(path).path
+        if endpoint not in ('/status', '/collection_status', '/sequence', '/actions', '/action_outputs', '/command', '/motor'):
             raise ValueError('unsupported_endpoint')
+        if '?' in path and (endpoint != '/action_outputs' or payload is not None):
+            raise ValueError('unsupported_endpoint')
+        budget = self.timeout if request_timeout is None else min(self.timeout, request_timeout)
+        if budget <= 0:
+            raise TimeoutError('request_deadline')
         self.serial += 1
         name = f'http-{self.serial:06d}'
         event = {'path': path, 'method': 'GET' if payload is None else 'POST',
@@ -163,13 +171,13 @@ class SequencePort:
         request = urllib.request.Request(self.url + path, data=body, headers=headers,
                                          method=event['method'])
         try:
-            with deadline(self.timeout):
+            with deadline(budget):
                 if run:
                     self.last_dispatch_before = self.clock.monotonic()
                     self.may_have_run = True
                 started = self.clock.monotonic()
                 for attempt in range(2):
-                    remaining = self.timeout - (self.clock.monotonic() - started)
+                    remaining = budget - (self.clock.monotonic() - started)
                     if remaining <= 0:
                         raise TimeoutError('request_deadline')
                     try:
@@ -185,19 +193,19 @@ class SequencePort:
                         queue_read = (path == '/sequence' and not self.may_have_run
                                       and self.off_verified)
                         quiet_read = (quiet_disconnect_retry and self._quiet_retry_off_proof
-                                      and path in ('/status', '/action_outputs')
+                                      and endpoint in ('/status', '/collection_status', '/action_outputs')
                                       and self._active_pulse is None)
                         if (attempt or payload is not None or run or emergency
                                 or self.evidence_failed or not (queue_read or quiet_read)):
                             raise
-                        remaining = self.timeout - (self.clock.monotonic() - started)
+                        remaining = budget - (self.clock.monotonic() - started)
                         if remaining <= 0:
                             raise
                         self._save(name + '-attempt-1-error.json', {
                             'error': 'RemoteDisconnected', 'endedAt': self.clock.monotonic()})
                         self._save(name + '-attempt-2-intent.json', {
                             **event, 'startedAt': self.clock.monotonic(),
-                            'attempt': 2, 'sharedTimeoutSeconds': self.timeout})
+                            'attempt': 2, 'sharedTimeoutSeconds': budget})
                 if run:
                     self.last_dispatch_after = self.clock.monotonic()
             if len(raw) > 65536 or code != 200:
@@ -289,6 +297,8 @@ class SequencePort:
             raise ValueError('output_history_gap')
         if quiet and self.last_sequence is not None and any(e['pwm'] != 0 for e in new):
             raise ValueError('unexpected_quiet_output')
+        if new and self._last_output_time is not None and new[0]['atMs'] < self._last_output_time:
+            raise ValueError('output_time_regressed')
         for entry in new:
             if self._active_pulse is not None:
                 self._trace.append(copy.deepcopy(entry))
@@ -298,18 +308,72 @@ class SequencePort:
                         or abs(entry['pwm']) > abs(pulse['expectedPwm'])):
                     raise ValueError('unexpected_driver_output')
             self.last_outputs[entry['motor']] = entry['pwm']
+        self._last_output_time = entries[-1]['atMs']
         self.last_sequence = entries[-1]['sequence']
         self._known_entries = {e['sequence']: copy.deepcopy(e) for e in entries}
         return new
+
+    def _status(self, **kwargs):
+        status = self._call('/collection_status' if self.compact_reads else '/status', **kwargs)
+        if self.compact_reads and status.get('schemaVersion') != 'collection.v1':
+            raise ValueError('collection_status_schema_invalid')
+        return status
+
+    def _outputs(self, *, quiet=False, **kwargs):
+        if not self.compact_reads:
+            payload = self._call('/action_outputs', **kwargs)
+            return payload, self._consume(payload, quiet=quiet)
+        started = self.clock.monotonic()
+        bootstrap = self.last_sequence is None
+        # Initial retained-ring loading occurs before any collector write. It
+        # may need sixteen small responses; each still has the original HTTP
+        # deadline. Once a cursor exists, every drain keeps the .8s budget.
+        bootstrap_budget = (bootstrap and self._active_pulse is None
+                            and not self.may_have_run and not self.writes_possible)
+        drain_budget = 4. if bootstrap_budget else self.timeout
+        new = []
+        pages = []
+        # A full ring fits in sixteen pages. Both elapsed time and page count
+        # are bounded, including the read-only initial baseline.
+        for _ in range(16):
+            cursor = self.last_sequence or 0
+            payload = self._call(f'/action_outputs?after={cursor}&limit=8',
+                                 request_timeout=drain_budget-(self.clock.monotonic()-started), **kwargs)
+            if self.clock.monotonic() - started >= drain_budget:
+                raise TimeoutError('request_deadline')
+            if (payload.get('bootId') != self.boot_id or payload.get('evidence') != 'driver_write'
+                    or payload.get('clockDomain') != 'controller_boot_millis'):
+                raise ValueError('output_identity_changed')
+            oldest, latest = payload.get('oldestSequence'), payload.get('latestSequence')
+            entries = payload.get('entries')
+            if (type(oldest) is not int or type(latest) is not int or not 1 <= oldest <= latest
+                    or payload.get('gap') is not False or type(payload.get('hasMore')) is not bool
+                    or not isinstance(entries, list) or len(entries) > 8 or latest < cursor):
+                raise ValueError('output_page_invalid_or_gap')
+            if entries:
+                if not all(isinstance(entry, dict) for entry in entries):
+                    raise ValueError('output_history_invalid')
+                expected = oldest if cursor == 0 else cursor + 1
+                if (entries[0].get('sequence') != expected
+                        or type(entries[-1].get('sequence')) is not int
+                        or entries[-1]['sequence'] > latest
+                        or payload['hasMore'] != (entries[-1]['sequence'] < latest)):
+                    raise ValueError('output_page_continuity_invalid')
+                new.extend(self._consume(payload, quiet=quiet and not bootstrap))
+            elif cursor != latest or payload['hasMore']:
+                raise ValueError('output_page_empty_before_end')
+            pages.append(payload)
+            if not payload['hasMore']:
+                return {**payload, 'entries': [e for page in pages for e in page['entries']]}, new
+        raise ValueError('output_page_budget_exceeded')
 
     def _snapshot(self, *, emergency=False):
         actions = self._call('/actions', emergency=emergency)
         if actions.get('bootId') != self.boot_id or actions.get('active') is not False:
             raise ValueError('controller_boot_or_action_changed')
-        status = self._call('/status', emergency=emergency)
+        status = self._status(emergency=emergency)
         self._check_status(status, 'IDLE')
-        output = self._call('/action_outputs', emergency=emergency)
-        self._consume(output, quiet=not emergency and self._active_pulse is None)
+        output, _ = self._outputs(emergency=emergency, quiet=not emergency and self._active_pulse is None)
         if self.last_outputs != {i: 0 for i in range(1, 6)}:
             raise ValueError('driver_off_not_proven')
         snapshot = {'actions': actions, 'status': status, 'outputs': output}
@@ -349,10 +413,9 @@ class SequencePort:
         self._finished = False
         self.off_verified = False
         try:
-            status = self._call('/status', quiet_disconnect_retry=self._quiet_retry_off_proof)
+            status = self._status(quiet_disconnect_retry=self._quiet_retry_off_proof)
             self._check_status(status, 'IDLE')
-            self._consume(self._call('/action_outputs',
-                                    quiet_disconnect_retry=self._quiet_retry_off_proof), quiet=True)
+            self._outputs(quiet=True, quiet_disconnect_retry=self._quiet_retry_off_proof)
             if self.last_outputs != {i: 0 for i in range(1, 6)}:
                 raise ValueError('driver_off_not_proven')
             self.off_verified = True
@@ -417,11 +480,11 @@ class SequencePort:
             tick()
             self.off_verified = False
             self._call('/command', {'cmd': 'arm'})
-            armed_status = self._call('/status')
+            armed_status = self._status()
             self._check_status(armed_status, 'ARMED')
             if pulse['motor'] == 4 and abs(self._shoulder_angle(armed_status) - baseline_angle) > 3:
                 raise ValueError('m4_observed_change_before_run')
-            new = self._consume(self._call('/action_outputs'))
+            _, new = self._outputs()
             if any(e['pwm'] != 0 for e in new):
                 raise ValueError('unexpected_output_before_run')
             self._active_pulse = pulse
@@ -433,8 +496,8 @@ class SequencePort:
             # needlessly age the 128-entry output ring before its first drain.
             while True:
                 tick()
-                self._consume(self._call('/action_outputs'))
-                self._check_status(self._call('/status'), 'ARMED', pulse, baseline_angle)
+                self._outputs()
+                self._check_status(self._status(), 'ARMED', pulse, baseline_angle)
                 # RUN may spend part of its round trip before the controller
                 # starts its timer. Waiting from the response upper bound
                 # avoids cutting that timer short because of network latency.

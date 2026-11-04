@@ -10,7 +10,7 @@
 // authentication and motor leases remain the responsibility of their owners.
 class IdleConnectionWebServer : public ::WebServer {
 public:
-  static constexpr uint32_t FIRST_BYTE_WAIT_MS = 100;
+  static constexpr uint32_t FIRST_BYTE_WAIT_MS = 500;
   explicit IdleConnectionWebServer(uint16_t port) : ::WebServer(port) {}
 
   void handleClient() override {

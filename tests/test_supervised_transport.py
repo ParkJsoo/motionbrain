@@ -495,4 +495,128 @@ class TransportTests(unittest.TestCase):
         self.assertFalse(device.queue)
 
 
+
+class CompactTransportTests(unittest.TestCase):
+    def setup_port(self):
+        port, device, store = TransportTests().setup_port()
+        port.compact_reads = True
+        original = device.open
+        def open_page(request, timeout):
+            address = urllib.parse.urlsplit(request.full_url)
+            if address.path == '/collection_status':
+                device.clock.now += .01
+                device.requests.append((address.path, None))
+                return Response(dict(device.status(), schemaVersion='collection.v1'))
+            if address.path == '/action_outputs':
+                device.clock.now += .01
+                device.requests.append((address.path+'?'+address.query, None))
+                cursor = int(urllib.parse.parse_qs(address.query)['after'][0])
+                retained = device.entries[-128:]
+                selected = [e for e in retained if e['sequence'] > cursor][:8]
+                oldest, latest = retained[0]['sequence'], retained[-1]['sequence']
+                return Response(dict(bootId=device.boot, evidence='driver_write',
+                    clockDomain='controller_boot_millis', entries=selected,
+                    oldestSequence=oldest, latestSequence=latest,
+                    gap=bool(cursor and (cursor < oldest-1 or cursor > latest)),
+                    hasMore=bool(selected and selected[-1]['sequence'] < latest)))
+            return original(request, timeout)
+        port.opener = type('Pages', (), {'open': staticmethod(open_page)})()
+        return port, device, store
+
+    def test_compact_preflight_empty_tail_and_execute(self):
+        port, device, store = self.setup_port()
+        port.preflight()
+        port.check_idle()
+        result = port.execute(pulse('shoulder', 'down', 20, 250), lambda: None)
+        self.assertTrue(result['offVerified'])
+        self.assertTrue(any(e['pwm'] == -51 for e in result['outputTrace']))
+        self.assertTrue(any(path == '/collection_status' for path, _ in device.requests))
+        self.assertFalse(any(path == '/status' for path, _ in device.requests))
+        self.assertEqual(sum(body == {'action': 'run'} for _, body in device.requests), 1)
+
+    def test_bootstrap_retained_ring_then_page_gap_rejected(self):
+        port, device, _ = self.setup_port()
+        for i in range(150): device.append(i % 5 + 1, 0)
+        port.preflight()
+        self.assertEqual(port.last_sequence, 155)
+        for i in range(129): device.append(i % 5 + 1, 0)
+        with self.assertRaisesRegex(ValueError, 'gap'): port.check_idle()
+
+    def test_quiet_later_page_nonzero_rejected(self):
+        port, device, _ = self.setup_port();port.preflight()
+        for _ in range(8): device.append(4, 0)
+        device.append(4, -20);device.append(4, 0)
+        with self.assertRaisesRegex(ValueError, 'quiet'): port.check_idle()
+
+    def test_paged_boot_identity_change_rejected(self):
+        port, device, _ = self.setup_port();port.preflight();device.boot='other'
+        with self.assertRaisesRegex(ValueError, 'identity'): port.check_idle()
+
+    def test_page_drain_shares_timeout(self):
+        port, device, _ = self.setup_port()
+        port.preflight()
+        for i in range(24): device.append(i % 5 + 1, 0)
+        original = port.opener.open
+        def slow(request, timeout):
+            if '/action_outputs?' in request.full_url: device.clock.now += .4
+            return original(request, timeout)
+        port.opener.open = slow
+        with self.assertRaisesRegex(TimeoutError, 'deadline'): port.check_idle()
+        self.assertTrue(all(body is None for _, body in device.requests))
+
+    def test_active_drain_cannot_use_initial_bootstrap_budget(self):
+        port, device, _ = self.setup_port()
+        port._active_pulse = pulse('shoulder', 'down', 20, 250)
+        port.may_have_run = True
+        port.writes_possible = True
+        for i in range(24): device.append(i % 5 + 1, 0)
+        original = port.opener.open
+        def delayed(request, timeout):
+            if '/action_outputs?' in request.full_url: device.clock.now += .4
+            return original(request, timeout)
+        port.opener.open = delayed
+        with self.assertRaisesRegex(TimeoutError, 'deadline'): port._outputs()
+
+    def test_initial_full_ring_accepts_normal_page_latency(self):
+        port, device, _ = self.setup_port()
+        for i in range(150): device.append(i % 5 + 1, 0)
+        original = port.opener.open
+        def delayed(request, timeout):
+            if '/action_outputs?' in request.full_url:
+                self.assertLessEqual(timeout, .8)
+                device.clock.now += .05
+            return original(request, timeout)
+        port.opener.open = delayed
+        port.preflight()
+        self.assertEqual(port.last_sequence, 155)
+        self.assertTrue(port.off_verified)
+        self.assertTrue(all(body is None for _, body in device.requests))
+
+    def test_initial_full_ring_still_has_four_second_limit(self):
+        port, device, _ = self.setup_port()
+        for i in range(150): device.append(i % 5 + 1, 0)
+        original = port.opener.open
+        def delayed(request, timeout):
+            if '/action_outputs?' in request.full_url:
+                self.assertLessEqual(timeout, .8)
+                device.clock.now += .3
+            return original(request, timeout)
+        port.opener.open = delayed
+        with self.assertRaisesRegex(TimeoutError, 'deadline'): port.preflight()
+        self.assertTrue(all(body is None for _, body in device.requests))
+
+    def test_missing_schema_fails_before_write(self):
+        port, device, _ = self.setup_port()
+        original=port.opener.open
+        port.opener.open=lambda request,timeout: (Response(device.status())
+            if '/collection_status' in request.full_url else original(request,timeout))
+        with self.assertRaisesRegex(ValueError, 'schema'): port.preflight()
+        self.assertTrue(all(body is None for _, body in device.requests))
+
+    def test_cross_page_time_regression_rejected(self):
+        port, device, _ = self.setup_port();port.preflight()
+        device.append(4, 0);device.entries[-1]['atMs']=0
+        with self.assertRaisesRegex(ValueError, 'time_regressed'): port.check_idle()
+
+
 if __name__ == '__main__': unittest.main()

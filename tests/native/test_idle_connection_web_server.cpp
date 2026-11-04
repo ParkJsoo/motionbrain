@@ -10,11 +10,19 @@ struct Server : IdleConnectionWebServer {
   }
 };
 int main() {
+  // A request recovered by a 239-281 ms TCP retransmission remains admissible.
+  {
+    Server recovery; auto client=std::make_shared<ClientState>();
+    recovery.seed(client,0); now=300; recovery.handleClient();
+    assert(client->stops==0);
+    client->bytes=32; recovery.handleClient();
+    assert(recovery.handled==1 && client->stops==0);
+  }
   Server s; auto idle=std::make_shared<ClientState>();
   auto request=std::make_shared<ClientState>(); request->bytes=32;
   s.seed(idle,1000); s.pending.push_back(request);
-  now=1099; s.handleClient(); assert(idle->stops==0 && s.handled==0);
-  now=1100; s.handleClient(); assert(idle->stops==1 && s.idleConnectionReleases()==1);
+  now=1499; s.handleClient(); assert(idle->stops==0 && s.handled==0);
+  now=1500; s.handleClient(); assert(idle->stops==1 && s.idleConnectionReleases()==1);
   s.handleClient(); assert(s.handled==1 && request->stops==0);
   // An old connection with request bytes is still parsed normally.
   auto data=std::make_shared<ClientState>(); data->bytes=1;
@@ -26,11 +34,11 @@ int main() {
   s.seed(closing,0,HC_WAIT_CLOSE); s.handleClient(); assert(closing->stops==0);
   // Unsigned 32-bit elapsed time across millis wraparound.
   auto wrapped=std::make_shared<ClientState>(); s.seed(wrapped,0xfffffff0u);
-  now=83; s.handleClient(); assert(wrapped->stops==0);
-  now=84; s.handleClient(); assert(wrapped->stops==1 && s.idleConnectionReleases()==2);
+  now=483; s.handleClient(); assert(wrapped->stops==0);
+  now=484; s.handleClient(); assert(wrapped->stops==1 && s.idleConnectionReleases()==2);
   // Two queued empty connections each get their own first-byte window.
   auto a=std::make_shared<ClientState>(), b=std::make_shared<ClientState>();
-  s.pending={a,b}; now=200; s.handleClient(); now=300; s.handleClient();
-  now=350; s.handleClient(); now=449; s.handleClient(); assert(b->stops==0);
-  now=450; s.handleClient(); assert(a->stops==1 && b->stops==1);
+  s.pending={a,b}; now=2000; s.handleClient(); now=2500; s.handleClient();
+  now=2550; s.handleClient(); now=3049; s.handleClient(); assert(b->stops==0);
+  now=3050; s.handleClient(); assert(a->stops==1 && b->stops==1);
 }

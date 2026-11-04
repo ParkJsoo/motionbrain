@@ -26,6 +26,6 @@ const bounded::Executor* executor();
 bounded::SubmitResult submit(const bounded::Request& request);
 void appendStatusJson(String& json);
 void appendRecordJson(String& json, const bounded::Record& record);
-void appendOutputJson(String& json);
+void appendOutputJson(String& json, bool paged = false, uint32_t after = 0, size_t limit = 8);
 }
 #endif

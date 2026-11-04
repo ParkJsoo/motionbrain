@@ -128,8 +128,8 @@ function paintEvidence(at){
   const seen=new Set();let status=null,statusAt=null;
   for(const event of events){
     if(event.kind==='command'){const pulse=event.pulse||{};addRow(commands,[displayTime(event.at),`${jointNames[pulse.joint]||pulse.joint||session.joint} · ${directionNames[pulse.direction]||pulse.direction||'—'}`,`${text(pulse.percent)}% / ${text(pulse.durationMs)} ms`]);}
-    if(event.kind==='http'&&event.path==='/status'){status=event.response;statusAt=event.at;}
-    if(event.kind==='http'&&event.path==='/action_outputs'){
+    if(event.kind==='http'&&['/status','/collection_status'].includes(event.path)){status=event.response;statusAt=event.at;}
+    if(event.kind==='http'&&event.path?.split('?')[0]==='/action_outputs'){
       for(const output of event.response?.entries||[]){
         if(!Number.isInteger(session.outputBaselineSequence)||!Number.isInteger(output.sequence)||output.sequence<=session.outputBaselineSequence)continue;
         const key=JSON.stringify([output.sequence,output.motor,output.atMs,output.pwm]);if(seen.has(key))continue;seen.add(key);
