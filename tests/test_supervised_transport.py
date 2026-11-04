@@ -258,7 +258,7 @@ class TransportTests(unittest.TestCase):
                 self.assertEqual(sum(n.endswith('-attempt-2-intent.json') for n in store.rows), 1)
                 self.assertTrue(all(payload is None for _, payload in device.requests))
 
-    def test_extended_quiet_status_only_and_no_timeout_retry(self):
+    def test_extended_quiet_status_and_outputs_without_timeout_retry(self):
         port, device, store = self.setup_port(); port.preflight(); original=device.open; seen=[]
         def inspect(request, timeout):
             path=urllib.parse.urlsplit(request.full_url).path;seen.append((path,timeout))
@@ -268,7 +268,8 @@ class TransportTests(unittest.TestCase):
         port.check_idle(allow_quiet_disconnect_retry=True, allow_quiet_monitor_timeout=True)
         self.assertEqual(seen[0],('/status',1.5))
         self.assertTrue(any(v.get('path')=='/status' and v.get('timeoutSeconds')==1.5 for v in store.rows.values()))
-        self.assertTrue(all(t <= .8 for p,t in seen if p != '/status'))
+        self.assertTrue(all(t <= 1.5 for p,t in seen))
+        self.assertTrue(any(p == '/action_outputs' and t == 1.5 for p,t in seen))
         self.assertTrue(port.off_verified)
         seen.clear();port.check_idle();self.assertEqual(seen[0],('/status',.8))
         for error in (TimeoutError(), http.client.RemoteDisconnected()):
@@ -292,7 +293,7 @@ class TransportTests(unittest.TestCase):
             self.assertEqual(timeouts,[.8])
         port, device, _=self.setup_port();port.preflight()
         with self.assertRaises(ValueError): port.check_idle(allow_quiet_monitor_timeout=True)
-        for path,payload,kwargs in (('/status',None,{}),('/action_outputs',None,{}),
+        for path,payload,kwargs in (('/status',None,{}),('/sequence',None,{}),
                 ('/status',None,{'emergency':True}),('/command',{'cmd':'stop'},{})):
             with self.subTest(path=path,kwargs=kwargs):
                 port._quiet_retry_off_proof = path != '/status' or bool(kwargs)
@@ -629,6 +630,22 @@ class CompactTransportTests(unittest.TestCase):
         port.opener.open = slow
         with self.assertRaisesRegex(TimeoutError, 'deadline'): port.check_idle()
         self.assertTrue(all(body is None for _, body in device.requests))
+
+    def test_extended_quiet_output_drain_has_one_shared_budget_and_no_retry(self):
+        port, device, store = self.setup_port(); port.preflight()
+        for i in range(16): device.append(i % 5 + 1, 0)
+        original = port.opener.open; seen = []
+        def slow(request, timeout):
+            if '/action_outputs?' in request.full_url:
+                seen.append(timeout); device.clock.now += .9
+            return original(request, timeout)
+        port.opener.open = slow
+        with self.assertRaisesRegex(TimeoutError, 'deadline'):
+            port.check_idle(allow_quiet_disconnect_retry=True, allow_quiet_monitor_timeout=True)
+        self.assertEqual(len(seen), 2)
+        self.assertAlmostEqual(seen[0], 1.5); self.assertAlmostEqual(seen[1], .59)
+        self.assertFalse(port.off_verified)
+        self.assertFalse(any('attempt-2' in name for name in store.rows))
 
     def test_active_drain_cannot_use_initial_bootstrap_budget(self):
         port, device, _ = self.setup_port()

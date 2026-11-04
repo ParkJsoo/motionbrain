@@ -156,11 +156,12 @@ class SequencePort:
         if type(quiet_monitor_timeout) is not bool:
             raise ValueError('quiet_monitor_timeout_invalid')
         if quiet_monitor_timeout and not (self._quiet_retry_off_proof and self._active_pulse is None
-                and not self.evidence_failed and endpoint in ('/status', '/collection_status')
-                and payload is None and not emergency and not run and request_timeout is None):
+                and not self.evidence_failed and endpoint in ('/status', '/collection_status', '/action_outputs')
+                and payload is None and not emergency and not run
+                and (request_timeout is None or endpoint == '/action_outputs')):
             raise ValueError('quiet_monitor_timeout_scope')
-        budget = max(self.timeout, 1.5) if quiet_monitor_timeout else (
-            self.timeout if request_timeout is None else min(self.timeout, request_timeout))
+        maximum = max(self.timeout, 1.5) if quiet_monitor_timeout else self.timeout
+        budget = maximum if request_timeout is None else min(maximum, request_timeout)
         if budget <= 0:
             raise TimeoutError('request_deadline')
         self.serial += 1
@@ -334,10 +335,12 @@ class SequencePort:
         bootstrap = self.last_sequence is None
         # Initial retained-ring loading occurs before any collector write. It
         # may need sixteen small responses; each still has the original HTTP
-        # deadline. Once a cursor exists, every drain keeps the .8s budget.
+        # deadline. Once a cursor exists, active/default drains keep the .8s budget.
+        # Explicit quiet monitoring may use the existing 1.5s status budget.
         bootstrap_budget = (bootstrap and self._active_pulse is None
                             and not self.may_have_run and not self.writes_possible)
-        drain_budget = 4. if bootstrap_budget else self.timeout
+        extended_quiet = kwargs.get('quiet_monitor_timeout') is True
+        drain_budget = 4. if bootstrap_budget else (max(self.timeout, 1.5) if extended_quiet else self.timeout)
         new = []
         pages = []
         # A full ring fits in sixteen pages. Both elapsed time and page count
@@ -428,7 +431,8 @@ class SequencePort:
             status = self._status(quiet_disconnect_retry=self._quiet_retry_off_proof and not extended,
                                   quiet_monitor_timeout=extended)
             self._check_status(status, 'IDLE')
-            self._outputs(quiet=True, quiet_disconnect_retry=self._quiet_retry_off_proof)
+            self._outputs(quiet=True, quiet_disconnect_retry=self._quiet_retry_off_proof and not extended,
+                          quiet_monitor_timeout=extended)
             if self.last_outputs != {i: 0 for i in range(1, 6)}:
                 raise ValueError('driver_off_not_proven')
             self.off_verified = True
