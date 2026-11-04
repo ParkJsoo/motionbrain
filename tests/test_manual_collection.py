@@ -41,7 +41,7 @@ class Port:
         Port.instances.append(self)
     def _call(self, path): return {'bootId': 'a'*32}
     def preflight(self): return {}
-    def check_idle(self, *, allow_quiet_disconnect_retry=False):
+    def check_idle(self, *, allow_quiet_disconnect_retry=False, allow_quiet_monitor_timeout=False):
         if self.fail_idle: raise ValueError('idle_failure')
     def execute(self, pulse, tick):
         self.executions.append(pulse)

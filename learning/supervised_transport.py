@@ -147,19 +147,26 @@ class SequencePort:
             if not emergency:
                 raise
 
-    def _call(self, path, payload=None, *, emergency=False, run=False, quiet_disconnect_retry=False, request_timeout=None):
+    def _call(self, path, payload=None, *, emergency=False, run=False, quiet_disconnect_retry=False, request_timeout=None, quiet_monitor_timeout=False):
         endpoint = urllib.parse.urlsplit(path).path
         if endpoint not in ('/status', '/collection_status', '/sequence', '/actions', '/action_outputs', '/command', '/motor'):
             raise ValueError('unsupported_endpoint')
         if '?' in path and (endpoint != '/action_outputs' or payload is not None):
             raise ValueError('unsupported_endpoint')
-        budget = self.timeout if request_timeout is None else min(self.timeout, request_timeout)
+        if type(quiet_monitor_timeout) is not bool:
+            raise ValueError('quiet_monitor_timeout_invalid')
+        if quiet_monitor_timeout and not (self._quiet_retry_off_proof and self._active_pulse is None
+                and not self.evidence_failed and endpoint in ('/status', '/collection_status')
+                and payload is None and not emergency and not run and request_timeout is None):
+            raise ValueError('quiet_monitor_timeout_scope')
+        budget = max(self.timeout, 1.5) if quiet_monitor_timeout else (
+            self.timeout if request_timeout is None else min(self.timeout, request_timeout))
         if budget <= 0:
             raise TimeoutError('request_deadline')
         self.serial += 1
         name = f'http-{self.serial:06d}'
         event = {'path': path, 'method': 'GET' if payload is None else 'POST',
-                 'payload': payload, 'startedAt': self.clock.monotonic()}
+                 'payload': payload, 'startedAt': self.clock.monotonic(), 'timeoutSeconds': budget}
         # No token/header is ever persisted. Intent must be durable before any
         # normal write; emergency cleanup proceeds even when storage is broken.
         self._save(name + '-intent.json', event, emergency)
@@ -399,12 +406,16 @@ class SequencePort:
             raise
         return snapshot
 
-    def check_idle(self, *, allow_quiet_disconnect_retry=False):
+    def check_idle(self, *, allow_quiet_disconnect_retry=False, allow_quiet_monitor_timeout=False):
         """Read-only quiet-window check; caller controls the polling frequency.
 
         Only the manual session's idle monitor opts into one disconnect recovery.
         Finalization and existing collection paths retain single-attempt reads.
         """
+        if type(allow_quiet_monitor_timeout) is not bool:
+            raise ValueError('quiet_monitor_timeout_invalid')
+        if allow_quiet_monitor_timeout and allow_quiet_disconnect_retry is not True:
+            raise ValueError('quiet_monitor_timeout_scope')
         # A prior OFF proof enables transport recovery, never certification of a
         # new quiet window. A failed fresh read still permits emergency cleanup.
         self._quiet_retry_off_proof = (allow_quiet_disconnect_retry is True
@@ -413,7 +424,9 @@ class SequencePort:
         self._finished = False
         self.off_verified = False
         try:
-            status = self._status(quiet_disconnect_retry=self._quiet_retry_off_proof)
+            extended = allow_quiet_monitor_timeout and self._quiet_retry_off_proof
+            status = self._status(quiet_disconnect_retry=self._quiet_retry_off_proof and not extended,
+                                  quiet_monitor_timeout=extended)
             self._check_status(status, 'IDLE')
             self._outputs(quiet=True, quiet_disconnect_retry=self._quiet_retry_off_proof)
             if self.last_outputs != {i: 0 for i in range(1, 6)}:

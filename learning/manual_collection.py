@@ -209,7 +209,7 @@ class ManualCollection:
                 self.finish()
                 return
             self.camera.check()
-            self.port.check_idle(allow_quiet_disconnect_retry=True)
+            self.port.check_idle(allow_quiet_disconnect_retry=True, allow_quiet_monitor_timeout=True)
             self.last_poll = self.clock.monotonic()
         except Exception:
             self.current['error'] = 'recording_or_controller_monitor_failed'
