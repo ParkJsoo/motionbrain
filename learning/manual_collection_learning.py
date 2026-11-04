@@ -79,7 +79,7 @@ def predict(model,image,command):
     return float(predict_matrix(model,[image_features(image,command)])[0])
 
 
-def load_verified(index_path,dataset_path):
+def load_verified(index_path,dataset_path, *, minimum_rows=3):
     dataset_path=Path(dataset_path);raw=_read(dataset_path.parent,dataset_path.name)
     saved=_decode_json(raw);stripped=copy.deepcopy(saved)
     for row in stripped['rows']:
@@ -101,10 +101,11 @@ def load_verified(index_path,dataset_path):
                     and digest(image.tobytes())==frame['pixelSha256'],'png_pixels_changed')
             if section=='inputs':images.append(image)
         rows.append(row)
-    require(len(rows)>=3,'at_least_three_eligible_records_required')
-    require(len({r['captureGroup'] for r in rows})==1,'single_development_group_required')
-    require(all(r['inputs']['command']==rows[0]['inputs']['command'] for r in rows),'single_command_required')
-    require(all(im.shape==images[0].shape for im in images),'image_shape_changed')
+    require(type(minimum_rows) is int and minimum_rows>=0,'minimum_rows_invalid')
+    require(len(rows)>=minimum_rows,'insufficient_eligible_records')
+    require(not rows or len({r['captureGroup'] for r in rows})==1,'single_development_group_required')
+    require(not rows or all(r['inputs']['command']==rows[0]['inputs']['command'] for r in rows),'single_command_required')
+    require(not images or all(im.shape==images[0].shape for im in images),'image_shape_changed')
     return saved,rows,images,digest(raw)
 
 
@@ -174,4 +175,73 @@ def export(index_path,dataset_path,output):
     result=run(index_path,dataset_path)
     store.write_json('model.json',result['model'])
     store.write_json('development-evaluation.json',result)
+    return result
+
+
+def frozen_evaluate(index_path,dataset_path,training_index,training_dataset,training_report,model_path,plan_path):
+    """Replay new pre-command inputs against an immutable, previously fitted model."""
+    def read(path):
+        path=Path(path);raw=_read(path.parent,path.name)
+        return _decode_json(raw),digest(raw)
+    plan,plan_hash=read(plan_path);model,model_hash=read(model_path);report,report_hash=read(training_report)
+    require(model_hash==plan.get('modelSha256') and model==report.get('model'),'locked_model_or_report_changed')
+    require(plan.get('retrain') is False and plan.get('stopOnFailure') is True
+            and type(plan.get('maximumAttempts')) is int and plan['maximumAttempts']>0,'locked_plan_policy')
+    require(plan['command']==model['supportedCommand'],'locked_command_changed')
+    require(report.get('schemaVersion')==SCHEMA and report.get('trainingPerformed') is True
+            and report.get('controlEligible') is False and report.get('independentTest') is False,'training_report_contract')
+    trained,old_rows,_,old_hash=load_verified(training_index,training_dataset)
+    require(old_hash==model.get('datasetSha256')==report.get('datasetSha256')
+            and trained['indexSha256']==model.get('indexSha256')==report.get('indexSha256'),'training_source_changed')
+    require(model['fitRows']==len(old_rows) and model['captureGroup']==report['captureGroup']
+            ==old_rows[0]['captureGroup'],'training_group_changed')
+    require(model['labelPolicy']==trained['policy']
+            and model['cameraIdentity']==old_rows[0]['evidence']['cameraIdentity'],'training_context_changed')
+    require(all(r['inputs']['command']==model['supportedCommand'] for r in old_rows),'training_command_changed')
+    require(set(report['diagnostics']['folds'][i]['heldOutSessionId'] for i in range(len(report['diagnostics']['folds'])))
+            =={r['sessionId'] for r in old_rows},'training_membership_changed')
+    # Check model contract even when no new record is eligible; no fit is invoked.
+    predict_matrix(model,[model['mean']])
+    saved,rows,images,dataset_hash=load_verified(index_path,dataset_path,minimum_rows=0)
+    require(saved['policy']==model['labelPolicy'],'followup_label_policy_changed')
+    require(0<saved['counts']['listed']<=plan['maximumAttempts'],'followup_attempt_limit')
+    groups={r['captureGroup'] for r in saved['rows']}
+    require(len(groups)==1 and model['captureGroup'] not in groups,'followup_group_must_be_new')
+    old_ids={r['sessionId'] for r in old_rows}
+    old_episodes={(r['evidence']['controllerBootId'],r['evidence']['commandId']) for r in old_rows}
+    old_sources={r['source']['sessionSha256'] for r in old_rows}
+    halted=False
+    for row in saved['rows']:
+        require(not halted,'attempt_after_followup_failure')
+        if row['status']!='eligible':halted=True
+        require(row['source']['sessionSha256'] not in old_sources,'training_session_reused')
+    predictions=[]
+    for row,image in zip(rows,images):
+        require(row['sessionId'] not in old_ids and
+                (row['evidence']['controllerBootId'],row['evidence']['commandId']) not in old_episodes,'training_episode_reused')
+        require(row['evidence']['cameraIdentity']==model['cameraIdentity'],'followup_camera_changed')
+        actual=float(row['targets']['sensorDeltaDeg'])
+        values=dict(imageRidge=predict(model,image,row['inputs']['command']),trainingMean=float(model['intercept']),noChange=0.)
+        predictions.append(dict(sessionId=row['sessionId'],actualDeltaDeg=actual,predictedDeltaDeg=values,
+            residualDeg={k:v-actual for k,v in values.items()},sensorObservation=sensor_uncertainty(row)))
+    y=[p['actualDeltaDeg'] for p in predictions]
+    return dict(schemaVersion='motionbrain.manual_frozen_evaluation.v1',status='evaluated' if rows else 'unavailable',
+        evaluationKind='offline_replay_of_pre_command_inputs',trainingPerformed=False,modelRefit=False,
+        independentTest=False,controlEligible=False,uncertaintyCalibration='unavailable',
+        modelSha256=model_hash,lockedPlanSha256=plan_hash,trainingReportSha256=report_hash,
+        trainingCodeSha256=report['reproducibility']['codeSha256'],evaluationCodeSha256=digest(Path(__file__).read_bytes()),
+        trainingDatasetSha256=old_hash,datasetSha256=dataset_hash,indexSha256=saved['indexSha256'],
+        captureGroup=next(iter(groups)),counts=copy.deepcopy(saved['counts']),excluded=copy.deepcopy(saved['excluded']),
+        rejected=[copy.deepcopy(r) for r in saved['rows'] if r['status']!='eligible'],predictions=predictions,
+        metrics={k:scores(y,[p['predictedDeltaDeg'][k] for p in predictions]) for k in
+                 ('imageRidge','trainingMean','noChange')} if rows else None,
+        unavailableReason=None if rows else 'no_eligible_followup_records',
+        temporalOrderVerified=False,
+        limitation='disjoint_same_setup_group_temporal_order_not_independently_verified')
+
+
+def export_frozen(index_path,dataset_path,training_index,training_dataset,training_report,model_path,plan_path,output):
+    store=ArtifactStore(Path(output))
+    result=frozen_evaluate(index_path,dataset_path,training_index,training_dataset,training_report,model_path,plan_path)
+    store.write_json('frozen-evaluation.json',result)
     return result

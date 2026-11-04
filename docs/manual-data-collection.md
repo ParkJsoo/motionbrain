@@ -195,3 +195,25 @@ python3 tools/train_manual_collection.py \
 | 영상·명령 ridge | 0.1050° | 0.1308° |
 
 영상 모델과 평균 기준의 차이는 사실상 없었다. 영상 특징의 예측 기여나 실제 각도 정확도가 개선됐다는 근거로 표현하지 않는다. 고정 스케일의 매우 작은 모델과 좁은 자세·동일 명령 네 기록으로 첫 파이프라인을 연결한 결과다. 전체 네 기록으로 학습한 모델과 각 제외 회차의 모델을 저장했으며, 원본 데이터셋의 생성 기록은 그대로 보존했다. 다음에는 같은 설정의 추가 수집을 별도 묶음으로 유지해 이후 기록에서 확인하고, 후보 명령 선택을 위해서는 다른 명령 조건의 자료가 별도로 필요하다.
+
+## 고정 모델의 후속 기록 평가
+
+첫 모델을 저장한 뒤 새 기록을 별도 촬영 그룹으로 수집하고, 기존 모델과 기존 학습 평균을 고정해 비교한다. 새 기록의 정답으로 모델을 다시 학습하거나 평균 기준을 갱신하지 않는다. 명령 전 영상과 예정 명령으로 저장 모델을 호출하는 사후 재생 평가이며, 구동 전에 실시간 예측을 제시하거나 모델이 명령을 선택한 실험은 아니다.
+
+새 기록의 원본·영상 검증과 함께 학습 기록과의 중복, 촬영 조건·라벨 정책·명령의 일치를 확인한다. 성공 기록이 적어도 전체 시도·거부·제외 분모를 보존하며, 유효 자료가 없으면 성능 수치를 생성하지 않는다. 같은 장치·카메라 설정에서 뒤이어 얻은 자료이므로 독립 일자·시점·하중 일반화 성능으로 표현하지 않는다.
+
+```sh
+python3 tools/evaluate_manual_collection.py \
+  --index .local/manual-followup-20261104/index.json \
+  --dataset .local/manual-followup-20261104/dataset/dataset.json \
+  --training-index .local/manual-collection/first-dataset-index.json \
+  --training-dataset .local/manual-dataset-20261104/dataset-v2/dataset.json \
+  --training-report .local/manual-learning-20261104/run-02/development-evaluation.json \
+  --model .local/manual-learning-20261104/run-02/model.json \
+  --plan .local/manual-followup-20261104/locked-plan.json \
+  --output-dir .local/manual-followup-20261104/evaluation
+```
+
+이 명령은 후속 수집 색인과 검증된 데이터셋을 만든 뒤 실행한다. 고정 계획에는 기존 모델 SHA-256, 예정 명령, 최대 시도 수, 실패 시 중단과 재학습 금지를 명시한다. 출력 폴더는 새 경로여야 한다. 학습은 최소 3건 조건을 유지하고, 고정 모델 평가는 유효 1건부터 가능하다. 전건 거부라면 `unavailable`과 거부 분모를 기록한다.
+
+평가 도구 자체는 그룹·원본·실행의 중복 여부를 검사하지만, 계획 파일 작성 시점과 실제 촬영 순서를 독립적으로 증명하지 않는다(`temporalOrderVerified=false`). 실제 후속 수집 순서는 별도의 실행 기록으로 확인해야 한다. 현재 고정 모델 평가 경로는 소프트웨어 테스트까지 완료한 단계이며, 새 실물 기록에 대한 평가는 수집 후 수행한다.

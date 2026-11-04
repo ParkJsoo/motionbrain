@@ -126,5 +126,83 @@ class LearningTests(unittest.TestCase):
                 self.assertTrue((root/'output/model.json').exists())
                 with self.assertRaises(StorageError):m.export(root/'index.json',path,root/'output')
 
+    def frozen_fixture(self,root,count=1):
+        old,images=rows_images()
+        for i,row in enumerate(old):
+            row.update(source=dict(sessionSha256=str(i)*64),evidence=dict(controllerBootId='boot',commandId=str(i),cameraIdentity={'view':'fixed'}))
+        policy={'fixed':True};trained=dict(policy=policy,indexSha256='a'*64)
+        model=m.evaluate(old,images)['model'];model.update(datasetSha256='b'*64,indexSha256='a'*64,
+            captureGroup='one',labelPolicy=policy,cameraIdentity={'view':'fixed'})
+        report=dict(schemaVersion=m.SCHEMA,trainingPerformed=True,controlEligible=False,independentTest=False,
+            datasetSha256='b'*64,indexSha256='a'*64,captureGroup='one',model=model,
+            diagnostics=dict(folds=[dict(heldOutSessionId=r['sessionId']) for r in old]),reproducibility=dict(codeSha256='code'))
+        model_path=root/'model.json';model_path.write_text(json.dumps(model))
+        report_path=root/'report.json';report_path.write_text(json.dumps(report))
+        plan=root/'plan.json';plan.write_text(json.dumps(dict(modelSha256=m.digest(model_path.read_bytes()),
+            retrain=False,stopOnFailure=True,maximumAttempts=3,command=COMMAND)))
+        new=copy.deepcopy(old[:count]);new_images=images[:count]
+        for i,row in enumerate(new):
+            row.update(sessionId='new'+str(i),captureGroup='followup',source=dict(sessionSha256='e'+str(i)*63))
+            row['evidence']['commandId']='new'+str(i)
+        saved=dict(policy=policy,indexSha256='c'*64,rows=new,counts=dict(listed=count,eligible=count,rejected=0),excluded=[])
+        loaded=[(trained,old,images,'b'*64),(saved,new,new_images,'d'*64)]
+        args=(root/'index',root/'dataset',root/'train-index',root/'train-dataset',report_path,model_path,plan)
+        return loaded,args
+
+    def test_frozen_one_row_never_fits_and_new_label_does_not_change_prediction(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            loaded,args=self.frozen_fixture(Path(tmp))
+            def run():
+                with patch.object(m,'load_verified',side_effect=loaded),patch.object(m,'fit',side_effect=AssertionError('refit')),patch.object(m,'evaluate',side_effect=AssertionError('refit')):
+                    return m.frozen_evaluate(*args)
+            a=run();loaded[1][1][0]['targets']['sensorDeltaDeg']=-20.;b=run()
+            self.assertEqual(a['predictions'][0]['predictedDeltaDeg'],b['predictions'][0]['predictedDeltaDeg'])
+            self.assertEqual(a['counts']['eligible'],1);self.assertFalse(a['trainingPerformed'])
+            self.assertEqual(a['evaluationKind'],'offline_replay_of_pre_command_inputs')
+            self.assertFalse(a['temporalOrderVerified'])
+            self.assertIn('temporal_order_not_independently_verified',a['limitation'])
+            self.assertAlmostEqual(a['predictions'][0]['predictedDeltaDeg']['trainingMean'],-1.2975)
+
+    def test_frozen_empty_eligible_preserves_failed_denominator(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            loaded,args=self.frozen_fixture(Path(tmp),0)
+            failed=dict(status='rejected',captureGroup='followup',source=dict(sessionSha256='f'*64),reason='capture_failed')
+            loaded[1][0].update(rows=[failed],counts=dict(listed=1,eligible=0,rejected=1),excluded=[dict(reason='unstarted')])
+            with patch.object(m,'load_verified',side_effect=loaded),patch.object(m,'fit',side_effect=AssertionError('refit')):
+                result=m.frozen_evaluate(*args)
+            self.assertEqual(result['status'],'unavailable');self.assertIsNone(result['metrics'])
+            self.assertEqual(result['counts']['rejected'],1);self.assertEqual(result['predictions'],[])
+
+    def test_frozen_source_contract_and_overlap_rejected(self):
+        mutations=[('training_episode',lambda r:r.update(sessionId='0')),
+            ('training_episode',lambda r:r['evidence'].update(commandId='0')),
+            ('camera',lambda r:r['evidence'].update(cameraIdentity={'view':'other'})),
+            ('command',lambda r:r['inputs']['command'].update(percent=26)),
+            ('group',lambda r:r.update(captureGroup='one')),
+            ('session_reused',lambda r:r['source'].update(sessionSha256='0'*64))]
+        for reason,mutate in mutations:
+            with self.subTest(reason=reason),tempfile.TemporaryDirectory() as tmp:
+                loaded,args=self.frozen_fixture(Path(tmp));mutate(loaded[1][1][0])
+                with patch.object(m,'load_verified',side_effect=loaded),self.assertRaisesRegex(ValueError,reason):m.frozen_evaluate(*args)
+
+    def test_frozen_model_hash_and_report_binding_rejected(self):
+        for target in ('model','report'):
+            with self.subTest(target=target),tempfile.TemporaryDirectory() as tmp:
+                loaded,args=self.frozen_fixture(Path(tmp));p=args[5 if target=='model' else 4]
+                data=json.loads(p.read_text())
+                if target=='model':data['intercept']+=1
+                else:data['model']['intercept']+=1
+                p.write_text(json.dumps(data))
+                with patch.object(m,'load_verified',side_effect=loaded),self.assertRaisesRegex(ValueError,'locked_model'):m.frozen_evaluate(*args)
+
+    def test_verified_loader_allows_one_only_when_explicit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);saved,rebuilt,path=self.fixture(root)
+            for d in (saved,rebuilt):d['rows']=d['rows'][:1];d['counts']=dict(listed=1,eligible=1,rejected=0)
+            path.write_text(json.dumps(saved))
+            with patch.object(m,'build_dataset',return_value=rebuilt):
+                with self.assertRaisesRegex(ValueError,'insufficient'):m.load_verified(root/'index',path)
+                self.assertEqual(len(m.load_verified(root/'index',path,minimum_rows=0)[1]),1)
+
 
 if __name__=='__main__':unittest.main()
