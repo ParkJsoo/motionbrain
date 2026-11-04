@@ -242,6 +242,22 @@ class ManualCollectionTests(unittest.TestCase):
         replay=other.session(sid)
         self.assertEqual([event for event in replay['events'] if event['kind']=='http_retry'], retries)
 
+    def test_four_fps_reduces_budget_and_default_eight_stays_compatible(self):
+        manager = ManualCollection(self.root, self.helper, 'http://127.0.0.1', 'secret', 'camera',
+                                   clock=self.clock, camera_factory=Camera, port_factory=Port, sample_fps=4,
+                                   journal_path=self.root/'four-fps-journal.sqlite')
+        try:
+            manager.start(dict(joint='wrist', poseContext='fixed', onsiteConfirmed=True))
+            camera = manager.camera.plan
+            self.assertEqual(camera['sampleFps'], 4)
+            self.assertEqual(camera['maxFrames'], 260)
+            self.assertEqual(camera['maxBytes'], 260*(1920*1080*4+65536))
+        finally:
+            manager.close()
+        for value in (True, 2, 30):
+            with self.assertRaisesRegex(ValueError, 'sample_fps'):
+                ManualCollection(self.root, self.helper, 'http://127.0.0.1', 'secret', 'camera', sample_fps=value)
+
     def test_path_traversal_rejected(self):
         with self.assertRaises(ValueError): self.manager.session('../outside')
 

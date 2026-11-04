@@ -191,6 +191,7 @@ def main(argv=None):
     parser.add_argument('--helper', type=Path, required=True)
     parser.add_argument('--view-id', default='manual')
     parser.add_argument('--port', type=int, default=8765)
+    parser.add_argument('--sample-fps', type=int, choices=(4, 8), default=8)
     parser.add_argument('--output-dir', type=Path, default=ROOT/'.local/manual-collection')
     args = parser.parse_args(argv)
     output = args.output_dir.resolve()
@@ -198,7 +199,7 @@ def main(argv=None):
         parser.error('output-dir must be inside repository .local/')
     token = os.environ.get('MOTIONBRAIN_HTTP_TOKEN', '')
     from learning.manual_collection import ManualCollection
-    manager = ManualCollection(output, args.helper, args.controller_url, token, args.device_id, args.view_id)
+    manager = ManualCollection(output, args.helper, args.controller_url, token, args.device_id, args.view_id, sample_fps=args.sample_fps)
     server = None
     def terminate(signum, frame):
         # Run cleanup on the owning main thread; never dispatch motion on restart.

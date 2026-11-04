@@ -60,7 +60,10 @@ class RecordingPort(SequencePort):
 class ManualCollection:
     def __init__(self, root, helper, controller_url, token, device_id, view_id='manual', *,
                  journal_path=None, clock=time, camera_factory=ActionRecorder,
-                 port_factory=RecordingPort):
+                 port_factory=RecordingPort, sample_fps=8):
+        if type(sample_fps) is not int or sample_fps not in (4, 8):
+            raise ValueError('collection_sample_fps')
+        self.sample_fps = sample_fps
         self.root = Path(root).resolve()
         self.helper = Path(helper)
         self.controller_url = validate_target(controller_url)
@@ -104,7 +107,8 @@ class ManualCollection:
             raise ValueError('camera_identity_required')
         helper_hash = hashlib.sha256(self.helper.read_bytes()).hexdigest()
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
-        budget = 500 * (1920*1080*4+65536)
+        maximum_frames = self.sample_fps*60+20
+        budget = maximum_frames * (1920*1080*4+65536)
         if shutil.disk_usage(self.root).free < budget + 2*1024**3:
             raise ValueError('storage_reserve_required')
         db = self._journal()
@@ -120,7 +124,7 @@ class ManualCollection:
         self.started = self.clock.monotonic()
         plan = dict(**payload, sessionId=sid, helperSha256=helper_hash, controllerUrl=self.controller_url,
                     camera=dict(deviceId=self.device_id, sessionId=sid, viewId=self.view_id,
-                                width=1920, height=1080, maxFrames=500, seconds=60, sampleFps=8, maxBytes=budget))
+                                width=1920, height=1080, maxFrames=maximum_frames, seconds=60, sampleFps=self.sample_fps, maxBytes=budget))
         try:
             self.store.write_json('plan.json', plan)
             with db:
