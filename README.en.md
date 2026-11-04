@@ -13,7 +13,7 @@ The intended loop is `current visual state + candidate command → predict chang
 | Stage | Implementation and validation |
 | --- | --- |
 | Collection and replay | A local Mac UI selects one of M1–M5 at a time and records/replays video, planned commands, actual driver outputs, sensors and failures |
-| Datasets | Training-data conversion and validation for manual collection currently target M4. Pre-command images and planned commands are inputs; sensor change is the label |
+| Datasets | Existing sensor labels target M4. A separate M1 path uses manually annotated object/jaw state from the gripper camera. Retrospective outputs are excluded from inputs |
 | Training and evaluation | Six M4 downward conditions; models frozen after 18 training records and evaluated on 18 new records. Per-command mean MAE **0.367°** versus image-plus-command ridge **0.605°**. No benefit from the current visual representation demonstrated |
 | Candidate selection | An offline selector compares predicted residuals for supported commands and stopping. A separate M2 experiment verified projected goal approach with one model-selected command |
 | Remaining integration | Object/gripper state estimation, repeated action selection and observation toward a goal, and learned grasp/lift evaluation |
@@ -22,7 +22,7 @@ The M4 figures compare predictions with sensor labels from sequential poses on o
 
 [Latest M4 evaluation and failure denominators (Korean)](docs/evidence/2026-11-04-m4-action-prediction.md) · [M2 single-command goal approach and limits (Korean)](docs/evidence/2026-10-31-first-model-goal-approach.md) · [Learning goals and design (Korean)](docs/visual-action-learning.md)
 
-The [relative-state development path (Korean)](docs/relative-action-selection.md) connects manual image annotations to prediction and candidate ranking on two M4 transitions. A separate gripper-camera image pair can also be bound after source and timing audits. Independent evaluation, automatic state estimation and physical grasping remain unverified.
+The [relative-state development path (Korean)](docs/relative-action-selection.md) connects manual image annotations to prediction and candidate ranking on two M4 transitions. A [gripper-camera pilot (Korean)](docs/evidence/2026-11-04-gripper-relative-learning.md) trained on four M1 transitions and evaluated one new record; no-change was best on that one record. Independent evaluation, automatic state estimation and physical grasping remain unverified.
 
 ## Architecture
 

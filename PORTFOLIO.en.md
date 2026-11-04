@@ -16,7 +16,7 @@ The implemented path addresses them as follows:
 - **Execution evidence:** journal intent before dispatch and check boot identity, output sequence and all-axis output state. Uncertain commands are not automatically resent; restarting the server does not erase an incomplete journal.
 - **Datasets and evaluation:** successful storage is separate from training eligibility. The M4 path audits raw hashes, image/sensor windows and execution evidence before building datasets, and checks overlap between training and subsequent evaluation data.
 
-Pre-action models use only pre-command images and planned commands. Actual outputs and later sensor values serve execution checks, labels and retrospective analysis, preventing future-information leakage into inputs. Driver records are software PWM values, not electrical waveform measurements. The collection UI supports all joints; the dataset/training path connected to this UI is limited to M4 downward motion.
+Pre-action models use only pre-command images and planned commands. Actual outputs and later sensor values serve execution checks, labels and retrospective analysis, preventing future-information leakage into inputs. Driver records are software PWM values, not electrical waveform measurements. The collection UI supports all joints. Existing sensor-label training covers M4 downward motion; a separate M1 relative-state path uses manual gripper-camera annotations.
 
 Implementation: [collection state management](learning/manual_collection.py) · [transport and command journal](learning/supervised_transport.py) · [dataset audit](learning/manual_collection_dataset.py). [Usage, failures and validation scope (Korean)](docs/manual-data-collection.md)
 
@@ -48,7 +48,7 @@ M4 also has an offline function comparing predicted candidates against a target 
 
 [First M2 prediction evaluation (Korean)](docs/evidence/2026-10-31-first-action-prediction.md) · [Single goal approach (Korean)](docs/evidence/2026-10-31-first-model-goal-approach.md) · [Selector contract (Korean)](docs/offline-action-selection.md)
 
-The [offline relative-state path (Korean)](docs/relative-action-selection.md) connects manual object/jaw annotations on two M4 transitions to change prediction and candidate ranking. Gripper-camera transitions use a separate coordinate and timing contract. With no separate evaluation data, this verifies development plumbing only; it does not establish automatic perception or grasping.
+The [offline relative-state path (Korean)](docs/relative-action-selection.md) connects manual object/jaw annotations on two M4 transitions to change prediction and candidate ranking. A [gripper-camera pilot (Korean)](docs/evidence/2026-11-04-gripper-relative-learning.md) trained on four new M1 transitions and evaluated one later record, where no-change was best. These are small development evaluations with approximate manual annotations; they do not establish automatic perception or grasping.
 
 ## 4. Control and communication work supporting learning experiments
 
