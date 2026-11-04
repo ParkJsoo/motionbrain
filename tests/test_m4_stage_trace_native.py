@@ -67,6 +67,9 @@ class M4StageTraceNativeTest(unittest.TestCase):
         source = (ROOT / 'src/network/web_server.cpp').read_text()
         self.assertIn('server_.on("/m4_diagnostics", HTTP_GET', source)
         handler = source.split('void MotionBrainWebServer::handleM4Diagnostics()', 1)[1]
+        # Stop at the function's unindented closing brace, not a nested block
+        # or the end of the file containing unrelated HTTP handlers.
+        handler = handler.split('\n}', 1)[0]
         for mutation in ('DebugLog', 'Serial.', '.clear(', '.begin(', 'sample(', 'setSpeed', 'dispatch'):
             self.assertNotIn(mutation, handler)
         main = (ROOT / 'src/main.cpp').read_text().split('void loop()', 1)[1]
