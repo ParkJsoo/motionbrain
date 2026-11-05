@@ -16,7 +16,7 @@ The implemented path addresses them as follows:
 - **Execution evidence:** journal intent before dispatch and check boot identity, output sequence and all-axis output state. Uncertain commands are not automatically resent; restarting the server does not erase an incomplete journal.
 - **Datasets and evaluation:** successful storage is separate from training eligibility. The M4 path audits raw hashes, image/sensor windows and execution evidence before building datasets, and checks overlap between training and subsequent evaluation data.
 
-Pre-action models use only pre-command images and planned commands. Actual outputs and later sensor values serve execution checks, labels and retrospective analysis, preventing future-information leakage into inputs. Driver records are software PWM values, not electrical waveform measurements. The collection UI supports all joints. Existing sensor-label training covers M4 downward motion; a separate M1 relative-state path uses manual gripper-camera annotations.
+Pre-action models use only pre-command images and planned commands. Actual outputs and later sensor values serve execution checks, labels and retrospective analysis, preventing future-information leakage into inputs. Driver records are software PWM values, not electrical waveform measurements. The collection UI supports all joints. Existing sensor-label training covers M4 downward motion; separate M1, M2 and M5 relative-state paths use manual gripper-camera annotations.
 
 Implementation: [collection state management](learning/manual_collection.py) · [transport and command journal](learning/supervised_transport.py) · [dataset audit](learning/manual_collection_dataset.py). [Usage, failures and validation scope (Korean)](docs/manual-data-collection.md)
 

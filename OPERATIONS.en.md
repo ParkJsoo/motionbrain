@@ -103,6 +103,10 @@ Experimental `/actions` and the legacy M4 `/shoulder` executor are separate path
 
 ## Raw archives and training data
 
+Closed manual-collection sessions can be converted using the [FFV1 lossless archive and restore procedure (Korean)](docs/manual-data-collection.md). Full restoration and original compressed-file byte hashes are verified before pruning. Restore only the needed sessions to their original paths before existing replay or training tools read archived frames. An archive on the same disk is not an external backup.
+
+A separate [relative-state path (Korean)](docs/relative-action-selection.md) reaudits and trains manual gripper-camera annotations for M1, M2 and M5 under separate joint contracts. This is distinct from M4 sensor-label conversion, automatic perception and physical control support.
+
 ```sh
 python3 tools/archive_hardware_demo.py '.local/<source-phase>' 'datasets/<new-archive>' --observation placed
 ```

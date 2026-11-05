@@ -22,7 +22,7 @@ The M4 figures compare predictions with sensor labels from sequential poses on o
 
 [Latest M4 evaluation and failure denominators (Korean)](docs/evidence/2026-11-04-m4-action-prediction.md) · [M2 single-command goal approach and limits (Korean)](docs/evidence/2026-10-31-first-model-goal-approach.md) · [Learning goals and design (Korean)](docs/visual-action-learning.md)
 
-The [relative-state development path (Korean)](docs/relative-action-selection.md) connects manual image annotations to prediction and candidate ranking on two M4 transitions. A [gripper-camera pilot (Korean)](docs/evidence/2026-11-04-gripper-relative-learning.md) trained on four M1 transitions and evaluated one new record; no-change was best on that one record. Independent evaluation, automatic state estimation and physical grasping remain unverified.
+The [relative-state development path (Korean)](docs/relative-action-selection.md) connects manual image annotations to prediction and candidate ranking on two M4 transitions. A [gripper-camera pilot (Korean)](docs/evidence/2026-11-04-gripper-relative-learning.md) trained on four M1 transitions and evaluated one new record; no-change was best on that one record. Generalization to other days or loads, automatic state estimation and learned physical grasping remain unverified.
 
 A [subsequent joint-specific study (Korean)](docs/evidence/2026-11-05-multi-joint-relative-learning.md) collected 33 transitions across separate M1, M5 and M2 contracts, with 24 training and nine later evaluation records. Range rejections and large errors remain; learned grasping and lifting are unverified.
 

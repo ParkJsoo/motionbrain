@@ -22,7 +22,7 @@ M4 수치는 같은 날·같은 장치의 순차 자세에서 센서 라벨과 �
 
 [최신 M4 평가·실패 분모](docs/evidence/2026-11-04-m4-action-prediction.md) · [M2 단발 목표 접근과 한계](docs/evidence/2026-10-31-first-model-goal-approach.md) · [학습 목표·설계](docs/visual-action-learning.md)
 
-[상대 상태 개발 경로](docs/relative-action-selection.md)는 수동 영상 주석으로 M4 전이 2건의 예측·후보 계산을 연결했다. 집게 위 영상으로 [M1 전이 4건 학습·새 1건 평가](docs/evidence/2026-11-04-gripper-relative-learning.md)도 수행했으며, 그 1건에서는 무변화 기준이 최선이었다. 독립 평가·자동 상태 추정·실물 집기는 미검증이다.
+[상대 상태 개발 경로](docs/relative-action-selection.md)는 수동 영상 주석으로 M4 전이 2건의 예측·후보 계산을 연결했다. 집게 위 영상으로 [M1 전이 4건 학습·새 1건 평가](docs/evidence/2026-11-04-gripper-relative-learning.md)도 수행했으며, 그 1건에서는 무변화 기준이 최선이었다. 다른 날짜·하중의 일반화, 자동 상태 추정과 학습 정책의 실물 집기는 미검증이다.
 
 후속 [관절별 자료 확대·고정 평가](docs/evidence/2026-11-05-multi-joint-relative-learning.md)에서는 M1·M5·M2를 분리해 33건을 확보하고 24건 학습·9건 후속 평가를 수행했다. 예측 범위 거절과 큰 오차가 남아 있으며 학습 정책의 집기·들기는 미검증이다.
 

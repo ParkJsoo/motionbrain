@@ -103,6 +103,10 @@ M4 실행기는 `$XDG_STATE_HOME/motionbrain/m4_commands.sqlite3`에 영속 저�
 
 ## 원본 보관과 학습 자료
 
+종료된 수동 수집 세션은 [FFV1 무손실 보관·복원 절차](docs/manual-data-collection.md)로 저장 형식을 바꿀 수 있다. 삭제 전 전체 복원과 원래 압축 파일의 바이트 해시를 검증하며, 보관된 프레임은 기존 재생·학습 전에 필요한 세션만 원래 경로로 복원한다. 같은 디스크의 보관은 외부 백업이 아니다.
+
+별도 [상대 상태 경로](docs/relative-action-selection.md)는 M1·M2·M5의 집게 위 영상 수동 주석을 관절별로 재감사·학습한다. 센서 라벨 M4 변환과 자동 인식·실물 제어 지원 범위는 구분한다.
+
 ```sh
 python3 tools/archive_hardware_demo.py '.local/<source-phase>' 'datasets/<new-archive>' --observation placed
 ```
