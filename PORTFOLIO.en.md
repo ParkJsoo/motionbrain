@@ -50,6 +50,8 @@ M4 also has an offline function comparing predicted candidates against a target 
 
 The [offline relative-state path (Korean)](docs/relative-action-selection.md) connects manual object/jaw annotations on two M4 transitions to change prediction and candidate ranking. A [gripper-camera pilot (Korean)](docs/evidence/2026-11-04-gripper-relative-learning.md) trained on four new M1 transitions and evaluated one later record, where no-change was best. These are small development evaluations with approximate manual annotations; they do not establish automatic perception or grasping.
 
+A [subsequent joint-specific study (Korean)](docs/evidence/2026-11-05-multi-joint-relative-learning.md) collected 33 transitions across separate M1, M5 and M2 contracts, with 24 training and nine later evaluation records. Range rejections and large errors remain; learned grasping and lifting are unverified.
+
 ## 4. Control and communication work supporting learning experiments
 
 **Correcting false target success.** M4 control initially ignored inertial motion after output cutoff, returning success at 235.37° for a 234° target. Settled-error checks, bounded correction and `TARGET_MISSED` were added. Final regressions passed 11/11 each with no added load and with 23.10g, at mean absolute errors of 0.132° and 0.155°, using a fixed mount and a 230–245° range. These do not establish accuracy for the other four axes or the whole workspace. [2026-06-28 measurements, failures and corrections](docs/evidence/2026-06-28-m4-shoulder-closed-loop.en.md)
