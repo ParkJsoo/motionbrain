@@ -63,6 +63,22 @@ M4 각도와 공통 센서는 수집 전용 `/collection_status` 응답을 보�
 
 저장 완료는 학습 적격 판정이 아니다. `datasetEligible=false`, `trainingPerformed=false`를 유지하며 자동 라벨 생성·학습·모델 배포는 하지 않는다.
 
+### 종료된 세션의 무손실 보관
+
+macOS와 `ffmpeg`가 있으면 종료된 수동 수집 세션을 FFV1으로 별도 보관할 수 있다. 촬영이나 구동 없이 실행하며 원본을 삭제하지 않는다. 보관·복원 대상 폴더는 새 경로여야 한다. 원본 세션 내부에 보관본을 만들 수 없다.
+
+```sh
+python3 tools/archive_manual_session.py create \
+  .local/manual-collection/<세션> .local/session-archives/<세션>
+python3 tools/archive_manual_session.py verify .local/session-archives/<세션>
+python3 tools/archive_manual_session.py restore \
+  .local/session-archives/<세션> .local/restored-sessions/<세션>
+```
+
+프레임은 BGRA 픽셀을 보존하는 FFV1으로, 나머지 파일은 원래 바이트로 복사한다. 원래 프레임 경로·파일 해시·픽셀 해시를 별도 명세에 남긴다. 영상의 재생 시각은 프레임 색인용이며 실제 PTS와 명령 시각은 복사된 원래 JSON을 사용한다. 복원 시 LZBITMAP 파일을 다시 생성하고 **기존 압축 파일의 바이트 해시까지 일치**해야 성공한다. macOS 압축 구현 차이 등으로 같은 파일을 재현하지 못하면 실패하며, 기존 자료를 덮어쓰지 않는다.
+
+보관 생성은 전체 영상 복호화·파일 복원 해시 확인과 원본 변경 검사를 통과해야 완료된다. 종료 상태는 `completed` 또는 `failed`여야 하며 실패 세션을 학습 적격으로 바꾸지 않는다. 기존 수집·재생·학습 도구는 원래 세션이나 새로 복원한 폴더를 사용한다. 보관본 직접 읽기와 원본 자동 삭제는 지원하지 않는다. 따라서 보관본 생성만으로 디스크 공간이 줄지는 않으며, 다른 디스크의 백업을 대신하지 않는다. 보관 중에는 변환본을 위한 추가 공간이 필요하다.
+
 ```sh
 python3 -m unittest tests.test_manual_collection tests.test_manual_collection_server tests.test_manual_collection_ui
 ```
