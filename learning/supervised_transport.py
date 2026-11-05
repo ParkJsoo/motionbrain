@@ -424,7 +424,10 @@ class SequencePort:
         self._quiet_retry_off_proof = (allow_quiet_disconnect_retry is True
                                       and self.off_verified and self._active_pulse is None
                                       and not self.evidence_failed)
-        self._finished = False
+        # A new quiet window invalidates a successful finish proof, but must
+        # never re-enable cleanup writes after a failed, already attempted finish.
+        if self._finish_result:
+            self._finished = False
         self.off_verified = False
         try:
             extended = allow_quiet_monitor_timeout and self._quiet_retry_off_proof

@@ -479,6 +479,17 @@ class TransportTests(unittest.TestCase):
         self.assertFalse(port.finish());self.assertFalse(any(device.speeds.values()))
         self.assertEqual(device.default, 100);self.assertFalse(device.queue)
 
+    def test_idle_read_after_failed_cleanup_does_not_repeat_writes(self):
+        port, device, _ = self.setup_port();device.fail_stop = True
+        with self.assertRaisesRegex(ValueError, 'cleanup'):
+            port.execute(pulse(), lambda: None)
+        writes = [p for _, p in device.requests if p is not None]
+        # ManualCollection finalization checks idle before calling finish again.
+        port.check_idle()
+        self.assertFalse(port.finish())
+        self.assertEqual([p for _, p in device.requests if p is not None], writes)
+        self.assertEqual(sum(p == {'cmd': 'stop'} for p in writes), 1)
+
     def test_queue_race_prevents_arm_and_run(self):
         port, device, _ = self.setup_port();original = device.open
         def mutate(request, timeout):
