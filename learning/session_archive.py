@@ -1,5 +1,7 @@
-"""Offline FFV1 copies of closed manual sessions; never deletes source data."""
+"""Offline FFV1 archives with verified frame pruning and exact recovery."""
+from contextlib import contextmanager
 import ctypes
+import fcntl
 import hashlib
 import json
 import os
@@ -76,7 +78,8 @@ def load(root):
     if type(width) is not int or type(height) is not int or not (1 <= width <= 1920 and 1 <= height <= 1080):
         raise ValueError('archive_dimensions')
     names = [f['path'] for f in m['frames']]
-    if len(set(names)) != len(names) or any(n not in m['files'] for n in names):
+    if (len(set(names)) != len(names)
+            or any(n not in m['files'] or not n.endswith(SUFFIX) for n in names)):
         raise ValueError('archive_frame_index')
     for name, record in m['files'].items():
         safe(root / 'files', name)
@@ -222,3 +225,111 @@ def restore(archive, destination, ffmpeg='ffmpeg'):
             raise ValueError('restored_inventory_mismatch')
         publish(stage, destination)
     return dict(restoredFiles=len(m['files']), restoredFrames=len(m['frames']))
+
+
+@contextmanager
+def archive_lock(root):
+    with safe(root, '.operation.lock').open('a+b') as lock:
+        os.chmod(lock.name, 0o600)
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        yield
+
+
+def sync_directory(path):
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def sync_archive(root):
+    for path in root.rglob('*'):
+        if path.is_symlink():
+            raise ValueError('archive_symlink')
+        if path.is_file():
+            with path.open('rb') as stream:
+                os.fsync(stream.fileno())
+    directories = [p for p in root.rglob('*') if p.is_dir()]
+    # Newly created archive parents must also survive loss of power.
+    for path in sorted(directories, key=lambda p: len(p.parts), reverse=True) + [root, *root.parents]:
+        sync_directory(path)
+
+
+def source_subset(session, manifest):
+    """Only archived frames may be absent; never accept changed or extra evidence."""
+    current = inventory(session)
+    frames = {f['path'] for f in manifest['frames']}
+    expected = manifest['files']
+    if (any(name not in expected or record != expected[name] for name, record in current.items())
+            or set(expected) - set(current) - frames):
+        raise ValueError('source_differs_from_archive')
+    return current
+
+
+def prune(archive, session, ffmpeg='ffmpeg'):
+    """Fsync and fully reconstruct archive before removing only matching frame copies."""
+    root, session = Path(archive).resolve(), Path(session).resolve()
+    if root.is_relative_to(session) or session.is_relative_to(root):
+        raise ValueError('archive_source_overlap')
+    with archive_lock(root):
+        root, m = load(root)
+        current = source_subset(session, m)
+        archived = inventory(root)
+        sync_archive(root)
+        verify(root, ffmpeg)
+        if inventory(root) != archived or source_subset(session, m) != current:
+            raise ValueError('archive_or_source_changed')
+        removed = removed_bytes = 0
+        journal_path = safe(root, '.prune-journal.jsonl')
+        with journal_path.open('ab') as journal:
+            os.chmod(journal_path, 0o600)
+            sync_directory(root)
+            for frame in m['frames']:
+                name = frame['path']
+                if name not in current:
+                    continue
+                target = safe(session, name)
+                if file_record(target) != m['files'][name]:
+                    raise ValueError('source_changed_before_prune')
+                journal.write((json.dumps(dict(path=name, **m['files'][name])) + '\n').encode())
+                journal.flush()
+                os.fsync(journal.fileno())
+                target.unlink()
+                sync_directory(target.parent)
+                removed += 1
+                removed_bytes += m['files'][name]['bytes']
+        source_subset(session, m)
+    return dict(removedFrames=removed, removedBytes=removed_bytes, metadataPreserved=True)
+
+
+def restore_missing(archive, session, ffmpeg='ffmpeg'):
+    """Restore pruned frames in place, rejecting modified metadata and existing bytes."""
+    root, session = Path(archive).resolve(), Path(session).resolve()
+    if root.is_relative_to(session) or session.is_relative_to(root):
+        raise ValueError('archive_source_overlap')
+    with archive_lock(root):
+        root, m = load(root)
+        current = source_subset(session, m)
+        count = 0
+        with tempfile.TemporaryDirectory(prefix='.restore-missing-', dir=session.parent) as tmp:
+            stage = Path(tmp) / 'complete'
+            restore(root, stage, ffmpeg)
+            if source_subset(session, m) != current:
+                raise ValueError('source_changed_before_restore')
+            for frame in m['frames']:
+                name = frame['path']
+                if name in current:
+                    continue
+                target = safe(session, name)
+                origin = safe(stage, name)
+                origin.chmod(0o600)
+                with origin.open('rb') as stream:
+                    os.fsync(stream.fileno())
+                # Original metadata directories must still exist. Link never overwrites.
+                os.link(origin, target)
+                sync_directory(target.parent)
+                count += 1
+        if inventory(session) != m['files']:
+            raise ValueError('restored_inventory_mismatch')
+    return dict(restoredFrames=count, originalPathsRestored=True)
