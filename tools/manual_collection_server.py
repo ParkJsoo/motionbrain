@@ -172,6 +172,10 @@ class CollectionHandler(BaseHTTPRequestHandler):
                 result = manager.start(payload)
             elif route == '/api/pulse':
                 result = manager.pulse(payload)
+            elif route == '/api/recover-readonly':
+                if payload:
+                    raise ValueError('empty_body_required')
+                result = manager.recover_readonly()
             elif route in ('/api/finish', '/api/stop'):
                 if payload:
                     raise ValueError('empty_body_required')

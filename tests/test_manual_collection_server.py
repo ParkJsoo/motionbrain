@@ -53,6 +53,20 @@ class ServerTests(unittest.TestCase):
         for path in ('/api/config', '/api/sessions', '/api/frame?session=a&index=0'):
             self.assertEqual(self.request(path, headers={'Sec-Fetch-Site': 'cross-site'})[0], 403)
 
+    def test_readonly_recovery_requires_auth_and_empty_body_then_delegates_once(self):
+        self.manager.recover_readonly.return_value = {'sessionId': 'failed', 'offVerified': True, 'noWrites': True}
+        headers = {'Content-Type': 'application/json', 'X-Collection-Token': self.server.ui_token}
+        self.assertEqual(self.request('/api/recover-readonly', method='POST', body='{}')[0], 403)
+        self.assertEqual(self.request('/api/recover-readonly', method='POST', body='{}',
+                                     headers={**headers, 'Origin': 'https://evil.example'})[0], 403)
+        self.assertEqual(self.request('/api/recover-readonly', method='POST', body='{"sessionId":"other"}', headers=headers)[0], 409)
+        self.manager.recover_readonly.assert_not_called()
+        code, result = self.request('/api/recover-readonly', method='POST', body='{}', headers=headers)
+        self.assertEqual((code, result['noWrites']), (200, True))
+        self.manager.recover_readonly.assert_called_once_with()
+        self.manager.start.assert_not_called()
+        self.manager.pulse.assert_not_called()
+
     def test_bad_payload_and_unknown_routes_never_dispatch(self):
         headers = {'Content-Type': 'application/json', 'X-Collection-Token': self.server.ui_token}
         for payload in ('{"joint":1,"joint":2}', '{"value":NaN}', '[]', 'x'*8193):

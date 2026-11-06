@@ -23,6 +23,13 @@ SCHEMA = 'motionbrain.manual_collection.v1'
 REPO = Path(__file__).resolve().parents[1]
 
 
+def _boot_identity(capability):
+    boot = capability.get('bootId')
+    if not isinstance(boot, str) or len(boot) != 32 or any(c not in '0123456789abcdef' for c in boot):
+        raise ValueError('controller_boot_identity_invalid')
+    return boot
+
+
 class RecordingPort(SequencePort):
     """Expose already-durable transport observations for the session viewer."""
     def __init__(self, *args, observer, **kwargs):
@@ -138,13 +145,14 @@ class ManualCollection:
         self.camera = self.port = None
         try:
             self.port = self.port_factory(self.controller_url, self.token, 'discovering', self.store,
-                                          observer=self._event, clock=self.clock, compact_reads=True)
-            capability = self.port._call('/actions')
-            boot = capability.get('bootId')
-            if not isinstance(boot, str) or len(boot) != 32 or any(c not in '0123456789abcdef' for c in boot):
-                raise ValueError('controller_boot_identity_invalid')
-            self.port.boot_id = boot
-            self.port.preflight()
+                                          observer=self._event, clock=self.clock, compact_reads=True, timeout=2)
+            try:
+                self.port.boot_id = _boot_identity(self.port._call('/actions'))
+                self.port.preflight()
+            finally:
+                # Only initial, read-only discovery gets the longer deadline.
+                # Camera failure cleanup and every later operation retain .8s.
+                self.port.timeout = .8
             self.current['outputBaselineSequence'] = getattr(self.port, 'last_sequence', None)
             self.camera = self.camera_factory(self.store.root/'native-camera', self.helper, plan['camera'])
             self.camera.start()
@@ -156,6 +164,64 @@ class ManualCollection:
             self.current['error'] = 'session_start_failed'
             self._finish(failed=True)
             raise
+        finally:
+            self.busy = False
+
+    def recover_readonly(self):
+        """Retire only this manager's never-started session using fresh GET proof.
+
+        The failed session, its transport and all original evidence stay intact.
+        Creating the separate store consumes the sole recovery attempt, even if
+        a read or persistence step fails; no cleanup or motion is dispatched.
+        """
+        if (self.busy or not self.current or self.current.get('phase') != 'failed'
+                or self.current.get('error') != 'session_start_failed' or self.command_count != 0
+                or self.camera is not None or self.port is None or self.store is None or self.journal is None
+                or getattr(self.port, 'may_have_run', None) is not False
+                or getattr(self.port, 'writes_possible', None) is not False):
+            raise ValueError('readonly_recovery_not_eligible')
+        sid, root = self.current['sessionId'], self.store.root
+        if (root != self.root/sid or (root/'native-camera').exists()
+                or any(root.glob('command-*.json'))
+                or any(event.get('kind') in ('command', 'result') or event.get('payload') is not None
+                       for event in self.current['events'])):
+            raise ValueError('readonly_recovery_write_or_camera_evidence')
+        for path in root.glob('http-*-intent.json'):
+            intent = _decode_json(_read(root, path.name))
+            if intent.get('method') != 'GET' or intent.get('payload') is not None:
+                raise ValueError('readonly_recovery_write_or_camera_evidence')
+        original = _read(root, 'session.json')
+        if _decode_json(original) != self.current:
+            raise ValueError('readonly_recovery_session_changed')
+        db = self.journal.connection
+        row = db.execute('SELECT output_path,phase,result_json FROM supervised_blocks WHERE session_id=?', (sid,)).fetchone()
+        if (row is None or row[0] != str(root) or row[1] != 'off_unverified'
+                or row[2] is None or _decode_json(row[2].encode()) != self.current):
+            raise ValueError('readonly_recovery_owned_failed_row_required')
+        if not self.journal.readiness()['ready']:
+            raise ValueError('legacy_journal_unresolved')
+        self.busy = True
+        try:
+            proof_store = ArtifactStore(root/'readonly-recovery')
+            port = SequencePort(self.controller_url, self.token, 'discovering', proof_store,
+                                clock=self.clock, compact_reads=True, timeout=2)
+            port.boot_id = _boot_identity(port._call('/actions'))
+            snapshot = port.preflight()
+            if not port.off_verified or port.may_have_run or port.writes_possible:
+                raise ValueError('readonly_recovery_off_not_proven')
+            proof = dict(sessionId=sid, offVerified=True, noWrites=True,
+                         originalSessionSha256=hashlib.sha256(original).hexdigest(),
+                         originalResultSha256=hashlib.sha256(row[2].encode()).hexdigest(),
+                         snapshot=snapshot)
+            proof_store.write_json('proof.json', proof)
+            with db:
+                if not self.journal.readiness()['ready']:
+                    raise ValueError('legacy_journal_unresolved')
+                changed = db.execute('UPDATE supervised_blocks SET phase=? WHERE session_id=? AND output_path=? AND phase=? AND result_json=?',
+                    ('resolved_no_run_after_stop', sid, str(root), 'off_unverified', row[2]))
+                if changed.rowcount != 1:
+                    raise ValueError('readonly_recovery_owned_failed_row_required')
+            return dict(sessionId=sid, offVerified=True, noWrites=True)
         finally:
             self.busy = False
 

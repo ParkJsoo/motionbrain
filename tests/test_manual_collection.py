@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from learning.manual_collection import ManualCollection, RecordingPort
 from learning.supervised_collection import PROFILES
+from learning.supervised_transport import SequencePort
 
 
 class Clock:
@@ -31,8 +32,10 @@ class Camera:
 
 class Port:
     instances = []
-    def __init__(self, url, token, boot_id, store, *, observer, clock, compact_reads=False):
+    def __init__(self, url, token, boot_id, store, *, observer, clock, compact_reads=False, timeout=.8):
         self.observer, self.clock = observer, clock
+        self.timeout = timeout
+        self.may_have_run = self.writes_possible = False
         self.boot_id = boot_id
         self.last_sequence = 12
         self.executions = []
@@ -73,6 +76,146 @@ class ManualCollectionTests(unittest.TestCase):
         return self.manager.start(dict(joint=joint, poseContext='fixed', onsiteConfirmed=True))
     def pulse(self, joint='wrist', direction='up'):
         return self.manager.pulse(dict(joint=joint, direction=direction, percent=20, durationMs=200))
+
+    def transport(self, fail_start=False):
+        from tests.test_supervised_transport import CompactTransportTests
+        template, device, _ = CompactTransportTests().setup_port()
+        device.boot = 'c'*32
+        # A retained baseline is discovered from evidence, never a fixed cursor.
+        for entry in device.entries:
+            entry['sequence'] += 730
+        self.clock = self.manager.clock = device.clock
+        requests = []
+        original = template.opener.open
+        self.transport_failed = fail_start
+        def open_request(request, timeout):
+            requests.append((request.get_method(), request.full_url, timeout))
+            if self.transport_failed:
+                raise TimeoutError('discovery_read_failed')
+            return original(request, timeout)
+        opener = type('Opener', (), {'open': staticmethod(open_request)})()
+        def factory(*args, **kwargs):
+            port = RecordingPort(*args, **kwargs)
+            port.opener = opener
+            return port
+        def recovery_factory(*args, **kwargs):
+            port = SequencePort(*args, **kwargs)
+            port.opener = opener
+            return port
+        self.manager.port_factory = factory
+        return device, requests, recovery_factory
+
+    def failed_readonly_start(self):
+        device, requests, factory = self.transport(fail_start=True)
+        with self.assertRaisesRegex(TimeoutError, 'discovery_read_failed'):
+            self.start()
+        self.transport_failed = False
+        return device, requests, factory
+
+    def test_startup_reads_use_two_seconds_then_restore_normal_deadline(self):
+        _, requests, _ = self.transport()
+        self.start()
+        self.assertTrue(all(1.99 <= timeout <= 2 for _, _, timeout in requests))
+        self.assertEqual(self.manager.port.timeout, .8)
+        self.assertEqual(self.manager.current['outputBaselineSequence'], 735)
+        requests.clear()
+        self.manager.port.check_idle()
+        self.manager.finish()
+        self.assertTrue(requests)
+        self.assertTrue(all(0 < timeout <= .8 for _, _, timeout in requests))
+
+    def test_startup_get_failure_restores_cleanup_deadline(self):
+        _, requests, _ = self.failed_readonly_start()
+        self.assertAlmostEqual(requests[0][2], 2)
+        self.assertTrue(all(0 < timeout <= .8 for _, _, timeout in requests[1:]))
+        self.assertEqual(self.manager.port.timeout, .8)
+        self.assertEqual(self.manager.status()['error'], 'session_start_failed')
+
+    def test_readonly_recovery_preserves_failure_and_only_resolves_owned_block(self):
+        device, requests, factory = self.failed_readonly_start()
+        root = self.manager.store.root
+        originals = {path.name: path.read_bytes() for path in root.iterdir() if path.is_file()}
+        before = copy.deepcopy(self.manager.current)
+        state = self.manager.status()
+        legacy = self.manager.journal.records()
+        result_json = self.manager.journal.connection.execute('SELECT result_json FROM supervised_blocks').fetchone()[0]
+        requests.clear()
+        with patch('learning.manual_collection.SequencePort', side_effect=factory):
+            result = self.manager.recover_readonly()
+        self.assertEqual(result, dict(sessionId=before['sessionId'], offVerified=True, noWrites=True))
+        self.assertEqual(self.manager.current, before)
+        self.assertEqual(self.manager.status(), state)
+        self.assertEqual(self.manager.journal.records(), legacy)
+        self.assertTrue(all(path.read_bytes() == originals[path.name] for path in root.iterdir() if path.is_file()))
+        self.assertEqual(self.manager.journal.connection.execute('SELECT phase,result_json FROM supervised_blocks').fetchone(),
+                         ('resolved_no_run_after_stop', result_json))
+        self.assertTrue(all(method == 'GET' and 1.99 <= timeout <= 2 for method, _, timeout in requests))
+        self.assertTrue(all(payload is None for _, payload in device.requests))
+        proof = json.loads((root/'readonly-recovery'/'proof.json').read_text())
+        self.assertEqual(proof['snapshot']['actions']['bootId'], 'c'*32)
+        self.assertEqual(proof['snapshot']['outputs']['entries'][-1]['sequence'], 735)
+        with self.assertRaisesRegex(ValueError, 'owned_failed_row'):
+            self.manager.recover_readonly()
+        self.start()
+        self.assertEqual(self.manager.current['phase'], 'recording')
+
+    def test_readonly_recovery_failed_read_consumes_attempt_and_keeps_lock(self):
+        _, requests, factory = self.failed_readonly_start()
+        self.transport_failed = True
+        before = self.manager.status()
+        with patch('learning.manual_collection.SequencePort', side_effect=factory):
+            with self.assertRaises(TimeoutError): self.manager.recover_readonly()
+            count = len(requests)
+            with self.assertRaises(RuntimeError): self.manager.recover_readonly()
+            self.assertEqual(len(requests), count)
+        self.assertEqual(self.manager.status(), before)
+        self.assertEqual(self.manager.journal.connection.execute('SELECT phase FROM supervised_blocks').fetchone()[0], 'off_unverified')
+        with self.assertRaisesRegex(ValueError, 'interrupted_collection'): self.start()
+
+    def test_readonly_recovery_rejects_active_run_write_camera_and_unknown(self):
+        _, _, factory = self.failed_readonly_start()
+        cases = [(self.manager, 'busy', True), (self.manager, 'command_count', 1),
+                 (self.manager, 'camera', object()), (self.manager.port, 'may_have_run', True),
+                 (self.manager.port, 'writes_possible', True)]
+        with patch('learning.manual_collection.SequencePort', side_effect=factory) as recovery:
+            for target, name, value in cases:
+                with self.subTest(name=name), patch.object(target, name, value):
+                    with self.assertRaisesRegex(ValueError, 'not_eligible'): self.manager.recover_readonly()
+            for field, value in (('phase', 'recording'), ('error', 'command_failed_no_retry')):
+                with self.subTest(field=field), patch.dict(self.manager.current, {field: value}):
+                    with self.assertRaisesRegex(ValueError, 'not_eligible'): self.manager.recover_readonly()
+            self.manager.current['events'].append(dict(kind='http', path='/sequence', payload={'action': 'run'}))
+            with self.assertRaisesRegex(ValueError, 'write_or_camera'): self.manager.recover_readonly()
+            self.manager.current['events'].pop()
+            self.manager.store.write_json('http-999999-intent.json', dict(method='POST', payload={'action': 'clear'}))
+            with self.assertRaisesRegex(ValueError, 'write_or_camera'): self.manager.recover_readonly()
+            recovery.assert_not_called()
+        self.assertFalse((self.manager.store.root/'readonly-recovery').exists())
+        with self.assertRaisesRegex(ValueError, 'interrupted_collection'): self.start()
+
+    def test_readonly_recovery_rejects_reloaded_manager_and_unready_legacy(self):
+        _, _, factory = self.failed_readonly_start()
+        other = self.make()
+        with self.assertRaisesRegex(ValueError, 'not_eligible'): other.recover_readonly()
+        with patch.object(self.manager.journal, 'readiness', return_value={'ready': False}), \
+                patch('learning.manual_collection.SequencePort', side_effect=factory) as recovery:
+            with self.assertRaisesRegex(ValueError, 'legacy_journal_unresolved'): self.manager.recover_readonly()
+            recovery.assert_not_called()
+        self.assertFalse((self.manager.store.root/'readonly-recovery').exists())
+
+    def test_readonly_recovery_requires_fresh_off_and_empty_queue_without_cleanup(self):
+        device, requests, factory = self.failed_readonly_start()
+        device.queue.append({'joint': 'wrist'})
+        original = self.manager.current.copy()
+        with patch('learning.manual_collection.SequencePort', side_effect=factory):
+            with self.assertRaisesRegex(ValueError, 'single_step_queue_changed'):
+                self.manager.recover_readonly()
+        self.assertEqual(self.manager.current, original)
+        self.assertTrue(all(method == 'GET' for method, _, _ in requests))
+        self.assertEqual(len(device.queue), 1)
+        self.assertEqual(self.manager.journal.connection.execute('SELECT phase FROM supervised_blocks').fetchone()[0], 'off_unverified')
+        self.assertFalse((self.manager.store.root/'readonly-recovery'/'proof.json').exists())
+        with self.assertRaisesRegex(ValueError, 'interrupted_collection'): self.start()
 
     def test_all_joints_record_and_replay_optional_sensor(self):
         for joint, profile in PROFILES.items():
