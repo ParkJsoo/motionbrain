@@ -32,6 +32,20 @@ python3 tools/replay_relative_actions.py \
 
 매니페스트 최상위는 `records` 배열과 `evaluationGroups` 배열이다. 평가자료가 없으면 후자는 빈 배열로 두고 개발 학습만 확인한다. 선택을 시험하려면 `query={state,target,commands,context}`를 추가한다. `context`는 모델의 전체 관측 계약과 일치해야 한다. 출력은 새 디렉터리의 `model.json`, `report.json`이며 원본·주석·모델은 `.local/`에 둔다. 실제 출력·센서값·사후 영상은 선택 질의에 넣지 않는다.
 
+## 저장 모델을 고정한 평가와 질의
+
+`--frozen-model`과 원래 모델 파일의 `--model-sha256`을 함께 지정하면 재학습 없이 새 자료를 평가한다. 명세의 모든 기록은 `evaluationGroups`에 속해야 한다. 기록이 없는 명세에 `query`만 넣으면 저장 상태의 후보 비교만 수행하며 새 평가 표본으로 세지 않는다.
+
+```sh
+python3 tools/replay_relative_actions.py \
+  --manifest .local/relative-state/evaluation-manifest.json \
+  --frozen-model .local/relative-state/train/model.json \
+  --model-sha256 '<고정한 모델 파일의 SHA-256>' \
+  --output-dir .local/relative-state/frozen-evaluation-01
+```
+
+고정 경로는 파일 해시·모델 차원·유한 계수·지원 표본 수·학습 출처 구조를 검사하고, 기존 원본 재감사와 학습/평가 중복 검사를 유지한다. 파일 해시는 원본 심사를 대신하지 않는다. 관측 계약은 카메라·구도·물체·표식·다른 관절 자세 조건까지 전체가 같아야 하며, 다른 모델에 맞추려고 관측 계약을 바꾸지 않는다. 고정 모델은 복사·덮어쓰기하지 않고 새 출력 폴더에 `report.json`만 기록한다. 결과는 실물 실행 허용이나 집기 검증이 아니다.
+
 ## 집게 위 카메라 자료의 연결
 
 외부 카메라로 전체 팔·물체 배치를 확인하면서, 양 턱이 구별되는 집게 위 카메라의 상태로 별도 모델을 만들 수 있다. 두 카메라 좌표를 합산하거나 동일 프레임으로 취급하지 않는다. 매니페스트 기록에 `observationCamera=gripper`, `gripperObservationRoot`(저장소 기준 상대 경로)를 추가하면 [결합기](../learning/gripper_camera_dataset.py)가 원래 외부 영상·출력 감사를 유지한 채 ESP32-CAM의 사전·사후 주석 프레임을 연결한다.
