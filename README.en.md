@@ -28,6 +28,8 @@ A [subsequent joint-specific study (Korean)](docs/evidence/2026-11-05-multi-join
 
 A separate [external-camera marker learning contract (Korean)](docs/projected-arm-learning.md) represents arm motion without an object using four pixel values from a fixed background point and two link landmarks. Its states remain distinct from the object/jaw model and calibrated joint angles.
 
+The [M3/M4 marker-learning follow-up (Korean)](docs/evidence/2026-11-06-projected-arm-m3-m4-learning.md) trained on 9 and 4 transitions, respectively. After freezing, both new M3 transitions were rejected by observation-quality checks and the new M4 transition was outside the training-state range, leaving no formal prediction-error metric. These were not model-selected physical control trials.
+
 ## Architecture
 
 ```text
