@@ -414,6 +414,109 @@ class TransportTests(unittest.TestCase):
         self.assertFalse(any(p == {'action': 'run'} for _, p in device.requests))
         self.assertEqual(device.default, 100);self.assertFalse(device.queue)
 
+    def test_before_run_is_after_durable_intent_and_exactly_once(self):
+        port, device, store = self.setup_port();original = store.write_json
+        persisted_at, called_at = [], []
+        def delayed_intent(name, value):
+            result = original(name, value)
+            if name.endswith('-intent.json') and value.get('payload') == {'action': 'run'}:
+                device.clock.sleep(.4)
+                persisted_at.append(device.clock.monotonic())
+            return result
+        store.write_json = delayed_intent
+        def guard():
+            self.assertEqual(len(persisted_at), 1)
+            self.assertFalse(port.may_have_run)
+            self.assertIsNone(port.last_dispatch_before)
+            self.assertFalse(any(p == {'action': 'run'} for _, p in device.requests))
+            called_at.append(device.clock.monotonic())
+        result = port.execute(pulse(), lambda: None, before_run=guard)
+        self.assertEqual(called_at, persisted_at)
+        self.assertGreaterEqual(result['dispatchBefore'], called_at[0])
+        self.assertEqual(sum(p == {'action': 'run'} for _, p in device.requests), 1)
+        self.assertTrue(result['offVerified']);self.assertIsNone(port._before_run)
+
+    def test_before_run_rejection_never_sends_and_keeps_cleanup(self):
+        for error in (ValueError('stale_observation'), KeyboardInterrupt()):
+            with self.subTest(error=type(error).__name__):
+                port, device, _ = self.setup_port();calls = []
+                def reject():
+                    calls.append(True)
+                    raise error
+                with self.assertRaises(type(error)):
+                    port.execute(pulse(), lambda: None, before_run=reject)
+                self.assertEqual(calls, [True]);self.assertFalse(port.may_have_run)
+                self.assertIsNone(port.last_dispatch_before);self.assertIsNone(port._before_run)
+                self.assertFalse(any(p == {'action': 'run'} for _, p in device.requests))
+                self.assertEqual(sum(p == {'cmd': 'stop'} for _, p in device.requests), 1)
+                self.assertFalse(device.queue);self.assertFalse(any(device.speeds.values()))
+                self.assertEqual(device.default, 100)
+
+    def test_before_run_can_reject_observation_aged_by_intent_persistence(self):
+        port, device, store = self.setup_port();original = store.write_json
+        observation_at = device.clock.monotonic()
+        def delayed_intent(name, value):
+            result = original(name, value)
+            if name.endswith('-intent.json') and value.get('payload') == {'action': 'run'}:
+                device.clock.sleep(1.)
+            return result
+        store.write_json = delayed_intent
+        def guard():
+            if device.clock.monotonic() - observation_at > .5:
+                raise ValueError('stale_observation')
+        with self.assertRaisesRegex(ValueError, 'stale_observation'):
+            port.execute(pulse(), lambda: None, before_run=guard)
+        self.assertFalse(port.may_have_run)
+        self.assertFalse(any(p == {'action': 'run'} for _, p in device.requests))
+
+    def test_before_run_time_is_in_request_budget(self):
+        port, device, _ = self.setup_port()
+        with self.assertRaisesRegex(TimeoutError, 'request_deadline'):
+            port.execute(pulse(), lambda: None,
+                         before_run=lambda: device.clock.sleep(port.timeout + .01))
+        self.assertFalse(port.may_have_run);self.assertIsNone(port.last_dispatch_before)
+        self.assertFalse(any(p == {'action': 'run'} for _, p in device.requests))
+        self.assertFalse(device.queue);self.assertFalse(any(device.speeds.values()))
+
+    def test_before_run_failure_or_early_error_does_not_leak_to_next_execute(self):
+        for mode in ('guard', 'intent', 'preflight'):
+            with self.subTest(mode=mode):
+                port, device, store = self.setup_port();calls = []
+                def guard():
+                    calls.append(True)
+                    if mode == 'guard':
+                        raise ValueError('guard_rejected')
+                if mode == 'intent': store.fail_run_intent = True
+                if mode == 'preflight': device.sensor_age = 151
+                with self.assertRaises((ValueError, OSError)):
+                    port.execute(pulse(), lambda: None, before_run=guard)
+                self.assertEqual(calls, [True] if mode == 'guard' else [])
+                self.assertIsNone(port._before_run)
+                count = len(calls)
+                # A new explicit execute is not an automatic retry. Its absent
+                # guard must not inherit a prior successful or rejected guard.
+                store.fail_run_intent = False;device.sensor_age = 20;port.evidence_failed = False
+                port.execute(pulse(), lambda: None)
+                self.assertEqual(len(calls), count)
+                self.assertEqual(sum(p == {'action': 'run'} for _, p in device.requests), 1)
+
+    def test_before_run_noncallable_rejected_before_any_device_access(self):
+        for value in (False, True, 1, 'guard', {}):
+            with self.subTest(value=value):
+                port, device, _ = self.setup_port()
+                with self.assertRaisesRegex(ValueError, 'before_run_callback_required'):
+                    port.execute(pulse(), lambda: None, before_run=value)
+                self.assertEqual(device.requests, [])
+
+    def test_before_run_is_consumed_after_ambiguous_run_without_retry(self):
+        port, device, _ = self.setup_port();calls = []
+        device.after_run = lambda controller: (_ for _ in ()).throw(TimeoutError('lost RUN response'))
+        with self.assertRaises(TimeoutError):
+            port.execute(pulse(), lambda: None, before_run=lambda: calls.append(True))
+        self.assertEqual(calls, [True]);self.assertIsNone(port._before_run)
+        self.assertTrue(port.may_have_run)
+        self.assertEqual(sum(p == {'action': 'run'} for _, p in device.requests), 1)
+
     def test_storage_breaks_after_run_emergency_stop_not_blocked(self):
         port, device, store = self.setup_port()
         device.after_run = lambda c: setattr(store, 'broken', True)

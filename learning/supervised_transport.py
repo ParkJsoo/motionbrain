@@ -138,6 +138,7 @@ class SequencePort:
         self.last_dispatch_after = None
         self.last_off_at = None
         self._quiet_retry_off_proof = False
+        self._before_run = None
 
     def _save(self, path, value, emergency=False):
         try:
@@ -188,15 +189,25 @@ class SequencePort:
                                          method=event['method'])
         try:
             with deadline(budget):
-                if run:
-                    self.last_dispatch_before = self.clock.monotonic()
-                    self.may_have_run = True
                 started = self.clock.monotonic()
                 for attempt in range(2):
                     remaining = budget - (self.clock.monotonic() - started)
                     if remaining <= 0:
                         raise TimeoutError('request_deadline')
                     try:
+                        if run:
+                            # Selection must remain fresh after durable intent
+                            # storage. Consume the guard even if it rejects;
+                            # neither a failed guard nor an ambiguous RUN may
+                            # authorize a second dispatch.
+                            before_run, self._before_run = self._before_run, None
+                            if before_run is not None:
+                                before_run()
+                            remaining = budget - (self.clock.monotonic() - started)
+                            if remaining <= 0:
+                                raise TimeoutError('request_deadline')
+                            self.last_dispatch_before = self.clock.monotonic()
+                            self.may_have_run = True
                         with self.opener.open(request, timeout=remaining) as response:
                             raw = response.read(65537)
                             code = response.status
@@ -490,7 +501,15 @@ class SequencePort:
             self._finish_result = self._stop_and_clear(restore_default=True, emergency=True)
         return self._finish_result
 
-    def execute(self, pulse, tick):
+    def execute(self, pulse, tick, *, before_run=None):
+        """Execute once; an optional guard may reject just before RUN is sent.
+
+        The guard runs after the RUN intent is durable and inside its request
+        deadline. It must raise to reject; no return value grants authority or
+        replaces the caller's own authorization and observation checks.
+        """
+        if before_run is not None and not callable(before_run):
+            raise ValueError('before_run_callback_required')
         self.may_have_run = False
         self.last_dispatch_before = None
         self.last_dispatch_after = None
@@ -499,6 +518,7 @@ class SequencePort:
         pulse = validate_pulse(pulse)
         self._active_pulse = None
         self._trace = []
+        self._before_run = before_run
         try:
             tick()
             snapshot = self.preflight()
@@ -554,3 +574,5 @@ class SequencePort:
         except BaseException:
             self.finish()
             raise
+        finally:
+            self._before_run = None
