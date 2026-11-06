@@ -16,11 +16,11 @@ The intended loop is `current visual state + candidate command → predict chang
 | Datasets | Existing sensor labels target M4. Separate M1, M2 and M5 paths use manually annotated object/jaw state from the gripper camera. Retrospective outputs are excluded from inputs |
 | Training and evaluation | Six M4 downward conditions; models frozen after 18 training records and evaluated on 18 new records. Per-command mean MAE **0.367°** versus image-plus-command ridge **0.605°**. No benefit from the current visual representation demonstrated |
 | Candidate selection | An offline selector compares predicted residuals for supported commands and stopping. A separate M2 experiment verified projected goal approach with one model-selected command |
-| Remaining integration | Object/gripper state estimation, repeated action selection and observation toward a goal, and learned grasp/lift evaluation |
+| Remaining integration | Automatic object/gripper state estimation, physical integration and repeated evaluation of the implemented trial core, and learned grasp/lift evaluation |
 
 The M4 figures compare predictions with sensor labels from sequential poses on one device on the same day. They do not establish generalization to other days/loads, sensor accuracy or grasping performance. Actual PWM and output duration are retrospective records and are excluded from pre-execution prediction inputs. Data from different joints or observation contracts are not automatically combined.
 
-[Latest M4 evaluation and failure denominators (Korean)](docs/evidence/2026-11-04-m4-action-prediction.md) · [M2 single-command goal approach and limits (Korean)](docs/evidence/2026-10-31-first-model-goal-approach.md) · [Learning goals and design (Korean)](docs/visual-action-learning.md)
+[M4 sensor evaluation and failure denominators (Korean)](docs/evidence/2026-11-04-m4-action-prediction.md) · [M2 single-command goal approach and limits (Korean)](docs/evidence/2026-10-31-first-model-goal-approach.md) · [Learning goals and design (Korean)](docs/visual-action-learning.md)
 
 The [relative-state development path (Korean)](docs/relative-action-selection.md) connects manual image annotations to prediction and candidate ranking on two M4 transitions. A [gripper-camera pilot (Korean)](docs/evidence/2026-11-04-gripper-relative-learning.md) trained on four M1 transitions and evaluated one new record; no-change was best on that one record. Generalization to other days or loads, automatic state estimation and learned physical grasping remain unverified.
 
@@ -30,9 +30,9 @@ A separate [external-camera marker learning contract (Korean)](docs/projected-ar
 
 The [M3/M4 marker-learning follow-up (Korean)](docs/evidence/2026-11-06-projected-arm-m3-m4-learning.md) trained on 9 and 4 transitions, respectively. After freezing, both new M3 transitions were rejected by observation-quality checks and the new M4 transition was outside the training-state range, leaving no formal prediction-error metric. These were not model-selected physical control trials.
 
-A [bounded positioning/close trial core (Korean)](docs/model-grasp-trial.md) connects frozen-model selection, one action and actual re-observation. Validation uses simulated inputs; the physical observation adapter and model applicability to the current pose still require separate checks. Automatic perception, learned grasping and lifting remain unverified.
+A [bounded positioning/close trial core (Korean)](docs/model-grasp-trial.md) connects frozen-model selection, one action and actual re-observation; the core was validated in simulation. A gripper-camera adapter binds original images, timestamps and manually reviewed landmarks, with a diagnostic tool that sends no motor commands. Automatic perception, depth/retention verification and physical grasping/lifting through this path remain unverified.
 
-A gripper-camera observation adapter binds original images, timestamps and reviewed landmarks, with a diagnostic tool that sends no motor commands. Camera boot, view and pose compatibility must be checked against each model; landmark, depth and object-retention approvals are never generated automatically.
+A [pose-separated M1/M4 follow-up and pre-command prediction check (Korean)](docs/relative-action-selection.md#2026-11-07-자세를-분리한-학습과-구동-전-예측-확인) trained separate models on four M1 and two M4 transitions. No-change was best on one new frozen-model M1 comparison, and the next prediction from the resulting state was rejected as outside the training range. This new path has zero model-selected physical commands and zero verified grasps.
 
 ## Architecture
 

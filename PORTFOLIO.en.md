@@ -52,6 +52,8 @@ The [offline relative-state path (Korean)](docs/relative-action-selection.md) co
 
 A [subsequent joint-specific study (Korean)](docs/evidence/2026-11-05-multi-joint-relative-learning.md) collected 33 transitions across separate M1, M5 and M2 contracts, with 24 training and nine later evaluation records. Range rejections and large errors remain; learned grasping and lifting are unverified.
 
+A [bounded positioning/close core (Korean)](docs/model-grasp-trial.md) now connects frozen-model selection to single-action execution and actual reobservation through injected adapters; its core validation is simulated. In a [pose-separated follow-up (Korean)](docs/relative-action-selection.md#2026-11-07-자세를-분리한-학습과-구동-전-예측-확인), separate M1/M4 models used four/two transitions. One new M1 pre-command prediction check favored no-change, and the resulting state was outside the model’s supported range. This path has zero model-selected physical commands and zero verified grasps.
+
 ## 4. Control and communication work supporting learning experiments
 
 **Correcting false target success.** M4 control initially ignored inertial motion after output cutoff, returning success at 235.37° for a 234° target. Settled-error checks, bounded correction and `TARGET_MISSED` were added. Final regressions passed 11/11 each with no added load and with 23.10g, at mean absolute errors of 0.132° and 0.155°, using a fixed mount and a 230–245° range. These do not establish accuracy for the other four axes or the whole workspace. [2026-06-28 measurements, failures and corrections](docs/evidence/2026-06-28-m4-shoulder-closed-loop.en.md)
@@ -66,4 +68,4 @@ Software regressions and firmware builds run in [PlatformIO/Python CI](https://g
 
 Earlier [manual grasp demonstrations (Korean)](docs/evidence/2026-10-17-lipbalm-repetitions.md) and [12-image detector development training (Korean)](docs/evidence/2026-10-30-cv-development.md) are supporting experiments. The manual demonstrations are not learned-policy results; detector results evaluate the final model on its training images.
 
-The core remaining work is to connect visual object/gripper state to action prediction, implement and evaluate repeated action selection and reobservation, then separately test grasp/lift successes and failures under bounded conditions. Whole-arm position/force feedback, an electrical emergency-stop latency bound, learned continuous manipulation and generalization to other environments are not established.
+The core remaining work is to collect data for the required pose ranges, evaluate fixed models separately, and physically integrate and evaluate the implemented selection/reobservation core, then separately test grasp/lift successes and failures under bounded conditions. Whole-arm position/force feedback, an electrical emergency-stop latency bound, learned continuous manipulation and generalization to other environments are not established.

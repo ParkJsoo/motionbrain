@@ -105,7 +105,7 @@ Experimental `/actions` and the legacy M4 `/shoulder` executor are separate path
 
 Closed manual-collection sessions can be converted using the [FFV1 lossless archive and restore procedure (Korean)](docs/manual-data-collection.md). Full restoration and original compressed-file byte hashes are verified before pruning. Restore only the needed sessions to their original paths before existing replay or training tools read archived frames. An archive on the same disk is not an external backup.
 
-A separate [relative-state path (Korean)](docs/relative-action-selection.md) reaudits and trains manual gripper-camera annotations for M1, M2 and M5 under separate joint contracts. This is distinct from M4 sensor-label conversion, automatic perception and physical control support.
+A separate [relative-state path (Korean)](docs/relative-action-selection.md) reaudits and trains manual gripper-camera annotations under separate joint and pose contracts, with frozen-model evaluation/query support. This is distinct from M4 sensor-label conversion and automatic perception. The [bounded positioning/close core and observation adapter (Korean)](docs/model-grasp-trial.md) require injected execution/observation adapters and do not provide a physical execution CLI. Physical learned grasping/lifting through that core remain unverified.
 
 ```sh
 python3 tools/archive_hardware_demo.py '.local/<source-phase>' 'datasets/<new-archive>' --observation placed
@@ -145,6 +145,8 @@ Run software verification with `python3 -m unittest discover -s tests`. Browser 
 ## Supervised collection
 
 The [manual joint data collection console (Korean)](docs/manual-data-collection.md) runs on the Mac and records/replays video, commands, actual outputs, and sensors for one selected joint among M1–M5. M4 permits downward motion only, and starting the server does not start capture or motion. Automated dataset conversion and sensor-delta learning currently target M4. Selecting every joint does not imply completed measurement or learning for every joint.
+
+Initial read-only checks use bounded startup budgets; a same-server failure before capture or writes may be resolved through the authenticated read-only recovery API. Follow the guide for exact conditions and limits. Recovery preserves the failed record and sends no motion/stop commands; it was checked on a physical startup failure, not as a general cure for HTTP failures.
 
 Models were fixed using 18 M4 downward records across six conditions, then evaluated without refitting on 18 later records. MAE was **0.367°** for the per-command mean, **0.595°** for command-only ridge, and **0.605°** for image-and-command ridge. The coarse image representation provided no demonstrated added predictive value. These are sequential same-day poses after a conditional restart. The four pre-motion stopped batches before the successful 18-record batch, plus initial failures and excluded records, are preserved in the [measurement and evaluation record (Korean)](docs/evidence/2026-11-04-m4-action-prediction.md). Independent generalization, repeated control, and learned-policy grasping remain unverified. Offline candidate comparison accepts a target sensor delta but does not generate an object-approach target automatically.
 
