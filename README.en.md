@@ -26,6 +26,8 @@ The [relative-state development path (Korean)](docs/relative-action-selection.md
 
 A [subsequent joint-specific study (Korean)](docs/evidence/2026-11-05-multi-joint-relative-learning.md) collected 33 transitions across separate M1, M5 and M2 contracts, with 24 training and nine later evaluation records. Range rejections and large errors remain; learned grasping and lifting are unverified.
 
+A separate [external-camera marker learning contract (Korean)](docs/projected-arm-learning.md) represents arm motion without an object using four pixel values from a fixed background point and two link landmarks. Its states remain distinct from the object/jaw model and calibrated joint angles.
+
 ## Architecture
 
 ```text
