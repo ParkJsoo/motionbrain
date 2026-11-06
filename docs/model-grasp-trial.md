@@ -37,7 +37,13 @@ RUN 전송 직전에는 원래 선택을 다시 검사한다. `SequencePort.exec
 
 ## 관측 어댑터 계약
 
-현재 실물 구도에 맞는 관측 어댑터는 현장 연결 전에 검증해야 한다. 기존 `ActionRecorder`의 원본·시계 검증과 집게 카메라의 `gripper_camera_dataset.read_frame()` 검증을 재사용할 수 있다. 저장 점을 자동 추정하거나 최신 시각을 붙여 새 관측처럼 취급하지 않는다.
+`learning/grasp_observation.py`는 집게 위 카메라 원본을 연결하는 `GripperObservationSource`와 분석가 검토를 받는 `ReviewedGraspObserver`를 제공한다. 기존 `gripper_camera_dataset.read_frame()` 검증을 재사용하며, 현재 실물 구도의 점 정의·정착·깊이·이동 여유는 별도 확인이 필요하다. 외부 카메라 원본을 이용하는 경우 기존 `ActionRecorder`의 원본·시계 검증을 유지하는 별도 어댑터가 필요하다. 저장 점을 자동 추정하거나 최신 시각을 붙여 새 관측처럼 취급하지 않는다.
+
+`GripperObservationSource(url, session_id, expected_boot_id, scene_context, store, ...)`는 생성·시작만으로 촬영하지 않는다. 명시적으로 `capture(deadline=...)`를 호출할 때만 `/capture?fresh=1` GET을 한 번 보낸다. 리다이렉트·프록시·자동 재시도 없이 최대 6초·2MB의 응답을 받고 JPEG·메타데이터·시각·실제 부팅 ID·원본 해시를 검사한다. 오류 응답과 실패 원본도 보존하며 실패한 소스로 다시 촬영하지 않는다.
+
+`scene_context`는 실제 확인한 `physicalView`, `object`, `poseRegime`, `landmarks`이며 요청한 단계나 모델에서 복사하지 않는다. 카메라 부팅 ID·영상 크기는 캡처 원본에서 파생한다. 카메라를 재부팅했거나 실제 구도·자세가 바뀌어 기존 모델과 계약이 다르면 자동 적용하지 않는다.
+
+`ReviewedGraspObserver(source, reviewer, retention_reviewer=..., ...)`는 `reviewer(record, deadline=..., tick=...)`에서 명시적으로 받은 프레임별 주석과 정착 확인만 사용한다. 보유 검토 콜백도 `(observations, deadline=..., tick=...)`를 받는다. 콜백은 즉시 반환하거나 대기 중 주기적으로 `tick()`을 호출하고 기한을 지켜야 한다. 콜백 전후 기한·출력과 원본 바이트를 다시 검사한다. 오래된 주석의 시각을 갱신해 새 영상으로 올리지 않으며, 실패 후 새 촬영으로 자동 복구하지 않는다. 닫기·보유 확인값을 어댑터가 생성하지 않는다.
 
 - `start(deadline=...)`: 해당 시험의 제한 촬영 준비.
 - `observe(stage, after_off=..., deadline=..., tick=...)`: 새 원본과 분석가 검토를 연결한 관측 반환. 대기 중 `tick()`을 정기적으로 호출해 전체 기한과 예상하지 못한 출력을 감시한다.
@@ -57,7 +63,30 @@ RUN 전송 직전에는 원래 선택을 다시 검사한다. `SequencePort.exec
 
 모델·관측·선택·전송 직전 판단·실제 명령 영수증·미실행/실행 불명·마지막 OFF를 기존 증거 저장소에 남긴다. 종료 직전까지 예상하지 못한 출력 이력을 검사하며 촬영 마무리나 OFF 확인이 실패하면 집기 성공을 보고하지 않는다. 원본과 별도로 학습을 자동 시작하거나 중단된 시험을 재개하지 않는다.
 
+## 무출력 원본·모델 진단
+
+`tools/check_grasp_observation.py`는 카메라 원본과 기존 모델의 계약을 확인한다. 제어기 주소나 모터 실행 옵션은 없다. `--capture`는 카메라 영상 한 장만 읽으며, `--source-binding`은 이미 저장한 원본을 다시 검사한다. 두 경로 모두 `controlEligible=false`이며 실물 실행 준비가 완료됐다는 뜻이 아니다.
+
+설정 JSON은 `schemaVersion=motionbrain.grasp_observation_check.v1`, `sessionId`, `cameraUrl`, `expectedCameraBootId`, `sceneContext`, `modelBindings`, `captureTimeoutSeconds`를 가진다. `modelBindings`의 각 항목은 `{id,path,sha256}`이며 실제 모델 파일을 해시로 고정한다. 장치별 주소와 설정·원본·주석·진단 출력은 `.local/` 아래에 둔다.
+
+```sh
+python3 tools/check_grasp_observation.py \
+  --config .local/grasp-observation/config.json --capture \
+  --output-dir .local/grasp-observation/source-check-01
+
+python3 tools/check_grasp_observation.py \
+  --config .local/grasp-observation/config.json \
+  --source-binding .local/grasp-observation/source-check-01/capture-0001/source-binding.json \
+  --source-binding-sha256 '<원래 source-binding.json의 SHA-256>' \
+  --annotation .local/grasp-observation/points.json \
+  --annotation-sha256 '<원래 주석 파일의 SHA-256>' \
+  --output-dir .local/grasp-observation/point-check-01
+```
+
+주석은 기존 `analyst_points` 형식이다. 주석을 제공하지 않거나 승인하지 않은 경우 상태를 생성하지 않는다. 전체 관측 계약이 일치하고 점 주석도 승인된 경우에만 지원 명령별 저장 상태 예측을 계산한다. 계약이 다르면 변경된 필드만 보고하며 모델이나 원본을 바꾸지 않는다. 재생 중 원래 시각은 그대로 보존한다. 오래된 저장 영상의 예측을 최신 실물 판단이나 새 독립 평가로 세지 않는다.
+
 ```sh
 python3 -m unittest tests.test_model_grasp_trial tests.test_supervised_transport \
-  tests.test_relative_model_bundle tests.test_relative_action_learning
+  tests.test_relative_model_bundle tests.test_relative_action_learning \
+  tests.test_grasp_observation tests.test_check_grasp_observation
 ```

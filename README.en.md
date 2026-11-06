@@ -32,6 +32,8 @@ The [M3/M4 marker-learning follow-up (Korean)](docs/evidence/2026-11-06-projecte
 
 A [bounded positioning/close trial core (Korean)](docs/model-grasp-trial.md) connects frozen-model selection, one action and actual re-observation. Validation uses simulated inputs; the physical observation adapter and model applicability to the current pose still require separate checks. Automatic perception, learned grasping and lifting remain unverified.
 
+A gripper-camera observation adapter binds original images, timestamps and reviewed landmarks, with a diagnostic tool that sends no motor commands. Camera boot, view and pose compatibility must be checked against each model; landmark, depth and object-retention approvals are never generated automatically.
+
 ## Architecture
 
 ```text
