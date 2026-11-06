@@ -147,7 +147,7 @@ class SequencePort:
             if not emergency:
                 raise
 
-    def _call(self, path, payload=None, *, emergency=False, run=False, quiet_disconnect_retry=False, request_timeout=None, quiet_monitor_timeout=False):
+    def _call(self, path, payload=None, *, emergency=False, run=False, quiet_disconnect_retry=False, request_timeout=None, quiet_monitor_timeout=False, initial_output_read=False):
         endpoint = urllib.parse.urlsplit(path).path
         if endpoint not in ('/status', '/collection_status', '/sequence', '/actions', '/action_outputs', '/command', '/motor'):
             raise ValueError('unsupported_endpoint')
@@ -155,12 +155,20 @@ class SequencePort:
             raise ValueError('unsupported_endpoint')
         if type(quiet_monitor_timeout) is not bool:
             raise ValueError('quiet_monitor_timeout_invalid')
+        if type(initial_output_read) is not bool:
+            raise ValueError('initial_output_read_invalid')
+        if initial_output_read and not (self.compact_reads and endpoint == '/action_outputs'
+                and payload is None and request_timeout is not None
+                and not emergency and not run and not quiet_disconnect_retry and not quiet_monitor_timeout
+                and self._active_pulse is None and not self.may_have_run and not self.writes_possible
+                and not self.evidence_failed and not self.off_verified and self.last_snapshot is None):
+            raise ValueError('initial_output_read_scope')
         if quiet_monitor_timeout and not (self._quiet_retry_off_proof and self._active_pulse is None
                 and not self.evidence_failed and endpoint in ('/status', '/collection_status', '/action_outputs')
                 and payload is None and not emergency and not run
                 and (request_timeout is None or endpoint == '/action_outputs')):
             raise ValueError('quiet_monitor_timeout_scope')
-        maximum = max(self.timeout, 1.5) if quiet_monitor_timeout else self.timeout
+        maximum = max(self.timeout, 1.5) if quiet_monitor_timeout or initial_output_read else self.timeout
         budget = maximum if request_timeout is None else min(maximum, request_timeout)
         if budget <= 0:
             raise TimeoutError('request_deadline')
@@ -334,11 +342,13 @@ class SequencePort:
         started = self.clock.monotonic()
         bootstrap = self.last_sequence is None
         # Initial retained-ring loading occurs before any collector write. It
-        # may need sixteen small responses; each still has the original HTTP
-        # deadline. Once a cursor exists, active/default drains keep the .8s budget.
+        # may need sixteen small responses. Only this read-only bootstrap allows
+        # a 1.5s page, within the unchanged 4s total. Later drains keep their budget.
         # Explicit quiet monitoring may use the existing 1.5s status budget.
         bootstrap_budget = (bootstrap and self._active_pulse is None
-                            and not self.may_have_run and not self.writes_possible)
+                            and not self.may_have_run and not self.writes_possible
+                            and not kwargs.get('emergency') and not self.evidence_failed
+                            and not self.off_verified and self.last_snapshot is None)
         extended_quiet = kwargs.get('quiet_monitor_timeout') is True
         drain_budget = 4. if bootstrap_budget else (max(self.timeout, 1.5) if extended_quiet else self.timeout)
         new = []
@@ -348,7 +358,8 @@ class SequencePort:
         for _ in range(16):
             cursor = self.last_sequence or 0
             payload = self._call(f'/action_outputs?after={cursor}&limit=8',
-                                 request_timeout=drain_budget-(self.clock.monotonic()-started), **kwargs)
+                                 request_timeout=drain_budget-(self.clock.monotonic()-started),
+                                 initial_output_read=bootstrap_budget, **kwargs)
             if self.clock.monotonic() - started >= drain_budget:
                 raise TimeoutError('request_deadline')
             if (payload.get('bootId') != self.boot_id or payload.get('evidence') != 'driver_write'

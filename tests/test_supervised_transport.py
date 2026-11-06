@@ -677,7 +677,7 @@ class CompactTransportTests(unittest.TestCase):
         original = port.opener.open
         def delayed(request, timeout):
             if '/action_outputs?' in request.full_url:
-                self.assertLessEqual(timeout, .8)
+                self.assertLessEqual(timeout, 1.5)
                 device.clock.now += .05
             return original(request, timeout)
         port.opener.open = delayed
@@ -692,12 +692,66 @@ class CompactTransportTests(unittest.TestCase):
         original = port.opener.open
         def delayed(request, timeout):
             if '/action_outputs?' in request.full_url:
-                self.assertLessEqual(timeout, .8)
+                self.assertLessEqual(timeout, 1.5)
                 device.clock.now += .3
             return original(request, timeout)
         port.opener.open = delayed
         with self.assertRaisesRegex(TimeoutError, 'deadline'): port.preflight()
         self.assertTrue(all(body is None for _, body in device.requests))
+
+    def test_initial_slow_page_can_complete_without_retry(self):
+        port, device, store = self.setup_port()
+        for i in range(150): device.append(i % 5 + 1, 0)
+        original = port.opener.open; pages = []
+        def delayed(request, timeout):
+            if '/action_outputs?' in request.full_url:
+                pages.append(request.full_url)
+                elapsed = .9 if len(pages) == 11 else .08
+                if timeout < elapsed:
+                    device.clock.sleep(timeout)
+                    raise TimeoutError('request_deadline')
+                device.clock.sleep(elapsed)
+            return original(request, timeout)
+        port.opener.open = delayed
+        port.preflight()
+        self.assertTrue(port.off_verified)
+        self.assertEqual(port.last_sequence, 155)
+        self.assertEqual(len(pages), 16)
+        self.assertEqual(len(set(pages)), 16)
+        self.assertFalse(any('attempt-2' in name for name in store.rows))
+        self.assertTrue(all(body is None for _, body in device.requests))
+        # Once the first snapshot exists, ordinary idle checks retain .8s.
+        seen = []
+        def monitor(request, timeout):
+            if '/action_outputs?' in request.full_url: seen.append(timeout)
+            return original(request, timeout)
+        port.opener.open = monitor
+        port.check_idle()
+        self.assertEqual(seen, [.8])
+
+    def test_initial_output_extension_rejects_other_scopes_before_request(self):
+        cases = [dict(compact_reads=False), dict(writes_possible=True), dict(may_have_run=True),
+                 dict(evidence_failed=True), dict(off_verified=True), dict(last_snapshot={}),
+                 dict(_active_pulse=pulse('shoulder', 'down', 20, 250))]
+        for attributes in cases:
+            with self.subTest(attributes=attributes):
+                port, device, _ = self.setup_port()
+                for key, value in attributes.items(): setattr(port, key, value)
+                with self.assertRaisesRegex(ValueError, 'initial_output_read_scope'):
+                    port._call('/action_outputs?after=0&limit=8', request_timeout=4,
+                               initial_output_read=True)
+                self.assertFalse(device.requests)
+        for path, payload, flags in [('/collection_status', None, {}),
+                ('/action_outputs', None, {'emergency': True}),
+                ('/action_outputs', None, {'run': True}),
+                ('/action_outputs', None, {'quiet_disconnect_retry': True}),
+                ('/action_outputs', None, {'quiet_monitor_timeout': True}),
+                ('/action_outputs', {'action': 'run'}, {})]:
+            with self.subTest(path=path, flags=flags):
+                port, device, _ = self.setup_port()
+                with self.assertRaisesRegex(ValueError, 'initial_output_read_scope'):
+                    port._call(path, payload, request_timeout=4, initial_output_read=True, **flags)
+                self.assertFalse(device.requests)
 
     def test_missing_schema_fails_before_write(self):
         port, device, _ = self.setup_port()
