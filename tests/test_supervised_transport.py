@@ -789,18 +789,54 @@ class CompactTransportTests(unittest.TestCase):
         self.assertTrue(port.off_verified)
         self.assertTrue(all(body is None for _, body in device.requests))
 
-    def test_initial_full_ring_still_has_four_second_limit(self):
+    def test_initial_full_ring_still_has_eight_second_limit(self):
         port, device, _ = self.setup_port()
         for i in range(150): device.append(i % 5 + 1, 0)
         original = port.opener.open
+        pages = []
         def delayed(request, timeout):
             if '/action_outputs?' in request.full_url:
+                pages.append(request.full_url)
                 self.assertLessEqual(timeout, 1.5)
-                device.clock.now += .3
+                if timeout < .55:
+                    device.clock.sleep(timeout)
+                    raise TimeoutError('request_deadline')
+                device.clock.sleep(.55)
             return original(request, timeout)
         port.opener.open = delayed
         with self.assertRaisesRegex(TimeoutError, 'deadline'): port.preflight()
+        self.assertFalse(port.off_verified)
+        self.assertLessEqual(len(pages), 16)
+        self.assertEqual(len(set(pages)), len(pages))
         self.assertTrue(all(body is None for _, body in device.requests))
+
+    def test_initial_full_ring_accepts_six_second_drain_only_before_first_snapshot(self):
+        port, device, store = self.setup_port()
+        for i in range(150): device.append(i % 5 + 1, 0)
+        original = port.opener.open
+        pages = []
+        def delayed(request, timeout):
+            if '/action_outputs?' in request.full_url:
+                pages.append(request.full_url)
+                self.assertLessEqual(timeout, 1.5)
+                if timeout < .36:
+                    device.clock.sleep(timeout)
+                    raise TimeoutError('request_deadline')
+                device.clock.sleep(.36)
+            return original(request, timeout)
+        port.opener.open = delayed
+        started = device.clock.monotonic()
+        port.preflight()
+        self.assertTrue(5.8 < device.clock.monotonic()-started < 6.1)
+        self.assertEqual(len(pages), 16)
+        self.assertEqual(len(set(pages)), 16)
+        self.assertTrue(port.off_verified)
+        self.assertFalse(any('attempt-2' in name for name in store.rows))
+        self.assertTrue(all(body is None for _, body in device.requests))
+        # A later multi-page drain still shares the ordinary .8s deadline.
+        for i in range(24): device.append(i % 5 + 1, 0)
+        with self.assertRaisesRegex(TimeoutError, 'deadline'): port.check_idle()
+        self.assertFalse(port.off_verified)
 
     def test_initial_slow_page_can_complete_without_retry(self):
         port, device, store = self.setup_port()

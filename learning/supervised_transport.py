@@ -354,14 +354,14 @@ class SequencePort:
         bootstrap = self.last_sequence is None
         # Initial retained-ring loading occurs before any collector write. It
         # may need sixteen small responses. Only this read-only bootstrap allows
-        # a 1.5s page, within the unchanged 4s total. Later drains keep their budget.
+        # a 1.5s page, within an 8s total. Later drains keep their budget.
         # Explicit quiet monitoring may use the existing 1.5s status budget.
         bootstrap_budget = (bootstrap and self._active_pulse is None
                             and not self.may_have_run and not self.writes_possible
                             and not kwargs.get('emergency') and not self.evidence_failed
                             and not self.off_verified and self.last_snapshot is None)
         extended_quiet = kwargs.get('quiet_monitor_timeout') is True
-        drain_budget = 4. if bootstrap_budget else (max(self.timeout, 1.5) if extended_quiet else self.timeout)
+        drain_budget = 8. if bootstrap_budget else (max(self.timeout, 1.5) if extended_quiet else self.timeout)
         new = []
         pages = []
         # A full ring fits in sixteen pages. Both elapsed time and page count
