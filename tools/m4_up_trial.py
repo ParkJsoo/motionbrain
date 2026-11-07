@@ -106,7 +106,9 @@ def main(argv=None):
     p.add_argument('--config',type=Path,required=True)
     p.add_argument('--output-dir',type=Path,required=True)
     p.add_argument('--confirm-scope-sha256')
+    p.add_argument('--wait-for-start',action='store_true',help='비공개 토큰 입력 뒤 촬영 시작용 Enter를 별도로 기다림')
     a=p.parse_args(argv)
+    require(not a.wait_for_start or a.mode=='run','start_wait_requires_run_mode')
     private=(ROOT/'.local').resolve(strict=True)
     config=_decode_json(_read(private,a.config.absolute().relative_to(private).as_posix()))
     require(set(config)=={'scope','camera'},'m4_trial_config_fields')
@@ -119,6 +121,8 @@ def main(argv=None):
         with warnings.catch_warnings():
             warnings.simplefilter('error',getpass.GetPassWarning)
             token=getpass.getpass('제어 토큰 (비공개 입력): ')
+        if a.wait_for_start:
+            input('토큰 입력 완료 · 촬영 시작 대기 (에이전트가 준비 후 Enter): ')
     store=ArtifactStore(a.output_dir)
     store.write_json('trial-config.json',config)
     if a.mode=='capture-check':result=capture_check(scope,config['camera'],store)

@@ -52,12 +52,12 @@ python3 tools/m4_up_trial.py capture-check \
   --config .local/m4-up/config.json --output-dir .local/m4-up/camera-check-01
 python3 tools/m4_up_trial.py run \
   --config .local/m4-up/config.json --output-dir .local/m4-up/trial-01 \
-  --confirm-scope-sha256 '<현재 범위 해시>'
+  --confirm-scope-sha256 '<현재 범위 해시>' --wait-for-start
 ```
 
 `capture-check`는 제어기 쓰기를 STOP까지 모두 차단한다. 두 카메라의 전후 저장과 마감, OFF 및 출력 이력 무변화를 검사한다. 접촉·현장 참석 등 긍정 판단을 자동 생성하지 않으며 실물 실행 승인을 부여하지 않는다. 촬영 중인 다른 작업을 덮어쓰지 않는다.
 
-`run`은 터미널에서 토큰을 비공개 입력받는다. 에코 억제를 보장할 수 없는 터미널에서는 입력 전에 실패하며 환경·다른 프로세스·브라우저에서 토큰을 가져오지 않는다. 실제 시험 전에 기존 수집기의 제어권을 정상 이관하고, 현재 조건과 사용자 실행 범위를 확인해야 한다. 이 명령을 준비만을 위해 미리 실행하지 않는다.
+`run`은 터미널에서 토큰을 비공개 입력받는다. 에코 억제를 보장할 수 없는 터미널에서는 입력 전에 실패하며 환경·다른 프로세스·브라우저에서 토큰을 가져오지 않는다. `--wait-for-start`는 토큰 입력 뒤 별도의 Enter를 기다린다. 이 대기 중에는 저널·시험 디렉터리를 생성하거나 촬영·장치 조회를 시작하지 않는다. 분석가는 토큰 입력 완료 채팅을 받은 뒤 영상 검토를 수행할 준비를 마치고 시작한다. 채팅 지연을 영상 신선도 완화나 재촬영으로 보상하지 않는다. 실제 시험 전에 기존 수집기의 제어권을 정상 이관하고, 현재 조건과 사용자 실행 범위를 확인해야 한다.
 
 전후 영상이 저장되면 실행기는 `<label>-review-request.json`과 미리보기 경로를 출력한다. 분석가는 원본 영상과 현장 확인에 근거해 `{requestSha256,decision:{context,stable,onsite}}` 형식의 `<label>-review-decision.json`을 새로 저장한다. 요청 파일 해시가 같아야 하며 `context`·`onsite` 계약은 아래와 같다. 실행 전 검토는 원래 영상의9초 이내에 응답해야 한다. 늦거나 불명확한 판단은 RUN 없이 종료하고 자동으로 대체 자료를 찍지 않는다. 사후 검토는 원래 전체 기한 내에 수행한다. 이 검토는 방향·출력을 고르는 절차가 아니다.
 

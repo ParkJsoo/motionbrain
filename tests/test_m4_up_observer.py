@@ -159,5 +159,18 @@ class AdapterTests(unittest.TestCase):
         with patch('builtins.print'):result=reviewer(request,deadline=self.clock.now+2,tick=decide)
         self.assertEqual(result,expected)
 
+    def test_start_wait_is_after_private_input_and_before_store_or_camera(self):
+        config=self.repo/'.local/config.json';config.write_text(json.dumps(dict(scope=self.scope,camera=self.config)))
+        events=[]
+        def secret(*args,**kwargs):events.append('private_input');return 'private-token'
+        def wait(*args,**kwargs):events.append('start_wait');raise EOFError('no start')
+        with (patch.object(cli,'ROOT',self.repo),patch.object(cli.sys.stdin,'isatty',return_value=True),
+              patch.object(cli.getpass,'getpass',side_effect=secret),patch('builtins.input',side_effect=wait),
+              patch.object(cli,'ArtifactStore',side_effect=AssertionError('must not create store'))):
+            with self.assertRaises(EOFError):
+                cli.main(['run','--config',str(config),'--output-dir',str(self.repo/'.local/new'),
+                          '--confirm-scope-sha256',plan_digest(self.scope),'--wait-for-start'])
+        self.assertEqual(events,['private_input','start_wait']);self.assertFalse(self.device.requests)
+
 
 if __name__=='__main__':unittest.main()
