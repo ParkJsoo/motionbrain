@@ -48,7 +48,7 @@ class UpLearningTests(AdapterTests):
         observer=self.adapter()
         observer.wait_pre_window=lambda **kwargs:None
         observer.wait_pre_dispatch_window=lambda **kwargs:None
-        observer.native_pre_window_ready=lambda:True
+        observer.native_pre_window_ready=lambda **kwargs:True
         observer.wait_post_window=lambda *args,**kwargs:None
         def measured(trial,label,record,frames):
             # Only metrology is synthetic; original native/JPEG provenance and
@@ -93,7 +93,7 @@ class UpLearningTests(AdapterTests):
 
     def test_native_admission_not_ready_never_dispatches(self):
         trial,_=self.prepare_learning('evaluation');ready=[]
-        def not_ready():ready.append(True);return False
+        def not_ready(**kwargs):ready.append(True);return False
         trial.observer.native_pre_window_ready=not_ready
         result=self.run_learning(trial)
         self.assertEqual(result['status'],'failed');self.assertFalse(result['mayHaveRun'])
@@ -101,7 +101,7 @@ class UpLearningTests(AdapterTests):
         self.assertFalse(any(v=={'action':'run'} for _,v in self.device.requests));self.assertTrue(result['finalIdleOffVerified'])
     def test_second_preparation_cycle_can_admit_without_repeating_motor_command(self):
         trial,_=self.prepare_learning('evaluation');ready=iter([False,True,True])
-        trial.observer.native_pre_window_ready=lambda:next(ready)
+        trial.observer.native_pre_window_ready=lambda **kwargs:next(ready)
         result=self.run_learning(trial)
         self.assertEqual(result['status'],'completed',result)
         self.assertEqual(sum(v=={'action':'run'} for _,v in self.device.requests),1)
@@ -149,11 +149,11 @@ class UpLearningTests(AdapterTests):
         self.assertEqual(result['status'],'failed');self.assertFalse(result['mayHaveRun'])
         self.assertFalse(any(v=={'action':'run'} for _,v in self.device.requests))
     def test_native_admission_is_rechecked_at_final_guard(self):
-        trial,_=self.prepare_learning('evaluation');trial.observer.native_pre_window_ready=lambda:True
+        trial,_=self.prepare_learning('evaluation');trial.observer.native_pre_window_ready=lambda **kwargs:True
         original=self.store.write_json
         def save(name,value):
             original(name,value)
-            if name=='pre-run-guard.json':trial.observer.native_pre_window_ready=lambda:False
+            if name=='pre-run-guard.json':trial.observer.native_pre_window_ready=lambda **kwargs:False
         with patch.object(self.store,'write_json',side_effect=save):result=self.run_learning(trial)
         self.assertEqual(result['status'],'failed');self.assertFalse(result['mayHaveRun'])
         self.assertFalse(any(v=={'action':'run'} for _,v in self.device.requests));self.assertTrue(result['finalIdleOffVerified'])

@@ -37,6 +37,10 @@ LEARNING_PULSE = dict(joint='shoulder', motor=4, direction='up', percent=50,
                       durationMs=650, expectedPwm=127)
 LEARNING_CANDIDATES = [PULSE, LEARNING_PULSE]
 MAX_CONTROLLER_PROOF_AGE_SECONDS = .25
+PUBLIC_FAILURE_CODES = frozenset({
+    'm4_native_pre_dispatch_unavailable', 'm4_controller_proof_stale',
+    'm4_pre_run_guard_stale', 'm4_pinned_before_outside_dispatch_window',
+    'm4_start_context_changed', 'm4_observed_excursion', 'm4_camera_wait_expired'})
 
 
 def sha(raw):
@@ -211,7 +215,7 @@ class _CommissioningPort(transport.SequencePort):
             kwargs['request_timeout'] = min(kwargs.get('request_timeout', remaining), remaining)
         return super()._call(path, payload, **kwargs)
 
-    def _refresh_run_proof(self):
+    def _refresh_run_proof(self, *, require_ready=True):
         # Successful reads can age during another HTTP round trip. Refresh only
         # the older successful proof, once, before the durable RUN intent and
         # final nonblocking guard. A failed read is never retried here.
@@ -233,7 +237,8 @@ class _CommissioningPort(transport.SequencePort):
         self._save(refresh_file, dict(
             refreshed=oldest, before=before, after=copy.deepcopy(self.proof_started),
             recordedAt=self.clock.monotonic(), maximumProofAgeSeconds=MAX_CONTROLLER_PROOF_AGE_SECONDS))
-        self.owner._require_fresh_controller_proof(self.clock.monotonic())
+        if require_ready:
+            self.owner._require_fresh_controller_proof(self.clock.monotonic())
 
     def _snapshot(self, *, emergency=False):
         old = self.proving_off; self.proving_off = emergency
@@ -406,16 +411,19 @@ class M4UpCommissioning:
         for cycle in range(2):
             self._require_pinned_native_window(self.before_frames['external'], self.clock.monotonic())
             self.observer.wait_pre_dispatch_window(
-                deadline=min(self.deadline, self.clock.monotonic()+1.), tick=self._tick)
+                deadline=min(self.deadline, self.clock.monotonic()+1.), tick=self._tick,
+                horizon_seconds=.12)
             self._require_pinned_native_window(self.before_frames['external'], self.clock.monotonic())
             # Refresh successful but aged reads, not failed requests. Any read
             # or source error propagates immediately; it does not enter cycle 2.
-            self.port._refresh_run_proof()
+            self.port._refresh_run_proof(require_ready=False)
             self._guard()
-            if self.observer.native_pre_window_ready():
+            now = self.clock.monotonic()
+            proof_ready = all(0 <= now-at <= .20 for at in self.port.proof_started.values())
+            if proof_ready and self.observer.native_pre_window_ready(horizon_seconds=.12):
                 self.store.write_json('native-pre-dispatch-admission.json', dict(
                     preparedAt=self.clock.monotonic(), preparationCycles=cycle+1,
-                    scopeSha256=self.digest, horizonSeconds=.02,
+                    scopeSha256=self.digest, preparationHorizonSeconds=.12, finalHorizonSeconds=.02,
                     policy='original_pre_window_and_current_availability'))
                 self._require_fresh_controller_proof(self.clock.monotonic())
                 return
@@ -513,7 +521,12 @@ class M4UpCommissioning:
                 self.observer.wait_post_window(receipt['offAt'],deadline=self.deadline,tick=lambda:self._tick(True))
             report['status'] = 'completed'
         except (Exception, KeyboardInterrupt) as exc:
-            report['errors'].append(dict(phase=phase, type=type(exc).__name__))
+            error = dict(phase=phase, type=type(exc).__name__)
+            # Only fixed machine codes, never arbitrary exception messages or
+            # request headers/credentials, may be added to the private report.
+            if isinstance(exc, ValueError) and str(exc) in PUBLIC_FAILURE_CODES:
+                error['code'] = str(exc)
+            report['errors'].append(error)
         finally:
             if claimed:
                 if observer_started:

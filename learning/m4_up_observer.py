@@ -5,6 +5,7 @@ import copy
 import hashlib
 import math
 from pathlib import Path
+from types import MappingProxyType
 import time
 
 import cv2
@@ -19,6 +20,14 @@ from learning.manual_collection_dataset import require, select_frames
 
 def sha(raw):
     return hashlib.sha256(raw).hexdigest()
+
+
+def _immutable_snapshot(value):
+    if isinstance(value, dict):
+        return MappingProxyType({k:_immutable_snapshot(v) for k,v in value.items()})
+    if isinstance(value, (list, tuple)):
+        return tuple(_immutable_snapshot(v) for v in value)
+    return value
 
 
 class M4DualCameraObserver:
@@ -44,11 +53,13 @@ class M4DualCameraObserver:
         self.cached = self.closed = None
         self.started = self.failed = False
         self.labels = set()
+        self._native_admission_snapshot = None
 
     def start(self, *, deadline):
         require(not self.started and self.clock.monotonic() < deadline, 'm4_camera_start_invalid')
         require(sha(Path(self.config['helperPath']).read_bytes()) == self.config['helperSha256'], 'm4_camera_helper_changed')
         self.started = True
+        self._native_admission_snapshot = None
         # Set started first so partial native startup is also closed by the owner.
         self.recorder.start()
         ctx = self.scope['context']
@@ -98,18 +109,27 @@ class M4DualCameraObserver:
         require(type(horizon_seconds) in (int, float) and math.isfinite(horizon_seconds)
                 and horizon_seconds >= 0, 'm4_native_admission_horizon_invalid')
         require(self.started and self.closed is None and not self.failed, 'm4_camera_not_active')
-        # The capture writer persists files while holding this lock. Admission
-        # also runs inside the bounded pre-RUN guard and must never wait on it.
-        if not self.recorder.lock.acquire(blocking=False):
+        def check_flags():
+            require(not self.recorder.fault and not self.recorder.done
+                    and not getattr(self.recorder, 'closing', False), 'm4_native_stream_failed')
+        check_flags()
+        # The writer may fsync under this lock. Never wait or read its mutable
+        # frames while busy: an atomically published, deeply frozen snapshot is
+        # sufficient if the exact policy still admits it at the CURRENT time.
+        if self.recorder.lock.acquire(blocking=False):
+            try:
+                check_flags()
+                if self.recorder.frames:
+                    self.recorder.check()
+                snapshot = _immutable_snapshot(copy.deepcopy(self.recorder.frames))
+                self._native_admission_snapshot = snapshot
+            finally:
+                self.recorder.lock.release()
+        frames = getattr(self, '_native_admission_snapshot', None)
+        now = self.clock.monotonic()
+        check_flags()
+        if not frames or not 0 <= now-frames[-1]['sourceEarliest'] <= 2:
             return False
-        try:
-            require(not self.recorder.fault and not self.recorder.done, 'm4_native_stream_failed')
-            if self.recorder.frames:
-                self.recorder.check()
-            frames = copy.deepcopy(self.recorder.frames)
-            now = self.clock.monotonic()
-        finally:
-            self.recorder.lock.release()
         try:
             for at in (now, now+horizon_seconds):
                 select_frames(frames, [at-3., at-.1], command_at=now)
@@ -117,10 +137,11 @@ class M4DualCameraObserver:
             if str(exc) in ('video_window_missing', 'video_window_coverage', 'video_window_gap'):
                 return False
             raise
+        check_flags()
         return True
 
-    def wait_pre_dispatch_window(self, *, deadline, tick):
-        return self._wait(lambda: True if self.native_pre_window_ready() else None, deadline, tick)
+    def wait_pre_dispatch_window(self, *, deadline, tick, horizon_seconds=.02):
+        return self._wait(lambda: True if self.native_pre_window_ready(horizon_seconds) else None, deadline, tick)
 
     def wait_post_window(self, after_off, *, deadline, tick):
         return self._wait(lambda: True if self.clock.monotonic()>=after_off+6.4 else None,deadline,tick)

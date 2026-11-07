@@ -46,6 +46,7 @@ class NativeAdmissionTests(unittest.TestCase):
         now = self.clock.now
         self.adapter.recorder.frames.append(self.frame(now+.01, read=now+.03))
         self.assertFalse(self.adapter.native_pre_window_ready())
+        self.adapter.recorder.frames.pop()  # A future source never publishes an admissible cache.
         with patch.object(observer, 'select_frames', wraps=select_frames) as policy:
             self.clock.now += .002
             self.assertTrue(self.adapter.native_pre_window_ready())
@@ -104,6 +105,41 @@ class NativeAdmissionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'recording_source_stall'):
             self.adapter.native_pre_window_ready()
         self.assertTrue(lock.acquire(blocking=False)); lock.release()
+
+    def test_published_immutable_snapshot_remains_usable_while_writer_is_busy(self):
+        self.adapter.recorder.frames = self.logged_margin_frames()
+        self.clock.now += .002
+        self.assertTrue(self.adapter.native_pre_window_ready())
+        snapshot = self.adapter._native_admission_snapshot
+        self.assertIsInstance(snapshot, tuple)
+        with self.assertRaises(TypeError):
+            snapshot[-1]['sourceEarliest'] = 0
+        self.assertIsInstance(snapshot[-1]['qualityFlags'], tuple)
+        lock = threading.Lock(); self.adapter.recorder.lock = lock; lock.acquire()
+        try:
+            self.adapter.recorder.frames[-1]['qualityFlags'].append('writer_mutation')
+            self.assertTrue(self.adapter.native_pre_window_ready())
+            self.assertEqual(snapshot[-1]['qualityFlags'], ())
+            self.clock.now += 2.1
+            self.assertFalse(self.adapter.native_pre_window_ready())
+        finally:
+            lock.release()
+
+    def test_busy_snapshot_never_borrows_late_receipt_and_faults_raise_immediately(self):
+        self.adapter.recorder.frames = self.logged_margin_frames()
+        self.assertFalse(self.adapter.native_pre_window_ready())  # Publishes, but receipt is not ready yet.
+        lock = threading.Lock(); self.adapter.recorder.lock = lock; lock.acquire()
+        try:
+            self.assertFalse(self.adapter.native_pre_window_ready())
+            self.clock.now += .002
+            self.assertTrue(self.adapter.native_pre_window_ready())
+            for flag in ('fault', 'done', 'closing'):
+                setattr(self.adapter.recorder, flag, 'fault' if flag == 'fault' else True)
+                with self.assertRaisesRegex(ValueError, 'm4_native_stream_failed'):
+                    self.adapter.native_pre_window_ready()
+                setattr(self.adapter.recorder, flag, None if flag == 'fault' else False)
+        finally:
+            lock.release()
 
     def test_wait_uses_cached_frames_until_available_and_honors_deadline(self):
         self.adapter.recorder.frames = self.logged_margin_frames()
