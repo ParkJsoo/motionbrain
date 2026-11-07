@@ -37,6 +37,20 @@ colcon test-result --verbose
 
 설치 의존성은 [ROS2 CI](.github/workflows/ros2.yml), 펌웨어·Python 검증은 [PlatformIO CI](.github/workflows/platformio.yml)와 대응한다.
 
+## 소스 동기화와 장치 적용
+
+호스트·Pi 저장소의 커밋, 실행 중인 서비스가 읽은 코드, 보드에 설치된 펌웨어는 각각 확인한다. Pi의 Git HEAD가 main과 같아도 서비스 재시작이나 펌웨어 업로드가 완료됐다는 뜻은 아니다.
+
+소스를 맞출 때는 작업 트리가 깨끗한지 확인하고 원격 변경을 검토한 뒤 fast-forward만 적용한다. 로컬 변경이나 분기된 이력이 있으면 보존하고 원인을 먼저 확인한다.
+
+```sh
+git status --short --branch
+git fetch origin
+git merge --ff-only origin/main
+```
+
+서비스 적용 여부는 이전 커밋과 새 커밋 사이의 실행 파일·의존 모듈·유닛 변경으로 판단한다. `tools/raspi/`, `deploy/`, `web/`, 관련 `learning/` 모듈과 `ros2_ws/`를 함께 검토한다. 실행 경로가 바뀌지 않았다면 저장소 동기화만으로 서비스를 재시작할 필요는 없다. 환경 파일·로컬 모델·원본 자료는 소스 동기화와 별도로 보존하며, 펌웨어 빌드·업로드도 구분한다.
+
 ## Pi 서비스 설정
 
 Pi 접속은 고정 DHCP IP 대신 현재 설치 환경의 호스트명을 사용한다. `tools/raspi/check_pi_ssh_target.py`는 SSH 대상과 연결을 확인한다. `tools/raspi/discover_device_url.py`는 ESP32 HTTP 탐색 도구이며 Pi SSH 탐색용이 아니다.

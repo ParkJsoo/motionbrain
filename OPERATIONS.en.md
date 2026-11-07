@@ -37,6 +37,20 @@ colcon test-result --verbose
 
 Dependencies are listed in [ROS2 CI](.github/workflows/ros2.yml); firmware/Python checks are defined in [PlatformIO CI](.github/workflows/platformio.yml).
 
+## Source synchronization and device application
+
+Check the host/Pi repository commit, code loaded by running services, and firmware installed on each board separately. A Pi Git HEAD matching main does not establish that services were restarted or firmware was uploaded.
+
+Before synchronizing sources, check for a clean working tree and review remote changes, then apply a fast-forward only. Preserve local changes or divergent history and investigate them first.
+
+```sh
+git status --short --branch
+git fetch origin
+git merge --ff-only origin/main
+```
+
+Decide whether services need updating by comparing executable files, dependencies and units between the old and new commits. Review `tools/raspi/`, `deploy/`, `web/`, relevant `learning/` modules and `ros2_ws/` together. If the runtime path has not changed, repository synchronization alone does not require a service restart. Preserve environment files, local models and raw data separately; firmware builds and uploads are also separate operations.
+
 ## Pi service configuration
 
 Use the installation's current hostname rather than a fixed DHCP address. `tools/raspi/check_pi_ssh_target.py` checks the SSH target and connectivity. `tools/raspi/discover_device_url.py` discovers ESP32 HTTP services, not Pi SSH.

@@ -8,17 +8,17 @@
 
 | 문서 | 역할 |
 | --- | --- |
-| [시각 행동 학습](visual-action-learning.md) | 목표, 현재 단계와 과거 수집 계획의 구분 |
+| [시각 행동 학습](visual-action-learning.md) | 현재 단계, 관측·예측·기구학의 역할과 전체 팔의 집기·들기 계획 |
 | [관절별 수동 수집](manual-data-collection.md) | 수집 화면·재생, M4 데이터셋 변환·학습·평가 사용법 |
-| [물체·집게 상대 상태](relative-action-selection.md) | 수동 점 주석·관절/자세별 모델, 고정 평가·질의와 구동 전 예측 확인 |
+| [물체·집게 상대 상태](relative-action-selection.md) | 수동 점·등록 특징의 별도 계약, 관절/자세별 모델과 고정 평가·질의 |
 | [외부 영상의 팔 표식 상태](projected-arm-learning.md) | 물체 없는 팔의 네 픽셀 상태 학습·고정 평가와 별도 관측 계약 |
-| [순차 접근·닫기 코어](model-grasp-trial.md) | 고정 모델 선택·실제 재관측, 카메라 관측 어댑터·무출력 진단과 실물 미검증 범위 |
+| [순차 접근·닫기 코어](model-grasp-trial.md) | 고정 모델 선택·접촉 후 들기 연결, 등록 특징·원호 관측과 실물 미검증 범위 |
 | [현장 감독 수집](supervised-action-collection.md) | 기존 M2 정착 전후 17개 자료와 개발 평가 계약 |
 | [유한 출력 프로파일](finite-output-profile.md) | M2 고정 출력 구현·실물 시운전과 계측 거부·불확실성 검토 |
 | [무명령 관측 반복성](stationary-repeatability.md) | 관측창·조명 조건 비교와 측정 변동 해석의 한계 |
 | [오프라인 행동 선택](offline-action-selection.md) | 저장 모델의 후보 순위·hold·abstain, 저장 상태 재생과 정책 평가 한계 |
 | [시각 행동 수집기](visual-action-collection.md) | 행동 ID·영상 구간·실패 기록·감사와 공개 단발 CLI의 계약. 별도 반복 실측 경로와 구분 |
-| [연구 근거](research/visual-action-learning.md) | 논문 6편의 실제 실험 조건과 적용 아이디어 |
+| [연구 근거](research/visual-action-learning.md) | 관련 연구의 실험 조건·대안·적용 아이디어와 현재 장치의 차이 |
 | [기존 행동 데이터 계약](data-pipeline.md) | 구현된 M4·물체 박스 데이터 검증과 학습 CLI |
 | [Mac 카메라 계측](mac-direct-camera.md) | 영상·USB 시각 연결 도구와 계측 결과 |
 | [화면 표식의 오프라인 시간 검증](optical-challenge-offline.md) | 기존 계약을 위한 선택적 합성 실험. 물리 노출 인증이나 새 행동 학습의 선행 조건이 아님 |
@@ -46,6 +46,7 @@
 | [2026-11-05 관절별 상대 상태 학습](evidence/2026-11-05-multi-joint-relative-learning.md) | 33건 확보·24건 학습·9건 후속 평가, 범위 거절·미구동 실패·미시작과 한계 |
 | [2026-11-06 M3·M4 표식 학습](evidence/2026-11-06-projected-arm-m3-m4-learning.md) | 학습 9건·4건, 고정 후 관측 품질·상태 범위 거절과 미평가 분모 |
 | [2026-11-07 M1 구동 전 예측 확인](relative-action-selection.md#2026-11-07-자세를-분리한-학습과-구동-전-예측-확인) | 자세별 분리 학습, 고정 후 새 1건 비교와 무변화 기준·지원 범위의 한계 |
+| [2026-11-08 닫기→들기 연결의 관측·입력 범위](evidence/2026-11-08-close-lift-integration.md) | M1 수집 4·준비 3회와 새 계약 재감사·고정 모델, 평가·선택·연결 0회, 관측 모호함과 범위 거절 |
 
 각 기록에는 조건·실패·분모·재현 한계를 남긴다. 비공개 원본 이미지·실행 응답은 이 공개 저장소에 포함하지 않는다.
 

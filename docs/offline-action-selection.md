@@ -47,7 +47,7 @@ python3 -m unittest tests.test_joint_action_selection tests.test_joint_collectio
 
 선택한 명령이 당시 실제 실행 명령과 같은 경우만 `selectedObservedGoalErrorDeg`를 연결한다. 이번에는 7개 판단이 일치했으며 서로 다른 원본 전이는 5개다. 나머지 후보와 `hold`의 실제 결과는 알 수 없어 `null`로 남긴다. 일치한 표본도 선택 편향이 있으므로 이 부분집합으로 정책 성공률이나 무작위 정책 대비 개선을 계산하지 않는다. 전체 `policySuccessRate`도 `null`이다.
 
-이미 예측 평가에 사용한 시험 자료를 다시 살펴본 탐색적 분석이다. 새로운 독립 정책 시험이 아니며, 이 결과로 규칙을 바꾼다면 이후 새 실측 평가 집합이 필요하다. 후속 단일 목표 시험 연결은 모의 검증 뒤 [첫 실물 목표 접근](evidence/2026-10-31-first-model-goal-approach.md)에서 결과를 측정했다. 현재 후속 방향은 [일괄 수집·묶음 학습 계획](visual-action-learning.md#첫-성공-이후의-진행-계획)을 따른다.
+이미 예측 평가에 사용한 시험 자료를 다시 살펴본 탐색적 분석이다. 새로운 독립 정책 시험이 아니며, 이 결과로 규칙을 바꾼다면 이후 새 실측 평가 집합이 필요하다. 후속 단일 목표 시험 연결은 모의 검증 뒤 [첫 실물 목표 접근](evidence/2026-10-31-first-model-goal-approach.md)에서 결과를 측정했다. 현재 후속 방향은 [전체 팔의 집기·들기 계획](visual-action-learning.md#단계와-판단-기준)을 따른다.
 
 
 ## 관측→선택→단일 목표 시험 연결
