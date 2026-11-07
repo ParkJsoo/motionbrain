@@ -203,6 +203,64 @@ class ModelGraspTests(unittest.TestCase):
         self.assertTrue(self.observer.closed)
         self.assertEqual(self.store.rows['result.json'], report)
 
+    def close_only_scope(self):
+        self.scope['stages'] = [dict(self.scope['stages'][-1], target=[20., 20., 20.])]
+        self.scope.update(maxCommands=1, maxRequestedMs=350)
+
+    def test_aligned_close_only_uses_one_model_selected_command_and_retention(self):
+        self.close_only_scope()
+        report = self.run_trial()
+        self.assertEqual(report['status'], 'held')
+        self.assertEqual(report['modelSelectedMotorCommands'], 1)
+        self.assertEqual(len(self.port.calls), 1)
+        self.assertEqual(self.port.calls[0]['joint'], 'gripper')
+        self.assertTrue(report['graspVerified'])
+        self.assertTrue(report['finalIdleOffVerified'])
+        self.assertFalse(report['liftVerified'])
+
+    def test_close_only_rejects_missing_depth_context_and_outside_range_without_run(self):
+        for case in ('missing_proof', 'context', 'outside_range', 'stale'):
+            with self.subTest(case=case):
+                self.setUp(); self.close_only_scope()
+                if case == 'missing_proof': self.observer.with_close_proof = False
+                elif case == 'context': self.observer.bad_context = True
+                elif case == 'outside_range': self.observer.state = [90., 90., 30.]
+                else: self.port.intent_delay = 3.
+                report = self.run_trial()
+                self.assertEqual(self.port.calls, [])
+                self.assertFalse(report['graspVerified'])
+                self.assertTrue(report['finalIdleOffVerified'])
+
+    def test_close_only_unknown_results_never_retry_or_claim_success(self):
+        for case in ('lost_response', 'retention_unknown', 'off_unverified'):
+            with self.subTest(case=case):
+                self.setUp(); self.close_only_scope()
+                if case == 'lost_response': self.port.loss = True
+                elif case == 'retention_unknown': self.observer.proof_status = 'unknown'
+                else: self.port.off = False
+                report = self.run_trial()
+                self.assertEqual(len(self.port.calls), 1)
+                self.assertFalse(report['graspVerified'])
+                self.assertFalse(report['automaticRetry'])
+
+    def test_close_only_scope_still_requires_one_close_and_nonempty_stages(self):
+        for case in ('empty', 'position_only', 'two_closes', 'open_candidate'):
+            with self.subTest(case=case):
+                self.setUp(); self.close_only_scope()
+                if case == 'empty': self.scope['stages'] = []
+                elif case == 'position_only': self.scope['stages'][0]['kind'] = 'position'
+                elif case == 'two_closes': self.scope['stages'][0]['maxCommands'] = 2
+                else: self.scope['stages'][0]['commands'] = [dict(CLOSE, direction='open')]
+                with self.assertRaises(ValueError): self.trial()
+                self.assertEqual(self.port.calls, [])
+
+    def test_close_only_existing_geometry_is_not_grasp_evidence(self):
+        self.close_only_scope(); self.observer.state = [20., 20., 20.]
+        report = self.run_trial()
+        self.assertEqual(report['errors'][0]['reason'], 'closed_geometry_is_not_grasp_proof')
+        self.assertEqual(self.port.calls, [])
+        self.assertFalse(report['graspVerified'])
+
     def test_sequence_transport_integration_preserves_stop_and_off(self):
         device = Controller(self.clock); device.boot = self.scope['controllerBootId']
         port = SequencePort('http://device', 'test-token', device.boot, self.store, clock=self.clock)

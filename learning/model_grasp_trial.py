@@ -73,7 +73,7 @@ def validate_scope(scope, bank):
     require(type(scope['postOffSeconds']) in (int, float) and scope['postOffSeconds'] == 3.,
             'fixed_post_off_observation_wait_required')
     stages = scope['stages']
-    require(isinstance(stages, list) and 2 <= len(stages) <= 4, 'position_then_close_required')
+    require(isinstance(stages, list) and 1 <= len(stages) <= 4, 'position_then_close_required')
     seen, objects = set(), set()
     for index, stage in enumerate(stages):
         require(isinstance(stage, dict) and set(stage) == {
