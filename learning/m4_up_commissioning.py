@@ -2,7 +2,8 @@
 
 General collection restrictions remain unchanged. The caller must supply current
 dual-camera acquisition/review and a private runtime token; this module never
-discovers devices, extracts tokens, fits a model or selects a grasp policy.
+discovers devices, extracts tokens or fits a model. A separately frozen model
+may select only the two explicitly registered learning candidates.
 """
 from __future__ import annotations
 
@@ -30,6 +31,11 @@ PULSE = dict(joint='shoulder', motor=4, direction='up', percent=16,
 LIFT_SCHEMA = 'motionbrain.m4_up_manual_lift.v1'
 LIFT_PULSE = dict(joint='shoulder', motor=4, direction='up', percent=50,
                   durationMs=750, expectedPwm=127)
+LEARNING_SCHEMA = 'motionbrain.m4_up_learning.v1'
+MODEL_SCHEMA = 'motionbrain.m4_up_model_selection.v1'
+LEARNING_PULSE = dict(joint='shoulder', motor=4, direction='up', percent=50,
+                      durationMs=650, expectedPwm=127)
+LEARNING_CANDIDATES = [PULSE, LEARNING_PULSE]
 MAX_CONTROLLER_PROOF_AGE_SECONDS = .25
 
 
@@ -39,7 +45,8 @@ def sha(raw):
 
 def implementation_digest():
     return sha(b'\0'.join(p.read_bytes() for p in (
-        Path(__file__),Path(transport.__file__),Path(__file__).with_name('m4_up_observer.py'))))
+        Path(__file__),Path(transport.__file__),Path(__file__).with_name('m4_up_observer.py'),
+        Path(__file__).with_name('m4_lift_learning.py'))))
 
 
 def _hash(value):
@@ -47,23 +54,36 @@ def _hash(value):
 
 
 def validate_scope(scope):
-    require(isinstance(scope, dict) and set(scope) == {
+    is_learning = isinstance(scope,dict) and scope.get('schemaVersion') in (LEARNING_SCHEMA,MODEL_SCHEMA)
+    extra = {'phase','observationContractSha256','modelPath','modelSha256'} if is_learning else set()
+    require(isinstance(scope, dict) and set(scope) == extra | {
         'schemaVersion', 'trialId', 'controllerUrl', 'controllerBootId', 'hostClockId',
         'implementationSha256', 'context', 'pulse', 'defaultSpeed', 'maxCommands',
         'expectedStartAngleDeg', 'startAngleToleranceDeg', 'maxObservedDeltaDeg',
         'maxSeconds', 'maxObservationAgeSeconds', 'postOffSeconds'}, 'm4_scope_fields')
-    require(scope['schemaVersion'] in (SCHEMA,LIFT_SCHEMA) and identifier(scope['trialId'])
+    require(scope['schemaVersion'] in (SCHEMA,LIFT_SCHEMA,LEARNING_SCHEMA,MODEL_SCHEMA) and identifier(scope['trialId'])
             and identifier(scope['hostClockId']) and isinstance(scope['controllerBootId'], str)
             and re.fullmatch('[0-9a-f]{32}', scope['controllerBootId']) is not None,
             'm4_scope_identity')
     transport.validate_target(scope['controllerUrl'])
     require(scope['implementationSha256'] == implementation_digest(), 'm4_implementation_changed')
-    profile = PULSE if scope['schemaVersion']==SCHEMA else LIFT_PULSE
+    profile = (next((p for p in LEARNING_CANDIDATES if p==scope['pulse']),{})
+               if is_learning else PULSE if scope['schemaVersion']==SCHEMA else LIFT_PULSE)
+    if is_learning:
+        require(scope['pulse'] in LEARNING_CANDIDATES and _hash(scope['observationContractSha256']), 'm4_learning_candidates_required')
+        require(scope['phase'] in ('training','evaluation','model_selection')
+                and (scope['schemaVersion']==MODEL_SCHEMA)==(scope['phase']=='model_selection'), 'm4_learning_phase')
+        require(scope['schemaVersion']!=MODEL_SCHEMA or scope['pulse']==LEARNING_PULSE,'m4_model_ceiling_required')
+        if scope['phase']=='training':
+            require(scope['modelPath'] is None and scope['modelSha256'] is None,'m4_training_no_model_binding')
+        else:
+            require(_hash(scope['modelSha256']) and isinstance(scope['modelPath'],str)
+                    and Path(scope['modelPath']).resolve().is_relative_to((REPO/'.local').resolve()),'m4_frozen_model_binding')
     require(scope['pulse'] == profile and all(type(scope['pulse'][k]) is type(v) for k, v in profile.items())
             and type(scope['defaultSpeed']) is int and scope['defaultSpeed'] == 255
             and type(scope['maxCommands']) is int and scope['maxCommands'] == 1,
             'm4_exact_single_pulse_required')
-    for k, value in [('startAngleToleranceDeg', .5), ('maxObservedDeltaDeg', 1.),
+    for k, value in [('startAngleToleranceDeg', .5), ('maxObservedDeltaDeg', 3. if is_learning else 1.),
                      ('maxSeconds', 60.), ('maxObservationAgeSeconds', 10.), ('postOffSeconds', 3.)]:
         require(transport.finite_number(scope[k]) and scope[k] == value, 'm4_fixed_limits_required')
     require(transport.finite_number(scope['expectedStartAngleDeg'])
@@ -174,7 +194,7 @@ class _CommissioningPort(transport.SequencePort):
 
     def _execute_validated(self, pulse, tick, *, before_run=None):
         self.owner._guard()
-        require(self.owner.in_pulse and pulse == self.owner.scope['pulse'], 'm4_scope_not_active')
+        require(self.owner.in_pulse and pulse == self.owner.selected_pulse, 'm4_scope_not_active')
         return super()._execute_validated(pulse, tick, before_run=before_run)
 
     def _call(self, path, payload=None, **kwargs):
@@ -215,17 +235,32 @@ class _CommissioningPort(transport.SequencePort):
 
 
 class M4UpCommissioning:
-    """One fixed manual identification or lift attempt, not a learned policy.
+    """One bounded identification, frozen evaluation or model-selected lift attempt.
 
     Observer: start(deadline), observe(after_off,deadline,tick), latest(), check(),
     close(). observe returns a durable review plus actual native/gripper sources;
     latest/check must be nonblocking and must never capture or perform HTTP.
     Only run() acquires the fixed shared journal and may contact a controller.
     """
-    def __init__(self, scope, observer, token, store, *, evidence_root, clock=time):
+    def __init__(self, scope, observer, token, store, *, evidence_root, clock=time, registration=None, model=None):
         self.scope = validate_scope(scope); self.digest = plan_digest(self.scope)
         self.selection_kind = ('manual_lift_fixed_profile' if self.scope['schemaVersion']==LIFT_SCHEMA
                                else 'manual_commissioning_fixed_profile')
+        self.learning = self.scope['schemaVersion'] in (LEARNING_SCHEMA,MODEL_SCHEMA)
+        self.registration,self.model=copy.deepcopy(registration),model
+        self.selected_pulse=copy.deepcopy(self.scope['pulse'])
+        self.measurement_records=[];self.model_decision=None
+        if self.learning:
+            from learning.m4_lift_learning import contract_sha
+            require(registration is not None and contract_sha(registration)==self.scope['observationContractSha256'],'m4_observation_contract_changed')
+            require((model is None)==(self.scope['phase']=='training'),'m4_frozen_model_required')
+            if model is not None:
+                require(str(Path(model.path).resolve())==str(Path(self.scope['modelPath']).resolve())
+                        and model.sha==self.scope['modelSha256'],'m4_model_binding_changed')
+                require(contract_sha(model.registration)==self.scope['observationContractSha256'],'m4_model_registration_changed')
+                model.verify()
+            self.selection_kind={'training':'manual_training_fixed_profile','evaluation':'fixed_model_evaluation_fixed_profile',
+                                 'model_selection':'model_selected_lift'}[self.scope['phase']]
         self.observer, self.store, self.clock = observer, store, clock
         self.root = Path(evidence_root).resolve(strict=True)
         require(self.root.is_relative_to((REPO/'.local').resolve())
@@ -238,6 +273,19 @@ class M4UpCommissioning:
         require(self.clock.monotonic() < self.deadline, 'm4_trial_deadline')
         require(plan_digest(self.scope) == self.digest
                 and self.scope['implementationSha256'] == implementation_digest(), 'm4_scope_or_code_changed')
+        if self.learning:
+            from learning.m4_lift_learning import contract_sha
+            require(contract_sha(self.registration)==self.scope['observationContractSha256'],'m4_registration_changed')
+            if self.model is not None:
+                require(str(Path(self.model.path).resolve())==str(Path(self.scope['modelPath']).resolve())
+                        and self.model.sha==self.scope['modelSha256'],'m4_model_binding_changed')
+                require(contract_sha(self.model.registration)==self.scope['observationContractSha256'],'m4_model_registration_changed')
+                self.model.verify()
+            require(self.selected_pulse in LEARNING_CANDIDATES,'m4_selected_pulse_not_supported')
+            if self.scope['schemaVersion']!=MODEL_SCHEMA:require(self.selected_pulse==self.scope['pulse'],'m4_fixed_pulse_changed')
+            elif self.model_decision is not None:
+                require(all(self.selected_pulse[k]==self.model_decision['pulse'][k]
+                            for k in ('joint','direction','percent','durationMs')),'m4_model_selection_changed')
         require(self.journal is not None and self.journal.readiness()['ready'], 'm4_owner_missing')
         rows = self.journal.connection.execute("SELECT session_id,plan_hash,output_path FROM supervised_blocks WHERE phase IN ('pending','off_unverified')").fetchall()
         require(rows == [(self.scope['trialId'], self.digest, str(self.store.root))], 'm4_owner_changed')
@@ -282,6 +330,17 @@ class M4UpCommissioning:
         latest = self.observer.latest()
         require(latest == self.before, 'm4_input_changed_before_run')
         frames = self._observe(latest)
+        if self.learning:
+            for record in self.measurement_records:
+                for name in ('external','gripper'):
+                    source=record[name]
+                    require(sha(_read(self.root,source['path']))==source['sha256'],'m4_measured_source_changed')
+            if self.model_decision is not None:
+                path=Path(self.model_decision['decisionPath'])
+                require(path.resolve().is_relative_to(self.root),'m4_prediction_outside_evidence')
+                raw=_read(self.root,path.resolve().relative_to(self.root).as_posix())
+                require(sha(raw)==self.model_decision['decisionSha256'] and _decode_json(raw)=={
+                    k:v for k,v in self.model_decision.items() if k not in ('decisionPath','decisionSha256')},'m4_prediction_changed')
         self._guard()
         self.store.write_json('pre-run-guard.json', dict(scopeSha256=self.digest, frames=frames,
             controllerProofStarted=copy.deepcopy(self.port.proof_started),
@@ -292,6 +351,26 @@ class M4UpCommissioning:
                 and all(now-frame['sourceEarliest'] <= self.scope['maxObservationAgeSeconds']
                         for frame in frames.values()), 'm4_pre_run_guard_stale')
         self._require_fresh_controller_proof(now)
+
+    def _measure(self,label,record,frames):
+        from learning.m4_lift_learning import measure, validate_before
+        import cv2,numpy as np
+        binding=dict(external={k:frames['external'][k] for k in ('configurationSha256','width','height','videoMirrored','videoRotationAngle')},
+                     gripper={k:frames['gripper'][k] for k in ('width','height')})
+        require(binding==self.registration.get('cameraBinding'),'m4_registered_camera_changed')
+        name=f'{label}-external.png';raw=_read(self.root,name)
+        pixels=cv2.imdecode(np.frombuffer(raw,np.uint8),cv2.IMREAD_UNCHANGED)
+        require(pixels is not None and pixels.shape==(frames['external']['height'],frames['external']['width'],4)
+                and sha(pixels.tobytes())==frames['external']['pixelSha256'],'m4_preview_not_original_pixels')
+        grip=record['gripper'];grip_path=grip['root']+f'/esp32-{label}.jpg'
+        source=dict(id=self.scope['hostClockId']+':'+label,context=copy.deepcopy(self.scope['context']),
+                    external=dict(path=name,sha256=sha(raw)),gripper=dict(path=grip_path,sha256=grip['imageSha256']))
+        features=measure(self.root,source,self.registration)
+        if label=='before':validate_before(features,self.registration)
+        self.store.write_json(label+'-measurement-source.json',source)
+        self.store.write_json(label+'-measurement.json',features)
+        self.measurement_records.append(source)
+        return source,features
 
     def _require_fresh_controller_proof(self, now):
         require(set(self.port.proof_started) == {'status','outputs'}
@@ -321,13 +400,33 @@ class M4UpCommissioning:
             self.baseline_angle = self.port._shoulder_angle(snapshot['status'])
             phase = 'before_observation'; observer_started = True
             self.observer.start(deadline=self.deadline)
+            if self.learning:self.observer.wait_pre_window(deadline=self.deadline,tick=lambda:self._tick(True))
             self.before = self.observer.observe(after_off=None, deadline=self.deadline, tick=lambda: self._tick(True))
             before_frames = self._observe(self.before); self._guard()
             self.store.write_json('before-observation.json', self.before)
+            if self.learning:
+                source,features=self._measure('before',self.before,before_frames)
+                report['beforeFeatures']=features
+                if self.model is not None:
+                    self.model_decision=(self.model.select(source) if self.scope['schemaVersion']==MODEL_SCHEMA
+                                         else self.model.predict(source,{k:self.scope['pulse'][k] for k in ('joint','direction','percent','durationMs')}))
+                    require(self.model_decision.get('modelSha256')==self.scope['modelSha256']
+                            and self.model_decision.get('contractSha256')==self.scope['observationContractSha256']
+                            and self.model_decision.get('modelSelected') is (self.scope['schemaVersion']==MODEL_SCHEMA), 'm4_prediction_binding_changed')
+                    if self.scope['schemaVersion']!=MODEL_SCHEMA:
+                        require(self.model_decision['pulse']=={k:self.scope['pulse'][k] for k in ('joint','direction','percent','durationMs')},'m4_evaluation_pulse_changed')
+                    if self.scope['schemaVersion']==MODEL_SCHEMA:
+                        pulse=self.model_decision['pulse'];selected=next((p for p in LEARNING_CANDIDATES
+                            if all(p[k]==pulse[k] for k in ('joint','direction','percent','durationMs'))),None)
+                        require(selected is not None,'m4_model_unsupported_selection')
+                        self.selected_pulse=copy.deepcopy(selected)
+                    report['modelDecision']=copy.deepcopy(self.model_decision)
+                report.update(selectedPulse=self.selected_pulse,modelSelected=self.scope['schemaVersion']==MODEL_SCHEMA)
             phase = 'pulse'; self.in_pulse = True
-            try: receipt = self.port._execute_validated(copy.deepcopy(self.scope['pulse']), self._tick, before_run=self._before_run)
+            try: receipt = self.port._execute_validated(copy.deepcopy(self.selected_pulse), self._tick, before_run=self._before_run)
             finally: self.in_pulse = False
             report['receipt'] = receipt
+            report['modelSelectedCommandExecuted']=bool(self.learning and self.scope['schemaVersion']==MODEL_SCHEMA and self.port.may_have_run)
             phase = 'after_observation'
             after = self.observer.observe(after_off=receipt['offAt'], deadline=self.deadline, tick=lambda: self._tick(True))
             frames = self._observe(after, after_off=receipt['offAt'])
@@ -339,6 +438,9 @@ class M4UpCommissioning:
                     and Fraction(*frames['external']['pts']) > Fraction(*before_frames['external']['pts'])
                     and frames['gripper']['capturedUs'] > before_frames['gripper']['capturedUs'], 'm4_duplicate_or_reversed_after')
             self.store.write_json('after-observation.json', after); self._guard()
+            if self.learning:
+                _,features=self._measure('after',after,frames);report['afterFeatures']=features
+                self.observer.wait_post_window(receipt['offAt'],deadline=self.deadline,tick=lambda:self._tick(True))
             report['status'] = 'completed'
         except (Exception, KeyboardInterrupt) as exc:
             report['errors'].append(dict(phase=phase, type=type(exc).__name__))

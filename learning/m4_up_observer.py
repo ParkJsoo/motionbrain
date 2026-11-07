@@ -79,6 +79,17 @@ class M4DualCameraObserver:
                         return copy.deepcopy(frame)
         return self._wait(select, deadline, tick)
 
+    def wait_pre_window(self, *, deadline, tick):
+        def ready():
+            with self.recorder.lock:
+                if not self.recorder.frames: return None
+                first=self.recorder.frames[0]['sourceEarliest']
+                return True if self.clock.monotonic()>=first+3.6 else None
+        return self._wait(ready,deadline,tick)
+
+    def wait_post_window(self, after_off, *, deadline, tick):
+        return self._wait(lambda: True if self.clock.monotonic()>=after_off+6.4 else None,deadline,tick)
+
     def observe(self, *, after_off, deadline, tick):
         require(self.started and self.closed is None and not self.failed, 'm4_camera_not_active')
         label = 'before' if after_off is None else 'after'

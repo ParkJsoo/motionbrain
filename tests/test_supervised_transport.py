@@ -109,6 +109,30 @@ class TransportTests(unittest.TestCase):
         port.opener = device
         return port, device, store
 
+    def test_private_return_goal_stops_once_after_safety_and_preserves_off(self):
+        port,device,store=self.setup_port()
+        device.after_run=lambda d:setattr(d,'angle',219.8)
+        requested=validate_pulse(pulse('shoulder','down',35,550))
+        result=port._execute_validated(requested,lambda:None,stop_when=lambda s:s['shoulderAngle']['angleDeg']<=219.9)
+        self.assertTrue(result['stoppedEarly']);self.assertTrue(result['offVerified'])
+        self.assertEqual(sum(p=={'action':'run'} for _,p in device.requests),1)
+        self.assertFalse(any(device.speeds.values()));self.assertFalse(device.queue)
+    def test_private_return_goal_cannot_skip_safety_or_retry_failure(self):
+        for mode in ('unsafe','exception','not_bool'):
+            port,device,_=self.setup_port();calls=[]
+            def goal(status):
+                calls.append(status)
+                if mode=='exception':raise ValueError('goal_failed')
+                return 1 if mode=='not_bool' else True
+            if mode=='unsafe':device.after_run=lambda d:setattr(d,'angle',216.)
+            with self.assertRaises(ValueError):port._execute_validated(validate_pulse(pulse('shoulder','down',35,550)),lambda:None,stop_when=goal)
+            self.assertEqual(sum(p=={'action':'run'} for _,p in device.requests),1)
+            self.assertFalse(any(device.speeds.values()));self.assertFalse(device.queue)
+            if mode=='unsafe':self.assertEqual(calls,[])
+        port,device,_=self.setup_port()
+        with self.assertRaises(ValueError):port._execute_validated(pulse(),lambda:None,stop_when=True)
+        self.assertFalse(device.requests)
+
     def test_preflight_readonly_and_stale_sensor_no_write(self):
         port, device, store = self.setup_port()
         port.preflight()

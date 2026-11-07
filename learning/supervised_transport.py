@@ -510,7 +510,7 @@ class SequencePort:
         """
         return self._execute_validated(validate_pulse(pulse), tick, before_run=before_run)
 
-    def _execute_validated(self, pulse, tick, *, before_run=None):
+    def _execute_validated(self, pulse, tick, *, before_run=None, stop_when=None):
         """Shared finite body for internally validated, narrowly scoped adapters.
 
         General callers must use execute(). The commissioning adapter validates
@@ -518,6 +518,8 @@ class SequencePort:
         """
         if before_run is not None and not callable(before_run):
             raise ValueError('before_run_callback_required')
+        if stop_when is not None and not callable(stop_when):
+            raise ValueError('stop_when_callback_required')
         self.may_have_run = False
         self.last_dispatch_before = None
         self.last_dispatch_after = None
@@ -526,6 +528,7 @@ class SequencePort:
         self._active_pulse = None
         self._trace = []
         self._before_run = before_run
+        stopped_early = False
         try:
             tick()
             snapshot = self.preflight()
@@ -555,7 +558,15 @@ class SequencePort:
             while True:
                 tick()
                 self._outputs()
-                self._check_status(self._status(), 'ARMED', pulse, baseline_angle)
+                status = self._status()
+                self._check_status(status, 'ARMED', pulse, baseline_angle)
+                if stop_when is not None:
+                    stop = stop_when(copy.deepcopy(status))
+                    if type(stop) is not bool:
+                        raise ValueError('stop_when_boolean_required')
+                    if stop:
+                        stopped_early = self.clock.monotonic() < after + pulse['durationMs'] / 1000
+                        break
                 # RUN may spend part of its round trip before the controller
                 # starts its timer. Waiting from the response upper bound
                 # avoids cutting that timer short because of network latency.
@@ -575,9 +586,13 @@ class SequencePort:
             if not any(e['motor'] == pulse['motor'] and e['pwm'] == 0 for e in trace):
                 raise ValueError('pulse_off_not_observed')
             self._active_pulse = None
-            return {'dispatchBefore': before, 'dispatchAfter': after, 'offAt': off,
+            receipt = {'dispatchBefore': before, 'dispatchAfter': after, 'offAt': off,
                     'outputTrace': trace, 'offVerified': True, 'motor': pulse['motor'],
                     'requestedPulse': pulse}
+            if stop_when is not None:
+                receipt.update(stoppedEarly=stopped_early,
+                               stopReason='observed_return_goal' if stopped_early else 'requested_period_complete')
+            return receipt
         except BaseException:
             self.finish()
             raise

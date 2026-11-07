@@ -74,6 +74,16 @@ class AdapterTests(unittest.TestCase):
                     onsite=dict(operatorPresent=True,clearanceVerified=True,jawContactVerified=True,
                                 tableSupportVerified=request['label']=='before'))
     def adapter(self):return camera.M4DualCameraObserver(self.scope,self.config,self.store,self.review,clock=self.clock)
+    def test_learning_windows_keep_full_pre_and_post_native_recording(self):
+        observer=self.adapter();observer.start(deadline=60)
+        first=self.native.frames[0]['sourceEarliest']
+        observer.wait_pre_window(deadline=60,tick=lambda:None)
+        self.assertGreaterEqual(self.clock.monotonic(),first+3.6)
+        off=self.clock.monotonic()
+        observer.wait_post_window(off,deadline=60,tick=lambda:None)
+        self.assertGreaterEqual(self.clock.monotonic(),off+6.4)
+        observer.close()
+
     def test_adapter_enters_existing_core_and_records_two_sources_around_one_command(self):
         observer=self.adapter();trial=core.M4UpCommissioning(self.scope,observer,'private-token',self.store,evidence_root=self.store.root,clock=self.clock)
         trial.port.opener=self.device
