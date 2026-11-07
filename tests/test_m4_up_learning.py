@@ -97,7 +97,7 @@ class UpLearningTests(AdapterTests):
         trial.observer.native_pre_window_ready=not_ready
         result=self.run_learning(trial)
         self.assertEqual(result['status'],'failed');self.assertFalse(result['mayHaveRun'])
-        self.assertEqual(len(ready),2)
+        self.assertEqual(len(ready),4)
         self.assertFalse(any(v=={'action':'run'} for _,v in self.device.requests));self.assertTrue(result['finalIdleOffVerified'])
     def test_second_preparation_cycle_can_admit_without_repeating_motor_command(self):
         trial,_=self.prepare_learning('evaluation');ready=iter([False,True,True])

@@ -225,7 +225,7 @@ class _CommissioningPort(transport.SequencePort):
             return
         before = copy.deepcopy(self.proof_started)
         self.proof_refresh_count += 1
-        require(self.proof_refresh_count <= 2, 'm4_proof_refresh_budget')
+        require(self.proof_refresh_count <= 4, 'm4_proof_refresh_budget')
         oldest = min(before, key=before.get)
         if oldest == 'status':
             self._check_status(self._status(), 'ARMED')
@@ -233,7 +233,7 @@ class _CommissioningPort(transport.SequencePort):
             self._outputs(quiet=True)
             require(self.last_outputs == {i: 0 for i in range(1, 6)}, 'driver_off_not_proven')
         refresh_file = ('controller-proof-refresh.json' if self.proof_refresh_count == 1
-                        else 'controller-proof-refresh-02.json')
+                        else f'controller-proof-refresh-{self.proof_refresh_count:02d}.json')
         self._save(refresh_file, dict(
             refreshed=oldest, before=before, after=copy.deepcopy(self.proof_started),
             recordedAt=self.clock.monotonic(), maximumProofAgeSeconds=MAX_CONTROLLER_PROOF_AGE_SECONDS))
@@ -408,22 +408,22 @@ class M4UpCommissioning:
         if not self.learning:
             self.port._refresh_run_proof()
             return
-        for cycle in range(2):
+        for cycle in range(4):
             self._require_pinned_native_window(self.before_frames['external'], self.clock.monotonic())
             self.observer.wait_pre_dispatch_window(
                 deadline=min(self.deadline, self.clock.monotonic()+1.), tick=self._tick,
-                horizon_seconds=.12)
+                horizon_seconds=.06)
             self._require_pinned_native_window(self.before_frames['external'], self.clock.monotonic())
             # Refresh successful but aged reads, not failed requests. Any read
-            # or source error propagates immediately; it does not enter cycle 2.
+            # or source error propagates immediately; it does not enter another preparation cycle.
             self.port._refresh_run_proof(require_ready=False)
             self._guard()
             now = self.clock.monotonic()
             proof_ready = all(0 <= now-at <= .20 for at in self.port.proof_started.values())
-            if proof_ready and self.observer.native_pre_window_ready(horizon_seconds=.12):
+            if proof_ready and self.observer.native_pre_window_ready(horizon_seconds=.06):
                 self.store.write_json('native-pre-dispatch-admission.json', dict(
                     preparedAt=self.clock.monotonic(), preparationCycles=cycle+1,
-                    scopeSha256=self.digest, preparationHorizonSeconds=.12, finalHorizonSeconds=.02,
+                    scopeSha256=self.digest, preparationHorizonSeconds=.06, finalHorizonSeconds=.02,
                     policy='original_pre_window_and_current_availability'))
                 self._require_fresh_controller_proof(self.clock.monotonic())
                 return
