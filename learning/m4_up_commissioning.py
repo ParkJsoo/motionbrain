@@ -200,9 +200,35 @@ class _CommissioningPort(transport.SequencePort):
     def _call(self, path, payload=None, **kwargs):
         if not kwargs.get('emergency'):
             self.owner._guard()
+            if kwargs.get('run'):
+                require(path == '/sequence' and payload == {'action': 'run'}
+                        and self.owner.in_pulse and not self.may_have_run,
+                        'm4_refresh_run_scope')
+                self._refresh_run_proof()
+                self.owner._guard()
             remaining = self.owner.deadline-self.clock.monotonic()
             kwargs['request_timeout'] = min(kwargs.get('request_timeout', remaining), remaining)
         return super()._call(path, payload, **kwargs)
+
+    def _refresh_run_proof(self):
+        # Successful reads can age during another HTTP round trip. Refresh only
+        # the older successful proof, once, before the durable RUN intent and
+        # final nonblocking guard. A failed read is never retried here.
+        require(set(self.proof_started) == {'status', 'outputs'}, 'm4_controller_proof_stale')
+        now = self.clock.monotonic()
+        if all(0 <= now-at <= .15 for at in self.proof_started.values()):
+            return
+        before = copy.deepcopy(self.proof_started)
+        oldest = min(before, key=before.get)
+        if oldest == 'status':
+            self._check_status(self._status(), 'ARMED')
+        else:
+            self._outputs(quiet=True)
+            require(self.last_outputs == {i: 0 for i in range(1, 6)}, 'driver_off_not_proven')
+        self._save('controller-proof-refresh.json', dict(
+            refreshed=oldest, before=before, after=copy.deepcopy(self.proof_started),
+            recordedAt=self.clock.monotonic(), maximumProofAgeSeconds=MAX_CONTROLLER_PROOF_AGE_SECONDS))
+        self.owner._require_fresh_controller_proof(self.clock.monotonic())
 
     def _snapshot(self, *, emergency=False):
         old = self.proving_off; self.proving_off = emergency

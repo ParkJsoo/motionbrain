@@ -252,6 +252,55 @@ class CommissioningTests(unittest.TestCase):
         with patch.object(self.store,'write_json',side_effect=write):r=self.run_trial()
         self.assertEqual(r['status'],'failed');self.assertFalse(r['mayHaveRun'])
         self.assertFalse(any(v=={'action':'run'} for _,v in self.posts()));self.assertTrue(r['finalIdleOffVerified'])
+    def delayed_arm_proof(self,refresh_delay=.01,refresh_failure=False):
+        original=self.device.open;reads=[]
+        def delayed(request,timeout):
+            armed=request.data is None and request.full_url.endswith('/collection_status') and self.device.state=='ARMED' and not self.device.running
+            if armed:
+                reads.append(self.clock.now)
+                if len(reads)==2 and refresh_failure:raise TimeoutError('failed fresh read')
+                self.clock.sleep(.24 if len(reads)==1 else refresh_delay)
+            return original(request,timeout)
+        self.device.open=delayed
+        return reads
+    def test_successful_slow_arm_proof_gets_one_fresh_read_before_run(self):
+        reads=self.delayed_arm_proof();result=self.run_trial()
+        self.assertEqual(result['status'],'completed',result)
+        self.assertEqual(len(reads),2);self.assertEqual(sum(p=={'action':'run'} for _,p in self.posts()),1)
+        proof=json.loads((self.store.root/'controller-proof-refresh.json').read_text())
+        self.assertEqual(proof['refreshed'],'status');self.assertGreater(proof['after']['status'],proof['before']['status'])
+        self.assertEqual(proof['after']['outputs'],proof['before']['outputs'])
+        guard=json.loads((self.store.root/'pre-run-guard.json').read_text())
+        self.assertTrue(all(0<=guard['validatedAt']-t<=.25 for t in guard['controllerProofStarted'].values()))
+    def test_still_stale_after_one_refresh_never_sends_run(self):
+        reads=self.delayed_arm_proof(refresh_delay=.30);result=self.run_trial()
+        self.assertEqual(result['status'],'failed');self.assertEqual(len(reads),2)
+        self.assertFalse(any(p=={'action':'run'} for _,p in self.posts()))
+        self.assertFalse(result['mayHaveRun']);self.assertTrue(result['finalIdleOffVerified'])
+    def test_old_output_proof_refresh_rejects_even_matching_nonzero_history(self):
+        original=self.trial.port._refresh_run_proof
+        def refresh():
+            self.trial.port.proof_started={'status':self.clock.now-.01,'outputs':self.clock.now-.20}
+            self.device.append(4,10);self.device.append(4,0)
+            return original()
+        with patch.object(self.trial.port,'_refresh_run_proof',side_effect=refresh):result=self.run_trial()
+        self.assertEqual(result['status'],'failed');self.assertFalse(result['mayHaveRun'])
+        self.assertFalse(any(p=={'action':'run'} for _,p in self.posts()));self.assertTrue(result['finalIdleOffVerified'])
+    def test_refresh_storage_delay_cannot_extend_proof_age(self):
+        self.delayed_arm_proof();original=self.store.write_json
+        def slow(name,value):
+            original(name,value)
+            if name=='controller-proof-refresh.json':self.clock.sleep(.30)
+        with patch.object(self.store,'write_json',side_effect=slow):result=self.run_trial()
+        self.assertEqual(result['status'],'failed');self.assertFalse(result['mayHaveRun'])
+        self.assertFalse(any(p=={'action':'run'} for _,p in self.posts()));self.assertTrue(result['finalIdleOffVerified'])
+
+    def test_failed_fresh_read_is_not_retried_or_dispatched(self):
+        reads=self.delayed_arm_proof(refresh_failure=True);result=self.run_trial()
+        self.assertEqual(result['status'],'failed');self.assertEqual(len(reads),2)
+        self.assertFalse(any(p=={'action':'run'} for _,p in self.posts()))
+        self.assertFalse(result['mayHaveRun']);self.assertTrue(result['finalIdleOffVerified'])
+
     def test_slow_run_intent_cannot_reuse_old_angle_or_boot_proof(self):
         original=self.store.write_json
         def write(name,value):
