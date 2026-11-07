@@ -92,3 +92,30 @@ python3 -m unittest tests.test_model_grasp_trial tests.test_supervised_transport
   tests.test_relative_model_bundle tests.test_relative_action_learning \
   tests.test_grasp_observation tests.test_check_grasp_observation
 ```
+
+## 저장 영상의 관측 방식 진단
+
+`tools/audit_grasp_observations.py`는 저장된 집게 카메라 영상에서 점의 소수점 표현과 정수 반올림이 입력 범위 판정에 미치는 영향을 비교한다. 장치 조회·촬영·제어·전이모델 학습은 하지 않는다. 원래 고정 모델과 분석가 주석을 바꾸거나 범위 거절을 해제하지 않으며, 모든 결과는 `trainingEligible=false`, `controlEligible=false`다.
+
+진단기는 고정 구도의 원통 윗면 오른쪽 윤곽을 원으로 근사하고, 좌우 ROI의 어두운 연결 성분 끝부분을 턱 점으로 측정한다. 원통·조명·구도가 다른 영상의 범용 검출기가 아니다. ROI 경계에 닿는 성분이나 원 근사 잔차 등 품질 플래그가 있는 측정은 범위 계산에서 제외하되 원본·플래그·분모를 남긴다. 검출 성공이 물체 중심이나 접촉 위치의 정확도를 입증하지 않는다.
+
+설정은 `motionbrain.grasp_observation_study.v1`이며 `.local/` 안에 다음 항목을 둔다.
+
+- `frozenModel={path,sha256}`, `manifestPath`, `manifestSha256`: 기존 고정 모델과 같은 학습 세션을 가리키며 평가 그룹은 비워 둔다. 원본 수집 감사와 프레임 해시·부팅 ID 검사를 다시 거친다.
+- `sceneContext`, `expectedCameraBootId`: 실제 관측 계약과 예상 부팅 ID. 다른 구도로 계약을 바꾸지 않는다.
+- `parameters`: `imageShape`, `grayThreshold`, `objectRightArcRows`, `objectRightArcColumns`, `jawRois`, `jawDistalRows`. 원 윤곽의 행·열 끝값은 포함하며 턱 ROI는 `[x0,y0,x1,y1]`의 뒤 끝값을 제외한다. 결과를 보고 범위를 통과하도록 조정하지 않는다. 기존 진단에서 가져온 경우 `parameterOrigin={path,sha256}`로 원래 보고서의 `parameters`와 동일한지 검사한다(`imageShape` 제외).
+- `rejectedQuery={source,annotationPath,annotationSha256}`: 학습 프레임과 겹치지 않는 거절 입력 한 장과 원래 분석가 주석. `source={root,label,sessionId}`이며 `label=before`만 허용한다.
+- 선택 항목 `stationarySources`: 같은 `source` 형식의 과거 정지 영상 목록. 시각을 갱신하거나 새 동기 관측으로 취급하지 않는다.
+
+```sh
+python3 tools/audit_grasp_observations.py \
+  --config .local/grasp-observation/study.json \
+  --config-sha256 '<고정한 설정 파일의 SHA-256>' \
+  --output-dir .local/grasp-observation/study-01
+
+python3 -m unittest tests.test_grasp_observation_diagnostic
+```
+
+`inputCoverage`는 품질 검사를 통과한 동작 전 입력만으로 명령별 최소·최대를 계산한다. `pairedInputCoverage`는 동작 전후 모두 통과한 쌍만 사용하며, 두 결과 모두 실패 입력의 분모를 보존한다. 원본 감사 실패로 명령을 신뢰할 수 없으면 `unknownCommand` 그룹에 남긴다. 동작 후 정답으로 입력 범위를 넓히지 않는다. `originalAnalystModelQueryCoverage`는 기존 모델의 원래 판정과 분리한다.
+
+소수점과 정수 표현의 판정 차이, 정지 영상의 반복 변동, 원래 분석가 점과의 차이는 관측 계약을 검토할 근거다. 어느 것도 독립적인 정확도·예측 성능·물리 안전의 측정값이 아니다. 새 관측 방식을 채택하려면 점 정의와 실패 처리를 먼저 고정하고 별도 모델·보류 평가에서 검증해야 한다.
