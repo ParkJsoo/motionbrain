@@ -34,7 +34,9 @@ A [bounded positioning/close trial core (Korean)](docs/model-grasp-trial.md) con
 
 On 2026-11-07, two cameras confirmed [one physical object lift using a separate fixed manual command (Korean)](docs/m4-up-commissioning.md#2026-11-07-수동-물체-들림1회와-관측-중단). The M4 upward 50%/750 ms request exceeded the 1° observational abort criterion and stopped; the original trial remains failed. The subsequent camera observation of free-space retention does not establish model-selected grasping/lifting or a repeated success rate.
 
-A [pose-separated M1/M4 follow-up and pre-command prediction check (Korean)](docs/relative-action-selection.md#2026-11-07-자세를-분리한-학습과-구동-전-예측-확인) trained separate models on four M1 and two M4 transitions. No-change was best on one new frozen-model M1 comparison, and the next prediction from the resulting state was rejected as outside the training range. This new path has zero model-selected physical commands and zero verified grasps.
+A [pose-separated M1/M4 follow-up and pre-command prediction check (Korean)](docs/relative-action-selection.md#2026-11-07-자세를-분리한-학습과-구동-전-예측-확인) trained separate models on four M1 and two M4 transitions. No-change was best on one new frozen-model M1 comparison, and the next prediction from the resulting state was rejected as outside the training range. That relative-state path had zero model-selected physical commands and zero verified grasps at the time.
+
+In a follow-up on 2026-11-07, an M4 model trained on four fresh records and then frozen selected up at 50% for 650ms from two candidates for an object already grasped manually. Two cameras confirmed one physical lift. The original execution nevertheless failed because the observed change of 3.08° exceeded its 3° guard; all outputs were OFF and the queue was empty. This does not establish autonomous positioning/closing, normal control completion or repeatability. [Evaluation conditions and failure distinction (Korean)](docs/m4-up-commissioning.md#2026-11-07-고정-모델-선택-들림과-실패-구분).
 
 ## Architecture
 

@@ -62,6 +62,8 @@ A [bounded positioning/close core (Korean)](docs/model-grasp-trial.md) now conne
 
 The control foundation includes ESP32 PWM/state guards, STM32 sensing/teleoperation, M4 AS5600 feedback and ROS2 integration. Physical ROS2 writes were validated only for an operator-confirmed single M4 target, not whole-arm trajectory tracking. [ROS2 physical validation](docs/evidence/2026-07-13-m4-physical-ros2-control.en.md)
 
+In a follow-up on 2026-11-07, an M4 model trained on four fresh records and then frozen selected up at 50% for 650ms from two candidates for an object already grasped manually. Two cameras confirmed one physical lift. The original execution nevertheless failed because the observed change of 3.08° exceeded its 3° guard; all outputs were OFF and the queue was empty. This does not establish autonomous positioning/closing, normal control completion or repeatability. [Evaluation conditions and failure distinction (Korean)](docs/m4-up-commissioning.md#2026-11-07-고정-모델-선택-들림과-실패-구분).
+
 ## Validation scope and next work
 
 Software regressions and firmware builds run in [PlatformIO/Python CI](https://github.com/ParkJsoo/motionbrain/actions/workflows/platformio.yml); ROS2 builds and tests run in [ROS2 CI](https://github.com/ParkJsoo/motionbrain/actions/workflows/ros2.yml). Physical results retain their dated conditions and denominators separately.
