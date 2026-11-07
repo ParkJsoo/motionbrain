@@ -61,6 +61,8 @@ python3 tools/m4_up_trial.py run \
 
 전후 영상이 저장되면 실행기는 `<label>-review-request.json`과 미리보기 경로를 출력한다. 분석가는 원본 영상과 현장 확인에 근거해 `{requestSha256,decision:{context,stable,onsite}}` 형식의 `<label>-review-decision.json`을 새로 저장한다. 요청 파일 해시가 같아야 하며 `context`·`onsite` 계약은 아래와 같다. 실행 전 검토는 원래 영상의9초 이내에 응답해야 한다. 늦거나 불명확한 판단은 RUN 없이 종료하고 자동으로 대체 자료를 찍지 않는다. 사후 검토는 원래 전체 기한 내에 수행한다. 이 검토는 방향·출력을 고르는 절차가 아니다.
 
+현장 사용자가 현재 준비를 확인한 **수동 고정 단발**에는 시작 전에 `--before-operator-attestation <비공개 JSON>` 경로를 명시할 수 있다. 원본 사용자 발언·확인 시각·승인 원본 해시·정확한 범위 SHA/trialId/context·접촉과 탁자 지지·현장 참석·이동 여유·확인 당시 출력 순번을 바인딩한다. `AttestedBeforeReviewer`는 같은 순번인지 확인하고 이 명시적 현장 판단을 사전 조건으로1회 복사한다. 새 두 원본의 신선도·해시·부팅·센서 검사는 동일하게 수행한다. 새 프레임을 사용자나 AI가 직접 판독했다고 기록하지 않으며 `currentFramesReviewed=false`, `reviewBasis=user_onsite_attestation_for_fixed_manual_command`를 보존한다. 사후 영상은 계속 분석가가 직접 검토한다. 이 선택은 촬영 시작 전에 고정하며, 만료된 영상 검토의 자동 대체나 모델 선택 경로에는 사용하지 않는다.
+
 전후 관측에는 다음을 묶은 변경 불가 검토 JSON과 해시가 필요하다.
 
 - 고정 외부 카메라의 네이티브 무손실 프레임·메타데이터·호스트 수신 기록·시계 변환 원본. 장치·구도·실제 설정 해시·픽셀 해시와 원래 촬영 시각을 검사한다.

@@ -172,5 +172,40 @@ class AdapterTests(unittest.TestCase):
                           '--confirm-scope-sha256',plan_digest(self.scope),'--wait-for-start'])
         self.assertEqual(events,['private_input','start_wait']);self.assertFalse(self.device.requests)
 
+    def attestation(self):
+        source=dict(schemaVersion='motionbrain.attended_single_pulse_authorization.v1',pulse=self.scope['pulse'],
+                    authorizedAt='2026-11-07T00:00:00+00:00',operatorOnSiteConfirmed=True,
+                    clearanceUnchangedConfirmed=True,physicalPoseUnchangedConfirmed=True,userInstruction='one manual pulse')
+        raw=json.dumps(source).encode();path=self.repo/'.local/operator-authorization.json';path.write_bytes(raw)
+        return dict(scopeSha256=plan_digest(self.scope),trialId=self.scope['trialId'],context=self.scope['context'],
+                    onsite=dict(operatorPresent=True,clearanceVerified=True,jawContactVerified=True,tableSupportVerified=True),
+                    stable=True,confirmedAt=source['authorizedAt'],sourceAuthorizationFile=path.name,
+                    sourceAuthorizationSha256=camera.sha(raw),expectedOutputSequence=self.device.entries[-1]['sequence'])
+
+    def test_attested_manual_before_keeps_raw_guards_and_visual_after(self):
+        att=self.attestation();observer=self.adapter();after=[]
+        def review_after(request,**kwargs):after.append(request['label']);return self.review(request,**kwargs)
+        with patch.object(cli,'ROOT',self.repo):
+            reviewer=cli.AttestedBeforeReviewer(self.scope,att,camera.sha(json.dumps(att).encode()),self.store,
+                                               lambda:trial.port.last_sequence,review_after)
+        observer.reviewer=reviewer
+        trial=core.M4UpCommissioning(self.scope,observer,'private-token',self.store,evidence_root=self.store.root,clock=self.clock)
+        trial.port.opener=self.device;r=trial.run(confirmed_scope_sha256=plan_digest(self.scope))
+        self.assertEqual(r['status'],'completed',r);self.assertEqual(after,['after'])
+        evidence=_decode_json(_read(self.store.root,'before-operator-attestation-binding.json'))
+        self.assertFalse(evidence['currentFramesReviewed']);self.assertIn('user_onsite',evidence['reviewBasis'])
+        self.assertEqual(sum(v=={'action':'run'} for _,v in self.device.requests),1)
+        with self.assertRaisesRegex(ValueError,'consumed'):reviewer({'label':'before'},deadline=60,tick=lambda:None)
+
+    def test_attestation_scope_and_changed_output_block_before_decision(self):
+        att=self.attestation()
+        with patch.object(cli,'ROOT',self.repo):
+            bad=copy.deepcopy(att);bad['scopeSha256']='0'*64
+            with self.assertRaisesRegex(ValueError,'scope_changed'):
+                cli.AttestedBeforeReviewer(self.scope,bad,'hash',self.store,lambda:5,self.review)
+            reviewer=cli.AttestedBeforeReviewer(self.scope,att,'hash',self.store,lambda:999,self.review)
+        with self.assertRaisesRegex(ValueError,'output_changed'):reviewer({'label':'before'},deadline=60,tick=lambda:None)
+        self.assertFalse((self.store.root/'before-operator-attestation-binding.json').exists())
+
 
 if __name__=='__main__':unittest.main()

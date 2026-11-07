@@ -54,6 +54,47 @@ class FileReviewer:
         raise ValueError('camera_review_expired_no_run')
 
 
+class AttestedBeforeReviewer:
+    """Explicit operator confirmation for this manual pulse; after is visual.
+
+    This is selected before acquisition, never a fallback for expired review.
+    The operator/AI has not directly reviewed the newly captured before pixels.
+    """
+    def __init__(self,scope,attestation,attestation_sha,store,sequence_reader,after_reviewer):
+        validate_scope(scope)
+        require(set(attestation)=={'scopeSha256','trialId','context','onsite','stable','confirmedAt',
+                                  'sourceAuthorizationFile','sourceAuthorizationSha256','expectedOutputSequence'},
+                'operator_attestation_fields')
+        require(attestation['scopeSha256']==plan_digest(scope) and attestation['trialId']==scope['trialId']
+                and attestation['context']==scope['context'] and attestation['stable'] is True,
+                'operator_attestation_scope_changed')
+        require(set(attestation['onsite'])=={'operatorPresent','clearanceVerified','jawContactVerified','tableSupportVerified'}
+                and all(v is True for v in attestation['onsite'].values())
+                and isinstance(attestation['confirmedAt'],str) and attestation['confirmedAt']
+                and type(attestation['expectedOutputSequence']) is int and attestation['expectedOutputSequence']>0,
+                'operator_attestation_required')
+        auth=_read((ROOT/'.local').resolve(),attestation['sourceAuthorizationFile'])
+        require(sha(auth)==attestation['sourceAuthorizationSha256'],'operator_authorization_changed')
+        source=_decode_json(auth)
+        require(source.get('schemaVersion')=='motionbrain.attended_single_pulse_authorization.v1'
+                and source.get('pulse')==scope['pulse'] and source.get('authorizedAt')==attestation['confirmedAt']
+                and source.get('operatorOnSiteConfirmed') is True and source.get('clearanceUnchangedConfirmed') is True
+                and source.get('physicalPoseUnchangedConfirmed') is True
+                and isinstance(source.get('userInstruction'),str) and bool(source['userInstruction']),
+                'explicit_user_confirmation_source_required')
+        self.attestation,self.digest=copy.deepcopy(attestation),attestation_sha
+        self.store,self.sequence_reader,self.after_reviewer=store,sequence_reader,after_reviewer
+        self.used=False
+    def __call__(self,request,*,deadline,tick):
+        if request['label']!='before':return self.after_reviewer(request,deadline=deadline,tick=tick)
+        require(not self.used,'operator_attestation_consumed');self.used=True
+        require(self.sequence_reader()==self.attestation['expectedOutputSequence'],'operator_context_output_changed')
+        self.store.write_json('before-operator-attestation-binding.json',dict(
+            reviewBasis='user_onsite_attestation_for_fixed_manual_command',currentFramesReviewed=False,
+            attestation=self.attestation,attestationSha256=self.digest,sourceRequest=request))
+        return {k:copy.deepcopy(self.attestation[k]) for k in ('context','stable','onsite')}
+
+
 def capture_check(scope,camera,store,*,clock=time):
     # Placeholder is never used as a credential: this port rejects every POST.
     port=ReadOnlyPort(scope['controllerUrl'],'unused-camera-check-no-write',scope['controllerBootId'],store,
@@ -107,13 +148,19 @@ def main(argv=None):
     p.add_argument('--output-dir',type=Path,required=True)
     p.add_argument('--confirm-scope-sha256')
     p.add_argument('--wait-for-start',action='store_true',help='비공개 토큰 입력 뒤 촬영 시작용 Enter를 별도로 기다림')
+    p.add_argument('--before-operator-attestation',type=Path,help='이 수동 단발 범위에만 묶인 현재 사용자 현장 확인 원본')
     a=p.parse_args(argv)
     require(not a.wait_for_start or a.mode=='run','start_wait_requires_run_mode')
+    require(a.before_operator_attestation is None or a.mode=='run','attestation_requires_manual_run_mode')
     private=(ROOT/'.local').resolve(strict=True)
     config=_decode_json(_read(private,a.config.absolute().relative_to(private).as_posix()))
     require(set(config)=={'scope','camera'},'m4_trial_config_fields')
     scope=validate_scope(config['scope'])
     require(a.output_dir.resolve().is_relative_to(private),'private_trial_output_required')
+    attested=None
+    if a.before_operator_attestation is not None:
+        raw=_read(private,a.before_operator_attestation.absolute().relative_to(private).as_posix())
+        attested=AttestedBeforeReviewer(scope,_decode_json(raw),sha(raw),None,None,None)
     if a.mode=='run':
         require(a.confirm_scope_sha256==plan_digest(scope),'exact_scope_confirmation_required')
         require(sys.stdin.isatty(),'private_terminal_input_required')
@@ -127,8 +174,13 @@ def main(argv=None):
     store.write_json('trial-config.json',config)
     if a.mode=='capture-check':result=capture_check(scope,config['camera'],store)
     else:
-        observer=M4DualCameraObserver(scope,config['camera'],store,FileReviewer(store))
-        result=M4UpCommissioning(scope,observer,token,store,evidence_root=store.root).run(confirmed_scope_sha256=a.confirm_scope_sha256)
+        reviewer=FileReviewer(store)
+        if attested is not None:
+            attested.store,attested.sequence_reader,attested.after_reviewer=store,lambda:trial.port.last_sequence,reviewer
+            reviewer=attested
+        observer=M4DualCameraObserver(scope,config['camera'],store,reviewer)
+        trial=M4UpCommissioning(scope,observer,token,store,evidence_root=store.root)
+        result=trial.run(confirmed_scope_sha256=a.confirm_scope_sha256)
     print(json.dumps(dict(status=result['status'],resultDirectory=str(store.root),mode=a.mode)),flush=True)
     return 0 if result['status']=='completed' else 2
 
