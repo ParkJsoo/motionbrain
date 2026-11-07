@@ -35,7 +35,8 @@ def sha(raw):
 
 
 def implementation_digest():
-    return sha(Path(__file__).read_bytes()+b'\0'+Path(transport.__file__).read_bytes())
+    return sha(b'\0'.join(p.read_bytes() for p in (
+        Path(__file__),Path(transport.__file__),Path(__file__).with_name('m4_up_observer.py'))))
 
 
 def _hash(value):
