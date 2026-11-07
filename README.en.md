@@ -40,6 +40,8 @@ In a follow-up on 2026-11-07, an M4 model trained on four fresh records and then
 
 A [close-to-lift connector (Korean)](docs/model-grasp-trial.md#닫기에서-들기로-넘기는-별도-연결) requires a normal close/OFF result and fresh dual-camera contact review before selection by a separate 500ms lift model. Connection failure paths were tested in simulation; physical validation of the complete connection remains separate.
 
+A [fresh-reference 500ms follow-up (Korean)](docs/m4-up-commissioning.md#2026-11-07-새-기준의-500ms-학습과-고정-평가) completed four new training trials, two evaluations after freezing and three returns, nine commands in total. Object-rise MAE was 2px, tied with the command mean. Physical selection by this new model and the close-to-lift connection have not yet been executed.
+
 ## Architecture
 
 ```text
