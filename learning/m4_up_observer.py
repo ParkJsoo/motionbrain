@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import math
 from pathlib import Path
 import time
 
@@ -13,7 +14,7 @@ from learning.action_recorder import ActionRecorder
 from learning.artifacts import ArtifactStore, _decode_json, _read
 from learning.grasp_observation import GripperObservationSource
 from learning.lossless_frame import decode
-from learning.manual_collection_dataset import require
+from learning.manual_collection_dataset import require, select_frames
 
 
 def sha(raw):
@@ -86,6 +87,40 @@ class M4DualCameraObserver:
                 first=self.recorder.frames[0]['sourceEarliest']
                 return True if self.clock.monotonic()>=first+3.6 else None
         return self._wait(ready,deadline,tick)
+
+    def native_pre_window_ready(self, horizon_seconds=.02):
+        """Admit only already-persisted cached native frames; no capture or I/O.
+
+        Both the current and short future dispatch windows must pass the SAME
+        offline policy. Future windows still use the current receipt-availability
+        cutoff, so a forecast never makes a future receipt available early.
+        """
+        require(type(horizon_seconds) in (int, float) and math.isfinite(horizon_seconds)
+                and horizon_seconds >= 0, 'm4_native_admission_horizon_invalid')
+        require(self.started and self.closed is None and not self.failed, 'm4_camera_not_active')
+        # The capture writer persists files while holding this lock. Admission
+        # also runs inside the bounded pre-RUN guard and must never wait on it.
+        if not self.recorder.lock.acquire(blocking=False):
+            return False
+        try:
+            require(not self.recorder.fault and not self.recorder.done, 'm4_native_stream_failed')
+            if self.recorder.frames:
+                self.recorder.check()
+            frames = copy.deepcopy(self.recorder.frames)
+            now = self.clock.monotonic()
+        finally:
+            self.recorder.lock.release()
+        try:
+            for at in (now, now+horizon_seconds):
+                select_frames(frames, [at-3., at-.1], command_at=now)
+        except ValueError as exc:
+            if str(exc) in ('video_window_missing', 'video_window_coverage', 'video_window_gap'):
+                return False
+            raise
+        return True
+
+    def wait_pre_dispatch_window(self, *, deadline, tick):
+        return self._wait(lambda: True if self.native_pre_window_ready() else None, deadline, tick)
 
     def wait_post_window(self, after_off, *, deadline, tick):
         return self._wait(lambda: True if self.clock.monotonic()>=after_off+6.4 else None,deadline,tick)

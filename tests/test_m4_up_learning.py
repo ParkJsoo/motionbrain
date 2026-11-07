@@ -47,6 +47,8 @@ class UpLearningTests(AdapterTests):
         if model is not None:self.scope.update(modelPath=str(model.path),modelSha256=model.sha)
         observer=self.adapter()
         observer.wait_pre_window=lambda **kwargs:None
+        observer.wait_pre_dispatch_window=lambda **kwargs:None
+        observer.native_pre_window_ready=lambda:True
         observer.wait_post_window=lambda *args,**kwargs:None
         def measured(trial,label,record,frames):
             # Only metrology is synthetic; original native/JPEG provenance and
@@ -88,6 +90,73 @@ class UpLearningTests(AdapterTests):
             result=self.run_learning(trial)
         self.assertEqual(result['status'],'failed');checked.assert_called_once()
         self.assertFalse(any(v=={'action':'run'} for _,v in self.device.requests))
+
+    def test_native_admission_not_ready_never_dispatches(self):
+        trial,_=self.prepare_learning('evaluation');ready=[]
+        def not_ready():ready.append(True);return False
+        trial.observer.native_pre_window_ready=not_ready
+        result=self.run_learning(trial)
+        self.assertEqual(result['status'],'failed');self.assertFalse(result['mayHaveRun'])
+        self.assertEqual(len(ready),2)
+        self.assertFalse(any(v=={'action':'run'} for _,v in self.device.requests));self.assertTrue(result['finalIdleOffVerified'])
+    def test_second_preparation_cycle_can_admit_without_repeating_motor_command(self):
+        trial,_=self.prepare_learning('evaluation');ready=iter([False,True,True])
+        trial.observer.native_pre_window_ready=lambda:next(ready)
+        result=self.run_learning(trial)
+        self.assertEqual(result['status'],'completed',result)
+        self.assertEqual(sum(v=={'action':'run'} for _,v in self.device.requests),1)
+        admission=_decode_json(_read(self.store.root,'native-pre-dispatch-admission.json'))
+        self.assertEqual(admission['preparationCycles'],2)
+    def test_preparation_read_failure_does_not_enter_second_cycle(self):
+        trial,_=self.prepare_learning('evaluation')
+        with patch.object(trial.port,'_refresh_run_proof',side_effect=TimeoutError('failed GET')) as refreshed:
+            result=self.run_learning(trial)
+        refreshed.assert_called_once();self.assertEqual(result['status'],'failed');self.assertFalse(result['mayHaveRun'])
+        self.assertFalse(any(v=={'action':'run'} for _,v in self.device.requests))
+    def test_native_admission_cannot_outlive_its_twenty_ms_horizon(self):
+        trial,_=self.prepare_learning('evaluation');original=self.store.write_json
+        def late():self.clock.sleep(.03);return True
+        def save(name,value):
+            original(name,value)
+            if name=='pre-run-guard.json':trial.observer.native_pre_window_ready=late
+        with patch.object(self.store,'write_json',side_effect=save):result=self.run_learning(trial)
+        self.assertEqual(result['status'],'failed');self.assertFalse(result['mayHaveRun'])
+        self.assertFalse(any(v=={'action':'run'} for _,v in self.device.requests))
+    def test_old_pinned_input_is_rejected_even_when_newer_window_is_complete(self):
+        trial,_=self.prepare_learning('evaluation');original=self.store.write_json
+        def save(name,value):
+            original(name,value)
+            if name.endswith('-intent.json') and value.get('payload')=={'action':'run'}:
+                source=trial.before_frames['external']['sourceEarliest']
+                self.clock.sleep(source+3.01-self.clock.now)
+                trial.port.proof_started={'status':self.clock.now,'outputs':self.clock.now}
+        with patch.object(self.store,'write_json',side_effect=save):result=self.run_learning(trial)
+        self.assertEqual(result['status'],'failed');self.assertFalse(result['mayHaveRun'])
+        self.assertFalse(any(v=={'action':'run'} for _,v in self.device.requests))
+    def test_final_native_admission_cannot_age_original_input_past_ten_seconds(self):
+        trial,_=self.prepare_learning('evaluation');original=self.store.write_json
+        def late():self.clock.sleep(.015);return True
+        def save(name,value):
+            original(name,value)
+            if name.endswith('-intent.json') and value.get('payload')=={'action':'run'}:
+                frames=trial._observe(trial.before);earliest=min(f['sourceEarliest'] for f in frames.values())
+                self.clock.sleep(earliest+9.99-self.clock.now)
+                trial.port.proof_started={'status':self.clock.now,'outputs':self.clock.now}
+                trial.observer.native_pre_window_ready=late
+        # Isolate the ten-second source-age bound from the stricter native
+        # three-second membership check, which has its own regression above.
+        with patch.object(self.store,'write_json',side_effect=save),patch.object(trial,'_require_pinned_native_window',return_value=None):result=self.run_learning(trial)
+        self.assertEqual(result['status'],'failed');self.assertFalse(result['mayHaveRun'])
+        self.assertFalse(any(v=={'action':'run'} for _,v in self.device.requests))
+    def test_native_admission_is_rechecked_at_final_guard(self):
+        trial,_=self.prepare_learning('evaluation');trial.observer.native_pre_window_ready=lambda:True
+        original=self.store.write_json
+        def save(name,value):
+            original(name,value)
+            if name=='pre-run-guard.json':trial.observer.native_pre_window_ready=lambda:False
+        with patch.object(self.store,'write_json',side_effect=save):result=self.run_learning(trial)
+        self.assertEqual(result['status'],'failed');self.assertFalse(result['mayHaveRun'])
+        self.assertFalse(any(v=={'action':'run'} for _,v in self.device.requests));self.assertTrue(result['finalIdleOffVerified'])
 
     def test_model_ceiling_high_can_select_low_actual_wire(self):
         trial,model=self.prepare_learning('model_selection')

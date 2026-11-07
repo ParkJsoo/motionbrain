@@ -188,6 +188,7 @@ class _CommissioningPort(transport.SequencePort):
         self.owner = owner
         self.proving_off = False
         self.proof_started = {}
+        self.proof_refresh_count = 0
 
     def execute(self, *args, **kwargs):
         raise ValueError('m4_use_scoped_commissioning_only')
@@ -204,7 +205,7 @@ class _CommissioningPort(transport.SequencePort):
                 require(path == '/sequence' and payload == {'action': 'run'}
                         and self.owner.in_pulse and not self.may_have_run,
                         'm4_refresh_run_scope')
-                self._refresh_run_proof()
+                self.owner._prepare_dispatch_inputs()
                 self.owner._guard()
             remaining = self.owner.deadline-self.clock.monotonic()
             kwargs['request_timeout'] = min(kwargs.get('request_timeout', remaining), remaining)
@@ -219,13 +220,17 @@ class _CommissioningPort(transport.SequencePort):
         if all(0 <= now-at <= .15 for at in self.proof_started.values()):
             return
         before = copy.deepcopy(self.proof_started)
+        self.proof_refresh_count += 1
+        require(self.proof_refresh_count <= 2, 'm4_proof_refresh_budget')
         oldest = min(before, key=before.get)
         if oldest == 'status':
             self._check_status(self._status(), 'ARMED')
         else:
             self._outputs(quiet=True)
             require(self.last_outputs == {i: 0 for i in range(1, 6)}, 'driver_off_not_proven')
-        self._save('controller-proof-refresh.json', dict(
+        refresh_file = ('controller-proof-refresh.json' if self.proof_refresh_count == 1
+                        else 'controller-proof-refresh-02.json')
+        self._save(refresh_file, dict(
             refreshed=oldest, before=before, after=copy.deepcopy(self.proof_started),
             recordedAt=self.clock.monotonic(), maximumProofAgeSeconds=MAX_CONTROLLER_PROOF_AGE_SECONDS))
         self.owner._require_fresh_controller_proof(self.clock.monotonic())
@@ -275,7 +280,7 @@ class M4UpCommissioning:
         self.learning = self.scope['schemaVersion'] in (LEARNING_SCHEMA,MODEL_SCHEMA)
         self.registration,self.model=copy.deepcopy(registration),model
         self.selected_pulse=copy.deepcopy(self.scope['pulse'])
-        self.measurement_records=[];self.model_decision=None
+        self.measurement_records=[];self.model_decision=None;self.before_frames=None
         if self.learning:
             from learning.m4_lift_learning import contract_sha
             require(registration is not None and contract_sha(registration)==self.scope['observationContractSha256'],'m4_observation_contract_changed')
@@ -377,6 +382,44 @@ class M4UpCommissioning:
                 and all(now-frame['sourceEarliest'] <= self.scope['maxObservationAgeSeconds']
                         for frame in frames.values()), 'm4_pre_run_guard_stale')
         self._require_fresh_controller_proof(now)
+        if self.learning:
+            admission_started = self.clock.monotonic()
+            self._require_pinned_native_window(frames['external'], admission_started)
+            ready = self.observer.native_pre_window_ready()
+            now = self.clock.monotonic()
+            require(ready and now-admission_started <= .02, 'm4_native_pre_dispatch_unavailable')
+            require(now-started <= .1 and now < self.deadline
+                    and all(now-frame['sourceEarliest'] <= self.scope['maxObservationAgeSeconds']
+                            for frame in frames.values()), 'm4_pre_run_guard_stale')
+            self._require_fresh_controller_proof(now)
+
+    @staticmethod
+    def _require_pinned_native_window(frame, now):
+        require(all(at-3. <= frame['sourceEarliest'] and frame['sourceLatest'] <= at-.1
+                    and frame['persistedAt'] < now for at in (now, now+.02)),
+                'm4_pinned_before_outside_dispatch_window')
+
+    def _prepare_dispatch_inputs(self):
+        if not self.learning:
+            self.port._refresh_run_proof()
+            return
+        for cycle in range(2):
+            self._require_pinned_native_window(self.before_frames['external'], self.clock.monotonic())
+            self.observer.wait_pre_dispatch_window(
+                deadline=min(self.deadline, self.clock.monotonic()+1.), tick=self._tick)
+            self._require_pinned_native_window(self.before_frames['external'], self.clock.monotonic())
+            # Refresh successful but aged reads, not failed requests. Any read
+            # or source error propagates immediately; it does not enter cycle 2.
+            self.port._refresh_run_proof()
+            self._guard()
+            if self.observer.native_pre_window_ready():
+                self.store.write_json('native-pre-dispatch-admission.json', dict(
+                    preparedAt=self.clock.monotonic(), preparationCycles=cycle+1,
+                    scopeSha256=self.digest, horizonSeconds=.02,
+                    policy='original_pre_window_and_current_availability'))
+                self._require_fresh_controller_proof(self.clock.monotonic())
+                return
+        raise ValueError('m4_native_pre_dispatch_unavailable')
 
     def _measure(self,label,record,frames):
         from learning.m4_lift_learning import measure, validate_before
@@ -429,6 +472,7 @@ class M4UpCommissioning:
             if self.learning:self.observer.wait_pre_window(deadline=self.deadline,tick=lambda:self._tick(True))
             self.before = self.observer.observe(after_off=None, deadline=self.deadline, tick=lambda: self._tick(True))
             before_frames = self._observe(self.before); self._guard()
+            self.before_frames = copy.deepcopy(before_frames)
             self.store.write_json('before-observation.json', self.before)
             if self.learning:
                 source,features=self._measure('before',self.before,before_frames)
