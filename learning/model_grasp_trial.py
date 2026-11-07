@@ -20,6 +20,7 @@ from learning.relative_model_bundle import load_frozen_model, sha256
 from learning.supervised_collection import PROFILES, identifier, plan_digest
 
 SCHEMA = 'motionbrain.model_grasp_trial.v1'
+CONTACT_SCHEMA = 'motionbrain.model_close_contact_trial.v1'
 
 
 def _number(value):
@@ -59,7 +60,7 @@ def validate_scope(scope, bank):
         'schemaVersion', 'trialId', 'hostClockId', 'controllerBootId', 'modelHashes', 'stages',
         'maxCommands', 'maxRequestedMs', 'maxSeconds', 'maxObservationAgeSeconds',
         'maxDecisionAgeSeconds', 'postOffSeconds', 'retentionSeconds'}, 'grasp_scope_fields')
-    require(scope['schemaVersion'] == SCHEMA and identifier(scope['trialId'])
+    require(scope['schemaVersion'] in (SCHEMA, CONTACT_SCHEMA) and identifier(scope['trialId'])
             and isinstance(scope['hostClockId'], str) and bool(scope['hostClockId'])
             and isinstance(scope['controllerBootId'], str)
             and re.fullmatch('[0-9a-f]{32}', scope['controllerBootId']) is not None
@@ -74,6 +75,9 @@ def validate_scope(scope, bank):
             'fixed_post_off_observation_wait_required')
     stages = scope['stages']
     require(isinstance(stages, list) and 1 <= len(stages) <= 4, 'position_then_close_required')
+    if scope['schemaVersion'] == CONTACT_SCHEMA:
+        require(len(stages) == 1 and scope['maxCommands'] == 1,
+                'contact_trial_single_close_required')
     seen, objects = set(), set()
     for index, stage in enumerate(stages):
         require(isinstance(stage, dict) and set(stage) == {
@@ -261,7 +265,7 @@ class ModelGraspTrial:
         self.store.write_json('trial-intent.json', self.scope)
         self.started = self.clock.monotonic()
         self.deadline = self.started + self.scope['maxSeconds']
-        report = dict(schemaVersion=SCHEMA, scopeSha256=confirmed_scope_sha256, status='failed',
+        report = dict(schemaVersion=self.scope['schemaVersion'], scopeSha256=confirmed_scope_sha256, status='failed',
             stages=[dict(id=s['id'], status='not_started', steps=[]) for s in self.scope['stages']],
             commandAttempts=0, confirmedCommands=0, requestedMs=0, modelSelectedMotorCommands=0,
             errors=[], automaticRetry=False, trainingPerformed=False, controlEligible=False,
@@ -359,6 +363,12 @@ class ModelGraspTrial:
                     finally:
                         self.store.write_json(f"step-{step['index']:03d}-result.json", step)
                     if stage['kind'] == 'close':
+                        if self.scope['schemaVersion'] == CONTACT_SCHEMA:
+                            # A normal close/OFF receipt permits a SEPARATE dual
+                            # camera contact review, never a grasp/lift claim.
+                            stage_report['status'] = 'closed_off'
+                            report['status'] = 'closed_off'
+                            return report
                         # Do not repeatedly close against possible contact to
                         # force a pixel target. Inspect retention after one close.
                         proof = self._retention(stage, off_at)

@@ -218,6 +218,24 @@ class ModelGraspTests(unittest.TestCase):
         self.assertTrue(report['finalIdleOffVerified'])
         self.assertFalse(report['liftVerified'])
 
+    def test_contact_only_close_does_not_claim_retention_or_call_retention_reviewer(self):
+        from learning.model_grasp_trial import CONTACT_SCHEMA
+        self.close_only_scope()
+        self.scope['schemaVersion'] = CONTACT_SCHEMA
+        self.observer.verify_grasp = lambda *a, **k: self.fail('retention must be reviewed separately')
+        report = self.run_trial()
+        self.assertEqual(report['status'], 'closed_off')
+        self.assertEqual(report['modelSelectedMotorCommands'], 1)
+        self.assertTrue(report['finalIdleOffVerified'])
+        self.assertFalse(report['graspVerified'])
+        self.assertFalse(report['liftVerified'])
+
+    def test_contact_only_rejects_positioning_and_multiple_commands(self):
+        from learning.model_grasp_trial import CONTACT_SCHEMA
+        self.scope['schemaVersion'] = CONTACT_SCHEMA
+        with self.assertRaisesRegex(ValueError, 'contact_trial_single_close_required'):
+            self.trial()
+
     def test_close_only_rejects_missing_depth_context_and_outside_range_without_run(self):
         for case in ('missing_proof', 'context', 'outside_range', 'stale'):
             with self.subTest(case=case):

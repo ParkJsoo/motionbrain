@@ -38,6 +38,8 @@ A [pose-separated M1/M4 follow-up and pre-command prediction check (Korean)](doc
 
 In a follow-up on 2026-11-07, an M4 model trained on four fresh records and then frozen selected up at 50% for 650ms from two candidates for an object already grasped manually. Two cameras confirmed one physical lift. The original execution nevertheless failed because the observed change of 3.08° exceeded its 3° guard; all outputs were OFF and the queue was empty. This does not establish autonomous positioning/closing, normal control completion or repeatability. [Evaluation conditions and failure distinction (Korean)](docs/m4-up-commissioning.md#2026-11-07-고정-모델-선택-들림과-실패-구분).
 
+A [close-to-lift connector (Korean)](docs/model-grasp-trial.md#닫기에서-들기로-넘기는-별도-연결) requires a normal close/OFF result and fresh dual-camera contact review before selection by a separate 500ms lift model. Connection failure paths were tested in simulation; physical validation of the complete connection remains separate.
+
 ## Architecture
 
 ```text
