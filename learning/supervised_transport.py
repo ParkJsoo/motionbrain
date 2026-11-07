@@ -508,6 +508,14 @@ class SequencePort:
         deadline. It must raise to reject; no return value grants authority or
         replaces the caller's own authorization and observation checks.
         """
+        return self._execute_validated(validate_pulse(pulse), tick, before_run=before_run)
+
+    def _execute_validated(self, pulse, tick, *, before_run=None):
+        """Shared finite body for internally validated, narrowly scoped adapters.
+
+        General callers must use execute(). The commissioning adapter validates
+        an exact, consumed scope before entering here; this is not a live API.
+        """
         if before_run is not None and not callable(before_run):
             raise ValueError('before_run_callback_required')
         self.may_have_run = False
@@ -515,7 +523,6 @@ class SequencePort:
         self.last_dispatch_after = None
         self._finished = False
         self._finish_result = False
-        pulse = validate_pulse(pulse)
         self._active_pulse = None
         self._trace = []
         self._before_run = before_run
