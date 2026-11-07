@@ -10,6 +10,7 @@ from learning.registered_gripper_landmarks import (
     RegisteredGripperLandmarks, default_parameters, register,
 )
 from learning.relative_action_learning import annotated_transition, fit, point_state
+from learning.object_arc import extract_object_arc
 
 
 def encoded(image):
@@ -135,8 +136,56 @@ class RegisteredLandmarksTests(unittest.TestCase):
     def test_model_semantics_do_not_claim_manual_analyst_points(self):
         rows = [annotated_transition(*self.transition(s)) for s in ('one', 'two')]
         model = fit(rows)
-        self.assertIn('registered_template_translation', model['annotationSemantics'])
+        self.assertIn('registered_feature_translation', model['annotationSemantics'])
         self.assertFalse(model['controlEligible'])
+
+
+class ObjectArcLandmarksTests(unittest.TestCase):
+    def setUp(self):
+        self.points = dict(object=[158, 98], jawLeft=[121, 135], jawRight=[193, 135])
+        self.image = np.full((240, 320, 3), 180, np.uint8)
+        cv2.circle(self.image, (158, 96), 38, (70, 70, 70), -1)
+        random = np.random.default_rng(32)
+        for name in ('jawLeft', 'jawRight'):
+            x0, y0, x1, y1 = default_parameters()['rois'][name]
+            self.image[y0:y1, x0:x1] = random.integers(10, 245, (y1-y0, x1-x0, 3), dtype=np.uint8)
+        self.raw = encoded(self.image)
+
+    def test_textureless_object_has_new_contract_without_fake_ncc(self):
+        with self.assertRaisesRegex(ValueError, 'texture_insufficient'):
+            register(self.raw, self.points)
+        parameters = default_parameters(object_arc=True)
+        reg = register(self.raw, self.points, parameters)
+        tracker = RegisteredGripperLandmarks(reg, self.raw)
+        result = tracker.observe(self.raw, 'arc-frame')
+        np.testing.assert_allclose(result['annotation']['points']['object'], self.points['object'], atol=1e-8)
+        self.assertNotIn('ncc', result['quality']['object'])
+        self.assertEqual(result['quality']['object']['method'], 'central_dual_arc_circle.v1')
+        self.assertIn('ncc', result['quality']['jawLeft'])
+        self.assertEqual(reg['parameters']['minimumNcc']['jawLeft'], .94)
+        self.assertEqual(reg['parameters']['minimumPeakGap'], .04)
+        self.assertNotIn('objectArc', default_parameters())
+
+    def test_absent_blurred_occluded_and_wrong_outline_are_rejected(self):
+        cases = dict(absent=np.full_like(self.image, 180),
+                     blurred=cv2.GaussianBlur(self.image, (0, 0), 4),
+                     occluded=self.image.copy(), wrong_outline=np.full_like(self.image, 180))
+        cases['occluded'][89:106, 138:179] = 200
+        # A rectangular dark region has a long run, but incompatible arc shape.
+        cases['wrong_outline'][58:135, 135:182] = 70
+        for label, image in cases.items():
+            with self.subTest(label=label), self.assertRaises(ValueError):
+                extract_object_arc(encoded(image))
+
+    def test_arc_parameters_cannot_be_relaxed_per_observation(self):
+        parameters = default_parameters(object_arc=True)
+        parameters['objectArc']['parameters']['minimumMedianEdgeContrast'] = 1.
+        with self.assertRaisesRegex(ValueError, 'object_arc_contract_changed'):
+            register(self.raw, self.points, parameters)
+        parameters = default_parameters(object_arc=True)
+        parameters['objectArc']['parameters']['minimumColumns'] = 32.0
+        with self.assertRaisesRegex(ValueError, 'object_arc_contract_changed'):
+            register(self.raw, self.points, parameters)
 
 
 if __name__ == '__main__':

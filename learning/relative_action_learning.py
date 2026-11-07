@@ -128,7 +128,7 @@ def fit(rows):
                 trainingCaptureGroups=sorted({r['captureGroup'] for r in rows}),
                 controlEligible=False, independentTest=False, alpha=1.,
                 annotationSemantics=(
-                    'registered_template_translation_of_analyst_seed_points_not_depth_contact_clearance_or_accuracy'
+                    'registered_feature_translation_of_analyst_seed_points_not_depth_contact_clearance_or_accuracy'
                     if context['landmarks'].startswith('registered-template-points-v1:') else
                     'analyst_2d_points_not_grasp_depth_contact_or_clearance'),
                 trainingEpisodes=[r['episode'] for r in rows], trainingFrameIds=[f for r in rows for f in r['frameIds']])

@@ -17,6 +17,7 @@ import cv2
 import numpy as np
 
 from learning.manual_collection_dataset import require
+from learning import object_arc as arc
 
 SCHEMA = 'motionbrain.registered_gripper_landmarks.v1'
 METHOD = 'registered_template_points'
@@ -33,9 +34,9 @@ def _digest(value):
                            allow_nan=False).encode())
 
 
-def default_parameters():
+def default_parameters(*, object_arc=False):
     """Predeclared for the 320x240 contact view, not a universal detector."""
-    return dict(imageShape=[240, 320],
+    parameters = dict(imageShape=[240, 320],
         rois=dict(object=[139, 74, 179, 120], jawLeft=[106, 110, 133, 143],
                   jawRight=[180, 110, 207, 143]),
         searchRadii=dict(object=[4, 4], jawLeft=[24, 14], jawRight=[24, 14]),
@@ -46,6 +47,10 @@ def default_parameters():
         # only a bounded matching hypothesis, not a verified current response.
         maximumJawYDifferencePx=6., maximumJawMidpointDriftPx=12.,
         minimumOpeningPx=64., maximumOpeningPx=124.)
+    if object_arc:
+        parameters['objectArc'] = dict(method=arc.METHOD,
+            parametersSha256=arc.parameter_sha(arc.PARAMETERS), parameters=copy.deepcopy(arc.PARAMETERS))
+    return parameters
 
 
 def _number(x):
@@ -62,8 +67,13 @@ def _image(jpeg, shape):
 
 
 def _parameters(p):
-    require(isinstance(p, dict) and set(p) == set(default_parameters()),
+    require(isinstance(p, dict) and set(p) in
+            (set(default_parameters()), set(default_parameters()) | {'objectArc'}),
             'registered_parameter_fields')
+    if 'objectArc' in p:
+        require(p['objectArc'] == default_parameters(object_arc=True)['objectArc']
+                and arc.parameter_sha(p['objectArc']['parameters']) == p['objectArc']['parametersSha256'],
+                'registered_object_arc_contract_changed')
     require(isinstance(p['imageShape'], list) and len(p['imageShape']) == 2
             and all(type(v) is int and 16 <= v <= 1280 for v in p['imageShape']),
             'registered_image_shape_invalid')
@@ -106,8 +116,11 @@ def register(reference_jpeg, points, parameters=None):
         require(isinstance(xy, list) and len(xy) == 2 and all(_number(v) for v in xy)
                 and x0 <= xy[0] < x1 and y0 <= xy[1] < y1,
                 'registered_seed_outside_patch')
-        require(float(gray[y0:y1, x0:x1].std()) >= p['minimumTemplateStd'],
-                'registered_template_texture_insufficient')
+        if name == 'object' and 'objectArc' in p:
+            arc.extract_object_arc(reference_jpeg, p['objectArc']['parameters'])
+        else:
+            require(float(gray[y0:y1, x0:x1].std()) >= p['minimumTemplateStd'],
+                    'registered_template_texture_insufficient')
     reg = dict(schemaVersion=SCHEMA, imageShape=p['imageShape'], points=copy.deepcopy(points),
         parameters=p, parametersSha256=_digest(p), referenceImageSha256=_sha(reference_jpeg),
         referencePixelSha256=pixel_sha,
@@ -151,8 +164,11 @@ class RegisteredGripperLandmarks:
             require(isinstance(xy, list) and len(xy) == 2 and all(_number(v) for v in xy)
                     and x0 <= xy[0] < x1 and y0 <= xy[1] < y1,
                     'registered_seed_outside_patch')
-            require(float(gray[y0:y1, x0:x1].std()) >= r['parameters']['minimumTemplateStd'],
-                    'registered_template_texture_insufficient')
+            if name == 'object' and 'objectArc' in r['parameters']:
+                arc.extract_object_arc(self.reference_jpeg, r['parameters']['objectArc']['parameters'])
+            else:
+                require(float(gray[y0:y1, x0:x1].std()) >= r['parameters']['minimumTemplateStd'],
+                        'registered_template_texture_insufficient')
         return True
 
     def observe(self, jpeg, frame_id):
@@ -163,6 +179,20 @@ class RegisteredGripperLandmarks:
         p = self.registration['parameters']; points, quality, shifts = {}, {}, {}
         for name in NAMES:
             x0, y0, x1, y1 = p['rois'][name]; dx, dy = p['searchRadii'][name]
+            if name == 'object' and 'objectArc' in p:
+                reference_arc = arc.extract_object_arc(self.reference_jpeg, p['objectArc']['parameters'])
+                current_arc = arc.extract_object_arc(jpeg, p['objectArc']['parameters'])
+                shift = (np.asarray(current_arc['centerPx'])-reference_arc['centerPx']).tolist()
+                require(abs(shift[0]) < dx and abs(shift[1]) < dy,
+                        'registered_object_arc_outside_search')
+                shifts[name] = shift
+                points[name] = [a+b for a, b in zip(self.registration['points'][name], shift)]
+                # No invented NCC/peak score for a different observation method.
+                quality[name] = dict(method=arc.METHOD,
+                    parametersSha256=p['objectArc']['parametersSha256'],
+                    reference=reference_arc, current=current_arc, shiftPx=shift,
+                    meaning='registered_seed_plus_arc_center_displacement')
+                continue
             template = self.gray[y0:y1, x0:x1]
             search = gray[y0-dy:y1+dy, x0-dx:x1+dx]
             scores = cv2.matchTemplate(search, template, cv2.TM_CCOEFF_NORMED)
