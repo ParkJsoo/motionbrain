@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""두 카메라 무구동 점검 또는 명시한 M4 위 200ms 단발 시험."""
+"""두 카메라 무구동 점검 또는 명시한 범위의 M4 위 단발 시험."""
 from __future__ import annotations
 
 import argparse

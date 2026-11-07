@@ -27,6 +27,9 @@ REPO = Path(__file__).resolve().parents[1]
 SCHEMA = 'motionbrain.m4_up_commissioning.v1'
 PULSE = dict(joint='shoulder', motor=4, direction='up', percent=16,
              durationMs=200, expectedPwm=40)
+LIFT_SCHEMA = 'motionbrain.m4_up_manual_lift.v1'
+LIFT_PULSE = dict(joint='shoulder', motor=4, direction='up', percent=50,
+                  durationMs=750, expectedPwm=127)
 MAX_CONTROLLER_PROOF_AGE_SECONDS = .25
 
 
@@ -49,13 +52,14 @@ def validate_scope(scope):
         'implementationSha256', 'context', 'pulse', 'defaultSpeed', 'maxCommands',
         'expectedStartAngleDeg', 'startAngleToleranceDeg', 'maxObservedDeltaDeg',
         'maxSeconds', 'maxObservationAgeSeconds', 'postOffSeconds'}, 'm4_scope_fields')
-    require(scope['schemaVersion'] == SCHEMA and identifier(scope['trialId'])
+    require(scope['schemaVersion'] in (SCHEMA,LIFT_SCHEMA) and identifier(scope['trialId'])
             and identifier(scope['hostClockId']) and isinstance(scope['controllerBootId'], str)
             and re.fullmatch('[0-9a-f]{32}', scope['controllerBootId']) is not None,
             'm4_scope_identity')
     transport.validate_target(scope['controllerUrl'])
     require(scope['implementationSha256'] == implementation_digest(), 'm4_implementation_changed')
-    require(scope['pulse'] == PULSE and all(type(scope['pulse'][k]) is type(v) for k, v in PULSE.items())
+    profile = PULSE if scope['schemaVersion']==SCHEMA else LIFT_PULSE
+    require(scope['pulse'] == profile and all(type(scope['pulse'][k]) is type(v) for k, v in profile.items())
             and type(scope['defaultSpeed']) is int and scope['defaultSpeed'] == 255
             and type(scope['maxCommands']) is int and scope['maxCommands'] == 1,
             'm4_exact_single_pulse_required')
@@ -170,7 +174,7 @@ class _CommissioningPort(transport.SequencePort):
 
     def _execute_validated(self, pulse, tick, *, before_run=None):
         self.owner._guard()
-        require(self.owner.in_pulse and pulse == PULSE, 'm4_scope_not_active')
+        require(self.owner.in_pulse and pulse == self.owner.scope['pulse'], 'm4_scope_not_active')
         return super()._execute_validated(pulse, tick, before_run=before_run)
 
     def _call(self, path, payload=None, **kwargs):
@@ -211,7 +215,7 @@ class _CommissioningPort(transport.SequencePort):
 
 
 class M4UpCommissioning:
-    """One fixed manual identification attempt, not a learned lift controller.
+    """One fixed manual identification or lift attempt, not a learned policy.
 
     Observer: start(deadline), observe(after_off,deadline,tick), latest(), check(),
     close(). observe returns a durable review plus actual native/gripper sources;
@@ -220,6 +224,8 @@ class M4UpCommissioning:
     """
     def __init__(self, scope, observer, token, store, *, evidence_root, clock=time):
         self.scope = validate_scope(scope); self.digest = plan_digest(self.scope)
+        self.selection_kind = ('manual_lift_fixed_profile' if self.scope['schemaVersion']==LIFT_SCHEMA
+                               else 'manual_commissioning_fixed_profile')
         self.observer, self.store, self.clock = observer, store, clock
         self.root = Path(evidence_root).resolve(strict=True)
         require(self.root.is_relative_to((REPO/'.local').resolve())
@@ -279,7 +285,7 @@ class M4UpCommissioning:
         self._guard()
         self.store.write_json('pre-run-guard.json', dict(scopeSha256=self.digest, frames=frames,
             controllerProofStarted=copy.deepcopy(self.port.proof_started),
-            validatedAt=self.clock.monotonic(), selectionKind='manual_commissioning_fixed_profile'))
+            validatedAt=self.clock.monotonic(), selectionKind=self.selection_kind))
         self._guard()
         now = self.clock.monotonic()
         require(now-started <= .1 and now < self.deadline
@@ -295,8 +301,8 @@ class M4UpCommissioning:
     def run(self, *, confirmed_scope_sha256):
         require(not self.used and confirmed_scope_sha256 == self.digest, 'm4_exact_unconsumed_scope_required')
         self.used = True; self.started = self.clock.monotonic(); self.deadline = self.started+self.scope['maxSeconds']
-        report = dict(schemaVersion=SCHEMA, scopeSha256=self.digest, status='failed', errors=[],
-            selectionKind='manual_commissioning_fixed_profile', mayHaveRun=False,
+        report = dict(schemaVersion=self.scope['schemaVersion'], scopeSha256=self.digest, status='failed', errors=[],
+            selectionKind=self.selection_kind, mayHaveRun=False,
             finalIdleOffVerified=False, trainingEligible=False, modelSelected=False, graspVerified=False, liftVerified=False)
         observer_started = claimed = False; phase = 'journal'
         try:
@@ -319,7 +325,7 @@ class M4UpCommissioning:
             before_frames = self._observe(self.before); self._guard()
             self.store.write_json('before-observation.json', self.before)
             phase = 'pulse'; self.in_pulse = True
-            try: receipt = self.port._execute_validated(copy.deepcopy(PULSE), self._tick, before_run=self._before_run)
+            try: receipt = self.port._execute_validated(copy.deepcopy(self.scope['pulse']), self._tick, before_run=self._before_run)
             finally: self.in_pulse = False
             report['receipt'] = receipt
             phase = 'after_observation'

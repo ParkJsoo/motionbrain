@@ -308,8 +308,36 @@ class CommissioningTests(unittest.TestCase):
         with patch.object(self.store,'write_json',side_effect=write):r=self.run_trial()
         self.assertEqual(r['status'],'failed');self.assertFalse(self.device.requests);self.assertEqual(self.row(),'off_unverified')
 
+    def lift_trial(self):
+        self.scope.update(schemaVersion=m.LIFT_SCHEMA,pulse=copy.deepcopy(m.LIFT_PULSE))
+        self.trial=m.M4UpCommissioning(self.scope,self.observer,'private-token',self.store,evidence_root=self.evidence,clock=self.clock)
+        self.trial.port.opener=self.device
+
+    def test_manual_lift_sends_exactly_one_fixed_750ms_pulse(self):
+        self.lift_trial();r=self.run_trial()
+        self.assertEqual(r['status'],'completed',r);self.assertEqual(r['schemaVersion'],m.LIFT_SCHEMA)
+        self.assertEqual(r['receipt']['requestedPulse'],m.LIFT_PULSE)
+        self.assertEqual(r['selectionKind'],'manual_lift_fixed_profile')
+        self.assertEqual(sum(v=={'action':'run'} for _,v in self.posts()),1)
+        self.assertIn(('/sequence',dict(action='add',joint='shoulder',direction='up',speed='50',duration='750')),self.posts())
+        self.assertTrue(r['finalIdleOffVerified']);self.assertFalse(r['modelSelected'])
+
+    def test_manual_lift_keeps_one_degree_abort_and_no_second_run(self):
+        self.lift_trial();self.device.after_run=lambda d:setattr(d,'angle',221.1)
+        r=self.run_trial();self.assertEqual(r['status'],'failed');self.assertTrue(r['finalIdleOffVerified'])
+        self.assertEqual(sum(v=={'action':'run'} for _,v in self.posts()),1);self.assertEqual(self.row(),'pending')
+
 
 class ScopeTests(unittest.TestCase):
+    def test_manual_lift_is_separate_exact_profile_and_general_up_stays_rejected(self):
+        s=scope();s.update(schemaVersion=m.LIFT_SCHEMA,pulse=copy.deepcopy(m.LIFT_PULSE))
+        self.assertEqual(m.validate_scope(s)['pulse']['expectedPwm'],127)
+        with self.assertRaisesRegex(ValueError,'m4_up'):validate_pulse(s['pulse'])
+        for key,value in [('percent',51),('durationMs',800),('expectedPwm',128)]:
+            bad=copy.deepcopy(s);bad['pulse'][key]=value
+            with self.subTest(key=key),self.assertRaises(ValueError):m.validate_scope(bad)
+        s['schemaVersion']=m.SCHEMA
+        with self.assertRaises(ValueError):m.validate_scope(s)
     def test_relaxing_any_fixed_limit_is_refused(self):
         cases=[('defaultSpeed',100),('maxCommands',2),('maxSeconds',61),('maxObservedDeltaDeg',2),
                ('maxObservationAgeSeconds',11),('postOffSeconds',2),('startAngleToleranceDeg',1),('expectedStartAngleDeg',300.)]
