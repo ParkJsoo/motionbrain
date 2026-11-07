@@ -32,6 +32,8 @@ The [M3/M4 marker-learning follow-up (Korean)](docs/evidence/2026-11-06-projecte
 
 A [bounded positioning/close trial core (Korean)](docs/model-grasp-trial.md) connects frozen-model selection, one action and actual re-observation; the core was validated in simulation. A gripper-camera adapter binds original images, timestamps and manually reviewed landmarks, with a diagnostic tool that sends no motor commands. Automatic perception, depth/retention verification and physical grasping/lifting through this path remain unverified.
 
+On 2026-11-07, two cameras confirmed [one physical object lift using a separate fixed manual command (Korean)](docs/m4-up-commissioning.md#2026-11-07-수동-물체-들림1회와-관측-중단). The M4 upward 50%/750 ms request exceeded the 1° observational abort criterion and stopped; the original trial remains failed. The subsequent camera observation of free-space retention does not establish model-selected grasping/lifting or a repeated success rate.
+
 A [pose-separated M1/M4 follow-up and pre-command prediction check (Korean)](docs/relative-action-selection.md#2026-11-07-자세를-분리한-학습과-구동-전-예측-확인) trained separate models on four M1 and two M4 transitions. No-change was best on one new frozen-model M1 comparison, and the next prediction from the resulting state was rejected as outside the training range. This new path has zero model-selected physical commands and zero verified grasps.
 
 ## Architecture
