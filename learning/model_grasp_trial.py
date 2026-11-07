@@ -162,6 +162,15 @@ class ModelGraspTrial:
             'frame', 'annotation', 'context', 'hostClockId', 'sourceEarliest', 'sourceLatest',
             'receivedAt', 'persistedAt', 'stable', 'closeEntryEvidence'}, 'observation_fields')
         require(record['context'] == self.bank.context(stage['modelId']), 'observation_context_changed')
+        annotation = record['annotation']
+        require(isinstance(annotation, dict), 'observation_annotation_required')
+        landmarks = record['context']['landmarks']
+        if annotation.get('method') == 'registered_template_points':
+            require(annotation.get('landmarkContract') == landmarks,
+                    'registered_annotation_context_changed')
+        else:
+            require(not landmarks.startswith('registered-template-points-v1:'),
+                    'registered_context_requires_registered_annotation')
         require(record['hostClockId'] == self.scope['hostClockId'] and record['stable'] is True,
                 'observation_clock_or_stability_changed')
         frame = record['frame']

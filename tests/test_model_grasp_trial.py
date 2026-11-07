@@ -249,6 +249,64 @@ class ModelGraspTests(unittest.TestCase):
                 self.assertFalse(report['graspVerified'])
                 self.assertTrue(report['finalIdleOffVerified'])
 
+    def test_registered_annotation_cannot_enter_existing_analyst_context(self):
+        self.close_only_scope()
+        original_frame = self.observer.frame
+
+        def wrong_annotation(stage):
+            record = original_frame(stage)
+            record['annotation'].update(method='registered_template_points',
+                registrationSha256='c'*64, parametersSha256='d'*64,
+                referenceImageSha256='e'*64,
+                landmarkContract='registered-template-points-v1:'+'c'*64)
+            return record
+
+        self.observer.frame = wrong_annotation
+        report = self.run_trial()
+        self.assertEqual(report['errors'][0]['reason'], 'registered_annotation_context_changed')
+        self.assertEqual(self.port.calls, [])
+        self.assertEqual(report['modelSelectedMotorCommands'], 0)
+        self.assertTrue(report['finalIdleOffVerified'])
+
+    def test_analyst_annotation_cannot_enter_registered_model_context(self):
+        self.close_only_scope()
+        contract = 'registered-template-points-v1:'+'c'*64
+        self.bank._models['close']['context']['landmarks'] = contract
+        original_frame = self.observer.frame
+
+        def wrong_annotation(stage):
+            record = original_frame(stage)
+            record['context']['landmarks'] = contract
+            return record
+
+        self.observer.frame = wrong_annotation
+        report = self.run_trial()
+        self.assertEqual(report['errors'][0]['reason'], 'registered_context_requires_registered_annotation')
+        self.assertEqual(self.port.calls, [])
+        self.assertEqual(report['modelSelectedMotorCommands'], 0)
+        self.assertTrue(report['finalIdleOffVerified'])
+
+    def test_matching_registered_context_and_annotation_preserve_close_path(self):
+        self.close_only_scope()
+        contract = 'registered-template-points-v1:'+'c'*64
+        self.bank._models['close']['context']['landmarks'] = contract
+        original_frame = self.observer.frame
+
+        def registered_frame(stage):
+            record = original_frame(stage)
+            record['context']['landmarks'] = contract
+            record['annotation'].update(method='registered_template_points',
+                registrationSha256='c'*64, parametersSha256='d'*64,
+                referenceImageSha256='e'*64, landmarkContract=contract)
+            return record
+
+        self.observer.frame = registered_frame
+        report = self.run_trial()
+        self.assertEqual(report['status'], 'held')
+        self.assertEqual(report['modelSelectedMotorCommands'], 1)
+        self.assertEqual(len(self.port.calls), 1)
+        self.assertTrue(report['finalIdleOffVerified'])
+
     def test_close_only_unknown_results_never_retry_or_claim_success(self):
         for case in ('lost_response', 'retention_unknown', 'off_unverified'):
             with self.subTest(case=case):

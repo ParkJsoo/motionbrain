@@ -35,8 +35,17 @@ def command_key(command):
 def point_state(annotation, frame):
     require(annotation.get('frameId') == frame['frameId']
             and annotation.get('pixelSha256') == frame['pixelSha256'], 'annotation_frame_mismatch')
-    require(annotation.get('accepted') is True and annotation.get('method') == 'analyst_points'
+    method = annotation.get('method')
+    require(annotation.get('accepted') is True and method in ('analyst_points', 'registered_template_points')
             and annotation.get('inputFrameOnly') is True, 'unaccepted_or_target_assisted_annotation')
+    if method == 'registered_template_points':
+        import re
+        require(all(isinstance(annotation.get(k), str)
+                    and re.fullmatch('[0-9a-f]{64}', annotation[k]) is not None
+                    for k in ('registrationSha256', 'parametersSha256', 'referenceImageSha256'))
+                and annotation.get('landmarkContract') ==
+                    'registered-template-points-v1:'+annotation['registrationSha256'],
+                'registered_annotation_contract_required')
     points = annotation['points']
     require(set(points) == {'object', 'jawLeft', 'jawRight'}, 'three_landmarks_required')
     coords = []
@@ -57,6 +66,16 @@ def annotated_transition(row, annotation):
     context = annotation['context']
     require(isinstance(context, dict) and set(context) == {'physicalView', 'object', 'poseRegime', 'landmarks'}
             and all(isinstance(x, str) and x for x in context.values()), 'observation_context_required')
+    methods = [annotation[k].get('method') for k in ('before', 'after')]
+    require(methods[0] == methods[1], 'annotation_method_changed')
+    if methods[0] == 'registered_template_points':
+        require(context['landmarks'] == annotation['before'].get('landmarkContract')
+                and all(annotation['before'].get(k) == annotation['after'].get(k) for k in
+                        ('landmarkContract', 'registrationSha256', 'parametersSha256', 'referenceImageSha256')),
+                'registered_annotation_context_changed')
+    else:
+        require(not context['landmarks'].startswith('registered-template-points-v1:'),
+                'registered_context_requires_registered_annotation')
     before = point_state(annotation['before'], row['inputs']['image'])
     after = point_state(annotation['after'], row['targets']['image'])
     command_key(row['inputs']['command'])
@@ -108,7 +127,10 @@ def fit(rows):
                 trainingSessionIds=[r['sessionId'] for r in rows],
                 trainingCaptureGroups=sorted({r['captureGroup'] for r in rows}),
                 controlEligible=False, independentTest=False, alpha=1.,
-                annotationSemantics='analyst_2d_points_not_grasp_depth_contact_or_clearance',
+                annotationSemantics=(
+                    'registered_template_translation_of_analyst_seed_points_not_depth_contact_clearance_or_accuracy'
+                    if context['landmarks'].startswith('registered-template-points-v1:') else
+                    'analyst_2d_points_not_grasp_depth_contact_or_clearance'),
                 trainingEpisodes=[r['episode'] for r in rows], trainingFrameIds=[f for r in rows for f in r['frameIds']])
 
 
