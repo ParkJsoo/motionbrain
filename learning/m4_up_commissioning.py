@@ -36,6 +36,13 @@ MODEL_SCHEMA = 'motionbrain.m4_up_model_selection.v1'
 LEARNING_PULSE = dict(joint='shoulder', motor=4, direction='up', percent=50,
                       durationMs=650, expectedPwm=127)
 LEARNING_CANDIDATES = [PULSE, LEARNING_PULSE]
+LEARNING_SHORT_SCHEMA = 'motionbrain.m4_up_learning_short500.v1'
+MODEL_SHORT_SCHEMA = 'motionbrain.m4_up_model_selection_short500.v1'
+SHORT_PULSE = dict(joint='shoulder', motor=4, direction='up', percent=50,
+                   durationMs=500, expectedPwm=127)
+SHORT_CANDIDATES = [PULSE, SHORT_PULSE]
+LEARNING_SCHEMAS = (LEARNING_SCHEMA, MODEL_SCHEMA, LEARNING_SHORT_SCHEMA, MODEL_SHORT_SCHEMA)
+MODEL_SCHEMAS = (MODEL_SCHEMA, MODEL_SHORT_SCHEMA)
 MAX_CONTROLLER_PROOF_AGE_SECONDS = .25
 PUBLIC_FAILURE_CODES = frozenset({
     'm4_native_pre_dispatch_unavailable', 'm4_controller_proof_stale',
@@ -58,26 +65,28 @@ def _hash(value):
 
 
 def validate_scope(scope):
-    is_learning = isinstance(scope,dict) and scope.get('schemaVersion') in (LEARNING_SCHEMA,MODEL_SCHEMA)
+    is_learning = isinstance(scope,dict) and scope.get('schemaVersion') in LEARNING_SCHEMAS
+    candidates = (SHORT_CANDIDATES if isinstance(scope,dict) and scope.get('schemaVersion') in
+                  (LEARNING_SHORT_SCHEMA,MODEL_SHORT_SCHEMA) else LEARNING_CANDIDATES)
     extra = {'phase','observationContractSha256','modelPath','modelSha256'} if is_learning else set()
     require(isinstance(scope, dict) and set(scope) == extra | {
         'schemaVersion', 'trialId', 'controllerUrl', 'controllerBootId', 'hostClockId',
         'implementationSha256', 'context', 'pulse', 'defaultSpeed', 'maxCommands',
         'expectedStartAngleDeg', 'startAngleToleranceDeg', 'maxObservedDeltaDeg',
         'maxSeconds', 'maxObservationAgeSeconds', 'postOffSeconds'}, 'm4_scope_fields')
-    require(scope['schemaVersion'] in (SCHEMA,LIFT_SCHEMA,LEARNING_SCHEMA,MODEL_SCHEMA) and identifier(scope['trialId'])
+    require(scope['schemaVersion'] in (SCHEMA,LIFT_SCHEMA)+LEARNING_SCHEMAS and identifier(scope['trialId'])
             and identifier(scope['hostClockId']) and isinstance(scope['controllerBootId'], str)
             and re.fullmatch('[0-9a-f]{32}', scope['controllerBootId']) is not None,
             'm4_scope_identity')
     transport.validate_target(scope['controllerUrl'])
     require(scope['implementationSha256'] == implementation_digest(), 'm4_implementation_changed')
-    profile = (next((p for p in LEARNING_CANDIDATES if p==scope['pulse']),{})
+    profile = (next((p for p in candidates if p==scope['pulse']),{})
                if is_learning else PULSE if scope['schemaVersion']==SCHEMA else LIFT_PULSE)
     if is_learning:
-        require(scope['pulse'] in LEARNING_CANDIDATES and _hash(scope['observationContractSha256']), 'm4_learning_candidates_required')
+        require(scope['pulse'] in candidates and _hash(scope['observationContractSha256']), 'm4_learning_candidates_required')
         require(scope['phase'] in ('training','evaluation','model_selection')
-                and (scope['schemaVersion']==MODEL_SCHEMA)==(scope['phase']=='model_selection'), 'm4_learning_phase')
-        require(scope['schemaVersion']!=MODEL_SCHEMA or scope['pulse']==LEARNING_PULSE,'m4_model_ceiling_required')
+                and (scope['schemaVersion'] in MODEL_SCHEMAS)==(scope['phase']=='model_selection'), 'm4_learning_phase')
+        require(scope['schemaVersion'] not in MODEL_SCHEMAS or scope['pulse']==candidates[1],'m4_model_ceiling_required')
         if scope['phase']=='training':
             require(scope['modelPath'] is None and scope['modelSha256'] is None,'m4_training_no_model_binding')
         else:
@@ -92,6 +101,8 @@ def validate_scope(scope):
         require(transport.finite_number(scope[k]) and scope[k] == value, 'm4_fixed_limits_required')
     require(transport.finite_number(scope['expectedStartAngleDeg'])
             and 127.58 < scope['expectedStartAngleDeg'] < 296.12, 'm4_start_angle_invalid')
+    if scope['schemaVersion'] in (LEARNING_SHORT_SCHEMA, MODEL_SHORT_SCHEMA):
+        require(192.61 <= scope['expectedStartAngleDeg'] <= 197.61, 'm4_short_reference_band')
     ctx = scope['context']
     require(isinstance(ctx, dict) and set(ctx) == {
         'physicalView', 'poseRegime', 'object', 'supportMode', 'externalDeviceId',
@@ -282,7 +293,10 @@ class M4UpCommissioning:
         self.scope = validate_scope(scope); self.digest = plan_digest(self.scope)
         self.selection_kind = ('manual_lift_fixed_profile' if self.scope['schemaVersion']==LIFT_SCHEMA
                                else 'manual_commissioning_fixed_profile')
-        self.learning = self.scope['schemaVersion'] in (LEARNING_SCHEMA,MODEL_SCHEMA)
+        self.learning = self.scope['schemaVersion'] in LEARNING_SCHEMAS
+        self.model_selection = self.scope['schemaVersion'] in MODEL_SCHEMAS
+        self.candidates = (SHORT_CANDIDATES if self.scope['schemaVersion'] in
+                           (LEARNING_SHORT_SCHEMA,MODEL_SHORT_SCHEMA) else LEARNING_CANDIDATES)
         self.registration,self.model=copy.deepcopy(registration),model
         self.selected_pulse=copy.deepcopy(self.scope['pulse'])
         self.measurement_records=[];self.model_decision=None;self.before_frames=None
@@ -294,6 +308,12 @@ class M4UpCommissioning:
                 require(str(Path(model.path).resolve())==str(Path(self.scope['modelPath']).resolve())
                         and model.sha==self.scope['modelSha256'],'m4_model_binding_changed')
                 require(contract_sha(model.registration)==self.scope['observationContractSha256'],'m4_model_registration_changed')
+                if self.scope['schemaVersion'] in (LEARNING_SHORT_SCHEMA,MODEL_SHORT_SCHEMA):
+                    from learning.m4_lift_learning import SHORT_SCHEMA
+                    require(model.model['schema']==SHORT_SCHEMA,'m4_short_model_version_required')
+                else:
+                    from learning.m4_lift_learning import SCHEMA as LEGACY_MODEL_SCHEMA
+                    require(getattr(model,'model',{}).get('schema',LEGACY_MODEL_SCHEMA)==LEGACY_MODEL_SCHEMA,'m4_legacy_model_version_required')
                 model.verify()
             self.selection_kind={'training':'manual_training_fixed_profile','evaluation':'fixed_model_evaluation_fixed_profile',
                                  'model_selection':'model_selected_lift'}[self.scope['phase']]
@@ -317,8 +337,11 @@ class M4UpCommissioning:
                         and self.model.sha==self.scope['modelSha256'],'m4_model_binding_changed')
                 require(contract_sha(self.model.registration)==self.scope['observationContractSha256'],'m4_model_registration_changed')
                 self.model.verify()
-            require(self.selected_pulse in LEARNING_CANDIDATES,'m4_selected_pulse_not_supported')
-            if self.scope['schemaVersion']!=MODEL_SCHEMA:require(self.selected_pulse==self.scope['pulse'],'m4_fixed_pulse_changed')
+                if self.scope['schemaVersion'] in (LEARNING_SHORT_SCHEMA,MODEL_SHORT_SCHEMA) and self.model_decision is not None:
+                    require(self.model_decision.get('angleEvidenceSha256')==self.model.angle_evidence_sha256,
+                            'm4_angle_decision_binding_changed')
+            require(self.selected_pulse in self.candidates,'m4_selected_pulse_not_supported')
+            if not self.model_selection:require(self.selected_pulse==self.scope['pulse'],'m4_fixed_pulse_changed')
             elif self.model_decision is not None:
                 require(all(self.selected_pulse[k]==self.model_decision['pulse'][k]
                             for k in ('joint','direction','percent','durationMs')),'m4_model_selection_changed')
@@ -486,25 +509,25 @@ class M4UpCommissioning:
                 source,features=self._measure('before',self.before,before_frames)
                 report['beforeFeatures']=features
                 if self.model is not None:
-                    self.model_decision=(self.model.select(source) if self.scope['schemaVersion']==MODEL_SCHEMA
+                    self.model_decision=(self.model.select(source) if self.model_selection
                                          else self.model.predict(source,{k:self.scope['pulse'][k] for k in ('joint','direction','percent','durationMs')}))
                     require(self.model_decision.get('modelSha256')==self.scope['modelSha256']
                             and self.model_decision.get('contractSha256')==self.scope['observationContractSha256']
-                            and self.model_decision.get('modelSelected') is (self.scope['schemaVersion']==MODEL_SCHEMA), 'm4_prediction_binding_changed')
-                    if self.scope['schemaVersion']!=MODEL_SCHEMA:
+                            and self.model_decision.get('modelSelected') is self.model_selection, 'm4_prediction_binding_changed')
+                    if not self.model_selection:
                         require(self.model_decision['pulse']=={k:self.scope['pulse'][k] for k in ('joint','direction','percent','durationMs')},'m4_evaluation_pulse_changed')
-                    if self.scope['schemaVersion']==MODEL_SCHEMA:
-                        pulse=self.model_decision['pulse'];selected=next((p for p in LEARNING_CANDIDATES
+                    if self.model_selection:
+                        pulse=self.model_decision['pulse'];selected=next((p for p in self.candidates
                             if all(p[k]==pulse[k] for k in ('joint','direction','percent','durationMs'))),None)
                         require(selected is not None,'m4_model_unsupported_selection')
                         self.selected_pulse=copy.deepcopy(selected)
                     report['modelDecision']=copy.deepcopy(self.model_decision)
-                report.update(selectedPulse=self.selected_pulse,modelSelected=self.scope['schemaVersion']==MODEL_SCHEMA)
+                report.update(selectedPulse=self.selected_pulse,modelSelected=self.model_selection)
             phase = 'pulse'; self.in_pulse = True
             try: receipt = self.port._execute_validated(copy.deepcopy(self.selected_pulse), self._tick, before_run=self._before_run)
             finally: self.in_pulse = False
             report['receipt'] = receipt
-            report['modelSelectedCommandExecuted']=bool(self.learning and self.scope['schemaVersion']==MODEL_SCHEMA and self.port.may_have_run)
+            report['modelSelectedCommandExecuted']=bool(self.learning and self.model_selection and self.port.may_have_run)
             phase = 'after_observation'
             after = self.observer.observe(after_off=receipt['offAt'], deadline=self.deadline, tick=lambda: self._tick(True))
             frames = self._observe(after, after_off=receipt['offAt'])

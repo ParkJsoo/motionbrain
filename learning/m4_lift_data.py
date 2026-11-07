@@ -155,7 +155,11 @@ def build_row(root, registration):
     """Return one audited row. Never changes raw training flags or source files."""
     ev = Evidence(Path(root).resolve())
     scope, result = ev.json('scope.json'), ev.json('result.json')
-    require(scope.get('schemaVersion') in (core.LEARNING_SCHEMA, core.MODEL_SCHEMA), 'lift_new_learning_schema_required')
+    require(scope.get('schemaVersion') in core.LEARNING_SCHEMAS, 'lift_new_learning_schema_required')
+    candidates = core.SHORT_CANDIDATES if scope['schemaVersion'] in (core.LEARNING_SHORT_SCHEMA,core.MODEL_SHORT_SCHEMA) else core.LEARNING_CANDIDATES
+    if scope['schemaVersion'] in (core.LEARNING_SHORT_SCHEMA,core.MODEL_SHORT_SCHEMA):
+        require(192.61 <= scope['expectedStartAngleDeg'] <= 197.61 and scope['maxObservedDeltaDeg'] == 3.,
+                'lift_short_angle_contract_changed')
     require(result.get('schemaVersion') == scope['schemaVersion'] and result.get('status') == 'completed'
             and result.get('errors') == [] and result.get('finalIdleOffVerified') is True
             and result.get('trainingEligible') is False and result.get('mayHaveRun') is True
@@ -165,10 +169,10 @@ def build_row(root, registration):
             result['scopeSha256'] == plan_digest(scope), 'lift_scope_or_contract_changed')
     require(scope['defaultSpeed'] == 255 and scope['maxCommands'] == 1 and
             scope['phase'] in ('training','evaluation','model_selection') and
-            (scope['schemaVersion'] == core.MODEL_SCHEMA) == (scope['phase'] == 'model_selection') and
-            scope['pulse'] in core.LEARNING_CANDIDATES, 'lift_learning_scope_invalid')
+            (scope['schemaVersion'] in core.MODEL_SCHEMAS) == (scope['phase'] == 'model_selection') and
+            scope['pulse'] in candidates, 'lift_learning_scope_invalid')
     pulse = result['selectedPulse']
-    require(pulse in core.LEARNING_CANDIDATES and
+    require(pulse in candidates and
             (scope['phase'] == 'model_selection' or pulse == scope['pulse']) and
             result['modelSelected'] is (scope['phase'] == 'model_selection'), 'lift_selected_pulse_changed')
     receipt = result['receipt']
@@ -199,3 +203,55 @@ def build_row(root, registration):
                               angleObservations=copy.deepcopy(result['angleObservations']),
                               cameraHostBounds=bridge['validPythonBounds'], windows=windows),
                 originalTrainingEligible=False)
+
+
+def build_angle_evidence(roots, registration):
+    """Audit all supplied executed responses, INCLUDING failed trials.
+
+    A response with unknown execution or incomplete raw proof rejects the whole
+    audit; it is not silently dropped. This sample maximum is not a confidence
+    bound. The 0.5 degree reserve is an unvalidated engineering choice.
+    """
+    from learning.supervised_transport import SequencePort
+    roots = [Path(root).resolve() for root in roots]
+    require(bool(roots) and len(set(roots)) == len(roots), 'angle_source_roots_required')
+    responses = []
+    for root in roots:
+        ev = Evidence(root); scope, result = ev.json('scope.json'), ev.json('result.json')
+        require(scope['schemaVersion'] in core.LEARNING_SCHEMAS and
+                result['schemaVersion'] == scope['schemaVersion'] and result['scopeSha256'] == plan_digest(scope) and
+                scope['context'] == registration['context'] and scope['observationContractSha256'] == learning.contract_sha(registration),
+                'angle_scope_or_contract_changed')
+        pulse = result['selectedPulse']
+        candidates = (core.SHORT_CANDIDATES if scope['schemaVersion'] in (core.LEARNING_SHORT_SCHEMA,core.MODEL_SHORT_SCHEMA)
+                      else core.LEARNING_CANDIDATES)
+        require(pulse in candidates and (scope['phase'] == 'model_selection' or pulse == scope['pulse']) and
+                scope['defaultSpeed'] == 255 and scope['maxCommands'] == 1, 'angle_pulse_changed')
+        require(result['status'] in ('completed','failed') and result['mayHaveRun'] is True and
+                result['commandOutcome'] == 'receipt_recorded' and result['finalIdleOffVerified'] is True and
+                result['trainingEligible'] is False and 'receipt' in result, 'angle_incomplete_execution_evidence')
+        statuses, _, boot, first = _http(ev,result['receipt'],pulse)
+        require(boot == scope['controllerBootId'], 'angle_controller_boot_changed')
+        port = object.__new__(SequencePort)
+        angles = [port._shoulder_angle(event['response']) for event in statuses]
+        baseline = angles[0]
+        require(learning.ANGLE_LIMITS['referenceBandDeg'][0] <= baseline <= learning.ANGLE_LIMITS['referenceBandDeg'][1]
+                and abs(baseline-scope['expectedStartAngleDeg']) <= scope['startAngleToleranceDeg'], 'angle_reference_band_changed')
+        for event in statuses:
+            status = event['response']; state = status['state']
+            require(state in ('IDLE','ARMED'), 'angle_controller_state_invalid')
+            try:
+                port._check_status(status,state,pulse if state == 'ARMED' else None,baseline if state == 'ARMED' else None)
+            except ValueError as exc:
+                # A measured excursion is retained as negative evidence, never
+                # turned into a completed sample; unrelated sensor faults reject.
+                require(result['status'] == 'failed' and str(exc) == 'm4_observed_change_exceeded', 'angle_sensor_or_output_invalid')
+        require(all(digest(_read(root,name)) == expected for name,expected in ev.hashes.items()), 'angle_source_changed_during_audit')
+        responses.append(dict(id=scope['trialId'],pulse={k:pulse[k] for k in ('joint','direction','percent','durationMs')},
+            status=result['status'],sourceSchema=scope['schemaVersion'],sourcePhase=scope['phase'],sourceRoot=str(root),resultSha256=ev.hashes['result.json'],
+            sourceProofsSha256=learning.contract_sha(ev.hashes),sourceProofCount=len(ev.hashes),episodeIdentity=[boot,first],
+            baselineAngleDeg=baseline,maximumObservedAbsDeltaDeg=max(abs(angle-baseline) for angle in angles),
+            sensorSamples=len(angles),failedOutcomePreserved=result['status'] == 'failed'))
+    require(len({r['id'] for r in responses}) == len(responses), 'angle_source_id_reused')
+    return dict(schemaVersion=learning.ANGLE_SCHEMA,context=copy.deepcopy(registration['context']),
+                contractSha256=learning.contract_sha(registration),limits=copy.deepcopy(learning.ANGLE_LIMITS),responses=responses)

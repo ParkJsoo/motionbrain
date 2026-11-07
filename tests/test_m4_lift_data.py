@@ -27,13 +27,16 @@ class LiftDataTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)/'trial'; self.store = ArtifactStore(self.root)
         self.scope = scope()
+        requested=copy.deepcopy(getattr(self,'requestedPulse',core.PULSE))
         self.scope.update(schemaVersion=core.LEARNING_SCHEMA, phase='training', modelPath=None, modelSha256=None,
-                          observationContractSha256='0'*64, maxObservedDeltaDeg=3.)
+                          observationContractSha256='0'*64, maxObservedDeltaDeg=3.,pulse=requested,expectedStartAngleDeg=195.)
+        if requested == core.SHORT_PULSE:self.scope['schemaVersion']=core.LEARNING_SHORT_SCHEMA
         clock = Clock(); device = Device(clock)
+        device.angle=195.
         port = SequencePort('http://controller.invalid', 'unused-private-test', device.boot, self.store, clock=clock, compact_reads=True)
         port.opener = device
         port.preflight()
-        self.receipt = port._execute_validated(copy.deepcopy(core.PULSE), lambda: None)
+        self.receipt = port._execute_validated(requested, lambda: None)
         self.assertTrue(port.finish())
         self.images = {}
         native, chosen = self.native_fixture()
@@ -65,12 +68,12 @@ class LiftDataTests(unittest.TestCase):
         for label in ('before','after'):
             features[label] = learning.measure(self.root, self.read(label+'-measurement-source.json'), self.registration)
             self.write(label+'-measurement.json', features[label])
-        result = dict(schemaVersion=core.LEARNING_SCHEMA, scopeSha256=plan_digest(self.scope), status='completed',
+        result = dict(schemaVersion=self.scope['schemaVersion'], scopeSha256=plan_digest(self.scope), status='completed',
                       errors=[], finalIdleOffVerified=True, trainingEligible=False, mayHaveRun=True,
-                      commandOutcome='receipt_recorded', modelSelected=False, selectedPulse=copy.deepcopy(core.PULSE),
+                      commandOutcome='receipt_recorded', modelSelected=False, selectedPulse=requested,
                       receipt=self.receipt, beforeFeatures=features['before'], afterFeatures=features['after'],
                       observerClose=dict(status='completed', errors=[], native=native, gripper=dict(status='completed')),
-                      angleObservations=[dict(at=self.receipt['dispatchBefore'], angleDeg=220., state='ARMED')])
+                      angleObservations=[dict(at=self.receipt['dispatchBefore'], angleDeg=195., state='ARMED')])
         self.write('result.json', result)
         self.decoder = patch.object(core, 'decode', side_effect=lambda raw,size,sha: self.decode(raw,size,sha))
         self.decoder.start(); self.addCleanup(self.decoder.stop)
@@ -176,6 +179,38 @@ class LiftDataTests(unittest.TestCase):
                 for t in (0.,.2,.8,1.)]
         with self.assertRaisesRegex(ValueError,'video_window_gap'):
             data.select_frames(frames,[0.,1.01])
+
+    def test_angle_evidence_preserves_failed_absolute_excursion(self):
+        result=self.read('result.json'); result['status']='failed'
+        result['errors']=[dict(phase='after_observation',type='ValueError')]
+        self.write('result.json',result)
+        for path in self.root.glob('http-*-intent.json'):
+            intent=self.read(path.name)
+            if intent['path'].split('?')[0] in ('/status','/collection_status') and intent['startedAt']>self.receipt['dispatchBefore']:
+                name=path.name.replace('-intent.json','-response.json'); response=self.read(name)
+                response['parsed']['shoulderAngle']['angleDeg']=198.08
+                response['rawUtf8']=json.dumps(response['parsed']);self.write(name,response)
+        report=data.build_angle_evidence([self.root],self.registration)
+        response=report['responses'][0]
+        self.assertEqual(response['status'],'failed');self.assertTrue(response['failedOutcomePreserved'])
+        self.assertAlmostEqual(response['maximumObservedAbsDeltaDeg'],3.08)
+        self.assertFalse(learning.candidate_angle_screen(report,response['pulse'])['admissible'])
+        del result['receipt'];self.write('result.json',result)
+        with self.assertRaisesRegex(ValueError,'angle_incomplete_execution_evidence'):
+            data.build_angle_evidence([self.root],self.registration)
+
+
+class ShortLiftDataTests(LiftDataTests):
+    requestedPulse=core.SHORT_PULSE
+
+    def test_new_short_raw_pulse_does_not_pass_legacy_scope(self):
+        row=data.build_row(self.root,self.registration)
+        self.assertEqual(row['pulse']['durationMs'],500)
+        scope=self.read('scope.json');scope['schemaVersion']=core.LEARNING_SCHEMA
+        result=self.read('result.json');result['schemaVersion']=core.LEARNING_SCHEMA;result['scopeSha256']=plan_digest(scope)
+        self.write('scope.json',scope);self.write('result.json',result)
+        with self.assertRaisesRegex(ValueError,'lift_learning_scope_invalid'):
+            data.build_row(self.root,self.registration)
 
 
 if __name__=='__main__': unittest.main()

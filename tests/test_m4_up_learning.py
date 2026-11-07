@@ -74,6 +74,42 @@ class UpLearningTests(AdapterTests):
     def run_learning(self,trial):
         return trial.run(confirmed_scope_sha256=plan_digest(self.scope))
 
+    def test_short500_training_is_new_schema_only_and_preserves_three_degree_guard(self):
+        old,_=self.prepare_learning('training')
+        self.scope.update(schemaVersion=core.LEARNING_SHORT_SCHEMA,pulse=copy.deepcopy(core.SHORT_PULSE),expectedStartAngleDeg=195.)
+        self.device.angle=195.
+        trial=core.M4UpCommissioning(self.scope,old.observer,'unused-private',self.store,evidence_root=self.store.root,
+                                   clock=self.clock,registration=self.registration)
+        trial.port.opener=self.device
+        result=self.run_learning(trial)
+        self.assertEqual(result['status'],'completed',result)
+        self.assertEqual(result['receipt']['requestedPulse'],core.SHORT_PULSE)
+        self.assertEqual(sum(v=={'action':'run'} for _,v in self.device.requests),1)
+        self.assertEqual(trial.scope['maxObservedDeltaDeg'],3.)
+        self.assertEqual(core.LEARNING_PULSE['durationMs'],650)
+
+    def test_500_and_650_scope_versions_are_not_interchangeable(self):
+        self.prepare_learning('training')
+        legacy=copy.deepcopy(self.scope);legacy['pulse']=copy.deepcopy(core.SHORT_PULSE)
+        with self.assertRaisesRegex(ValueError,'m4_learning_candidates_required'):
+            core.validate_scope(legacy)
+        short=copy.deepcopy(self.scope);short.update(schemaVersion=core.LEARNING_SHORT_SCHEMA,expectedStartAngleDeg=195.)
+        with self.assertRaisesRegex(ValueError,'m4_learning_candidates_required'):
+            core.validate_scope(short)
+        short['pulse']=copy.deepcopy(core.SHORT_PULSE)
+        self.assertEqual(core.validate_scope(short)['pulse'],core.SHORT_PULSE)
+        short['expectedStartAngleDeg']=220.
+        with self.assertRaisesRegex(ValueError,'m4_short_reference_band'):
+            core.validate_scope(short)
+
+    def test_legacy_frozen_model_is_not_automatically_used_for_short_scope(self):
+        old,model=self.prepare_learning('evaluation');model.model=dict(schema=learning.SCHEMA)
+        self.scope.update(schemaVersion=core.LEARNING_SHORT_SCHEMA,pulse=copy.deepcopy(core.SHORT_PULSE),expectedStartAngleDeg=195.)
+        with self.assertRaisesRegex(ValueError,'m4_short_model_version_required'):
+            core.M4UpCommissioning(self.scope,old.observer,'unused-private',self.store,evidence_root=self.store.root,
+                                   clock=self.clock,registration=self.registration,model=model)
+        self.assertFalse(self.device.requests)
+
     def test_registered_camera_change_rejects_before_run(self):
         trial,_=self.prepare_learning('training')
         trial.registration['cameraBinding']['external']['configurationSha256']='0'*64

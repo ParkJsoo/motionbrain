@@ -20,6 +20,11 @@ STATE = ['objectRisePx', 'toolRisePx', 'slipDyPx']
 PULSES = [dict(joint='shoulder', direction='up', percent=16, durationMs=200),
           dict(joint='shoulder', direction='up', percent=50, durationMs=650)]
 SCHEMA = 'motionbrain.fixed_scene_lift.v1'
+SHORT_SCHEMA = 'motionbrain.fixed_scene_lift.short500.v1'
+SHORT_PULSES = [copy.deepcopy(PULSES[0]), dict(joint='shoulder', direction='up', percent=50, durationMs=500)]
+ANGLE_SCHEMA = 'motionbrain.lift_angle_evidence.v1'
+ANGLE_LIMITS = dict(observedAbortAbsDeg=3., planningAbsLimitDeg=2.5, engineeringReserveDeg=.5,
+                    reserveIsValidatedSafetyBound=False, referenceBandDeg=[192.61,197.61])
 PARAMETERS = dict(objectRoi=[680, 690, 810, 850], grayThreshold=110, distalRows=8,
                   medianFootWidth=[40, 100], markerRoi=[840, 550, 970, 700],
                   markerHsvLower=[135, 30, 50], markerHsvUpper=[179, 255, 255],
@@ -131,9 +136,40 @@ def measure(root, record, registration):
                 sourceSha256=hashes)
 
 
-def _pulse_key(pulse):
-    _require(pulse in PULSES, 'unsupported_pulse')
-    return str(PULSES.index(pulse))
+def model_pulses(schema):
+    _require(schema in (SCHEMA, SHORT_SCHEMA), 'unsupported_lift_model_schema')
+    return copy.deepcopy(PULSES if schema == SCHEMA else SHORT_PULSES)
+
+
+def _pulse_key(pulse, model_schema=SCHEMA):
+    pulses = model_pulses(model_schema)
+    _require(pulse in pulses, 'unsupported_pulse')
+    return str(pulses.index(pulse))
+
+
+def validate_angle_evidence(report, registration, *, recheck_sources=True):
+    _require(report['schemaVersion'] == ANGLE_SCHEMA and report['context'] == registration['context']
+             and report['contractSha256'] == contract_sha(registration) and report['limits'] == ANGLE_LIMITS
+             and bool(report['responses']), 'angle_evidence_contract_invalid')
+    ids = [r['id'] for r in report['responses']]
+    _require(len(set(ids)) == len(ids) and all(r['status'] in ('completed','failed') and
+             np.isfinite(r['maximumObservedAbsDeltaDeg']) and r['maximumObservedAbsDeltaDeg'] >= 0
+             for r in report['responses']), 'angle_responses_invalid')
+    if recheck_sources:
+        from learning.m4_lift_data import build_angle_evidence
+        _require(build_angle_evidence([r['sourceRoot'] for r in report['responses']],registration) == report,
+                 'angle_source_evidence_changed')
+    return True
+
+
+def candidate_angle_screen(report, pulse):
+    responses = [r for r in report['responses'] if r['pulse'] == pulse]
+    maximum = max((r['maximumObservedAbsDeltaDeg'] for r in responses),default=None)
+    return dict(admissible=len(responses) >= 2 and maximum <= ANGLE_LIMITS['planningAbsLimitDeg']
+                and maximum+ANGLE_LIMITS['engineeringReserveDeg'] <= ANGLE_LIMITS['observedAbortAbsDeg'],
+                observations=len(responses), maximumObservedAbsDeltaDeg=maximum,
+                planningAbsLimitDeg=2.5, engineeringReserveDeg=.5, reserveIsValidatedSafetyBound=False,
+                includesFailedResponses=True, sampleMaximumIsConfidenceBound=False)
 
 
 def _state(observation, registration, before=False):
@@ -206,8 +242,24 @@ def _check_source_disjoint(source, earlier, reason):
                      for prior in earlier), reason)
 
 
-def fit(rows, registration, context):
+def fit(rows, registration, context, *, model_schema=SCHEMA, angle_evidence=None, allow_reaudited_legacy_low=False):
     _require(context == registration['context'] and len(rows) >= 4, 'four_training_rows_required')
+    model_pulses(model_schema)
+    if model_schema == SHORT_SCHEMA:
+        _require(angle_evidence is not None and len(rows) == 4, 'short500_exact_four_audited_rows_required')
+        validate_angle_evidence(angle_evidence,registration)
+        responses = {r['id']:r for r in angle_evidence['responses']}
+        for row in rows:
+            _require(row['id'] in responses and responses[row['id']]['resultSha256'] == row['resultSha256']
+                     and responses[row['id']]['pulse'] == row['pulse'] and responses[row['id']]['status'] == 'completed'
+                     and responses[row['id']]['sourcePhase'] == 'training' and row.get('phase') == 'training',
+                     'short500_training_angle_binding')
+            if responses[row['id']]['sourceSchema'] != 'motionbrain.m4_up_learning_short500.v1':
+                _require(allow_reaudited_legacy_low and row['pulse'] == SHORT_PULSES[0], 'legacy_low_explicit_reaudit_required')
+            # All four new-version rows must equal fresh canonical raw audits.
+            # A receipt/result hash alone does not authenticate supplied labels.
+            from learning.m4_lift_data import build_row
+            _require(contract_sha(build_row(row['sourceRoot'],registration)) == contract_sha(row), 'short500_training_reaudit_changed')
     ids, hashes, sources, groups = set(), set(), [], {'0': [], '1': []}
     for row in rows:
         _require(row['id'] not in ids and row['context'] == context and
@@ -217,15 +269,19 @@ def fit(rows, registration, context):
         sources.append(source)
         ids.add(row['id']); hashes.update(source['images'])
         a, b = _state(row['before'], registration, True), _state(row['after'], registration)
-        groups[_pulse_key(row['pulse'])].append((a, b))
+        groups[_pulse_key(row['pulse'],model_schema)].append((a, b))
     _require(all(len(g) >= 2 for g in groups.values()), 'two_sources_per_candidate_required')
-    return dict(schema=SCHEMA, kind='local_visual_translation', context=copy.deepcopy(context),
+    model = dict(schema=model_schema, kind='local_visual_translation', context=copy.deepcopy(context),
                 registration=copy.deepcopy(registration), contractSha256=contract_sha(registration),
                 trainingIds=sorted(ids), trainingSourceHashes=sorted(hashes),
                 sourceIdentityMode=sources[0]['mode'], trainingSources=sources,
                 candidates={k: dict(count=len(g), delta=np.mean([b-a for a,b in g], axis=0).tolist(),
                                     absoluteAfterMean=np.mean([b for _,b in g], axis=0).tolist())
                             for k,g in groups.items()})
+    if model_schema == SHORT_SCHEMA:
+        model.update(angleEvidence=copy.deepcopy(angle_evidence), angleEvidenceSha256=contract_sha(angle_evidence),
+                     legacyLowExplicitlyReaudited=allow_reaudited_legacy_low)
+    return model
 
 
 def save_model(path, model):
@@ -247,7 +303,7 @@ def evaluate(model, rows):
                  'evaluation_contract_mismatch')
         sources.append(source)
         before, after = _state(row['before'], reg, True), _state(row['after'], reg)
-        candidate = model['candidates'][_pulse_key(row['pulse'])]
+        candidate = model['candidates'][_pulse_key(row['pulse'],model['schema'])]
         for key, prediction in [('local_visual_translation', before+candidate['delta']),
                                 ('commandOnly', candidate['absoluteAfterMean']), ('noChange', before)]:
             errors[key].append(np.abs(after-prediction).tolist())
@@ -255,18 +311,22 @@ def evaluate(model, rows):
 
 
 class FrozenLiftModel:
-    def __init__(self, path, sha, registration, evidence_root, source_root=None):
+    def __init__(self, path, sha, registration, evidence_root, source_root=None, *, angle_evidence=None):
         self.path, self.sha = Path(path), sha
         self.registration = copy.deepcopy(registration)
         self.evidence_root = Path(evidence_root)
         self.source_root = Path(source_root or evidence_root)
         self.model = json.loads(self.path.read_bytes())
+        self.angle_evidence = copy.deepcopy(angle_evidence if angle_evidence is not None else self.model.get('angleEvidence'))
+        self.angle_evidence_sha256 = contract_sha(self.angle_evidence) if self.angle_evidence is not None else None
         self.verify()
+        if self.model['schema'] == SHORT_SCHEMA:
+            validate_angle_evidence(self.angle_evidence,self.registration)
 
     def verify(self):
         raw = self.path.read_bytes()
         _require(_sha(raw) == self.sha and json.loads(raw) == self.model, 'frozen_model_changed')
-        _require(self.model['schema'] == SCHEMA and self.model['kind'] == 'local_visual_translation'
+        _require(self.model['schema'] in (SCHEMA,SHORT_SCHEMA) and self.model['kind'] == 'local_visual_translation'
                  and self.model['registration'] == self.registration and
                  self.model['contractSha256'] == contract_sha(self.registration), 'frozen_contract_changed')
         _require(set(self.model['candidates']) == {'0', '1'} and
@@ -281,6 +341,14 @@ class FrozenLiftModel:
                  'training_source_manifest_invalid')
         for i, source in enumerate(sources):
             _check_source_disjoint(source, sources[:i], 'training_source_manifest_reused')
+        if self.model['schema'] == SHORT_SCHEMA:
+            report = self.model['angleEvidence']
+            _require(contract_sha(report) == self.model['angleEvidenceSha256'], 'frozen_angle_evidence_changed')
+            validate_angle_evidence(report,self.registration,recheck_sources=False)
+            _require(contract_sha(self.angle_evidence) == self.angle_evidence_sha256, 'current_angle_evidence_changed')
+            validate_angle_evidence(self.angle_evidence,self.registration,recheck_sources=False)
+            current = {r['id']:r for r in self.angle_evidence['responses']}
+            _require(all(current.get(r['id']) == r for r in report['responses']), 'known_angle_response_removed_or_changed')
         return True
 
     def _decision(self, record, pulse=None):
@@ -288,11 +356,19 @@ class FrozenLiftModel:
         features = measure(self.source_root, record, self.registration)
         state = _state(features, self.registration, True)
         predictions = [dict(pulse=copy.deepcopy(p), state=(state+self.model['candidates'][str(i)]['delta']).tolist())
-                       for i,p in enumerate(PULSES)]
+                       for i,p in enumerate(model_pulses(self.model['schema']))]
+        if self.model['schema'] == SHORT_SCHEMA:
+            for prediction in predictions:
+                prediction['angleScreen'] = candidate_angle_screen(self.angle_evidence,prediction['pulse'])
         # Pre-collection task eligibility, not measured safety or grasp accuracy.
         selected, rejection = pulse, None
+        if pulse is not None and self.model['schema'] == SHORT_SCHEMA:
+            key = _pulse_key(pulse,self.model['schema'])
+            if not predictions[int(key)]['angleScreen']['admissible']:
+                rejection = 'candidate_angle_screen_failed'
         if pulse is None:
-            feasible = sorted((p for p in predictions if p['state'][0] >= 8 and abs(p['state'][2]) <= 4),
+            feasible = sorted((p for p in predictions if p['state'][0] >= 8 and abs(p['state'][2]) <= 4
+                               and p.get('angleScreen',{}).get('admissible',True)),
                               key=lambda p: abs(p['state'][0]-20))
             if not feasible:
                 rejection = 'no_feasible_lift_candidate'
@@ -301,13 +377,15 @@ class FrozenLiftModel:
             else:
                 selected = feasible[0]['pulse']
         if selected is not None:
-            _pulse_key(selected)
+            _pulse_key(selected,self.model['schema'])
         result = dict(features=features, predictions=predictions, pulse=copy.deepcopy(selected),
                       modelSha256=self.sha, contractSha256=contract_sha(self.registration),
                       goalObjectRisePx=20, modelSelected=pulse is None and rejection is None,
                       selectionRejection=rejection,
                       selectionEligibility=dict(minimumObjectRisePx=8, maximumAbsSlipDyPx=4,
                                                 minimumCostSeparationPx=1))
+        if self.model['schema'] == SHORT_SCHEMA:
+            result['angleEvidenceSha256'] = self.angle_evidence_sha256
         self.evidence_root.mkdir(parents=True, exist_ok=True)
         path = self.evidence_root / ('decision-'+uuid.uuid4().hex+'.json')
         raw = _bytes(result)
