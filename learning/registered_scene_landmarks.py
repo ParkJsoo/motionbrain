@@ -1,7 +1,8 @@
 """새 외부 구도의 명시적 특징점 등록·평행이동 관측. 장치·파일 접근 없음.
 
-점의 물리적 정체성은 분석가가 확인한다. 색 영상의 고정 패치 일치는
+점의 물리적 정체성은 분석가가 확인한다. 고정 패치와 선택적 회전 목록은
 2D 이동만 제안하며 깊이·접촉·정확도·옛 모델의 전이 적격을 판단하지 않는다.
+회전 후보는 영상 패치의 방향이며 실제 관절의 회전각이 아니다.
 """
 from __future__ import annotations
 
@@ -51,15 +52,24 @@ def _rectangle(value, shape):
 
 
 def _parameters(p):
-    _require(isinstance(p, dict) and set(p) == {
+    required = {
         'imageShape', 'patchRois', 'searchRois', 'minimumNcc', 'minimumPeakGap',
-        'peakExclusionRadius', 'minimumTemplateStd'}, 'scene_parameter_fields')
+        'peakExclusionRadius', 'minimumTemplateStd'}
+    _require(isinstance(p, dict) and set(p) in (required, required | {'rotationDegrees'}),
+             'scene_parameter_fields')
     shape = p['imageShape']
     _require(isinstance(shape, list) and len(shape) == 2
              and all(type(v) is int for v in shape)
              and 32 <= shape[0] <= 1080 and 32 <= shape[1] <= 1920, 'scene_image_shape_invalid')
     _require(all(isinstance(p[k], dict) and set(p[k]) == set(NAMES)
                  for k in ('patchRois', 'searchRois', 'minimumNcc')), 'scene_three_patch_parameters_required')
+    if 'rotationDegrees' in p:
+        bank = p['rotationDegrees']
+        _require(isinstance(bank, dict) and set(bank) == set(NAMES), 'scene_rotation_names_invalid')
+        for angles in bank.values():
+            _require(isinstance(angles, list) and 1 <= len(angles) <= 71
+                     and all(_number(v) and abs(v) <= 35 for v in angles)
+                     and angles == sorted(set(angles)) and 0 in angles, 'scene_rotation_bank_invalid')
     for name in NAMES:
         x0, y0, x1, y1 = _rectangle(p['patchRois'][name], shape)
         a, b, c, d = _rectangle(p['searchRois'][name], shape)
@@ -94,6 +104,24 @@ def _seeds(points, parameters, reference):
         _require(float(gray[y0:y1, x0:x1].std()) >= parameters['minimumTemplateStd'],
                  'scene_template_texture_insufficient')
     _require(points['jawLeft'] != points['jawRight'], 'scene_coincident_jaw_points')
+
+
+def _template(reference, point, roi, angle):
+    x0, y0, x1, y1 = roi
+    if angle == 0:
+        return reference[y0:y1, x0:x1]
+    # 씨앗점을 중심으로 전체 원본을 회전한 뒤 출력 창만 잘라낸다.
+    # 작은 템플릿의 빈 모서리를 채워 실제 원본인 것처럼 쓰지 않는다.
+    matrix = cv2.getRotationMatrix2D(tuple(map(float, point)), angle, 1.)
+    matrix[:, 2] -= [x0, y0]
+    width, height = x1-x0, y1-y0
+    inverse = cv2.invertAffineTransform(matrix)
+    corners = np.array([[0, 0, 1], [width-1, 0, 1],
+                        [0, height-1, 1], [width-1, height-1, 1]]) @ inverse.T
+    h, w = reference.shape[:2]
+    _require(np.all(corners >= 0) and np.all(corners[:, 0] < w-1)
+             and np.all(corners[:, 1] < h-1), 'scene_rotated_template_clipped')
+    return cv2.warpAffine(reference, matrix, (width, height), flags=cv2.INTER_LINEAR)
 
 
 def register(reference_image, points, parameters, scene_context):
@@ -159,10 +187,24 @@ class RegisteredSceneLandmarks:
         for name in NAMES:
             x0, y0, x1, y1 = p['patchRois'][name]
             a, b, c, d = p['searchRois'][name]
-            template = reference[y0:y1, x0:x1]
-            scores = cv2.matchTemplate(image[b:d, a:c], template, cv2.TM_CCOEFF_NORMED)
-            _require(np.isfinite(scores).all(), 'scene_nonfinite_match')
+            angles = p.get('rotationDegrees', {}).get(name, [0])
+            scores = None
+            winning_angles = None
+            for angle_index, angle in enumerate(angles):
+                template = _template(reference, self.registration['points'][name],
+                                     p['patchRois'][name], angle)
+                candidate = cv2.matchTemplate(image[b:d, a:c], template, cv2.TM_CCOEFF_NORMED)
+                _require(np.isfinite(candidate).all(), 'scene_nonfinite_match')
+                if scores is None:
+                    scores = candidate
+                    winning_angles = np.zeros(scores.shape, dtype=np.uint8)
+                else:
+                    better = candidate > scores
+                    scores[better] = candidate[better]
+                    winning_angles[better] = angle_index
+            # 같은 위치의 여러 각도는 경쟁 피크가 아니다. 위치별 최고점으로 유일성을 검사한다.
             _, peak, _, (ix, iy) = cv2.minMaxLoc(scores)
+            angle = angles[int(winning_angles[iy, ix])]
             _require(0 < ix < scores.shape[1]-1 and 0 < iy < scores.shape[0]-1,
                      'scene_match_at_search_boundary')
             _require(peak >= p['minimumNcc'][name], 'scene_ncc_below_threshold')
@@ -183,7 +225,9 @@ class RegisteredSceneLandmarks:
             shift = [a+ix-x0+offsets[0], b+iy-y0+offsets[1]]
             points[name] = [v+s for v, s in zip(self.registration['points'][name], shift)]
             quality[name] = dict(ncc=float(peak), alternativeNcc=second, peakGap=float(peak-second),
-                                 shiftPx=shift, matching='fixed_bgr_patch_translation_only')
+                                 shiftPx=shift, templateRotationDeg=angle, rotationCandidates=len(angles),
+                                 matching=('fixed_bgr_patch_rotation_bank' if 'rotationDegrees' in p
+                                           else 'fixed_bgr_patch_translation_only'))
         obj, left, right = (np.asarray(points[n], dtype=float) for n in NAMES)
         opening = float(np.linalg.norm(right-left))
         _require(opening > 0, 'scene_coincident_jaw_points')

@@ -92,6 +92,31 @@ class RegisteredSceneLandmarksTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'shape_changed'):
             self.tracker.observe(encoded(self.image[:100]), 'wrong-shape')
 
+    def test_explicit_bank_tracks_image_plane_rigid_rotation(self):
+        reference = cv2.GaussianBlur(self.image, (0, 0), 1.)
+        raw = encoded(reference)
+        p = copy.deepcopy(self.p)
+        angles = list(range(-34,35,2))
+        p['rotationDegrees'] = {name: angles.copy() for name in self.points}
+        registration = register(raw, self.points, p, self.context)
+        tracker = RegisteredSceneLandmarks(registration, raw)
+        # 합성 영상 전체에 동일한 영상 평면 강체 변환을 적용한다. 관절 동작을 뜻하지 않는다.
+        matrix = cv2.getRotationMatrix2D((90., 80.), 8., 1.)
+        current = cv2.warpAffine(reference, matrix, (180, 120))
+        result = tracker.observe(encoded(current), 'rotated-current')
+        for name in self.points:
+            expected = matrix @ np.array([*self.points[name], 1.])
+            np.testing.assert_allclose(result['annotation']['points'][name], expected, atol=.15)
+            self.assertEqual(result['quality'][name]['templateRotationDeg'], 8)
+            self.assertGreaterEqual(result['quality'][name]['ncc'], p['minimumNcc'][name])
+            self.assertGreaterEqual(result['quality'][name]['peakGap'], .04)
+        self.assertAlmostEqual(result['state'][2], 100., delta=.15)
+        self.assertNotEqual(registration['parametersSha256'], self.reg['parametersSha256'])
+        for invalid in ([0, 0], [0, 36], [2], [0, float('nan')]):
+            changed = copy.deepcopy(p); changed['rotationDegrees']['jawLeft'] = invalid
+            with self.subTest(angles=invalid), self.assertRaisesRegex(ValueError, 'rotation_bank_invalid'):
+                register(raw, self.points, changed, self.context)
+
 
 if __name__ == '__main__':
     unittest.main()
