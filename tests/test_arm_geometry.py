@@ -27,7 +27,7 @@ class ArmGeometryTest(unittest.TestCase):
 
     def test_default_separates_reported_measurement_from_remaining_legacy_values(self):
         self.assertEqual(geometry_values(self.profile), dict(zip(
-            GEOMETRY_FIELDS, [.07, 0, .09, .11, .11, .09])))
+            GEOMETRY_FIELDS, [.07, 0, .09, .11, .045, .065])))
         self.assertEqual(self.profile["status"], "nominal")
         for name, field in self.profile["parameters"].items():
             if name in ('base_height_m', 'upper_arm_m', 'forearm_m'):
@@ -41,10 +41,15 @@ class ArmGeometryTest(unittest.TestCase):
                 self.assertIsNone(field['uncertainty_m'])
                 continue
             self.assertEqual(field["status"], "nominal")
-            self.assertEqual(field["method"], "not_measured")
+            self.assertIn('nominal', field['method'])
             self.assertIsNone(field["uncertainty_m"])
-            self.assertIsNone(field["evidence_sha256"])
-            self.assertIsNone(field["physical_revision"])
+            self.assertEqual(len(field['evidence_sha256']), 64)
+
+    def test_confirmed_distal_total_does_not_double_count_intermediate_segment(self):
+        values = geometry_values(self.profile)
+        self.assertAlmostEqual(values['wrist_m'] + values['tool_m'], .110)
+        self.assertEqual(self.profile['parameters']['wrist_m']['status'], 'nominal')
+        self.assertEqual(self.profile['parameters']['tool_m']['status'], 'nominal')
 
     def test_zero_radial_shoulder_offset_is_supported(self):
         self.profile["parameters"]["shoulder_offset_m"]["value_m"] = 0

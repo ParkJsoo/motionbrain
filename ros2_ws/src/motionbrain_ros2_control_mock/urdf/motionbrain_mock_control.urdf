@@ -50,12 +50,12 @@
        schematic jaw, not a calibrated contact or aperture model. -->
   <joint name="wrist_to_gripper" type="fixed">
     <parent link="wrist_link"/><child link="gripper_link"/>
-    <origin xyz="0.11 0 0" rpy="0 0 0"/>
+    <origin xyz="0.045 0 0" rpy="0 0 0"/>
   </joint>
   <link name="tool0"/>
   <joint name="gripper_to_tool0" type="fixed">
     <parent link="gripper_link"/><child link="tool0"/>
-    <origin xyz="0.09 0 0" rpy="0 0 0"/>
+    <origin xyz="0.065 0 0" rpy="0 0 0"/>
   </joint>
   <link name="gripper_jaw_link"/>
   <joint name="gripper_joint" type="revolute">

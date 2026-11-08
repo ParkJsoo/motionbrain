@@ -95,7 +95,7 @@ class MotionBrainKinematicsTest(unittest.TestCase):
         pose = forward_kinematics(JointAngles(base_yaw=math.pi / 2.0))
 
         self.assertAlmostEqual(pose.x_m, 0.0, places=7)
-        self.assertGreater(pose.y_m, 0.3)
+        self.assertAlmostEqual(pose.y_m, .31)
 
     def test_fk_and_ros_orientation_match_all_full_arm_urdfs(self):
         rng = np.random.default_rng(42)
@@ -114,7 +114,7 @@ class MotionBrainKinematicsTest(unittest.TestCase):
                         quaternion_matrix(tool_orientation_quaternion(fk.yaw_rad, fk.pitch_rad)), atol=1e-10)
 
     def test_ik_targets_match_independent_urdf_chain(self):
-        for target, pitch in [((.37, 0, .07), 0), ((.36, .04, .10), .2), ((.37, -.02, .04), -.1)]:
+        for target, pitch in [((.28, 0, .07), 0), ((.27, .04, .10), .2), ((.28, -.02, .04), -.1)]:
             solution = inverse_kinematics(*target, target_tool_pitch_rad=pitch)
             self.assertTrue(solution.reachable, solution.reason)
             positions = dict(zip(["base_yaw_joint", "shoulder_pitch_joint", "elbow_pitch_joint",
@@ -146,12 +146,12 @@ class MotionBrainKinematicsTest(unittest.TestCase):
         self.assertEqual(violations, ("shoulder_pitch_joint", "gripper_joint"))
 
     def test_inverse_kinematics_reachable_target(self) -> None:
-        solution = inverse_kinematics(0.37, 0.0, 0.07)
+        solution = inverse_kinematics(0.28, 0.0, 0.07)
 
         self.assertTrue(solution.reachable)
         self.assertEqual(solution.reason, "ok")
         pose = forward_kinematics(solution.joint_angles)
-        self.assertAlmostEqual(pose.x_m, 0.37, places=2)
+        self.assertAlmostEqual(pose.x_m, 0.28, places=2)
         self.assertAlmostEqual(pose.z_m, 0.07, places=2)
 
     def test_inverse_kinematics_outside_workspace(self) -> None:

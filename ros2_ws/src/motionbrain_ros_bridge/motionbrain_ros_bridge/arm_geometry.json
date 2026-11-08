@@ -62,22 +62,22 @@
       "physical_revision": "owi535_camera_m4_sensor_20261108"
     },
     "wrist_m": {
-      "value_m": 0.11,
+      "value_m": 0.045,
       "status": "nominal",
-      "source": "legacy_unverified_default",
-      "method": "not_measured",
+      "source": "user_confirmed_total_wrist_to_tip_110mm_20261108",
+      "method": "nominal_body_frame_at_reported_intermediate_45mm",
       "uncertainty_m": null,
-      "evidence_sha256": null,
-      "physical_revision": null
+      "evidence_sha256": "dadc9a6d56657b5578d58ea3551a886b051678f2bdcb524198ec5ae741cd28b6",
+      "physical_revision": "owi535_camera_m4_sensor_20261108"
     },
     "tool_m": {
-      "value_m": 0.09,
+      "value_m": 0.065,
       "status": "nominal",
-      "source": "legacy_unverified_default",
-      "method": "not_measured",
+      "source": "user_confirmed_total_wrist_to_tip_110mm_20261108",
+      "method": "nominal_residual_from_confirmed_total_110mm_minus45mm",
       "uncertainty_m": null,
-      "evidence_sha256": null,
-      "physical_revision": null
+      "evidence_sha256": "dadc9a6d56657b5578d58ea3551a886b051678f2bdcb524198ec5ae741cd28b6",
+      "physical_revision": "owi535_camera_m4_sensor_20261108"
     }
   }
 }
