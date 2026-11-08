@@ -124,6 +124,25 @@ class ManualCollectionTests(unittest.TestCase):
         self.assertTrue(requests)
         self.assertTrue(all(0 < timeout <= .8 for _, _, timeout in requests))
 
+    def test_failed_optional_predispatch_guard_never_executes_or_retries(self):
+        self.start()
+        calls = []
+        def execute(pulse, tick, *, before_run):
+            tick()
+            before_run()
+            calls.append(pulse)
+        self.manager.port.execute = execute
+        def reject():
+            raise ValueError('new_observation_not_eligible')
+        with self.assertRaisesRegex(ValueError, 'new_observation_not_eligible'):
+            self.manager.pulse(dict(joint='wrist', direction='up', percent=20,
+                                    durationMs=200), before_run=reject)
+        self.assertEqual(calls, [])
+        self.assertEqual(self.manager.status()['phase'], 'failed')
+        self.assertTrue(self.manager.status()['finalIdleOffVerified'])
+        with self.assertRaisesRegex(ValueError, 'recording_required'):
+            self.pulse()
+
     def test_startup_get_failure_restores_cleanup_deadline(self):
         _, requests, _ = self.failed_readonly_start()
         self.assertAlmostEqual(requests[0][2], 2)

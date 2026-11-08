@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 import math
+import re
 import numpy as np
 
 from learning.manual_collection_dataset import require, build_visual_session
@@ -11,6 +12,14 @@ from learning.artifacts import StorageError
 
 SCHEMA = 'motionbrain.relative_action_ridge.v1'
 STATE = ['objectMinusJawMidXpx', 'objectMinusJawMidYpx', 'jawOpeningPx']
+REGISTERED_METHODS = {
+    'registered_template_points': 'registered-template-points-v1:',
+    'registered_scene_template_points': 'registered-scene-template-points-v1:',
+}
+
+
+def registered_landmarks(value):
+    return isinstance(value, str) and value.startswith(tuple(REGISTERED_METHODS.values()))
 
 
 def vector(value):
@@ -36,15 +45,14 @@ def point_state(annotation, frame):
     require(annotation.get('frameId') == frame['frameId']
             and annotation.get('pixelSha256') == frame['pixelSha256'], 'annotation_frame_mismatch')
     method = annotation.get('method')
-    require(annotation.get('accepted') is True and method in ('analyst_points', 'registered_template_points')
+    require(annotation.get('accepted') is True and method in ('analyst_points', *REGISTERED_METHODS)
             and annotation.get('inputFrameOnly') is True, 'unaccepted_or_target_assisted_annotation')
-    if method == 'registered_template_points':
-        import re
+    if method in REGISTERED_METHODS:
         require(all(isinstance(annotation.get(k), str)
                     and re.fullmatch('[0-9a-f]{64}', annotation[k]) is not None
                     for k in ('registrationSha256', 'parametersSha256', 'referenceImageSha256'))
                 and annotation.get('landmarkContract') ==
-                    'registered-template-points-v1:'+annotation['registrationSha256'],
+                    REGISTERED_METHODS[method]+annotation['registrationSha256'],
                 'registered_annotation_contract_required')
     points = annotation['points']
     require(set(points) == {'object', 'jawLeft', 'jawRight'}, 'three_landmarks_required')
@@ -68,13 +76,13 @@ def annotated_transition(row, annotation):
             and all(isinstance(x, str) and x for x in context.values()), 'observation_context_required')
     methods = [annotation[k].get('method') for k in ('before', 'after')]
     require(methods[0] == methods[1], 'annotation_method_changed')
-    if methods[0] == 'registered_template_points':
+    if methods[0] in REGISTERED_METHODS:
         require(context['landmarks'] == annotation['before'].get('landmarkContract')
                 and all(annotation['before'].get(k) == annotation['after'].get(k) for k in
                         ('landmarkContract', 'registrationSha256', 'parametersSha256', 'referenceImageSha256')),
                 'registered_annotation_context_changed')
     else:
-        require(not context['landmarks'].startswith('registered-template-points-v1:'),
+        require(not registered_landmarks(context['landmarks']),
                 'registered_context_requires_registered_annotation')
     before = point_state(annotation['before'], row['inputs']['image'])
     after = point_state(annotation['after'], row['targets']['image'])
@@ -129,7 +137,7 @@ def fit(rows):
                 controlEligible=False, independentTest=False, alpha=1.,
                 annotationSemantics=(
                     'registered_feature_translation_of_analyst_seed_points_not_depth_contact_clearance_or_accuracy'
-                    if context['landmarks'].startswith('registered-template-points-v1:') else
+                    if registered_landmarks(context['landmarks']) else
                     'analyst_2d_points_not_grasp_depth_contact_or_clearance'),
                 trainingEpisodes=[r['episode'] for r in rows], trainingFrameIds=[f for r in rows for f in r['frameIds']])
 

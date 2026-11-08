@@ -15,7 +15,8 @@ import time
 from learning.manual_collection_dataset import require
 from learning.artifacts import _decode_json, _read
 from learning.manual_collection_dataset import POLICY as EXTERNAL_POLICY
-from learning.relative_action_learning import command_key, point_state, select, vector
+from learning.relative_action_learning import (command_key, point_state, select, vector,
+                                              REGISTERED_METHODS, registered_landmarks)
 from learning.relative_model_bundle import load_frozen_model, sha256
 from learning.supervised_collection import PROFILES, identifier, plan_digest
 
@@ -165,11 +166,11 @@ class ModelGraspTrial:
         annotation = record['annotation']
         require(isinstance(annotation, dict), 'observation_annotation_required')
         landmarks = record['context']['landmarks']
-        if annotation.get('method') == 'registered_template_points':
+        if annotation.get('method') in REGISTERED_METHODS:
             require(annotation.get('landmarkContract') == landmarks,
                     'registered_annotation_context_changed')
         else:
-            require(not landmarks.startswith('registered-template-points-v1:'),
+            require(not registered_landmarks(landmarks),
                     'registered_context_requires_registered_annotation')
         require(record['hostClockId'] == self.scope['hostClockId'] and record['stable'] is True,
                 'observation_clock_or_stability_changed')

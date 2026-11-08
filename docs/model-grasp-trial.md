@@ -55,7 +55,7 @@ RUN 전송 직전에는 원래 선택을 다시 검사한다. `SequencePort.exec
 - `verify_grasp(stage, after_off=..., deadline=..., tick=...)`: 별도 보유 확인 결과 `held`, `failed`, `unknown` 반환. 대기 중 출력 감시를 유지한다.
 - `close()`: 원본 촬영과 시계 기록을 마무리하고 `status=completed`를 반환. 미완결 촬영은 성공으로 올리지 않는다.
 
-관측은 `frame={frameId,pixelSha256,width,height}`, `annotation`, 실제 `context`, `hostClockId`, `sourceEarliest`, `sourceLatest`, `receivedAt`, `persistedAt`, `stable`을 가진다. `annotation`은 `analyst_points` 또는 아래 별도 등록의 `registered_template_points` 계약을 따른다. 등록한 관측은 `annotation.landmarkContract`와 실제 `context.landmarks`가 정확히 같아야 하며 수동 점 계약과 자동 혼합하지 않는다. 시각은 동일한 Python monotonic 영역의 원래 캡처/요청 근거이며 새 시험 시작 이후여야 한다. 집게 카메라는 정확한 노출 시각을 발명하지 않고 요청 시작~수신 범위를 사용한다. OFF 이후 상태는 최소 3초 뒤의 새 프레임이어야 한다. 원본 바이트·메타데이터·실제 구도·정착 검증은 관측 어댑터의 책임이며 플래그만으로 인증되지 않는다.
+관측은 `frame={frameId,pixelSha256,width,height}`, `annotation`, 실제 `context`, `hostClockId`, `sourceEarliest`, `sourceLatest`, `receivedAt`, `persistedAt`, `stable`을 가진다. `annotation`은 `analyst_points` 또는 아래 별도 등록의 `registered_template_points`·`registered_scene_template_points` 계약을 따른다. 등록한 관측은 `annotation.landmarkContract`와 실제 `context.landmarks`가 정확히 같아야 하며 수동 점 계약과 자동 혼합하지 않는다. 시각은 동일한 Python monotonic 영역의 원래 캡처/요청 근거이며 새 시험 시작 이후여야 한다. 집게 카메라는 정확한 노출 시각을 발명하지 않고 요청 시작~수신 범위를 사용한다. OFF 이후 상태는 최소 3초 뒤의 새 프레임이어야 한다. 원본 바이트·메타데이터·실제 구도·정착 검증은 관측 어댑터의 책임이며 플래그만으로 인증되지 않는다.
 
 ## 등록 특징과 원호를 사용하는 새 관측 계약
 
@@ -70,6 +70,10 @@ RUN 전송 직전에는 원래 선택을 다시 검사한다. `SequencePort.exec
 빠른 특징 계산과 입력 신선도는 각각 확인해야 한다. `ReviewedGraspObserver`는 기본 2초의 관측 나이 안에서 콜백과 원본 재검증을 마쳐야 하며, 새 GET이나 영상 처리는 RUN 직전 `latest()`·`check()` 안에서 수행하지 않는다. 과거 주석 복사·시각 갱신이나 기한 확대를 관측 실패의 우회책으로 사용하지 않는다.
 
 등록 특징의 일치는 깊이·접촉·이동 여유·정착·정확도를 인증하지 않는다. `stable`과 닫기 진입의 현장 확인을 NCC 점수만으로 만들지 않으며 외부 카메라·시간순 관측·현장 근거를 별도로 연결한다. 현재 계약은 특정 원통·고정 구도의 개발 범위다. [최신 실물 기록](evidence/2026-11-08-close-lift-integration.md)에서는 새 계약으로 4건을 학습·고정했으나 고정 후 평가와 모델 선택 닫기는 아직 0회다.
+
+새 외부 구도에는 `learning/registered_scene_landmarks.py`의 별도 등록을 사용할 수 있다. 분석가가 물체·양턱 점의 실제 정체성과 패치·검색 영역을 동작 전에 지정하고, 기준 원본과 장면 문맥을 함께 고정한다. 주석은 `registered_scene_template_points`, 모델의 특징 계약은 `registered-scene-template-points-v1:<등록 SHA-256>`이다. 기존 모델의 문맥이나 입력 범위를 새 영상으로 바꾸지 않는다. 평행이동만 관측하므로 회전·가림·유일성·품질 실패 시 중단하며, 접촉·깊이·제어 적격을 부여하지 않는다.
+
+관측과 모델 선택을 연결하는 실행기는 `ManualCollection.pulse(..., before_run=guard)`로 기존 전송기의 RUN 직전 가드를 사용할 수 있다. 가드는 캐시된 관측과 사전 선택을 비차단으로 확인해야 하며, 실패하면 재시도하지 않는다. 기본 수동 수집 경로와 출력·정지 검사는 유지한다.
 
 ## 닫기와 집기 확인
 

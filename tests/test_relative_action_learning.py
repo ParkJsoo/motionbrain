@@ -76,6 +76,18 @@ class RelativeTests(unittest.TestCase):
             m.evaluate(self.model, [row(3, 2.)])
         self.assertEqual(m.evaluate(self.model, [])['status'], 'unavailable')
 
+    def test_scene_registration_cannot_impersonate_legacy_contract(self):
+        frame = dict(frameId='scene', pixelSha256='a'*64, width=100, height=100)
+        annotation = dict(frameId='scene', pixelSha256='a'*64, accepted=True,
+            method='registered_scene_template_points', inputFrameOnly=True,
+            points=dict(object=[50, 20], jawLeft=[40, 40], jawRight=[60, 40]),
+            registrationSha256='b'*64, parametersSha256='c'*64, referenceImageSha256='d'*64,
+            landmarkContract='registered-scene-template-points-v1:'+'b'*64)
+        self.assertEqual(m.point_state(annotation, frame), [0., -20., 20.])
+        annotation['landmarkContract'] = 'registered-template-points-v1:'+'b'*64
+        with self.assertRaisesRegex(ValueError, 'registered_annotation_contract_required'):
+            m.point_state(annotation, frame)
+
     def test_visual_adapter_does_not_require_sensor_and_legacy_still_does(self):
         r = row(9, 2.)
         r['inputs'] = {'command': {'joint': 'gripper'}}
