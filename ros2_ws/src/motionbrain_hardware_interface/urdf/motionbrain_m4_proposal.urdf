@@ -8,7 +8,7 @@
   <link name="upper_arm_link"/>
   <joint name="shoulder_pitch_joint" type="revolute">
     <parent link="shoulder_link"/><child link="upper_arm_link"/>
-    <axis xyz="0 1 0"/>
+    <axis xyz="0 -1 0"/>
     <limit lower="-1.757" upper="1.365" effort="1.0" velocity="1.0"/>
   </joint>
   <ros2_control name="MotionBrainM4ProposalSystem" type="system">

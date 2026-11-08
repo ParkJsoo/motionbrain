@@ -18,20 +18,7 @@ from motionbrain_ros_bridge.motionbrain_kinematics import JOINT_ORDER
 from motionbrain_ros_bridge.motionbrain_kinematics import forward_kinematics
 from motionbrain_ros_bridge.motionbrain_kinematics import inverse_kinematics
 from motionbrain_ros_bridge.motionbrain_kinematics import validate_complete_finite_joint_positions
-
-
-def quaternion_from_yaw_pitch(yaw: float, pitch: float) -> tuple[float, float, float, float]:
-    cy = math.cos(yaw * 0.5)
-    sy = math.sin(yaw * 0.5)
-    cp = math.cos(pitch * 0.5)
-    sp = math.sin(pitch * 0.5)
-
-    return (
-        -sp * sy,
-        sp * cy,
-        cp * sy,
-        cp * cy,
-    )
+from motionbrain_ros_bridge.motionbrain_kinematics import tool_orientation_quaternion
 
 
 def compact_json(payload: dict[str, Any]) -> str:
@@ -222,7 +209,7 @@ class MotionBrainKinematicsNode(LifecycleNode):
         pose_message.pose.position.x = pose.x_m
         pose_message.pose.position.y = pose.y_m
         pose_message.pose.position.z = pose.z_m
-        qx, qy, qz, qw = quaternion_from_yaw_pitch(pose.yaw_rad, pose.pitch_rad)
+        qx, qy, qz, qw = tool_orientation_quaternion(pose.yaw_rad, pose.pitch_rad)
         pose_message.pose.orientation.x = qx
         pose_message.pose.orientation.y = qy
         pose_message.pose.orientation.z = qz

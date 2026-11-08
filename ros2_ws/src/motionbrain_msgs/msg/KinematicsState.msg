@@ -3,6 +3,7 @@ float32 x_m
 float32 y_m
 float32 z_m
 float32 yaw_rad
+# Upward tool elevation; ROS orientation pitch is its negative.
 float32 pitch_rad
 float32 radial_reach_m
 bool within_joint_limits

@@ -2,6 +2,8 @@
 
 [English](README.en.md) · [운영 안내](../../../OPERATIONS.md)
 
+표시·mock·하드웨어 URDF의 팔 pitch축은 `−Y`이며 양의 값은 위쪽 상승각이다. 전체 팔 모델의 `tool0`는 집게 개방과 독립적인 고정 도구 기준이다. ROS pose의 pitch는 상승각의 음수다. 센서 보정값·출력 경로는 이 표시 정합성 수정으로 바뀌지 않으며 실물 보정은 별도 검증한다.
+
 `motionbrain_hardware_interface/MotionBrainHardwareInterface`는 `ros2_control`의 `SystemInterface` 플러그인이다. 전체 관절에 엔코더가 있다고 가정하지 않고, 추정 상태·M4 실측·실물 실행 제안을 구분한다.
 
 현재 [시각 행동 학습 계획](../../../docs/visual-action-learning.md)은 영상과 모터 명령의 결과를 학습하는 별도 연구 경로다. 이 플러그인이 새 시각 모델이나 센서 없는 축의 학습 제어를 이미 제공하는 것은 아니다. 아래 실물 쓰기 범위는 기존 M4 확인형 경로로 유지한다.

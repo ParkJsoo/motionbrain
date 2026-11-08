@@ -2,6 +2,8 @@
 
 [한국어](README.md) · [Operations](../../../OPERATIONS.en.md)
 
+Arm pitch axes are `−Y` in the display, mock, and hardware URDFs: positive values raise the arm. Full-arm models use a fixed `tool0` independent of jaw opening. ROS pose pitch is the negative of elevation. This display consistency change does not alter sensor calibration or output paths; physical calibration remains a separate check.
+
 `motionbrain_hardware_interface/MotionBrainHardwareInterface` is a `ros2_control` `SystemInterface` plugin. It separates estimated state, measured M4 feedback, and physical command proposals without assuming encoders on every joint.
 
 The current [visual action learning plan (Korean)](../../../docs/visual-action-learning.md) is a separate research path linking observations and motor-command outcomes. This plugin does not yet provide that visual model or learned control of joints without encoders. Physical writes below remain limited to the existing confirmed M4 path.

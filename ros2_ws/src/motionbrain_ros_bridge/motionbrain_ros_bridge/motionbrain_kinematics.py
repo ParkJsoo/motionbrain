@@ -66,6 +66,8 @@ class JointAngles:
 
 @dataclass(frozen=True)
 class EndEffectorPose:
+    """Tool0 pose; pitch_rad is upward elevation, opposite ROS +Y pitch."""
+
     x_m: float
     y_m: float
     z_m: float
@@ -246,3 +248,10 @@ def inverse_kinematics(
         within_joint_limits=not violations,
         joint_limit_violations=violations,
     )
+
+
+def tool_orientation_quaternion(yaw: float, elevation: float) -> tuple[float, float, float, float]:
+    """ROS xyzw orientation for yaw followed by upward tool elevation."""
+    cy, sy = math.cos(yaw / 2), math.sin(yaw / 2)
+    cp, sp = math.cos(-elevation / 2), math.sin(-elevation / 2)
+    return (-sp * sy, sp * cy, cp * sy, cp * cy)

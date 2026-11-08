@@ -2,6 +2,8 @@
 
 [한국어](README.md) · [Portfolio](PORTFOLIO.en.md) · [Build and operations](OPERATIONS.en.md)
 
+The kinematic display uses positive upward elevation and a fixed `tool0` independent of jaw opening. Software checks of FK/IK against URDF positions and orientations do not establish physical dimensions or zero calibration. See [coordinate conventions and limits (Korean)](docs/visual-action-learning.md#전체-팔에서-기구학동역학을-쓰는-방법).
+
 **A personal robotics project that predicts arm motion from images and planned commands, then compares candidate outcomes to grasp and lift an object.** It connects two cameras and sensors to an ESP32-controlled five-axis DC arm, developing collection, raw-data validation, training, evaluation and bounded execution.
 
 The current stage is **connecting joint-specific prediction into an M1 gripper close → M4 shoulder lift sequence**. Automatic alignment and learned whole-arm grasping/lifting are not complete.

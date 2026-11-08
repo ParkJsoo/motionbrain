@@ -42,7 +42,7 @@
 
   <link name="upper_arm_link">
     <visual>
-      <origin xyz="0.12 0 0" rpy="0 1.5708 0"/>
+      <origin xyz="0.12 0 0" rpy="0 0 0"/>
       <geometry>
         <box size="0.24 0.035 0.035"/>
       </geometry>
@@ -56,13 +56,13 @@
     <parent link="shoulder_link"/>
     <child link="upper_arm_link"/>
     <origin xyz="0.18 0 0" rpy="0 0 0"/>
-    <axis xyz="0 1 0"/>
+    <axis xyz="0 -1 0"/>
     <limit lower="-1.5708" upper="1.5708" effort="1.0" velocity="1.0"/>
   </joint>
 
   <link name="forearm_link">
     <visual>
-      <origin xyz="0.10 0 0" rpy="0 1.5708 0"/>
+      <origin xyz="0.10 0 0" rpy="0 0 0"/>
       <geometry>
         <box size="0.20 0.03 0.03"/>
       </geometry>
@@ -76,13 +76,13 @@
     <parent link="upper_arm_link"/>
     <child link="forearm_link"/>
     <origin xyz="0.24 0 0" rpy="0 0 0"/>
-    <axis xyz="0 1 0"/>
+    <axis xyz="0 -1 0"/>
     <limit lower="-1.5708" upper="1.5708" effort="1.0" velocity="1.0"/>
   </joint>
 
   <link name="wrist_link">
     <visual>
-      <origin xyz="0.055 0 0" rpy="0 1.5708 0"/>
+      <origin xyz="0.055 0 0" rpy="0 0 0"/>
       <geometry>
         <box size="0.11 0.025 0.025"/>
       </geometry>
@@ -96,7 +96,7 @@
     <parent link="forearm_link"/>
     <child link="wrist_link"/>
     <origin xyz="0.20 0 0" rpy="0 0 0"/>
-    <axis xyz="0 1 0"/>
+    <axis xyz="0 -1 0"/>
     <limit lower="-1.5708" upper="1.5708" effort="1.0" velocity="1.0"/>
   </joint>
 
@@ -112,11 +112,28 @@
     </visual>
   </link>
 
-  <joint name="gripper_joint" type="revolute">
-    <parent link="wrist_link"/>
-    <child link="gripper_link"/>
+  <!-- Jaw opening is separate from the fixed tool reference. This is a
+       schematic jaw, not a calibrated contact or aperture model. -->
+  <joint name="wrist_to_gripper" type="fixed">
+    <parent link="wrist_link"/><child link="gripper_link"/>
     <origin xyz="0.11 0 0" rpy="0 0 0"/>
-    <axis xyz="0 1 0"/>
+  </joint>
+  <link name="tool0"/>
+  <joint name="gripper_to_tool0" type="fixed">
+    <parent link="gripper_link"/><child link="tool0"/>
+    <origin xyz="0.09 0 0" rpy="0 0 0"/>
+  </joint>
+  <link name="gripper_jaw_link">
+    <visual>
+      <origin xyz="0.025 0 0"/>
+      <geometry><box size="0.05 0.012 0.025"/></geometry>
+      <material name="signal_blue"/>
+    </visual>
+  </link>
+  <joint name="gripper_joint" type="revolute">
+    <parent link="gripper_link"/><child link="gripper_jaw_link"/>
+    <origin xyz="0.035 0.025 0" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
     <limit lower="-0.7854" upper="0.7854" effort="1.0" velocity="1.0"/>
   </joint>
 
