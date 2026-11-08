@@ -96,3 +96,21 @@ python3 tools/compare_arm_video_sensor.py \
 두 영역은 같은 6개 원본을 재분석했으므로 독립 표본 12개가 아니다. 영역을 수동으로 선언한 개발 탐색이며 새로 고정한 평가·전체 자세 일반화·모델 성능 개선의 결과가 아니다. 일부 중간 프레임의 품질 탈락과 센서 시각 미대응도 보존했다. 원래 기록의 학습·평가 구분과 실패 이력은 바꾸지 않는다. 이 도구는 기존 HTTP 원장 전체를 재감사한 것이 아니며 `rawHttpReaudited=false`로 표시한다.
 
 센서값은 호스트가 관측한 시각, 영상은 호스트 PTS를 사용한다. 가장 가까운 센서 관측을 찾았다는 사실이나 PTS 변환 경계가 광학 노출·센서 샘플의 정확한 동기화를 증명하지 않는다. 결과는 좁은 자세 범위의 투영 변화 일관성이며 정밀 M4 영점·방향·카메라 외부 좌표 보정이나 실물 제어 승인이 아니다.
+
+## 촬영별 첫 프레임 기준 등록
+
+`collect_supervised_actions.py`의 `--arm-reference-template`은 기존 단발 수집에 선택적으로 연결한다. 템플릿은 `motionbrain.arm_reference_template.v1` 형식이며 `imageSize`와 상완·전완의 `regions`를 담는다. 각 영역에는 `movingPolygon`, 고정 배경 두 곳 이상의 `backgroundPolygons`, `forwardImageSign`이 필요하다. 실제 영역 좌표는 해당 촬영 구도에서 정해 비공개 자료로 보관한다.
+
+`prepare`에서 원본 템플릿 바이트의 SHA를 계획에 고정하고, `validate`·`run`에서도 같은 템플릿을 지정한다. 수집기는 카메라 준비 직후 같은 촬영의 **첫 프레임만** 기준으로 등록한다. 원본 픽셀·시계·특징 품질과 근접 센서 관측을 검사해 등록한 뒤에야 기존 실행 경로로 진행한다. 등록이 실패하면 모터 명령 전에 미시작으로 남기며, 나중 프레임을 대신 고르지 않는다. 옵션 없는 기존 수집 경로는 그대로다.
+
+촬영 재시작 사이에는 화면 배율·위치가 조금 달라질 수 있으므로 이전 촬영의 기준 프레임을 자동 재사용하지 않는다. 벽면의 미세 질감 대신 고정된 무늬를 선정한 뒤, 같은 촬영의 첫 프레임을 기준으로 약 10초·76프레임에서 품질 검사를 통과했다. 이는 해당 구도의 정지 관측이며 다른 촬영·모든 자세의 안정성을 보장하지 않는다.
+
+```bash
+python3 tools/compare_supervised_arm_video.py \
+  --run .local/supervised-run --output .local/arm-comparison \
+  --arm-reference-template .local/arm-reference-template.json \
+  --expected-plan-sha256 '<plan-sha256>' \
+  --expected-template-sha256 '<template-file-sha256>'
+```
+
+사후 대조는 실제 HTTP RUN·OFF 경계, 전체 출력 이력, 마지막 OFF·빈 큐, 등록 시각과 첫 쓰기 시각, 원본 프레임·센서·계획의 연결을 재검사한다. 사후 프레임은 검증된 정지 구간 안에서 OFF 후 3초 목표에 ±0.5초 이내인 근접 표본을 선택하고 실제 경과 시간을 남긴다. 과거 사전등록 없는 자료는 `--allow-offline-registration`을 명시한 경우만 재구성하며, 사전등록·고정 후 평가로 바꾸지 않는다. 출력은 영상 평면 변화와 센서의 사후 대조이며 실물 각도 정확도나 학습 성능의 검증은 아니다.

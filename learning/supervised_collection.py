@@ -27,7 +27,7 @@ def plan_digest(plan):
 
 def validate_plan(plan):
     required={'schemaVersion','sessionId','captureGroup','split','controllerUrl','controllerBootId','helperSha256','camera','pulses','postSeconds','beforeSeconds','operatorSupervised','poseContext'}
-    if not isinstance(plan,dict) or set(plan)!=required or plan['schemaVersion']!=SCHEMA:
+    if not isinstance(plan,dict) or set(plan) not in (required, required | {'armReferenceTemplateSha256'}) or plan['schemaVersion']!=SCHEMA:
         raise ValueError('supervised_plan_schema')
     if not identifier(plan['sessionId']) or not identifier(plan['captureGroup']) or not identifier(plan['poseContext']):
         raise ValueError('plan_identifiers')
@@ -62,6 +62,12 @@ def validate_plan(plan):
         if direction is not None and direction!=key: raise ValueError('single_joint_direction_block_required')
         direction=key
         if p['joint']=='shoulder' and len(pulses)!=1: raise ValueError('shoulder_single_pulse_only')
+    if 'armReferenceTemplateSha256' in plan:
+        if (not isinstance(plan['armReferenceTemplateSha256'], str)
+                or not re.fullmatch('[0-9a-f]{64}', plan['armReferenceTemplateSha256'])):
+            raise ValueError('arm_reference_template_hash_required')
+        if len(pulses) != 1:
+            raise ValueError('arm_reference_single_pulse_required')
     c=plan['camera']
     if not isinstance(c,dict) or set(c)!={'deviceId','sessionId','viewId','width','height','maxFrames','seconds','sampleFps','maxBytes'}:
         raise ValueError('camera_schema')
@@ -88,8 +94,14 @@ def make_plan(*,session_id,capture_group,split,controller_url,boot_id,helper_sha
 
 
 class SupervisedCollection:
-    def __init__(self,plan,camera,port,store,*,clock=time):
+    def __init__(self,plan,camera,port,store,*,clock=time,arm_reference_template=None):
         self.plan=validate_plan(plan);self.camera=camera;self.port=port;self.store=store;self.clock=clock;self.used=False
+        self.arm_reference_template=arm_reference_template
+        if arm_reference_template is not None or 'armReferenceTemplateSha256' in self.plan:
+            from learning.arm_session_reference import load_template
+            if arm_reference_template is None or 'armReferenceTemplateSha256' not in self.plan:
+                raise ValueError('arm_reference_template_and_plan_pin_required')
+            load_template(arm_reference_template,self.plan['armReferenceTemplateSha256'])
 
     def wait(self,seconds):
         end=self.clock.monotonic()+seconds
@@ -110,8 +122,21 @@ class SupervisedCollection:
         touched=False;camera_started=False
         self.store.write_json('plan.json',self.plan)
         try:
+            if self.arm_reference_template is not None:
+                self.store._write('arm-reference-template.json',self.arm_reference_template)
             self.port.preflight() # no mutations before this succeeds
             camera_started=True;self.camera.start();self.camera.wait_ready(timeout=15)
+            if self.arm_reference_template is not None:
+                # Optional registration gets a nearby read-only sensor snapshot
+                # before feature checks; the default path keeps its old timing.
+                self.port.check_idle()
+                from learning.arm_session_reference import build_registration
+                if not self.camera.frames:raise ValueError('arm_reference_first_frame_missing')
+                registration=build_registration(self.store.root,self.plan,self.arm_reference_template,copy.deepcopy(self.camera.frames[0]))
+                registration['registeredAt']=self.clock.monotonic()
+                receipt=self.store.write_json('arm-reference.json',registration)
+                report['armReference']=registration
+                report['armReferenceSha256']=receipt['sha256']
             self.wait(self.plan['beforeSeconds'])
             for i,row in enumerate(report['trials']):
                 self.camera.check();self.port.preflight()

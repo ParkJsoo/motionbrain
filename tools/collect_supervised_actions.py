@@ -26,8 +26,10 @@ def parser():
     a.add_argument('--percent',type=int,required=True)
     a.add_argument('--durations-ms',type=int,nargs='+',required=True)
     a.add_argument('--helper',type=Path,required=True);a.add_argument('--output-plan',type=Path,required=True)
+    a.add_argument('--arm-reference-template',type=Path,help='optional fixed ROI JSON; binds its original SHA to the plan')
     for name in ('validate','run'):
         a=sub.add_parser(name);a.add_argument('--plan',type=Path,required=True);a.add_argument('--helper',type=Path,required=True)
+        a.add_argument('--arm-reference-template',type=Path)
         if name=='run':
             a.add_argument('--confirm-plan-sha256',required=True);a.add_argument('--onsite',action='store_true',required=True)
             a.add_argument('--output-dir',type=Path,required=True)
@@ -40,8 +42,19 @@ def private_path(p):
     return p
 
 
+def arm_template(args,plan):
+    path=getattr(args,'arm_reference_template',None)
+    expected=plan.get('armReferenceTemplateSha256')
+    if path is None and expected is None:return None
+    if path is None or expected is None:raise ValueError('arm_reference_template_and_plan_pin_required')
+    from learning.arm_session_reference import load_template
+    raw=path.read_bytes();load_template(raw,expected)
+    return raw
+
+
 def run(args,plan):
     if not args.onsite or args.confirm_plan_sha256!=plan_digest(plan):raise ValueError('explicit_attended_plan_required')
+    reference_template=arm_template(args,plan)
     out=private_path(args.output_dir)
     if out.exists():raise ValueError('new_output_directory_required')
     token=os.environ.get('MOTIONBRAIN_HTTP_TOKEN','')
@@ -72,7 +85,8 @@ def run(args,plan):
             raise KeyboardInterrupt()
         for sig in (signal.SIGINT,signal.SIGTERM):
             handlers[sig]=signal.signal(sig,interrupted)
-        report=SupervisedCollection(plan,camera,port,store).run(plan_digest(plan))
+        options={'arm_reference_template':reference_template} if reference_template is not None else {}
+        report=SupervisedCollection(plan,camera,port,store,**options).run(plan_digest(plan))
         with db:
             db.execute('UPDATE supervised_blocks SET phase=?,result_json=? WHERE session_id=?',
                 ('closed' if report['finalIdleOffVerified'] else 'off_unverified',json.dumps(report,allow_nan=False),plan['sessionId']))
@@ -92,11 +106,17 @@ def main(argv=None):
             controller_url=args.controller_url,boot_id=args.boot_id,helper_sha256=hashlib.sha256(args.helper.read_bytes()).hexdigest(),
             device_id=args.device_id,view_id=args.view_id,pose_context=args.pose_context,joint=args.joint,direction=args.direction,
             percent=args.percent,durations=args.durations_ms)
+        if args.arm_reference_template is not None:
+            from learning.arm_session_reference import load_template
+            raw=args.arm_reference_template.read_bytes();load_template(raw)
+            plan['armReferenceTemplateSha256']=hashlib.sha256(raw).hexdigest()
+            plan=validate_plan(plan)
         path=private_path(args.output_plan);path.parent.mkdir(parents=True,exist_ok=True)
         with path.open('x') as f:json.dump(plan,f,ensure_ascii=False,indent=2);f.write('\n')
     else:
         plan=validate_plan(_decode_json(args.plan.read_bytes()))
         if hashlib.sha256(args.helper.read_bytes()).hexdigest()!=plan['helperSha256']:raise ValueError('helper_hash_mismatch')
+        arm_template(args,plan)
         if args.mode=='run':return run(args,plan)
     print(json.dumps({'planSha256':plan_digest(plan),'pulses':plan['pulses'],'requiredFreeBytes':plan['camera']['maxBytes']+2*1024**3,'hardwareCalls':0,'captures':0},indent=2));return 0
 
