@@ -2,6 +2,9 @@
 set -euo pipefail
 export DISPLAY=:1 LIBGL_ALWAYS_SOFTWARE=1 QT_X11_NO_MITSHM=1 QT_QPA_PLATFORM=xcb
 export ROS_DOMAIN_ID=42 ROS_LOCALHOST_ONLY=1
+# A stopped container retains Xvfb's lock/socket while its processes are gone.
+# This entrypoint owns display :1 in a fresh container PID namespace.
+rm -f /tmp/.X1-lock /tmp/.X11-unix/X1
 Xvfb :1 -screen 0 1440x950x24 +extension GLX +render -noreset &
 for _ in $(seq 1 50); do [[ -S /tmp/.X11-unix/X1 ]] && break; sleep .1; done
 openbox >/tmp/openbox.log 2>&1 &
