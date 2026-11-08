@@ -5,7 +5,7 @@ import unittest
 import cv2
 import numpy as np
 
-from learning.registered_scene_landmarks import RegisteredSceneLandmarks, register, METHOD, LANDMARK_PREFIX
+from learning.registered_scene_landmarks import RegisteredSceneLandmarks, register, METHOD, LANDMARK_PREFIX, _jaw_pair
 
 
 def encoded(image):
@@ -116,6 +116,68 @@ class RegisteredSceneLandmarksTests(unittest.TestCase):
             changed = copy.deepcopy(p); changed['rotationDegrees']['jawLeft'] = invalid
             with self.subTest(angles=invalid), self.assertRaisesRegex(ValueError, 'rotation_bank_invalid'):
                 register(raw, self.points, changed, self.context)
+
+    def pair_parameters(self):
+        p = copy.deepcopy(self.p)
+        for name in ('jawLeft', 'jawRight'):
+            p['searchRois'][name] = [12, 42, 168, 108]
+        p['jawPair'] = dict(minimumSpanPx=95., maximumSpanPx=105.,
+                            minimumMeanNccGap=.04, maxCandidatesPerJaw=64)
+        return p
+
+    def test_registered_pair_rejects_wrong_span_without_hiding_individual_failure(self):
+        p = self.pair_parameters(); reg = register(self.raw, self.points, p, self.context)
+        image = self.image.copy()
+        image[72:88, 58:74] = self.image[72:88, 132:148]
+        raw = encoded(image)
+        result = RegisteredSceneLandmarks(reg, self.raw).observe(raw, 'pair-current')
+        np.testing.assert_allclose(result['state'], [0., -50., 100.], atol=.05)
+        self.assertFalse(result['quality']['jawRight']['individualUniquenessPassed'])
+        self.assertLess(result['quality']['jawRight']['peakGap'], .04)
+        pair = result['quality']['jawPair']
+        self.assertEqual(pair['uniquenessBasis'], 'no_second_eligible_pair')
+        self.assertTrue(any(x['reason'] == 'outside_registered_span_band' for x in pair['pairs']))
+        self.assertFalse(pair['spanIsPhysicalInvariant'])
+        self.assertNotEqual(reg['registrationSha256'], self.reg['registrationSha256'])
+        unpaired = copy.deepcopy(p); unpaired.pop('jawPair')
+        original = RegisteredSceneLandmarks(register(self.raw, self.points, unpaired, self.context), self.raw)
+        with self.assertRaisesRegex(ValueError, 'scene_match_ambiguous'):
+            original.observe(raw, 'original-contract-still-rejected')
+
+    def test_registered_pair_ambiguity_occlusion_and_candidate_overflow_fail_closed(self):
+        p = self.pair_parameters(); tracker = RegisteredSceneLandmarks(register(self.raw, self.points, p, self.context), self.raw)
+        duplicated = self.image.copy()
+        duplicated[52:68, 32:48] = self.image[72:88, 32:48]
+        duplicated[52:68, 132:148] = self.image[72:88, 132:148]
+        with self.assertRaisesRegex(ValueError, 'scene_jaw_pair_ambiguous') as caught:
+            tracker.observe(encoded(duplicated), 'two-real-looking-pairs')
+        self.assertGreaterEqual(sum(x['eligible'] for x in caught.exception.diagnostics['pairs']), 2)
+        hidden = self.image.copy(); hidden[72:88, 32:48] = 127
+        with self.assertRaisesRegex(ValueError, 'scene_jaw_candidates_missing'):
+            tracker.observe(encoded(hidden), 'occluded')
+        p['jawPair']['maxCandidatesPerJaw'] = 1
+        capped = RegisteredSceneLandmarks(register(self.raw, self.points, p, self.context), self.raw)
+        with self.assertRaisesRegex(ValueError, 'candidate_budget_exceeded') as caught:
+            capped.observe(encoded(duplicated), 'overflow-no-truncation')
+        self.assertIn('overflow', caught.exception.diagnostics)
+
+    def test_registered_pair_parameters_are_explicit_finite_and_bounded(self):
+        for field, value in [('minimumSpanPx', 0), ('maximumSpanPx', float('inf')),
+                             ('minimumMeanNccGap', .03), ('maxCandidatesPerJaw', 65),
+                             ('maxCandidatesPerJaw', True)]:
+            p = self.pair_parameters(); p['jawPair'][field] = value
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, 'jaw_pair_parameters_invalid'):
+                register(self.raw, self.points, p, self.context)
+
+    def test_near_band_competitor_is_not_hidden_before_subpixel_localization(self):
+        p = self.pair_parameters()
+        left = np.zeros((51, 141), np.float32); left[30, 20] = .99
+        right = np.zeros_like(left); right[30, 120] = .99; right[30, 113] = .98
+        # 정수 span93px는 band95..105 밖이지만 subpixel 허용량으로 안에 들 수 있다.
+        matches = {name: (scores, np.zeros_like(scores, dtype=np.uint8), [0])
+                   for name, scores in [('jawLeft', left), ('jawRight', right)]}
+        with self.assertRaisesRegex(ValueError, 'scene_jaw_pair_ambiguous'):
+            _jaw_pair(matches, dict(parameters=p, points=self.points))
 
 
 if __name__ == '__main__':

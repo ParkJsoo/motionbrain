@@ -55,7 +55,8 @@ def _parameters(p):
     required = {
         'imageShape', 'patchRois', 'searchRois', 'minimumNcc', 'minimumPeakGap',
         'peakExclusionRadius', 'minimumTemplateStd'}
-    _require(isinstance(p, dict) and set(p) in (required, required | {'rotationDegrees'}),
+    _require(isinstance(p, dict) and required <= set(p)
+             and set(p) <= required | {'rotationDegrees', 'jawPair'},
              'scene_parameter_fields')
     shape = p['imageShape']
     _require(isinstance(shape, list) and len(shape) == 2
@@ -70,6 +71,16 @@ def _parameters(p):
             _require(isinstance(angles, list) and 1 <= len(angles) <= 71
                      and all(_number(v) and abs(v) <= 35 for v in angles)
                      and angles == sorted(set(angles)) and 0 in angles, 'scene_rotation_bank_invalid')
+    if 'jawPair' in p:
+        pair = p['jawPair']
+        _require(isinstance(pair, dict) and set(pair) == {'minimumSpanPx', 'maximumSpanPx',
+                 'minimumMeanNccGap', 'maxCandidatesPerJaw'}
+                 and all(_number(pair.get(k)) for k in
+                         ('minimumSpanPx', 'maximumSpanPx', 'minimumMeanNccGap'))
+                 and 0 < pair['minimumSpanPx'] < pair['maximumSpanPx'] <= math.hypot(*shape)
+                 and .04 <= pair['minimumMeanNccGap'] <= 1.
+                 and type(pair['maxCandidatesPerJaw']) is int
+                 and 1 <= pair['maxCandidatesPerJaw'] <= 64, 'scene_jaw_pair_parameters_invalid')
     for name in NAMES:
         x0, y0, x1, y1 = _rectangle(p['patchRois'][name], shape)
         a, b, c, d = _rectangle(p['searchRois'][name], shape)
@@ -122,6 +133,94 @@ def _template(reference, point, roi, angle):
     _require(np.all(corners >= 0) and np.all(corners[:, 0] < w-1)
              and np.all(corners[:, 1] < h-1), 'scene_rotated_template_clipped')
     return cv2.warpAffine(reference, matrix, (width, height), flags=cv2.INTER_LINEAR)
+
+
+def _pair_require(condition, reason, diagnostic):
+    if not condition:
+        error = ValueError(reason)
+        error.diagnostics = copy.deepcopy(diagnostic)
+        raise error
+
+
+def _jaw_candidates(scores, seed, patch, search, floor, radius, cap, diagnostic, name):
+    remaining = scores.copy(); candidates = diagnostic['candidates'].setdefault(name, [])
+    while True:
+        _, peak, _, (ix, iy) = cv2.minMaxLoc(remaining)
+        if peak < floor: break
+        if len(candidates) >= cap:
+            diagnostic['overflow'] = dict(feature=name, nextScorePosition=[ix, iy], nextNcc=float(peak))
+            _pair_require(False, 'scene_jaw_candidate_budget_exceeded', diagnostic)
+        candidates.append(dict(scorePosition=[ix, iy], ncc=float(peak),
+            projectedPoint=[seed[0]+search[0]+ix-patch[0], seed[1]+search[1]+iy-patch[1]]))
+        remaining[max(0, iy-radius):iy+radius+1, max(0, ix-radius):ix+radius+1] = -2.
+    return candidates
+
+
+def _jaw_pair(matches, registration):
+    p = registration['parameters']; limits = p['jawPair']
+    # 각 끝점의 축별 subpixel 이동은 최대 .75px다. 경계 근처의 경쟁 쌍을
+    # 정수 위치만으로 배제하지 않는다. 최종 선택은 실제 subpixel span으로 검사한다.
+    span_margin = 2*.75*math.sqrt(2.)
+    diagnostic = dict(method='registered_jaw_pair_mean_ncc_v1', limits=copy.deepcopy(limits),
+                      candidates={}, pairs=[], individualUniquenessEnforced=False,
+                      spanIsPhysicalInvariant=False, nmsRadius=p['peakExclusionRadius'],
+                      competingPairSubpixelSpanMarginPx=span_margin)
+    for name in ('jawLeft', 'jawRight'):
+        diagnostic['candidates'][name] = _jaw_candidates(matches[name][0], registration['points'][name],
+            p['patchRois'][name], p['searchRois'][name], p['minimumNcc'][name],
+            p['peakExclusionRadius'], limits['maxCandidatesPerJaw'], diagnostic, name)
+        _pair_require(bool(diagnostic['candidates'][name]), 'scene_jaw_candidates_missing', diagnostic)
+    for li, left in enumerate(diagnostic['candidates']['jawLeft']):
+        for ri, right in enumerate(diagnostic['candidates']['jawRight']):
+            span = float(np.linalg.norm(np.asarray(left['projectedPoint'])-right['projectedPoint']))
+            eligible = span+span_margin >= limits['minimumSpanPx'] and span-span_margin <= limits['maximumSpanPx']
+            diagnostic['pairs'].append(dict(leftIndex=li, rightIndex=ri, spanPx=span,
+                possibleLocalizedSpanPx=[max(0., span-span_margin), span+span_margin],
+                meanNcc=(left['ncc']+right['ncc'])/2, eligible=eligible,
+                reason=None if eligible else 'outside_registered_span_band'))
+    eligible = sorted((x for x in diagnostic['pairs'] if x['eligible']), key=lambda x: -x['meanNcc'])
+    _pair_require(bool(eligible), 'scene_jaw_pair_span_not_supported', diagnostic)
+    selected = eligible[0]; second = eligible[1] if len(eligible) > 1 else None
+    diagnostic.update(selected=copy.deepcopy(selected), secondEligiblePair=copy.deepcopy(second),
+        meanNccGap=selected['meanNcc']-second['meanNcc'] if second is not None else None,
+        uniquenessBasis='competing_nms_pairs' if second is not None else 'no_second_eligible_pair')
+    _pair_require(second is None or diagnostic['meanNccGap'] >= limits['minimumMeanNccGap'],
+                  'scene_jaw_pair_ambiguous', diagnostic)
+    chosen = {name: diagnostic['candidates'][name][selected[key]]['scorePosition']
+              for name, key in [('jawLeft', 'leftIndex'), ('jawRight', 'rightIndex')]}
+    return chosen, diagnostic
+
+
+def _localize(scores, winning_angles, angles, registration, name, position=None, paired=False):
+    p = registration['parameters']; x0, y0, _, _ = p['patchRois'][name]
+    a, b, _, _ = p['searchRois'][name]
+    if position is None: _, _, _, position = cv2.minMaxLoc(scores)
+    ix, iy = position; peak = float(scores[iy, ix]); angle = angles[int(winning_angles[iy, ix])]
+    _require(0 < ix < scores.shape[1]-1 and 0 < iy < scores.shape[0]-1, 'scene_match_at_search_boundary')
+    _require(peak >= p['minimumNcc'][name], 'scene_ncc_below_threshold')
+    alternative = scores.copy(); radius = p['peakExclusionRadius']
+    alternative[max(0, iy-radius):iy+radius+1, max(0, ix-radius):ix+radius+1] = -2.
+    _require(np.any(alternative != -2.), 'scene_search_insufficient_for_uniqueness')
+    second = float(alternative.max()); gap = peak-second
+    if not paired: _require(gap >= p['minimumPeakGap'], 'scene_match_ambiguous')
+    offsets = []
+    for before, center, after in ((scores[iy, ix-1], scores[iy, ix], scores[iy, ix+1]),
+                                  (scores[iy-1, ix], scores[iy, ix], scores[iy+1, ix])):
+        denominator = float(before-2*center+after)
+        _require(denominator < -1e-7, 'scene_peak_not_localized')
+        offset = .5*float(before-after)/denominator
+        _require(_number(offset) and abs(offset) <= .75, 'scene_subpixel_peak_invalid')
+        offsets.append(offset)
+    shift = [a+ix-x0+offsets[0], b+iy-y0+offsets[1]]
+    point = [v+s for v, s in zip(registration['points'][name], shift)]
+    quality = dict(ncc=peak, alternativeNcc=second, peakGap=float(gap), shiftPx=shift,
+        templateRotationDeg=angle, rotationCandidates=len(angles),
+        matching=('fixed_bgr_patch_rotation_bank' if 'rotationDegrees' in p
+                  else 'fixed_bgr_patch_translation_only'))
+    if paired:
+        quality.update(individualUniquenessEnforced=False,
+                       individualUniquenessPassed=gap >= p['minimumPeakGap'])
+    return point, quality
 
 
 def register(reference_image, points, parameters, scene_context):
@@ -183,7 +282,7 @@ class RegisteredSceneLandmarks:
         image, pixel_sha = _image(image_bytes, self.registration['imageShape'])
         reference, _ = _image(self.reference_image, self.registration['imageShape'])
         p = self.registration['parameters']
-        points, quality = {}, {}
+        points, quality, matches = {}, {}, {}
         for name in NAMES:
             x0, y0, x1, y1 = p['patchRois'][name]
             a, b, c, d = p['searchRois'][name]
@@ -202,32 +301,24 @@ class RegisteredSceneLandmarks:
                     better = candidate > scores
                     scores[better] = candidate[better]
                     winning_angles[better] = angle_index
-            # 같은 위치의 여러 각도는 경쟁 피크가 아니다. 위치별 최고점으로 유일성을 검사한다.
-            _, peak, _, (ix, iy) = cv2.minMaxLoc(scores)
-            angle = angles[int(winning_angles[iy, ix])]
-            _require(0 < ix < scores.shape[1]-1 and 0 < iy < scores.shape[0]-1,
-                     'scene_match_at_search_boundary')
-            _require(peak >= p['minimumNcc'][name], 'scene_ncc_below_threshold')
-            alternative = scores.copy()
-            radius = p['peakExclusionRadius']
-            alternative[max(0, iy-radius):iy+radius+1, max(0, ix-radius):ix+radius+1] = -2.
-            _require(np.any(alternative != -2.), 'scene_search_insufficient_for_uniqueness')
-            second = float(alternative.max())
-            _require(peak-second >= p['minimumPeakGap'], 'scene_match_ambiguous')
-            offsets = []
-            for before, center, after in ((scores[iy, ix-1], scores[iy, ix], scores[iy, ix+1]),
-                                          (scores[iy-1, ix], scores[iy, ix], scores[iy+1, ix])):
-                denominator = float(before-2*center+after)
-                _require(denominator < -1e-7, 'scene_peak_not_localized')
-                offset = .5*float(before-after)/denominator
-                _require(_number(offset) and abs(offset) <= .75, 'scene_subpixel_peak_invalid')
-                offsets.append(offset)
-            shift = [a+ix-x0+offsets[0], b+iy-y0+offsets[1]]
-            points[name] = [v+s for v, s in zip(self.registration['points'][name], shift)]
-            quality[name] = dict(ncc=float(peak), alternativeNcc=second, peakGap=float(peak-second),
-                                 shiftPx=shift, templateRotationDeg=angle, rotationCandidates=len(angles),
-                                 matching=('fixed_bgr_patch_rotation_bank' if 'rotationDegrees' in p
-                                           else 'fixed_bgr_patch_translation_only'))
+            if 'jawPair' in p and name != 'object':
+                matches[name] = (scores, winning_angles, angles)
+            else:
+                points[name], quality[name] = _localize(scores, winning_angles, angles, self.registration, name)
+        if 'jawPair' in p:
+            positions, pair_quality = _jaw_pair(matches, self.registration)
+            try:
+                for name in ('jawLeft', 'jawRight'):
+                    points[name], quality[name] = _localize(*matches[name], self.registration, name,
+                                                           position=positions[name], paired=True)
+                span = float(np.linalg.norm(np.asarray(points['jawLeft'])-points['jawRight']))
+                pair_quality['localizedSpanPx'] = span
+                _pair_require(p['jawPair']['minimumSpanPx'] <= span <= p['jawPair']['maximumSpanPx'],
+                              'scene_localized_jaw_pair_outside_band', pair_quality)
+            except ValueError as exc:
+                if not hasattr(exc, 'diagnostics'): exc.diagnostics = copy.deepcopy(pair_quality)
+                raise
+            quality['jawPair'] = pair_quality
         obj, left, right = (np.asarray(points[n], dtype=float) for n in NAMES)
         opening = float(np.linalg.norm(right-left))
         _require(opening > 0, 'scene_coincident_jaw_points')
