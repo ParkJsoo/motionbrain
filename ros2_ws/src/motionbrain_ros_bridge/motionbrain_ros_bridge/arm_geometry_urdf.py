@@ -64,6 +64,16 @@ def _origin(block, xyz):
 def _appearance(text, values):
     """Own display visuals only; leave inertia/collision/control text intact."""
     root = ET.fromstring(text)
+    # The display must represent a folded elbow beyond the old +/-90 deg
+    # placeholder. This symmetric 300 deg window is visual-only and nominal;
+    # the manual's total travel does not establish actual signed safe endpoints.
+    def display_elbow(block):
+        node = ET.fromstring(block)
+        limit = node.find('limit')
+        limit.set('lower', format(-math.radians(150), '.12g'))
+        limit.set('upper', format(math.radians(150), '.12g'))
+        return re.sub(r'<limit\b[^>]*/>', ET.tostring(limit, encoding='unicode').strip(), block, count=1)
+    text = _replace_block(text, 'joint', 'elbow_pitch_joint', display_elbow)
     if root.find("link[@name='gripper_opposing_jaw_link']") is None:
         text = text.replace('</robot>', '<link name="gripper_opposing_jaw_link"></link>\n</robot>')
     text = _replace_block(text, 'joint', 'gripper_joint', lambda b: _origin(b, [.01, .012, 0]))

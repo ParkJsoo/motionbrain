@@ -24,10 +24,10 @@ if follower>=0:
     d.qpos[m.jnt_qposadr[follower]]=-pose['gripper_joint']
 mujoco.mj_forward(m,d)
 with mujoco.viewer.launch_passive(m,d) as viewer:
-    viewer.cam.lookat[:]=[.08,0,.12]
-    viewer.cam.distance=.6
-    viewer.cam.azimuth=135
-    viewer.cam.elevation=-25
+    viewer.cam.lookat[:]=[.055,0,.10]
+    viewer.cam.distance=.5
+    viewer.cam.azimuth=-90
+    viewer.cam.elevation=-5
     while viewer.is_running():
         started=time.monotonic()
         mujoco.mj_step(m,d)

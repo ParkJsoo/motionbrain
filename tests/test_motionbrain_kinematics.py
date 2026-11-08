@@ -15,6 +15,7 @@ sys.path.insert(0, str(ROOT / "ros2_ws" / "src" / "motionbrain_ros_bridge"))
 
 from motionbrain_ros_bridge.motionbrain_kinematics import ArmModel  # noqa: E402
 from motionbrain_ros_bridge.motionbrain_kinematics import JointAngles  # noqa: E402
+from motionbrain_ros_bridge.motionbrain_kinematics import JOINT_LIMITS  # noqa: E402
 from motionbrain_ros_bridge.motionbrain_kinematics import forward_kinematics  # noqa: E402
 from motionbrain_ros_bridge.motionbrain_kinematics import inverse_kinematics  # noqa: E402
 from motionbrain_ros_bridge.motionbrain_kinematics import joint_limit_violations  # noqa: E402
@@ -200,6 +201,19 @@ class MotionBrainKinematicsTest(unittest.TestCase):
 
 
 class GeometryDerivativesTest(unittest.TestCase):
+    def test_folded_elbow_display_range_does_not_expand_control_limits(self):
+        display = ET.parse(ROOT / 'ros2_ws/src/motionbrain_description/urdf/motionbrain.urdf')
+        limit = display.find("joint[@name='elbow_pitch_joint']/limit")
+        self.assertLess(float(limit.get('lower')), math.radians(-109))
+        self.assertAlmostEqual(float(limit.get('lower')), -math.radians(150), places=10)
+        self.assertAlmostEqual(float(limit.get('upper')), math.radians(150), places=10)
+        for relative in URDF_PATHS[1:3]:
+            control = ET.parse(ROOT / 'ros2_ws/src' / relative)
+            limit = control.find("joint[@name='elbow_pitch_joint']/limit")
+            self.assertAlmostEqual(float(limit.get('lower')), -1.5708)
+            self.assertAlmostEqual(float(limit.get('upper')), 1.5708)
+        self.assertAlmostEqual(JOINT_LIMITS['elbow_pitch_joint'].lower, -math.pi / 2)
+
     def test_repository_geometry_matches_one_packaged_profile(self):
         profile = load_geometry_profile()
         for relative in URDF_PATHS:

@@ -18,7 +18,7 @@ if [[ "${VIEWER:-rviz}" == gazebo ]]; then
     python3 - <<'PYGUI'
 from pathlib import Path
 source=Path('/opt/ros/jazzy/opt/gz_sim_vendor/share/gz/gz-sim8/gui/gui.config').read_text()
-source=source.replace('<camera_pose>-6 0 6 0 0.5 0</camera_pose>', '<camera_pose>0.38 -0.38 0.30 0 0.45 2.25</camera_pose>')
+source=source.replace('<camera_pose>-6 0 6 0 0.5 0</camera_pose>', '<camera_pose>0.055 0.36 0.136 0 0.1 -1.57079632679</camera_pose>')
 source=source.replace('<width>1000</width>', '<width>1360</width>').replace('<height>845</height>', '<height>900</height>')
 Path('/tmp/motionbrain-gui.config').write_text(source)
 PYGUI

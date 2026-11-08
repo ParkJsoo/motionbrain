@@ -1,10 +1,15 @@
 {
-  "description": "외형 확인용 가상 자세. 연결된 실물의 현재 자세가 아님.",
+  "description": "실측 링크 길이와 측면 사진으로 추정한 정적 근사 자세. 실시간 센서 자세·검증된 관절 영점이 아님.",
+  "method": "manual_side_photo_weak_perspective_approximation",
+  "unmeasured": ["base_yaw_joint", "gripper_joint"],
+  "cameraExtrinsicsCalibrated": false,
+  "feedbackCalibrated": false,
+  "controlEligible": false,
   "joints": {
     "base_yaw_joint": 0.0,
-    "shoulder_pitch_joint": 1.1,
-    "elbow_pitch_joint": -1.2,
-    "wrist_pitch_joint": -0.35,
+    "shoulder_pitch_joint": 1.0995574287564276,
+    "elbow_pitch_joint": -1.9024088846738192,
+    "wrist_pitch_joint": 0.5585053606381855,
     "gripper_joint": 0.15
   }
 }

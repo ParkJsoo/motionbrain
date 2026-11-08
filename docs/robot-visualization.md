@@ -40,7 +40,7 @@ docker compose -f tools/visualization/compose.yaml up -d
 
 일부 RViz 버전은 [한 링크의 여러 visual에 첫 재질을 공유하는 문제](https://github.com/ros2/rviz/issues/1293)가 있다. RViz 입력만 색별 고정 표시 링크로 나누어 색을 보존한다. 원래 관절·도구 프레임과 모든 형상의 위치는 그대로이며 추가 `rviz_visual_*` 프레임은 외형 표시용이다. 이 파생물은 MuJoCo·Gazebo 물리 모델 생성에 사용하지 않는다.
 
-세 Viewer의 보기용 관절 목표는 [`display-pose.json`](../tools/visualization/display-pose.json)에 둔다. 실물 현재 자세를 센서로 읽어 표시하는 것이 아니다. 표시용 팔에는 중력을 보상한다(MuJoCo body `gravcomp=1`, Gazebo robot link `gravity=false`)고 지정하되 실제 엔진의 지원 여부와 별개로 물리 보정은 미완료다. Gazebo는 속도 명령과 표시 전용 effort 한도 10을 사용하는 임시 위치 추종기로 목표를 유지한다. 소스 URDF의 effort 계약은 바꾸지 않는다. 이는 실물 PWM·토크·하중 반응이 아니며 동역학 식별에는 사용할 수 없다. 선택적 시험 물체의 중력은 유지한다. 노랑·검정 부품이 구분되도록 배경·조명·시점을 조정했다.
+세 Viewer의 보기용 관절 목표는 [`display-pose.json`](../tools/visualization/display-pose.json)에 둔다. 현재는 기존 치수와 측면 사진에서 추정한 어깨 63°·팔꿈치 −109°·손목 32°의 정적 근사이며, yaw와 집게 각도는 가정이다. 접힌 자세를 재현하는 표시용 팔꿈치 범위와 실물 제어 범위의 차이는 [사진 근사 절차](arm-calibration.md#사진과-기존-치수로-근사-자세-맞추기)를 참고한다. 실물 현재 자세를 센서로 읽어 표시하는 것이 아니다. 표시용 팔에는 중력을 보상한다(MuJoCo body `gravcomp=1`, Gazebo robot link `gravity=false`)고 지정하되 실제 엔진의 지원 여부와 별개로 물리 보정은 미완료다. Gazebo는 속도 명령과 표시 전용 effort 한도 10을 사용하는 임시 위치 추종기로 목표를 유지한다. 소스 URDF의 effort 계약은 바꾸지 않는다. 이는 실물 PWM·토크·하중 반응이 아니며 동역학 식별에는 사용할 수 없다. 선택적 시험 물체의 중력은 유지한다. 노랑·검정 부품이 구분되도록 배경·조명을 조정하고, 측면 사진과 비교하기 쉽게 기본 시점을 맞췄다.
 
 두 집게는 하나의 개방 입력을 반대 방향으로 따르는 단순 회전 연동이다. ROS는 URDF mimic, MuJoCo는 joint equality, Gazebo Harmonic은 설치된 Bullet Featherstone의 mimic constraint를 사용한다. 실제 집게의 다절 링크·개구폭·접촉·마찰 모델을 식별한 것은 아니다. 외형 개수로 임시 질량이 늘지 않도록 링크별 질량·관성을 한 번만 지정한다.
 
