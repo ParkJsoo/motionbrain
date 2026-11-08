@@ -114,3 +114,21 @@ python3 tools/compare_supervised_arm_video.py \
 ```
 
 사후 대조는 실제 HTTP RUN·OFF 경계, 전체 출력 이력, 마지막 OFF·빈 큐, 등록 시각과 첫 쓰기 시각, 원본 프레임·센서·계획의 연결을 재검사한다. 사후 프레임은 검증된 정지 구간 안에서 OFF 후 3초 목표에 ±0.5초 이내인 근접 표본을 선택하고 실제 경과 시간을 남긴다. 과거 사전등록 없는 자료는 `--allow-offline-registration`을 명시한 경우만 재구성하며, 사전등록·고정 후 평가로 바꾸지 않는다. 출력은 영상 평면 변화와 센서의 사후 대조이며 실물 각도 정확도나 학습 성능의 검증은 아니다.
+
+## 높이와 센서로 만드는 M4 근사 기준점
+
+[`calibrate_arm_joint_reference.py`](../tools/calibrate_arm_joint_reference.py)는 같은 정지 구간의 전후 GET·사진·수직 높이를 묶어 **읽기 전용 근사 기준점 후보**를 만든다. M3 팔꿈치 축 높이 145mm, 기존 어깨 높이 70mm·상완 90mm를 사용하면 어깨 상승각은 `asin((145−70)/90) ≈ 56.44°`다. 팔꿈치가 어깨보다 앞쪽·위쪽에 있는 분기를 사진으로 확인한다. 이때 M4의 전후 보고값은 모두 192.83°였고, 같은 부팅·전축 OFF·빈 큐·출력 이력 불변을 확인했다.
+
+입력은 `motionbrain.arm_joint_reference_input.v1` 형식의 JSON이다. 기하 프로필·높이 판독·전후 상태·사진·방향 대조 자료의 경로와 해시, 사진 기준점과 호스트 시각 구간을 지정한다. 사진은 전후 상태 조회 사이에 있어야 하며, 부팅·출력·센서 상태가 달라지면 거부한다. 형식 예제는 [검사 코드](../tests/test_arm_joint_reference.py)에 있다.
+
+```bash
+python3 tools/calibrate_arm_joint_reference.py \
+  --input .local/joint-reference-input.json \
+  --output .local/joint-reference-candidate
+```
+
+기준쌍은 `sRef=192.83°`, `qRef≈56.44°`이며, 기존 변환식 `q=qRef+sign·rad(angleDeg−sRef)`과 호환된다. `sensor_zero_deg`와 `ros_joint_zero_rad`에는 이 **기준쌍**을 넣는다. 수평 0° 자세의 센서값을 직접 측정한 것은 아니다. 입력 `angleDeg`에는 펌웨어의 장착 오프셋 −24.35°가 이미 적용돼 있으므로 다시 더하지 않는다. 증가 방향의 대응은 좁은 범위의 상대 변화에 근거한 잠정값으로 남긴다.
+
+같은 사진의 어깨 투영각은 약 59.44°로, 높이 기준과 **약 −3.00° 차이**가 있다. 이 잔차를 없애려고 링크 길이나 장착 오프셋을 바꾸지 않는다. cm 단위 치수·높이 판독, 수동 축점, 약투영·수평선 가정의 오차는 정량화되지 않았다. 높이 입력의 상·하한이 같아도 오차 0이나 신뢰구간을 뜻하지 않는다.
+
+결과는 `single_pose_coarse_read_only_anchor`이고 `enabled=false`, `controlEligible=false`다. 기존 ROS 피드백·목표 쓰기 설정·펌웨어·소프트 제한에는 자동 적용하지 않는다. M2·M3는 한 사진에서 추정한 정적 자세이며 센서 영점이 아니다. M1 개방과 M5 yaw도 미측정이다. 따라서 단일 근사 기준점을 얻은 것과 전체 관절의 정밀 영점 보정 완료를 구분한다.
