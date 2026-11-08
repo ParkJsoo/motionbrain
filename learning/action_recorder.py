@@ -14,6 +14,40 @@ from learning.lossless_frame import ENCODING, SUFFIX
 from learning.mac_clock_bridge import MacHostClock, validate_sample
 
 
+def stream_helper_capabilities(helper, plan):
+    """Query the local producer contract before opening a camera or recording."""
+    try:
+        result = subprocess.run([str(Path(helper).resolve(strict=True)), '--describe-capabilities'],
+                                capture_output=True, timeout=3, check=False)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise ValueError('recording_helper_capability_query_failed') from exc
+    if result.returncode != 0 or not 0 < len(result.stdout) <= 65536:
+        raise ValueError('recording_helper_capability_query_failed')
+    capabilities = _decode_json(result.stdout)
+    if type(capabilities) is not dict or type(capabilities.get('stream')) is not dict:
+        raise ValueError('recording_helper_stream_protocol_incompatible')
+    stream = capabilities.get('stream', {})
+    if (capabilities.get('schemaVersion') != 'motionbrain.mac_camera_capabilities.v1'
+            or stream.get('frameSchemaVersion') != 'motionbrain.mac_camera_frame.v2'
+            or stream.get('storageEncoding') != ENCODING
+            or stream.get('processingMethod') != 'lossless_record_only_v1'
+            or stream.get('gracefulStop') is not True
+            or stream.get('droppedFramePolicy') != 'fail_close'
+            or type(stream.get('storageBudgetMs')) is not int
+            or stream['storageBudgetMs'] != 250):
+        raise ValueError('recording_helper_stream_protocol_incompatible')
+    for advertised, requested in [('maxFrames', 'maxFrames'), ('maxSeconds', 'seconds'),
+                                  ('maxSampleFps', 'sampleFps'), ('maxBytes', 'maxBytes')]:
+        limit = stream.get(advertised)
+        if type(limit) is not int or limit < plan[requested]:
+            raise ValueError('recording_helper_stream_budget_incompatible')
+    deadline = stream.get('overallDeadlineSeconds')
+    # Reserve launch, warmup and shutdown time within the same clock bracket.
+    if type(deadline) is not int or not plan['seconds']+50 <= deadline <= 170:
+        raise ValueError('recording_helper_stream_deadline_incompatible')
+    return capabilities
+
+
 def recording_bridge(before, after):
     """Same-clock bracket for the recorder's bounded 120-second acquisition."""
     a, b = validate_sample(before), validate_sample(after)
@@ -67,9 +101,11 @@ class ActionRecorder:
         if self.started is not None:
             raise ValueError('recording_single_use')
         self.started = self.clock.monotonic()
-        self.root.mkdir(mode=0o700, parents=True, exist_ok=False)
-        self.store = ArtifactStore(self.root/'host-ingress')
         try:
+            capabilities = stream_helper_capabilities(self.helper, self.plan)
+            self.root.mkdir(mode=0o700, parents=True, exist_ok=False)
+            self.store = ArtifactStore(self.root/'host-ingress')
+            self.store.write_json('helper-capabilities.json', capabilities)
             self.clock_source = MacHostClock()
             self.clock_before = self.clock_source.sample(self.host_clock_id)
             self.offset_low, self.offset_high = validate_sample(self.clock_before)

@@ -20,6 +20,8 @@ python3 tools/probe_mac_camera.py audit 'datasets/mac_camera/<new-run>'
 
 Python 래퍼가 독립 프로세스 기한을 적용한다. 기존 디렉터리 덮어쓰기·재개·자동 재시도·다른 카메라 대체는 없다. 이 도구의 검증된 입력은 iPhone 연속성 카메라로, 고정·잠금·Mac 신뢰 설정이 필요하다. 케이블 연결만으로 실제 USB 영상 전송을 증명하지 못하므로 `transportVerifiedUSB=false`다. [Apple 요구사항](https://support.apple.com/en-us/102546)
 
+행동 수집의 `ActionRecorder`는 같은 소스의 `--stream` 모드를 사용한다. 위 빌드 명령으로 만든 실행 파일의 `--describe-capabilities`에서 스트림 v2·`apple-lzbitmap-bgra8-v1`·정상 부분 종료 지원을 확인할 수 있다. 수집기는 카메라를 열기 전에 이 계약과 요청 예산을 검사하며, 구형 raw v1 전용 실행 파일은 거부한다. 스트림은 무손실 압축·복원 일치와 원본/저장 픽셀 해시를 기록하고, 최대 1,000장·120초·8.4GB·초당 30장 안에서 요청한 예산을 적용한다. SIGTERM 종료는 저장 중인 프레임을 마친 뒤 `partial/operator_stop`으로 보존한다. 누락 프레임이나 저장 250ms 초과는 실패로 남긴다. 기존 `--capture`의 raw v1·21장 계측 계약은 그대로다. 형식 호환성은 광학 동기화나 행동 데이터 적격을 증명하지 않는다.
+
 ## 고정 계약
 
 - 시작 최대 30초, 준비 1초 또는 콜백 30회 중 먼저 도달하는 값.
