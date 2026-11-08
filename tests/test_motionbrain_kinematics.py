@@ -1,5 +1,8 @@
 import math
+import copy
+import json
 import sys
+import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 
@@ -20,6 +23,8 @@ from motionbrain_ros_bridge.motionbrain_kinematics import tool_orientation_quate
 from motionbrain_ros_bridge.motionbrain_kinematics import (  # noqa: E402
     validate_complete_finite_joint_positions,
 )
+from motionbrain_ros_bridge.arm_geometry import load_geometry_profile
+from motionbrain_ros_bridge.arm_geometry_urdf import URDF_PATHS, render_urdf, geometry_mismatches
 
 
 FULL_ARM_URDFS = [
@@ -90,7 +95,7 @@ class MotionBrainKinematicsTest(unittest.TestCase):
         pose = forward_kinematics(JointAngles(base_yaw=math.pi / 2.0))
 
         self.assertAlmostEqual(pose.x_m, 0.0, places=7)
-        self.assertGreater(pose.y_m, 0.7)
+        self.assertGreater(pose.y_m, 0.3)
 
     def test_fk_and_ros_orientation_match_all_full_arm_urdfs(self):
         rng = np.random.default_rng(42)
@@ -109,7 +114,7 @@ class MotionBrainKinematicsTest(unittest.TestCase):
                         quaternion_matrix(tool_orientation_quaternion(fk.yaw_rad, fk.pitch_rad)), atol=1e-10)
 
     def test_ik_targets_match_independent_urdf_chain(self):
-        for target, pitch in [((.70, 0, .09), 0), ((.73, .12, .18), .2), ((.70, -.1, .04), -.1)]:
+        for target, pitch in [((.37, 0, .07), 0), ((.36, .04, .10), .2), ((.37, -.02, .04), -.1)]:
             solution = inverse_kinematics(*target, target_tool_pitch_rad=pitch)
             self.assertTrue(solution.reachable, solution.reason)
             positions = dict(zip(["base_yaw_joint", "shoulder_pitch_joint", "elbow_pitch_joint",
@@ -141,13 +146,13 @@ class MotionBrainKinematicsTest(unittest.TestCase):
         self.assertEqual(violations, ("shoulder_pitch_joint", "gripper_joint"))
 
     def test_inverse_kinematics_reachable_target(self) -> None:
-        solution = inverse_kinematics(0.70, 0.0, 0.09)
+        solution = inverse_kinematics(0.37, 0.0, 0.07)
 
         self.assertTrue(solution.reachable)
         self.assertEqual(solution.reason, "ok")
         pose = forward_kinematics(solution.joint_angles)
-        self.assertAlmostEqual(pose.x_m, 0.70, places=2)
-        self.assertAlmostEqual(pose.z_m, 0.09, places=2)
+        self.assertAlmostEqual(pose.x_m, 0.37, places=2)
+        self.assertAlmostEqual(pose.z_m, 0.07, places=2)
 
     def test_inverse_kinematics_outside_workspace(self) -> None:
         solution = inverse_kinematics(2.0, 0.0, 0.09)
@@ -191,6 +196,88 @@ class MotionBrainKinematicsTest(unittest.TestCase):
         self.assertIn("missing:elbow_pitch_joint", errors)
         self.assertIn("missing:wrist_pitch_joint", errors)
         self.assertIn("missing:gripper_joint", errors)
+
+
+class GeometryDerivativesTest(unittest.TestCase):
+    def test_repository_geometry_matches_one_packaged_profile(self):
+        profile = load_geometry_profile()
+        for relative in URDF_PATHS:
+            path = ROOT / 'ros2_ws/src' / relative
+            self.assertEqual([], geometry_mismatches(path.read_text(), profile), relative)
+
+    def test_different_geometry_matches_fk_ik_all_urdfs_and_preserves_control(self):
+        profile = copy.deepcopy(load_geometry_profile())
+        # Synthetic software fixture, explicitly not physical measurements.
+        values = dict(base_height_m=.065, shoulder_offset_m=0., upper_arm_m=.12,
+                      forearm_m=.10, wrist_m=.06, tool_m=.035)
+        for key, value in values.items():
+            profile['parameters'][key]['value_m'] = value
+            profile['parameters'][key].update(status='nominal', source='synthetic_software_fixture',
+                method='not_measured', uncertainty_m=None, evidence_sha256=None, physical_revision=None)
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            source = folder / 'profile.json'
+            source.write_text(json.dumps(profile))
+            model = ArmModel.from_profile(source)
+            full_paths = []
+            for relative in URDF_PATHS:
+                path = ROOT / 'ros2_ws/src' / relative
+                original = path.read_text()
+                rendered = render_urdf(original, profile)
+                if '<ros2_control' in original:
+                    self.assertEqual(original[original.index('<ros2_control'):],
+                                     rendered[rendered.index('<ros2_control'):])
+                candidate = folder / path.name
+                candidate.write_text(rendered)
+                self.assertEqual([], geometry_mismatches(rendered, profile))
+                if 'base_yaw_joint' in rendered:
+                    full_paths.append(candidate)
+                else:
+                    actual = xml_transform(candidate, {'shoulder_pitch_joint': .4}, 'upper_arm_link')
+                    np.testing.assert_allclose(actual[:3, 3], [0, 0, .065], atol=1e-12)
+            for values in np.random.default_rng(18).uniform(-.6, .6, (12, 5)):
+                angles = JointAngles(*values)
+                pose = forward_kinematics(angles, model)
+                positions = dict(zip(['base_yaw_joint', 'shoulder_pitch_joint', 'elbow_pitch_joint',
+                                      'wrist_pitch_joint', 'gripper_joint'], values))
+                for path in full_paths:
+                    np.testing.assert_allclose(xml_transform(path, positions)[:3, 3],
+                                               [pose.x_m, pose.y_m, pose.z_m], atol=1e-11)
+            target = (.26, .025, .08)
+            solution = inverse_kinematics(*target, model=model, target_tool_pitch_rad=.1)
+            self.assertTrue(solution.reachable)
+            pose = forward_kinematics(solution.joint_angles, model)
+            np.testing.assert_allclose([pose.x_m, pose.y_m, pose.z_m], target, atol=1e-11)
+            # Detect a stale derivative and a stale schematic visual separately.
+            for stale in [original.replace('0 0 0.07', '0 0 0.08'),
+                          FULL_ARM_URDFS[0].read_text().replace('0.09 0.035', '0.10 0.035')]:
+                self.assertTrue(geometry_mismatches(stale, load_geometry_profile()))
+
+    def test_unmodelled_transforms_and_axes_are_not_silently_discarded(self):
+        source = FULL_ARM_URDFS[0].read_text()
+        changed_templates = [source.replace('axis xyz="0 -1 0"', 'axis xyz="0 1 0"')]
+        for attr, value in [('xyz', '0 .01 0'), ('rpy', '0 0 .1')]:
+            tree = ET.fromstring(source)
+            tree.find("joint[@name='shoulder_pitch_joint']/origin").set(attr, value)
+            changed_templates.append(ET.tostring(tree, encoding='unicode'))
+        for changed in changed_templates:
+            with self.assertRaises(ValueError):
+                render_urdf(changed, load_geometry_profile())
+
+    def test_visual_updates_preserve_preceding_inertia_and_collision(self):
+        source = FULL_ARM_URDFS[0].read_text()
+        physical = '''<inertial><origin xyz="0.01 0.02 0.03"/><mass value="0.2"/>
+        <inertia ixx=".1" iyy=".1" izz=".1" ixy="0" ixz="0" iyz="0"/></inertial>
+        <collision><origin xyz="0.03 0.02 0.01"/>
+        <geometry><box size="0.23 .04 .04"/></geometry></collision>'''
+        source = source.replace('<link name="upper_arm_link">', '<link name="upper_arm_link">' + physical)
+        profile = load_geometry_profile()
+        profile['parameters']['upper_arm_m']['value_m'] = .12
+        rendered = render_urdf(source, profile)
+        self.assertIn(physical, rendered)
+        visual = ET.fromstring(rendered).find("link[@name='upper_arm_link']/visual")
+        self.assertEqual(list(map(float, visual.find('origin').get('xyz').split())), [.06, 0, 0])
+        self.assertEqual(float(visual.find('geometry/box').get('size').split()[0]), .12)
 
 
 if __name__ == "__main__":

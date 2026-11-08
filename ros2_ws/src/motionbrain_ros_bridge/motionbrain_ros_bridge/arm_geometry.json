@@ -1,0 +1,83 @@
+{
+  "schema": "motionbrain.arm_geometry.planar.v1",
+  "units": "metres",
+  "model": "planar_yaw_3pitch",
+  "convention": {
+    "yaw_axis": [
+      0,
+      0,
+      1
+    ],
+    "pitch_axis": [
+      0,
+      -1,
+      0
+    ],
+    "joint_origin_rpy": [
+      0,
+      0,
+      0
+    ],
+    "positive_pitch": "upward_elevation",
+    "tool_frame": "tool0",
+    "tool_reference": "fixed_to_gripper_body",
+    "jaw_motion_affects_tool": false
+  },
+  "status": "nominal",
+  "parameters": {
+    "base_height_m": {
+      "value_m": 0.07,
+      "status": "measured",
+      "source": "coarse_tape_height_selected_20261108",
+      "method": "user_selected_70mm_from_reported_70_to_75mm_range",
+      "uncertainty_m": null,
+      "evidence_sha256": "2012af24068574613ba87bbb71bc5ad3e47821589161c8981fba35b0664421ab",
+      "physical_revision": "owi535_camera_m4_sensor_20261108"
+    },
+    "shoulder_offset_m": {
+      "value_m": 0.0,
+      "status": "nominal",
+      "source": "OWI-535_Assembly_and_Instruction_Manual_printed_14_15_16_32",
+      "method": "unscaled_assembly_diagram_intersection_assumption",
+      "uncertainty_m": null,
+      "evidence_sha256": "14bb653f4359ea2a613002bd316bbf57cd4d1b824a4f249d60349c81435721ff",
+      "physical_revision": null
+    },
+    "upper_arm_m": {
+      "value_m": 0.09,
+      "status": "measured",
+      "source": "axis_center_tape_measurement_20261108",
+      "method": "user_report_tape_axis_centres_cm_resolution",
+      "uncertainty_m": null,
+      "evidence_sha256": "82d515074636c8f194fd2743841a46e4f77d35c16de0f285edf30a82052dc847",
+      "physical_revision": "owi535_camera_m4_sensor_20261108"
+    },
+    "forearm_m": {
+      "value_m": 0.11,
+      "status": "measured",
+      "source": "axis_center_tape_measurement_20261108",
+      "method": "user_tape_axis_centres_endpoint_photo_confirmed_cm_resolution",
+      "uncertainty_m": null,
+      "evidence_sha256": "5ee6e6f7a07f064a0780e67bb3fce2e5881e9786fcba28dbe0d92c223dd2d23d",
+      "physical_revision": "owi535_camera_m4_sensor_20261108"
+    },
+    "wrist_m": {
+      "value_m": 0.11,
+      "status": "nominal",
+      "source": "legacy_unverified_default",
+      "method": "not_measured",
+      "uncertainty_m": null,
+      "evidence_sha256": null,
+      "physical_revision": null
+    },
+    "tool_m": {
+      "value_m": 0.09,
+      "status": "nominal",
+      "source": "legacy_unverified_default",
+      "method": "not_measured",
+      "uncertainty_m": null,
+      "evidence_sha256": null,
+      "physical_revision": null
+    }
+  }
+}

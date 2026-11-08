@@ -4,6 +4,11 @@ import math
 from dataclasses import dataclass
 from typing import Iterable
 
+from motionbrain_ros_bridge.arm_geometry import geometry_values, load_geometry_profile
+
+
+_DEFAULT_GEOMETRY = geometry_values(load_geometry_profile())
+
 
 JOINT_ORDER = [
     "base_yaw_joint",
@@ -28,12 +33,17 @@ class JointLimit:
 
 @dataclass(frozen=True)
 class ArmModel:
-    base_height_m: float = 0.09
-    shoulder_offset_m: float = 0.18
-    upper_arm_m: float = 0.24
-    forearm_m: float = 0.20
-    wrist_m: float = 0.11
-    tool_m: float = 0.09
+    base_height_m: float = _DEFAULT_GEOMETRY['base_height_m']
+    shoulder_offset_m: float = _DEFAULT_GEOMETRY['shoulder_offset_m']
+    upper_arm_m: float = _DEFAULT_GEOMETRY['upper_arm_m']
+    forearm_m: float = _DEFAULT_GEOMETRY['forearm_m']
+    wrist_m: float = _DEFAULT_GEOMETRY['wrist_m']
+    tool_m: float = _DEFAULT_GEOMETRY['tool_m']
+
+    @classmethod
+    def from_profile(cls, path) -> 'ArmModel':
+        """Load an explicit offline geometry; this does not calibrate feedback."""
+        return cls(**geometry_values(load_geometry_profile(path)))
 
 
 @dataclass(frozen=True)

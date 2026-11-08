@@ -13,7 +13,7 @@
   <joint name="base_yaw_joint" type="revolute">
     <parent link="base_link"/>
     <child link="shoulder_link"/>
-    <origin xyz="0 0 0.09" rpy="0 0 0"/>
+    <origin xyz="0 0 0.07" rpy="0 0 0"/>
     <axis xyz="0 0 1"/>
     <limit lower="-3.1416" upper="3.1416" effort="1.0" velocity="1.0"/>
   </joint>
@@ -22,7 +22,7 @@
   <joint name="shoulder_pitch_joint" type="revolute">
     <parent link="shoulder_link"/>
     <child link="upper_arm_link"/>
-    <origin xyz="0.18 0 0" rpy="0 0 0"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
     <axis xyz="0 -1 0"/>
     <limit lower="-1.5708" upper="1.5708" effort="1.0" velocity="1.0"/>
   </joint>
@@ -31,7 +31,7 @@
   <joint name="elbow_pitch_joint" type="revolute">
     <parent link="upper_arm_link"/>
     <child link="forearm_link"/>
-    <origin xyz="0.24 0 0" rpy="0 0 0"/>
+    <origin xyz="0.09 0 0" rpy="0 0 0"/>
     <axis xyz="0 -1 0"/>
     <limit lower="-1.5708" upper="1.5708" effort="1.0" velocity="1.0"/>
   </joint>
@@ -40,7 +40,7 @@
   <joint name="wrist_pitch_joint" type="revolute">
     <parent link="forearm_link"/>
     <child link="wrist_link"/>
-    <origin xyz="0.20 0 0" rpy="0 0 0"/>
+    <origin xyz="0.11 0 0" rpy="0 0 0"/>
     <axis xyz="0 -1 0"/>
     <limit lower="-1.5708" upper="1.5708" effort="1.0" velocity="1.0"/>
   </joint>
