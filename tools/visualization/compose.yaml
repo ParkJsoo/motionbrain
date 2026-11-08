@@ -1,0 +1,28 @@
+name: motionbrain-visual
+services:
+  rviz:
+    image: motionbrain-visual-tools:jazzy
+    build:
+      context: ../..
+      dockerfile: tools/visualization/Dockerfile
+    container_name: motionbrain-visual-rviz
+    environment:
+      VIEWER: rviz
+    ports:
+      - "127.0.0.1:6081:6080"
+    volumes:
+      - ../../ros2_ws/src/motionbrain_description:/workspace/ros2_ws/src/motionbrain_description:ro
+    networks: [offline]
+  gazebo:
+    image: motionbrain-visual-tools:jazzy
+    container_name: motionbrain-visual-gazebo
+    environment:
+      VIEWER: gazebo
+    ports:
+      - "127.0.0.1:6082:6080"
+    volumes:
+      - ../../.local/visual-tools/world.sdf:/workspace/.local/visual-tools/world.sdf:ro
+    networks: [offline]
+networks:
+  offline:
+    driver: bridge

@@ -56,3 +56,5 @@
 - [RViz 모델 이미지](assets/motionbrain-rviz-robotmodel.png): URDF 모델·좌표축 표시 예시. [ROS2 안내](../ros2_ws/src/motionbrain_hardware_interface/README.md)에서 사용하며 실물 자세 추종이나 기구학 보정 정확도의 증거가 아니다.
 
 영상·그림은 위 범위의 설명 자료이며 현재 장치 연결 상태를 표시하지 않는다.
+
+- [로봇·학습 시각화 도구](robot-visualization.md): RViz·Gazebo·MuJoCo 모델 표시, Rerun 평가 재생, W&B 지표 기록·게시 경로와 한계.

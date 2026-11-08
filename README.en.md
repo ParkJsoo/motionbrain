@@ -64,7 +64,9 @@ Physical collection requires checking current connections, camera setup and move
 
 First establish reliable observation and supported M1 inputs at the current pose, then separately evaluate the frozen model and connect M1 closing, contact review and M4 lifting. Extend to the necessary approach joints and poses afterward.
 
-Kinematics will progressively constrain reachability and movement clearance. Whole-arm inverse-kinematics/dynamics control and a reinforcement-learning policy have not been introduced; current learning is supervised action-change prediction and candidate comparison. Extend RViz, Rerun and W&B use for whole-arm observation and experiment comparison. Contact/dynamics studies in Gazebo or MuJoCo follow geometry and actuator-response calibration; adopting a simulator is not a prerequisite for the first physical connection.
+Kinematics will progressively constrain reachability and movement clearance. Whole-arm inverse-kinematics/dynamics control and a reinforcement-learning policy have not been introduced; current learning is supervised action-change prediction and candidate comparison. Contact/dynamics studies in Gazebo or MuJoCo follow geometry and actuator-response calibration; adopting a simulator is not a prerequisite for the first physical connection.
+
+Local viewers now cover virtual joints in RViz, schematic arm models in Gazebo and MuJoCo, two-camera fixed-evaluation replay in Rerun, and offline W&B metrics with an explicit web-publishing path. See [viewer setup and uncalibrated-model limits (Korean)](docs/robot-visualization.md).
 
 ## Code and documentation
 

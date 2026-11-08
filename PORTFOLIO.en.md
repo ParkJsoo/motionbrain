@@ -89,6 +89,8 @@ Software regressions and firmware builds run in [PlatformIO/Python CI](https://g
 
 The nearest task is reliable observation and supported M1 inputs at the current pose, followed by separate frozen evaluation, model-selected closing and M4 lifting. Then extend to the necessary approach joints and poses, evaluating repeated successes and failures.
 
-Kinematics will progressively constrain reachability and movement clearance. Whole-arm inverse-kinematics/dynamics control and a reinforcement-learning policy have not been applied; current learning is supervised transition prediction and candidate comparison. Extend RViz, Rerun and W&B use for whole-arm observation and experiment comparison, with Gazebo/MuJoCo contact and dynamics studies following geometry and actuator-response calibration.
+Kinematics will progressively constrain reachability and movement clearance. Whole-arm inverse-kinematics/dynamics control and a reinforcement-learning policy have not been applied; current learning is supervised transition prediction and candidate comparison. Further Gazebo/MuJoCo contact and dynamics studies will follow geometry and actuator-response calibration.
 
 Whole-arm position/force feedback, an electrical emergency-stop latency bound, learned continuous manipulation and generalization to other environments remain unverified. Training every joint or completing a simulator is not a prerequisite for the first grasp.
+
+The visualization path connects virtual joints in RViz, schematic Gazebo/MuJoCo arms, two-camera fixed-evaluation replay in Rerun, and offline W&B metrics with explicit web publishing. [Setup and validation limits (Korean)](docs/robot-visualization.md) distinguish coordinates, observations and prospective predictions; uncalibrated simulation does not establish physical grasping performance.

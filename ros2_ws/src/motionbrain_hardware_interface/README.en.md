@@ -64,3 +64,5 @@ The [2026-07-13 single-target M4 measurement](../../../docs/evidence/2026-07-13-
 ![RViz model example](../../../docs/assets/motionbrain-rviz-robotmodel.png)
 
 This URDF/RViz rendering is not evidence of physical tracking accuracy.
+
+The [local RViz/Gazebo/MuJoCo viewers (Korean)](../../../docs/robot-visualization.md) are a separate virtual-model path. They start no hardware transport modes and do not establish measured feedback or motor-control performance.

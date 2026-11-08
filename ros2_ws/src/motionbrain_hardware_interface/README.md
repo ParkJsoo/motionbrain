@@ -64,3 +64,5 @@ ros2 launch motionbrain_hardware_interface m4_measured_state.launch.py \
 ![RViz 모델 예시](../../../docs/assets/motionbrain-rviz-robotmodel.png)
 
 URDF/RViz 모델 표시 예시이며 실물 추종 정확도의 증거는 아니다.
+
+[RViz·Gazebo·MuJoCo 로컬 화면](../../../docs/robot-visualization.md)은 별도의 가상 모델 경로다. 하드웨어 전송 모드를 시작하지 않으며, 실측 피드백·모터 제어 성과와 구분한다.

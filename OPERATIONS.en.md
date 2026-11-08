@@ -10,6 +10,8 @@ The earlier M2 [action prediction experiment (Korean)](docs/evidence/2026-10-31-
 
 [Finite output profiles (Korean)](docs/finite-output-profile.md) are enabled only in the separate `esp32dev_m2_finite_trial` build; default builds keep them disabled. Four-profile firmware upload and individual output checks were completed, but the new-view U4 trial on 2026-11-04 was rejected by measurement after output completed because post-window variation exceeded its threshold (one command, one completed output, zero eligible transitions). Earlier pre-ARM stops are also preserved. Read the conditions, denominators, and limitations alongside [stationary repeatability diagnostics (Korean)](docs/stationary-repeatability.md); completed output does not establish accurate motion or eligible training data.
 
+Use the [five-tool visualization guide (Korean)](docs/robot-visualization.md) for local robot-model and evaluation views. This separate path starts no physical-control nodes and distinguishes web publishing from private source data.
+
 ## Builds
 
 ESP32 uses PlatformIO. Host tests require Python, NumPy, OpenCV and Node.js (CI: Python 3.12 and Node.js 22). Native C++ checks require a C++ compiler and are skipped when it is unavailable. Replace `<...>` placeholders with installation-specific values. Run from the repository root:
