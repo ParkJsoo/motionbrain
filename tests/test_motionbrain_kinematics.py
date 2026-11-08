@@ -25,6 +25,7 @@ from motionbrain_ros_bridge.motionbrain_kinematics import (  # noqa: E402
 )
 from motionbrain_ros_bridge.arm_geometry import load_geometry_profile
 from motionbrain_ros_bridge.arm_geometry_urdf import URDF_PATHS, render_urdf, geometry_mismatches
+from motionbrain_ros_bridge.rviz_appearance import rviz_description
 
 
 FULL_ARM_URDFS = [
@@ -249,8 +250,10 @@ class GeometryDerivativesTest(unittest.TestCase):
             pose = forward_kinematics(solution.joint_angles, model)
             np.testing.assert_allclose([pose.x_m, pose.y_m, pose.z_m], target, atol=1e-11)
             # Detect a stale derivative and a stale schematic visual separately.
+            display = ET.fromstring(FULL_ARM_URDFS[0].read_text())
+            display.find("link[@name='upper_arm_link']/visual/geometry/box").set('size', '.10 .006 .015')
             for stale in [original.replace('0 0 0.07', '0 0 0.08'),
-                          FULL_ARM_URDFS[0].read_text().replace('0.09 0.035', '0.10 0.035')]:
+                          ET.tostring(display, encoding='unicode')]:
                 self.assertTrue(geometry_mismatches(stale, load_geometry_profile()))
 
     def test_unmodelled_transforms_and_axes_are_not_silently_discarded(self):
@@ -276,8 +279,85 @@ class GeometryDerivativesTest(unittest.TestCase):
         rendered = render_urdf(source, profile)
         self.assertIn(physical, rendered)
         visual = ET.fromstring(rendered).find("link[@name='upper_arm_link']/visual")
-        self.assertEqual(list(map(float, visual.find('origin').get('xyz').split())), [.06, 0, 0])
+        self.assertEqual(float(visual.find('origin').get('xyz').split()[0]), .06)
         self.assertEqual(float(visual.find('geometry/box').get('size').split()[0]), .12)
+
+    def test_missing_extra_recolored_or_rotated_visuals_are_detected(self):
+        source = FULL_ARM_URDFS[0].read_text()
+        for kind in ('missing', 'extra', 'color', 'rotation'):
+            tree = ET.fromstring(source)
+            link = tree.find("link[@name='upper_arm_link']")
+            visual = link.find('visual')
+            if kind == 'missing':
+                link.remove(visual)
+            elif kind == 'extra':
+                extra = copy.deepcopy(visual);extra.set('name', 'unexpected_extra')
+                link.append(extra)
+            elif kind == 'color':
+                visual.find('material/color').set('rgba', '0 0 1 1')
+            else:
+                visual.find('origin').set('rpy', '0 .2 0')
+            self.assertTrue(geometry_mismatches(ET.tostring(tree, encoding='unicode'), load_geometry_profile()), kind)
+
+    def test_display_jaws_mirror_and_tool_frame_stays_fixed(self):
+        source = FULL_ARM_URDFS[0]
+        tree = ET.parse(source).getroot()
+        follower = tree.find("joint[@name='gripper_opposing_joint']/mimic")
+        self.assertEqual(follower.attrib, dict(joint='gripper_joint', multiplier='-1', offset='0'))
+        for q in (0, .15, .3):
+            positions = {'gripper_joint': q, 'gripper_opposing_joint': -q}
+            left = xml_transform(source, positions, 'gripper_jaw_link')
+            right = xml_transform(source, positions, 'gripper_opposing_jaw_link')
+            # Mirror symmetry in the local gripper plane, not aperture calibration.
+            a = left @ np.array([.055, 0, 0, 1]);b = right @ np.array([.055, 0, 0, 1])
+            np.testing.assert_allclose(a[[0,2]], b[[0,2]], atol=1e-12)
+            self.assertAlmostEqual(a[1], -b[1])
+            np.testing.assert_allclose(xml_transform(source, positions), xml_transform(source, {}), atol=1e-12)
+
+    def test_opposing_jaw_limits_reverse_asymmetric_master_limits(self):
+        source = ET.parse(FULL_ARM_URDFS[0]).getroot()
+        source.find("joint[@name='gripper_joint']/limit").set('lower','0')
+        source.find("joint[@name='gripper_joint']/limit").set('upper','.5')
+        rendered = ET.fromstring(render_urdf(ET.tostring(source,encoding='unicode'),load_geometry_profile()))
+        limit = rendered.find("joint[@name='gripper_opposing_joint']/limit")
+        self.assertEqual(float(limit.get('lower')), -.5)
+        self.assertEqual(float(limit.get('upper')), 0.)
+
+    def test_rviz_color_groups_preserve_original_frames_and_every_visual(self):
+        source = FULL_ARM_URDFS[0]
+        original = ET.parse(source).getroot()
+        converted = rviz_description(source.read_text())
+        tree = ET.fromstring(converted)
+        self.assertEqual(len(original.findall('.//visual')), len(tree.findall('.//visual')))
+        def signature(node):
+            return node.tag, node.attrib, [signature(child) for child in node]
+        for joint in original.findall('joint'):
+            self.assertEqual(signature(joint), signature(tree.find(f"joint[@name='{joint.get('name')}']")))
+        for link in tree.findall('link'):
+            colors = {v.find('material/color').get('rgba') for v in link.findall('visual')}
+            self.assertLessEqual(len(colors), 1)
+        with tempfile.TemporaryDirectory() as folder:
+            path=Path(folder)/'rviz.urdf';path.write_text(converted)
+            positions=dict(shoulder_pitch_joint=.4,elbow_pitch_joint=-.3,wrist_pitch_joint=.2,
+                           gripper_joint=.15,gripper_opposing_joint=-.15)
+            np.testing.assert_allclose(xml_transform(path,positions),xml_transform(source,positions),atol=1e-12)
+            for joint in tree.findall('joint'):
+                if not joint.get('name').startswith('rviz_visual_'):
+                    continue
+                parent=joint.find('parent').get('link');child=joint.find('child').get('link')
+                np.testing.assert_allclose(xml_transform(path,positions,child),xml_transform(source,positions,parent),atol=1e-12)
+
+    def test_self_closing_empty_camera_does_not_consume_opposing_jaw(self):
+        source = ET.parse(FULL_ARM_URDFS[0]).getroot()
+        source.find("link[@name='camera_link']").text = None
+        # Standard XML serializers compact empty links into self-closing tags.
+        compact = ET.tostring(source,encoding='unicode',short_empty_elements=True)
+        self.assertIn('<link name="camera_link" />',compact)
+        rendered = render_urdf(compact,load_geometry_profile())
+        tree = ET.fromstring(rendered)
+        self.assertEqual(len(tree.findall('.//visual')),119)
+        self.assertEqual(len(tree.findall("link[@name='gripper_opposing_jaw_link']/visual")),10)
+        self.assertEqual(geometry_mismatches(rendered,load_geometry_profile()),[])
 
 
 if __name__ == "__main__":

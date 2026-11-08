@@ -19,18 +19,19 @@ def main():
     mode.add_argument('--experiment', type=Path)
     mode.add_argument('--models-only', action='store_true')
     p.add_argument('--output', type=Path, required=True)
+    p.add_argument('--physics-test-object', action='store_true', help='로봇과 별개인 낙하 진단용 초록 상자 추가')
     args = p.parse_args()
     output = args.output.resolve()
     if not output.is_relative_to(ROOT/'.local'):
         p.error('원본 영상이 포함되므로 출력은 .local 아래여야 합니다')
     if args.models_only:
         output.mkdir(parents=True, exist_ok=False)
-        generate_models(ROOT/'ros2_ws/src/motionbrain_description/urdf/motionbrain.urdf', output)
+        generate_models(ROOT/'ros2_ws/src/motionbrain_description/urdf/motionbrain.urdf', output, include_test_object=args.physics_test_object)
         print(json.dumps({'models':str(output),'simulationCalibrated':False}))
         return
     data = load_lift_evaluation(args.experiment)
     output.mkdir(parents=True, exist_ok=False)
-    generate_models(ROOT/'ros2_ws/src/motionbrain_description/urdf/motionbrain.urdf', output)
+    generate_models(ROOT/'ros2_ws/src/motionbrain_description/urdf/motionbrain.urdf', output, include_test_object=args.physics_test_object)
     export_evaluation_rerun(data, output/'evaluation.rrd')
     # Publishable preview contains allowlisted scalars, never automatic uploads.
     metrics = public_metrics(data)

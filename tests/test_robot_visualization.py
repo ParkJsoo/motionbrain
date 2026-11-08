@@ -133,6 +133,55 @@ class SimulationModelTest(unittest.TestCase):
         ground=sdf.find("world/model[@name='ground']/link")
         self.assertNotEqual(ground.find('visual').get('name'),ground.find('collision').get('name'))
 
+    def test_robot_scene_has_no_unrequested_test_cube_but_diagnostic_can_opt_in(self):
+        self.assertIsNone(ET.parse(self.root/'model.xml').find("worldbody/body[@name='test_object']"))
+        self.assertIsNone(ET.parse(self.root/'world.sdf').find("world/model[@name='test_object']"))
+        (self.root/'diagnostic').mkdir()
+        generate_models(ROOT/'ros2_ws/src/motionbrain_description/urdf/motionbrain.urdf',
+                        self.root/'diagnostic',include_test_object=True)
+        self.assertIsNotNone(ET.parse(self.root/'diagnostic/model.xml').find("worldbody/body[@name='test_object']"))
+        self.assertIsNotNone(ET.parse(self.root/'diagnostic/world.sdf').find("world/model[@name='test_object']"))
+
+    def test_shared_colors_and_mirrored_jaw_contract_survive_both_exports(self):
+        mj=ET.parse(self.root/'model.xml').getroot()
+        sdf=ET.parse(self.root/'world.sdf').getroot()
+        robot=sdf.find("world/model[@name='MotionBrain_uncalibrated']")
+        ring=robot.find("link[@name='base_link']/visual[5]/material/diffuse")
+        self.assertEqual(ring.text,'1 0.72 0.015 1')
+        self.assertEqual(mj.find(".//geom[@name='base_link_visual_4']").get('rgba'),ring.text)
+        self.assertEqual(len(mj.findall('actuator/position')),5)
+        self.assertEqual(mj.find('equality/joint').get('polycoef'),'0 -1 0 0 0')
+        mimic=robot.find("joint[@name='gripper_opposing_joint']/axis/mimic")
+        self.assertEqual(mimic.get('joint'),'gripper_joint')
+        self.assertEqual(mimic.find('multiplier').text,'-1')
+        self.assertTrue(sdf.find('world/plugin/engine').get('filename').endswith('bullet-featherstone-plugin'))
+        self.assertEqual(robot.find("joint[@name='shoulder_pitch_joint']/axis/limit/effort").text,'10')
+        self.assertEqual(robot.find("link[@name='upper_arm_link']/gravity").text,'false')
+        self.assertEqual(mj.find(".//body[@name='upper_arm_link']").get('gravcomp'),'1')
+
+    @unittest.skipUnless(importlib.util.find_spec('mujoco'),'MuJoCo optional runtime not installed')
+    def test_extra_visual_does_not_change_placeholder_mass_or_inertia(self):
+        import copy,mujoco
+        source=ET.parse(ROOT/'ros2_ws/src/motionbrain_description/urdf/motionbrain.urdf')
+        link=source.find("link[@name='upper_arm_link']")
+        visual=copy.deepcopy(link.find('visual'));visual.set('name','extra_appearance_only');link.append(visual)
+        source.write(self.root/'extra.urdf')
+        (self.root/'extra').mkdir();generate_models(self.root/'extra.urdf',self.root/'extra')
+        a=mujoco.MjModel.from_xml_path(str(self.root/'model.xml'))
+        b=mujoco.MjModel.from_xml_path(str(self.root/'extra/model.xml'))
+        np.testing.assert_allclose(a.body_mass,b.body_mass,atol=0)
+        np.testing.assert_allclose(a.body_inertia,b.body_inertia,atol=0)
+        self.assertEqual(b.ngeom,a.ngeom+1)
+
+    @unittest.skipUnless(importlib.util.find_spec('mujoco'),'MuJoCo optional runtime not installed')
+    def test_jaw_mimic_coupling_is_enforced_during_simulation(self):
+        import mujoco
+        m=mujoco.MjModel.from_xml_path(str(self.root/'model.xml'));d=mujoco.MjData(m)
+        d.ctrl[m.actuator('gripper_joint').id]=.2
+        for _ in range(500):mujoco.mj_step(m,d)
+        self.assertAlmostEqual(float(d.joint('gripper_joint').qpos[0]),.2,places=3)
+        self.assertAlmostEqual(float(d.joint('gripper_opposing_joint').qpos[0]),-.2,places=3)
+
     @unittest.skipUnless(importlib.util.find_spec('mujoco'),'MuJoCo optional runtime not installed')
     def test_mujoco_tool_frame_matches_fk_for_mixed_poses_and_opening(self):
         import mujoco

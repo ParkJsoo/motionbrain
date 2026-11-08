@@ -184,73 +184,97 @@ def _quat(rpy):
     return [cr*cp*cy+sr*sp*sy, sr*cp*cy-cr*sp*sy, cr*sp*cy+sr*cp*sy, cr*cp*sy-sr*sp*cy]
 
 
-def generate_models(urdf, output):
+def generate_models(urdf, output, *, include_test_object=False):
     """Same URDF geometry in MuJoCo and Gazebo; all physics values are placeholders."""
     output = Path(output)
     root = ET.parse(urdf).getroot()
     links = {e.get('name'): e for e in root.findall('link')}
     joints = root.findall('joint')
+    has_mimic = any(j.find('mimic') is not None for j in joints)
+    materials = {e.get('name'): e.find('color').get('rgba') for e in root.iter('material') if e.find('color') is not None}
+    display_pose = read_json(Path(__file__).resolve().parents[1]/'tools/visualization/display-pose.json')['joints']
     mj = ET.Element('mujoco', model='MotionBrain_uncalibrated')
     ET.SubElement(mj,'compiler',angle='radian')
     ET.SubElement(mj,'option',timestep='0.002',gravity='0 0 -9.81')
     visual = ET.SubElement(mj,'visual'); ET.SubElement(visual,'global',offwidth='1200',offheight='800')
+    ET.SubElement(visual,'headlight',ambient='.5 .5 .5',diffuse='.8 .8 .8',specular='.2 .2 .2')
     world = ET.SubElement(mj,'worldbody')
     ET.SubElement(world,'light',pos='0.3 -1 2',dir='0 0 -1',diffuse='.9 .9 .9')
-    ET.SubElement(world,'geom',name='floor',type='plane',size='2 2 .1',rgba='.18 .21 .25 1')
+    ET.SubElement(world,'geom',name='floor',type='plane',size='1 1 .1',rgba='.72 .75 .78 1')
     ET.SubElement(world,'camera',name='overview',pos='1.1 -1.1 .8',xyaxes='.72 .69 0 -.29 .30 .91')
     actuators=ET.SubElement(mj,'actuator')
+    equality=ET.SubElement(mj,'equality')
     def body(parent, link_name, joint=None):
-        attrs={'name':link_name}
+        attrs={'name':link_name,'gravcomp':'1'}
         if joint is not None:
             origin=joint.find('origin')
             if origin is not None:
                 attrs['pos']=origin.get('xyz','0 0 0');attrs['quat']=' '.join(map(str,_quat(_numbers(origin.get('rpy')))))
         node=ET.SubElement(parent,'body',attrs)
+        if links[link_name].find('visual') is not None or (joint is not None and joint.get('type')=='revolute'):
+            # Appearance complexity must not multiply the placeholder mass.
+            ET.SubElement(node,'inertial',pos='0 0 0',mass='.1',diaginertia='.001 .001 .001')
         if joint is not None and joint.get('type')=='revolute':
             limit=joint.find('limit')
             ET.SubElement(node,'joint',name=joint.get('name'),type='hinge',axis=joint.find('axis').get('xyz'),
                           range=limit.get('lower')+' '+limit.get('upper'),damping='1',armature='.01')
-            ET.SubElement(actuators,'position',name=joint.get('name'),joint=joint.get('name'),kp='30',kv='3')
-        materials={e.get('name'):e.find('color').get('rgba') for e in root.iter('material') if e.find('color') is not None}
+            mimic=joint.find('mimic')
+            if mimic is None:
+                ET.SubElement(actuators,'position',name=joint.get('name'),joint=joint.get('name'),kp='30',kv='3')
+            else:
+                ET.SubElement(equality,'joint',name=joint.get('name')+'_coupling',
+                              joint1=joint.get('name'),joint2=mimic.get('joint'),
+                              polycoef=f"{mimic.get('offset','0')} {mimic.get('multiplier','1')} 0 0 0")
         for n,v in enumerate(links[link_name].findall('visual')):
             geom=v.find('geometry'); shape=list(geom)[0];origin=v.find('origin')
-            a=dict(name=link_name+f'_visual_{n}',type=shape.tag,mass='.1',contype='0',conaffinity='0')
+            a=dict(name=link_name+f'_visual_{n}',type=shape.tag,mass='0',contype='0',conaffinity='0')
             if origin is not None:
                 a.update(pos=origin.get('xyz','0 0 0'),quat=' '.join(map(str,_quat(_numbers(origin.get('rpy'))))))
             if shape.tag=='box':a['size']=' '.join(str(x/2) for x in _numbers(shape.get('size')))
             elif shape.tag=='cylinder':a['size']=shape.get('radius')+' '+str(float(shape.get('length'))/2)
+            elif shape.tag=='sphere':a['size']=shape.get('radius')
             material=v.find('material');a['rgba']=materials.get(material.get('name'),'.5 .6 .7 1') if material is not None else '.5 .6 .7 1'
             ET.SubElement(node,'geom',a)
         for child in joints:
             if child.find('parent').get('link')==link_name:body(node,child.find('child').get('link'),child)
     body(world,'base_link')
-    # Independent falling object demonstrates the engine, not a successful grasp.
-    obj=ET.SubElement(world,'body',name='test_object',pos='.55 .25 .25')
-    ET.SubElement(obj,'freejoint');ET.SubElement(obj,'geom',type='box',size='.025 .025 .025',mass='.05',rgba='.2 .8 .5 1')
+    # Optional engine diagnostic, absent from the robot's normal display scene.
+    if include_test_object:
+        obj=ET.SubElement(world,'body',name='test_object',pos='.30 .15 .15')
+        ET.SubElement(obj,'freejoint');ET.SubElement(obj,'geom',type='box',size='.025 .025 .025',mass='.05',rgba='.2 .8 .5 1')
     ET.indent(mj);ET.ElementTree(mj).write(output/'model.xml',encoding='unicode')
-    sdf=ET.Element('sdf',version='1.9');w=ET.SubElement(sdf,'world',name='motionbrain_offline')
+    sdf=ET.Element('sdf',version='1.11');w=ET.SubElement(sdf,'world',name='motionbrain_offline')
     for file,name in [('physics','Physics'),('user-commands','UserCommands'),('scene-broadcaster','SceneBroadcaster')]:
-        ET.SubElement(w,'plugin',filename='gz-sim-'+file+'-system',name='gz::sim::systems::'+name)
+        plugin=ET.SubElement(w,'plugin',filename='gz-sim-'+file+'-system',name='gz::sim::systems::'+name)
+        if file=='physics' and has_mimic:
+            ET.SubElement(plugin,'engine',filename='gz-physics-bullet-featherstone-plugin',name='gz::physics::bullet_featherstone::Plugin')
+    scene=ET.SubElement(w,'scene');ET.SubElement(scene,'ambient').text='.6 .6 .6 1';ET.SubElement(scene,'background').text='.85 .88 .91 1'
     ET.SubElement(w,'gravity').text='0 0 -9.81'
     light=ET.SubElement(w,'light',name='sun',type='directional');ET.SubElement(light,'pose').text='0 0 3 0 0 0';ET.SubElement(light,'direction').text='-.3 .2 -1'
     ground=ET.SubElement(w,'model',name='ground');ET.SubElement(ground,'static').text='true';g=ET.SubElement(ground,'link',name='ground')
     for kind in ['visual','collision']:
         e=ET.SubElement(g,kind,name=kind+'_ground');geom=ET.SubElement(e,'geometry');plane=ET.SubElement(geom,'plane');ET.SubElement(plane,'normal').text='0 0 1';ET.SubElement(plane,'size').text='4 4'
-    obj=ET.SubElement(w,'model',name='test_object')
-    ET.SubElement(obj,'pose').text='.55 .25 .25 0 0 0'
-    link=ET.SubElement(obj,'link',name='object')
-    inertia=ET.SubElement(link,'inertial');ET.SubElement(inertia,'mass').text='.05'
-    tensor=ET.SubElement(inertia,'inertia')
-    for key in ['ixx','iyy','izz']:ET.SubElement(tensor,key).text='.000021'
-    for kind in ['visual','collision']:
-        item=ET.SubElement(link,kind,name=kind+'_object')
-        geometry=ET.SubElement(item,'geometry');box=ET.SubElement(geometry,'box');ET.SubElement(box,'size').text='.05 .05 .05'
         if kind=='visual':
-            mat=ET.SubElement(item,'material');ET.SubElement(mat,'diffuse').text='.2 .8 .5 1'
+            mat=ET.SubElement(e,'material');ET.SubElement(mat,'diffuse').text='.72 .75 .78 1'
+    if include_test_object:
+        obj=ET.SubElement(w,'model',name='test_object')
+        ET.SubElement(obj,'pose').text='.30 .15 .15 0 0 0'
+        link=ET.SubElement(obj,'link',name='object')
+        inertia=ET.SubElement(link,'inertial');ET.SubElement(inertia,'mass').text='.05'
+        tensor=ET.SubElement(inertia,'inertia')
+        for key in ['ixx','iyy','izz']:ET.SubElement(tensor,key).text='.000021'
+        for kind in ['visual','collision']:
+            item=ET.SubElement(link,kind,name=kind+'_object')
+            geometry=ET.SubElement(item,'geometry');box=ET.SubElement(geometry,'box');ET.SubElement(box,'size').text='.05 .05 .05'
+            if kind=='visual':
+                mat=ET.SubElement(item,'material');ET.SubElement(mat,'diffuse').text='.2 .8 .5 1'
     robot=ET.SubElement(w,'model',name='MotionBrain_uncalibrated')
+    state_plugin=ET.SubElement(robot,'plugin',filename='gz-sim-joint-state-publisher-system',name='gz::sim::systems::JointStatePublisher')
+    ET.SubElement(state_plugin,'topic').text='/motionbrain/visual_joint_state'
     for name,link in links.items():
         if name=='world':continue
         l=ET.SubElement(robot,'link',name=name)
+        ET.SubElement(l,'gravity').text='false'  # Gravity-compensated display, not identified dynamics.
         parent=next((j for j in joints if j.find('child').get('link')==name),None)
         if parent is not None:
             ref=parent.find('parent').get('link');o=parent.find('origin')
@@ -262,16 +286,29 @@ def generate_models(urdf, output):
             if o is not None:ET.SubElement(vis,'pose').text=o.get('xyz','0 0 0')+' '+o.get('rpy','0 0 0')
             geometry=ET.SubElement(vis,'geometry');shape=list(v.find('geometry'))[0];elem=ET.SubElement(geometry,shape.tag)
             for k,value in shape.attrib.items():ET.SubElement(elem,k).text=value
-            material=ET.SubElement(vis,'material');mat=v.find('material');color=mat.find('color') if mat is not None else None
-            ET.SubElement(material,'diffuse').text=color.get('rgba') if color is not None else '.3 .5 .7 1'
+            material=ET.SubElement(vis,'material');mat=v.find('material')
+            ET.SubElement(material,'diffuse').text=materials.get(mat.get('name'),'.3 .5 .7 1') if mat is not None else '.3 .5 .7 1'
     for j in joints:
         joint=ET.SubElement(robot,'joint',name=j.get('name'),type=j.get('type'))
         for part in ['parent','child']:ET.SubElement(joint,part).text=j.find(part).get('link')
         ET.SubElement(joint,'pose',relative_to=j.find('child').get('link')).text='0 0 0 0 0 0'
         if j.get('type')=='revolute':
             axis=ET.SubElement(joint,'axis');ET.SubElement(axis,'xyz').text=j.find('axis').get('xyz')
+            dynamics=ET.SubElement(axis,'dynamics');ET.SubElement(dynamics,'damping').text='.05'
             lim=ET.SubElement(axis,'limit')
             for k,value in j.find('limit').attrib.items():ET.SubElement(lim,k).text=value
-            plugin=ET.SubElement(robot,'plugin',filename='gz-sim-joint-position-controller-system',name='gz::sim::systems::JointPositionController')
-            ET.SubElement(plugin,'joint_name').text=j.get('name');ET.SubElement(plugin,'p_gain').text='30'
+            lim.find('effort').text='10'  # Display servo only; not the hardware/URDF effort contract.
+            mimic=j.find('mimic')
+            if mimic is not None:
+                coupling=ET.SubElement(axis,'mimic',joint=mimic.get('joint'),axis='axis')
+                ET.SubElement(coupling,'multiplier').text=mimic.get('multiplier','1')
+                ET.SubElement(coupling,'offset').text=mimic.get('offset','0')
+                ET.SubElement(coupling,'reference').text='0'
+            else:
+                plugin=ET.SubElement(robot,'plugin',filename='gz-sim-joint-position-controller-system',name='gz::sim::systems::JointPositionController')
+                ET.SubElement(plugin,'joint_name').text=j.get('name');ET.SubElement(plugin,'p_gain').text='30'
+                ET.SubElement(plugin,'d_gain').text='3'
+                # This is an uncalibrated display servo, not a PWM motor model.
+                ET.SubElement(plugin,'use_velocity_commands').text='true'
+                ET.SubElement(plugin,'initial_position').text=str(display_pose.get(j.get('name'),0))
     ET.indent(sdf);ET.ElementTree(sdf).write(output/'world.sdf',encoding='unicode')

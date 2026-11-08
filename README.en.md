@@ -66,7 +66,7 @@ First establish reliable observation and supported M1 inputs at the current pose
 
 Kinematics will progressively constrain reachability and movement clearance. Whole-arm inverse-kinematics/dynamics control and a reinforcement-learning policy have not been introduced; current learning is supervised action-change prediction and candidate comparison. Contact/dynamics studies in Gazebo or MuJoCo follow geometry and actuator-response calibration; adopting a simulator is not a prerequisite for the first physical connection.
 
-Local viewers now cover virtual joints in RViz, schematic arm models in Gazebo and MuJoCo, two-camera fixed-evaluation replay in Rerun, and offline W&B metrics with an explicit web-publishing path. See [viewer setup and uncalibrated-model limits (Korean)](docs/robot-visualization.md). [Physical calibration (Korean)](docs/arm-calibration.md) starts with a shared geometry source and derivative checks; so far, manual readings cover shoulder height and shoulder-to-elbow-to-wrist lengths.
+RViz, Gazebo and MuJoCo display a photo/manual-informed approximation of the OWI-535 with virtual joints and simple mirrored jaws. The default scene hides diagnostic objects and coordinate axes; this is not precision CAD or a physically calibrated model. Rerun provides two-camera fixed-evaluation replay, and W&B supports offline metrics and selective web publishing. See [viewer setup and limits (Korean)](docs/robot-visualization.md). [Physical calibration (Korean)](docs/arm-calibration.md) uses shared geometry and derivative checks; manual readings cover shoulder height, shoulder-to-elbow-to-wrist lengths and the complete wrist-to-gripper-tip distance.
 
 ## Code and documentation
 

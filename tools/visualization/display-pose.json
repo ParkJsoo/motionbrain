@@ -1,0 +1,10 @@
+{
+  "description": "외형 확인용 가상 자세. 연결된 실물의 현재 자세가 아님.",
+  "joints": {
+    "base_yaw_joint": 0.0,
+    "shoulder_pitch_joint": 1.1,
+    "elbow_pitch_joint": -1.2,
+    "wrist_pitch_joint": -0.35,
+    "gripper_joint": 0.15
+  }
+}

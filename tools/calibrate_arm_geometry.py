@@ -62,7 +62,9 @@ def main(argv=None):
                     geometryStatus=profile['status'], physicallyCalibrated=False,
                     measurementEvidenceFilesVerified=verify_evidence and bool(required_evidence),
                     feedbackCalibrated=False, dynamicsCalibrated=False, contactCalibrated=False,
-                    controlEligible=False, dimensionsOnly=True)
+                    controlEligible=False, appearance='photo_manual_approximation',
+                    jawModel='simple_mirrored_revolute', displayPose='illustrative_virtual_pose',
+                    displayGravityCompensated=True)
     (output / 'geometry-manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2, allow_nan=False) + '\n')
     print(json.dumps(dict(output=str(output), geometryStatus=profile['status'],
                           profileSha256=manifest['profileSha256'], controlEligible=False)))

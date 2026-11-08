@@ -8,4 +8,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY ros2_ws/src/motionbrain_description/urdf/ /opt/motionbrain/description/urdf/
 COPY ros2_ws/src/motionbrain_description/rviz/ /opt/motionbrain/description/rviz/
 COPY tools/visualization/desktop.sh /usr/local/bin/motionbrain-visual-desktop
+COPY tools/visualization/display-pose.json /opt/motionbrain/display-pose.json
+COPY ros2_ws/src/motionbrain_ros_bridge/motionbrain_ros_bridge/rviz_appearance.py /opt/motionbrain/rviz_appearance.py
 ENTRYPOINT ["bash", "/usr/local/bin/motionbrain-visual-desktop"]

@@ -7,6 +7,7 @@ from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
+from motionbrain_ros_bridge.rviz_appearance import rviz_description
 
 
 def generate_launch_description() -> LaunchDescription:
@@ -26,7 +27,7 @@ def generate_launch_description() -> LaunchDescription:
     shoulder_direction_sign = LaunchConfiguration("shoulder_direction_sign")
     shoulder_ros_joint_zero_rad = LaunchConfiguration("shoulder_ros_joint_zero_rad")
 
-    robot_description = urdf_path.read_text(encoding="utf-8")
+    robot_description = rviz_description(urdf_path.read_text(encoding="utf-8"))
 
     return LaunchDescription(
         [

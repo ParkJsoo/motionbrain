@@ -1,10 +1,16 @@
 Panels:
   - Class: rviz_common/Displays
     Name: Displays
+Window Geometry:
+  Width: 1120
+  Height: 900
+  X: 300
+  Y: 10
 Visualization Manager:
   Class: ""
   Displays:
     - Class: rviz_default_plugins/Grid
+      Cell Size: 0.05
       Enabled: true
       Name: Grid
     - Class: rviz_default_plugins/RobotModel
@@ -13,10 +19,12 @@ Visualization Manager:
       Enabled: true
       Name: MotionBrain RobotModel
     - Class: rviz_default_plugins/TF
-      Enabled: true
+      Enabled: false
       Name: TF
+      Marker Scale: 0.08
   Enabled: true
   Global Options:
+    Background Color: 222; 228; 235
     Fixed Frame: world
   Name: root
   Tools:
@@ -27,9 +35,9 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 1.2
+      Distance: 0.65
       Focal Point:
-        X: 0.22
+        X: 0.08
         Y: 0.0
         Z: 0.12
       Name: Current View

@@ -1,8 +1,8 @@
 """Render the supported planar skeleton without changing control contracts.
 
-URDFs remain checked-in derivatives. Only kinematic origins and longitudinal
-schematic visuals are owned here; camera extrinsics, jaw geometry, limits,
-ros2_control and all physical properties remain separate and uncalibrated.
+URDFs remain checked-in derivatives. This module owns the supported skeleton,
+approximate display visuals and mirrored display jaw. ros2_control and physical
+contracts are preserved; camera extrinsics and all dynamics remain uncalibrated.
 """
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ import re
 import xml.etree.ElementTree as ET
 
 from motionbrain_ros_bridge.arm_geometry import geometry_values
+from motionbrain_ros_bridge.arm_appearance import build_visuals
 
 
 URDF_PATHS = (
@@ -37,12 +38,17 @@ def _replace_block(text, tag, name, transform):
     # A type attribute selects the top-level kinematic joint rather than the
     # ros2_control joint of the same name. Preserve that block byte-for-byte.
     suffix = r'[^>]*\btype="[^"]+"[^>]*' if tag == 'joint' else r'[^>]*'
-    pattern = re.compile(r'<' + tag + r'\s+name="' + re.escape(name) + r'"' + suffix + r'>.*?</' + tag + r'>', re.S)
+    prefix = r'<' + tag + r'\s+name="' + re.escape(name) + r'"'
+    pattern = re.compile(prefix + suffix + r'(?<!/)>.*?</' + tag + r'>', re.S)
     matches = list(pattern.finditer(text))
-    if len(matches) != 1:
+    empty = list(re.finditer(prefix + r'[^>]*?/\s*>', text)) if tag == 'link' else []
+    if len(matches) + len(empty) != 1:
         raise ValueError('expected_one_' + tag + ':' + name)
-    match = matches[0]
-    return text[:match.start()] + transform(match.group()) + text[match.end():]
+    match = (matches or empty)[0]
+    block = match.group()
+    if empty:
+        block = re.sub(r'/\s*>$', '></' + tag + '>', block)
+    return text[:match.start()] + transform(block) + text[match.end():]
 
 
 def _origin(block, xyz):
@@ -55,40 +61,58 @@ def _origin(block, xyz):
     return block.replace('</joint>', '  ' + element + '\n  </joint>', 1)
 
 
-def _visual(block, length):
-    pattern = re.compile(r'<visual\b[^>]*>.*?</visual>', re.S)
-    return pattern.sub(lambda m: _visual_element(m.group(), length), block, count=1)
-
-
-def _visual_element(block, length):
-    # Zero offset is supported kinematically. The schematic connector is then
-    # drawn as a 1mm sliver to avoid invalid zero-sized simulator geometry.
-    displayed = max(length, .001)
-    visual = ET.fromstring(block)
-    origin = visual.find('origin')
-    shape = list(visual.find('geometry'))[0]
-    if origin is None:
-        raise ValueError('schematic_visual_origin_missing')
-    xyz = _vector(origin.get('xyz', '0 0 0'))
-    original_xyz = xyz.copy()
-    xyz[0] = length / 2
-    if xyz != original_xyz:
-        block = re.sub(r'(<origin\b[^>]*\bxyz=")[^"]*(")',
-                       lambda m: m[1] + _text(xyz) + m[2], block, count=1)
-    if shape.tag == 'box':
-        size = _vector(shape.get('size'))
-        original_size = size.copy()
-        size[0] = displayed
-        if size != original_size:
-            block = re.sub(r'(<box\b[^>]*\bsize=")[^"]*(")',
-                           lambda m: m[1] + _text(size) + m[2], block, count=1)
-    elif shape.tag == 'cylinder':
-        if float(shape.get('length')) != displayed:
-            block = re.sub(r'(<cylinder\b[^>]*\blength=")[^"]*(")',
-                           lambda m: m[1] + format(displayed, '.12g') + m[2], block, count=1)
+def _appearance(text, values):
+    """Own display visuals only; leave inertia/collision/control text intact."""
+    root = ET.fromstring(text)
+    if root.find("link[@name='gripper_opposing_jaw_link']") is None:
+        text = text.replace('</robot>', '<link name="gripper_opposing_jaw_link"></link>\n</robot>')
+    text = _replace_block(text, 'joint', 'gripper_joint', lambda b: _origin(b, [.01, .012, 0]))
+    limit = root.find("joint[@name='gripper_joint']/limit")
+    follower = ET.Element('joint', name='gripper_opposing_joint', type='revolute')
+    ET.SubElement(follower, 'parent', link='gripper_link')
+    ET.SubElement(follower, 'child', link='gripper_opposing_jaw_link')
+    ET.SubElement(follower, 'origin', xyz='.01 -.012 0', rpy='0 0 0')
+    ET.SubElement(follower, 'axis', xyz='0 0 1')
+    follower_limit = dict(limit.attrib, lower=format(-float(limit.get('upper')), '.12g'),
+                          upper=format(-float(limit.get('lower')), '.12g'))
+    ET.SubElement(follower, 'limit', **follower_limit)
+    ET.SubElement(follower, 'mimic', joint='gripper_joint', multiplier='-1', offset='0')
+    ET.indent(follower)
+    xml = ET.tostring(follower, encoding='unicode')
+    if root.find("joint[@name='gripper_opposing_joint']") is None:
+        text = text.replace('</robot>', xml + '\n</robot>')
     else:
-        raise ValueError('unsupported_schematic_visual')
-    return block
+        text = _replace_block(text, 'joint', 'gripper_opposing_joint', lambda _: xml)
+    visual_map = build_visuals(values)
+    palette = {}
+    for elements in visual_map.values():
+        for visual in elements:
+            material = visual.find('material')
+            color = material.find('color').get('rgba')
+            if color not in palette:
+                palette[color] = 'owi_palette_' + str(len(palette))
+            material.set('name', palette[color])
+    # urdfdom/RViz resolves all visual-array materials reliably when the names
+    # are declared globally, rather than only inline on later visuals.
+    text = re.sub(r'\s*<material\s+name="owi_palette_\d+"[^>]*>.*?</material>', '', text, flags=re.S)
+    declarations = []
+    for color, name in palette.items():
+        material = ET.Element('material', name=name)
+        ET.SubElement(material, 'color', rgba=color)
+        ET.indent(material, level=1)
+        declarations.append('  ' + ET.tostring(material, encoding='unicode'))
+    text = re.sub(r'(<robot\b[^>]*>)', lambda m: m[1] + '\n' + '\n'.join(declarations), text, count=1)
+    for name, elements in visual_map.items():
+        def replace(block, visuals=elements):
+            block = re.sub(r'\s*<visual\b[^>]*>.*?</visual>', '', block, flags=re.S)
+            block = re.sub(r'\s*</link>', '</link>', block)
+            rendered = []
+            for visual in visuals:
+                ET.indent(visual, level=2)
+                rendered.append('    ' + ET.tostring(visual, encoding='unicode').rstrip())
+            return block.replace('</link>', '\n' + '\n'.join(rendered) + '\n  </link>')
+        text = _replace_block(text, 'link', name, replace)
+    return text
 
 
 def render_urdf(template, profile):
@@ -143,13 +167,9 @@ def render_urdf(template, profile):
     result = template
     for name, xyz in origins.items():
         result = _replace_block(result, 'joint', name, lambda b, v=xyz: _origin(b, v))
-    if full:
-        for link, field in [('shoulder_link', 'shoulder_offset_m'), ('upper_arm_link', 'upper_arm_m'),
-                            ('forearm_link', 'forearm_m'), ('wrist_link', 'wrist_m'), ('gripper_link', 'tool_m')]:
-            element = root.find(f"link[@name='{link}']")
-            # Hardware/control-only descriptions intentionally have no visuals.
-            if element is not None and element.find('visual') is not None:
-                result = _replace_block(result, 'link', link, lambda b, v=values[field]: _visual(b, v))
+    # Control-only descriptions retain their original joint/control contracts.
+    if full and (root.get('name')=='motionbrain' or root.find('.//visual') is not None):
+        result = _appearance(result, values)
     return result
 
 
@@ -158,24 +178,50 @@ def geometry_mismatches(text, profile):
     actual = ET.fromstring(text)
     expected = ET.fromstring(render_urdf(text, profile))
     errors = []
+    def palette(root):
+        return {m.get('name'): m.find('color').get('rgba') for m in root.findall('material')
+                if m.get('name','').startswith('owi_palette_') and m.find('color') is not None}
+    if palette(actual) != palette(expected):
+        errors.append('appearance_palette')
     for node in expected.findall('joint'):
         name = node.get('name')
         other = actual.find(f"joint[@name='{name}']")
-        for tag, attr in [('origin', 'xyz')]:
+        if other is None:
+            errors.append(name + '/missing_joint')
+            continue
+        for tag, attr in [('origin', 'xyz'), ('origin', 'rpy')]:
             a, b = other.find(tag), node.find(tag)
             va = _vector(a.get(attr, '0 0 0')) if a is not None else [0, 0, 0]
             vb = _vector(b.get(attr, '0 0 0')) if b is not None else [0, 0, 0]
             if not all(math.isclose(x, y, abs_tol=1e-11, rel_tol=0) for x, y in zip(va, vb)):
+                errors.append(name + '/' + tag + '/' + attr)
+        for tag in ('parent', 'child', 'axis', 'limit'):
+            a, b = other.find(tag), node.find(tag)
+            if ((a is None) != (b is None) or
+                    (a is not None and b is not None and a.attrib != b.attrib)):
                 errors.append(name + '/' + tag)
+        actual_mimic, expected_mimic = other.find('mimic'), node.find('mimic')
+        if ((actual_mimic is None) != (expected_mimic is None) or
+                (actual_mimic is not None and expected_mimic is not None and
+                 actual_mimic.attrib != expected_mimic.attrib)):
+            errors.append(name + '/mimic')
     for node in expected.findall('link'):
         name = node.get('name')
         other = actual.find(f"link[@name='{name}']")
-        for a, b in zip(other.findall('visual'), node.findall('visual')):
-            for query, attr in [('origin', 'xyz'), ('geometry/box', 'size'), ('geometry/cylinder', 'length')]:
-                x, y = a.find(query), b.find(query)
-                if x is None or y is None:
-                    continue
-                vx, vy = list(map(float, x.get(attr).split())), list(map(float, y.get(attr).split()))
-                if not all(math.isclose(i, j, abs_tol=1e-11, rel_tol=0) for i, j in zip(vx, vy)):
-                    errors.append(name + '/' + query)
+        if other is None:
+            errors.append(name + '/missing_link')
+            continue
+        def signature(link):
+            def node_signature(n):
+                attrs = []
+                for key, value in sorted(n.attrib.items()):
+                    try:
+                        value = tuple(round(float(v), 11) for v in value.split())
+                    except ValueError:
+                        pass
+                    attrs.append((key, value))
+                return n.tag, tuple(attrs), tuple(node_signature(child) for child in n)
+            return tuple(node_signature(v) for v in link.findall('visual'))
+        if signature(other) != signature(node):
+            errors.append(name + '/visuals')
     return errors

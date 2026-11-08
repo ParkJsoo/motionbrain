@@ -27,10 +27,24 @@ docker compose -f tools/visualization/compose.yaml up -d
 | 도구 | 여는 방법 | 조작과 해석 |
 | --- | --- | --- |
 | RViz | [로컬 화면](http://127.0.0.1:6081/vnc.html?autoconnect=true&resize=scale) | 별도 `joint_state_publisher_gui` 창의 슬라이더로 가상 관절값 변경. 실측 팔 상태가 아님 |
-| Gazebo | [로컬 화면](http://127.0.0.1:6082/vnc.html?autoconnect=true&resize=scale) | 가상 팔·바닥·낙하 시험 물체. 재생 버튼으로 가상 물리 실행 |
+| Gazebo | [로컬 화면](http://127.0.0.1:6082/vnc.html?autoconnect=true&resize=scale) | 가상 팔·바닥. 보기용 관절 목표 자세로 시작하는 가상 물리 실행이며 일시정지 가능 |
 | MuJoCo | 위 명령의 네이티브 창 | 마우스로 시점 이동, `Control`에서 가상 위치 구동기 목표 변경 |
 
 컨테이너에는 실물 HTTP 미러나 모터 실행기를 시작하지 않는다. ROS는 별도 도메인·localhost 발견, Gazebo는 별도 partition을 사용한다. Compose는 전용 bridge 네트워크를 사용하고 GUI 포트는 Mac의 loopback에만 공개한다. 컨테이너의 네트워크 기능 전체를 차단하는 구성은 아니지만 실물 연결 노드·출력 경로를 시작하지 않는다. 종료는 `docker compose -f tools/visualization/compose.yaml stop`으로 하며 네이티브 창은 닫는다.
+
+## 외형과 보기용 자세
+
+기본 화면은 OWI-535 사진·조립도를 참고해 직접 작성한 외형 근사다. 노랑·검정 베이스 층판, 평행 링크, 관절 케이스, 실제 손목 힌지와 구분한 M2 모터 케이스, 양쪽 집게, 흰 카메라 지지대를 같은 URDF의 여러 visual로 표현한다. 제조사 CAD나 정밀 스캔은 아니며, 케이스 지름·두께·나사·카메라 장착 치수는 외형 추정이다. 실측한 관절 중심 간 치수와 구분한다.
+
+베이스 옆에 떠 있던 카메라 상자, 편심 0을 나타내던 얇은 파란 원판은 제거했다. 카메라 외형은 집게 몸체에 연결했지만 외부 좌표 보정을 뜻하지 않는다. 기존 `camera_link`는 호환용 미보정 프레임으로 남고 외형은 그리지 않는다. RViz 좌표축은 기본으로 숨기며 필요할 때 Displays의 TF를 켠다.
+
+일부 RViz 버전은 [한 링크의 여러 visual에 첫 재질을 공유하는 문제](https://github.com/ros2/rviz/issues/1293)가 있다. RViz 입력만 색별 고정 표시 링크로 나누어 색을 보존한다. 원래 관절·도구 프레임과 모든 형상의 위치는 그대로이며 추가 `rviz_visual_*` 프레임은 외형 표시용이다. 이 파생물은 MuJoCo·Gazebo 물리 모델 생성에 사용하지 않는다.
+
+세 Viewer의 보기용 관절 목표는 [`display-pose.json`](../tools/visualization/display-pose.json)에 둔다. 실물 현재 자세를 센서로 읽어 표시하는 것이 아니다. 표시용 팔에는 중력을 보상한다(MuJoCo body `gravcomp=1`, Gazebo robot link `gravity=false`)고 지정하되 실제 엔진의 지원 여부와 별개로 물리 보정은 미완료다. Gazebo는 속도 명령과 표시 전용 effort 한도 10을 사용하는 임시 위치 추종기로 목표를 유지한다. 소스 URDF의 effort 계약은 바꾸지 않는다. 이는 실물 PWM·토크·하중 반응이 아니며 동역학 식별에는 사용할 수 없다. 선택적 시험 물체의 중력은 유지한다. 노랑·검정 부품이 구분되도록 배경·조명·시점을 조정했다.
+
+두 집게는 하나의 개방 입력을 반대 방향으로 따르는 단순 회전 연동이다. ROS는 URDF mimic, MuJoCo는 joint equality, Gazebo Harmonic은 설치된 Bullet Featherstone의 mimic constraint를 사용한다. 실제 집게의 다절 링크·개구폭·접촉·마찰 모델을 식별한 것은 아니다. 외형 개수로 임시 질량이 늘지 않도록 링크별 질량·관성을 한 번만 지정한다.
+
+초록 상자는 독립 낙하 진단 물체였으며 기본 화면에는 없다. 필요하면 `prepare.py --models-only --physics-test-object --output .local/physics-diagnostic`처럼 별도로 생성한다. 그 물체의 낙하·바닥 접촉은 로봇의 집기 성공을 뜻하지 않는다.
 
 ## 실제 고정 평가의 재생과 비교
 
@@ -62,4 +76,4 @@ W&B SDK는 지표·평가표를 `offline` 모드로 기록한다. 로컬 비교 
 
 URDF·FK·IK의 위치·방향 일치와 MuJoCo 변환 후 `tool0` 일치를 소프트웨어로 검사한다. Gazebo SDF의 문법과 GUI 표시, 실제 SDK의 Rerun 기록·W&B 오프라인 기록은 별도로 확인한다.
 
-시뮬레이션 질량·관성·위치 구동기는 임시값이다. 팔 링크의 충돌과 양턱 접촉·파지 모델은 없으며, 독립 시험 물체와 바닥의 접촉만 포함한다. 물리 모델 식별·실물 보정·정책 학습·집기 성공을 주장하지 않는다. 실제 평가 두 건의 지표를 여러 조건의 일반화나 전체 팔 연속 집기 성과로 확대하지 않는다.
+시뮬레이션 질량·관성·위치 구동기는 임시값이다. 팔 링크의 충돌과 양턱 접촉·파지 모델은 없으며, 선택적으로 추가한 독립 시험 물체와 바닥의 접촉만 지원한다. 물리 모델 식별·실물 보정·정책 학습·집기 성공을 주장하지 않는다. 실제 평가 두 건의 지표를 여러 조건의 일반화나 전체 팔 연속 집기 성과로 확대하지 않는다.
