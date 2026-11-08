@@ -2,9 +2,19 @@
 
 [프로젝트](../README.md) · [포트폴리오](../PORTFOLIO.md) · [운영](../OPERATIONS.md) · [핀맵](../PIN_MAP.md)
 
-현재 연구 계획, 구현된 도구의 사용법, 날짜별 실측을 구분해 읽을 수 있는 색인이다. 날짜별 기록은 당시 구성의 결과이며 현재 장치 상태나 새 모델의 성능을 뜻하지 않는다.
+설계·사용법과 날짜별 실측을 구분해 읽을 수 있는 색인이다. 시작은 [프로젝트 개요](../README.md), 구현 판단과 대표 결과는 [포트폴리오](../PORTFOLIO.md), 실행 환경과 운영은 [운영 안내](../OPERATIONS.md)를 따른다. 날짜별 기록은 당시 구성의 결과이며 현재 장치 상태나 새 모델의 성능을 뜻하지 않는다.
 
-## 연구와 구현 안내
+## 팔 모델·보정과 결과 재생
+
+| 문서 | 역할 |
+| --- | --- |
+| [로봇·학습 시각화 도구](robot-visualization.md) | RViz·Gazebo·MuJoCo의 같은 팔 모델 표시, Rerun의 두 카메라 평가 재생, W&B 지표 기록·게시 |
+| [실물 치수와 관절 기준](arm-calibration.md) | 공통 기하 프로필, 사진 자세 근사, 촬영별 첫 프레임 등록·HTTP 사후 감사, M4 읽기 전용 근사 기준점 후보 |
+| [ROS2 하드웨어 인터페이스](../ros2_ws/src/motionbrain_hardware_interface/README.md) | 추정·실측·확인형 M4 명령의 구현 범위 |
+
+가상 팔의 표시와 실제 평가 재생은 실시간 실물 자세 연동·가상 학습과 구분한다. 정밀 관절 영점·카메라 좌표·질량·구동 반응·팔 충돌·집게 접촉은 보정 완료 상태가 아니다.
+
+## 행동 수집·학습과 후보 비교
 
 | 문서 | 역할 |
 | --- | --- |
@@ -13,20 +23,25 @@
 | [물체·집게 상대 상태](relative-action-selection.md) | 수동 점·등록 특징의 별도 계약, 관절/자세별 모델과 고정 평가·질의 |
 | [외부 영상의 팔 표식 상태](projected-arm-learning.md) | 물체 없는 팔의 네 픽셀 상태 학습·고정 평가와 별도 관측 계약 |
 | [순차 접근·닫기 코어](model-grasp-trial.md) | 고정 모델 선택·접촉 후 들기 연결, 등록 특징·원호 관측과 실물 미검증 범위 |
+| [M4 위 방향 전용 경로](m4-up-commissioning.md) | 일반 수집기와 분리한 수동 식별·들기 모델, 고정 평가·선택 들림과 실행 실패의 구분 |
 | [현장 감독 수집](supervised-action-collection.md) | 기존 M2 정착 전후 17개 자료와 개발 평가 계약 |
-| [유한 출력 프로파일](finite-output-profile.md) | M2 고정 출력 구현·실물 시운전과 계측 거부·불확실성 검토 |
-| [무명령 관측 반복성](stationary-repeatability.md) | 관측창·조명 조건 비교와 측정 변동 해석의 한계 |
 | [오프라인 행동 선택](offline-action-selection.md) | 저장 모델의 후보 순위·hold·abstain, 저장 상태 재생과 정책 평가 한계 |
 | [시각 행동 수집기](visual-action-collection.md) | 행동 ID·영상 구간·실패 기록·감사와 공개 단발 CLI의 계약. 별도 반복 실측 경로와 구분 |
-| [연구 근거](research/visual-action-learning.md) | 관련 연구의 실험 조건·대안·적용 아이디어와 현재 장치의 차이 |
 | [기존 행동 데이터 계약](data-pipeline.md) | 구현된 M4·물체 박스 데이터 검증과 학습 CLI |
+| [연구 근거](research/visual-action-learning.md) | 관련 연구의 실험 조건·대안·적용 아이디어와 현재 장치의 차이 |
+
+## 영상 계측·인식과 진단
+
+| 문서 | 역할 |
+| --- | --- |
+| [유한 출력 프로파일](finite-output-profile.md) | M2 고정 출력 구현·실물 시운전과 계측 거부·불확실성 검토 |
+| [무명령 관측 반복성](stationary-repeatability.md) | 관측창·조명 조건 비교와 측정 변동 해석의 한계 |
 | [Mac 카메라 계측](mac-direct-camera.md) | 영상·USB 시각 연결 도구와 계측 결과 |
 | [화면 표식의 오프라인 시간 검증](optical-challenge-offline.md) | 기존 계약을 위한 선택적 합성 실험. 물리 노출 인증이나 새 행동 학습의 선행 조건이 아님 |
 | [대상 물체·집게 오프라인 CV](offline-cv.md) | 저장 라벨·예측의 검출 및 상대 위치 채점 |
 | [제한된 CV 개발 학습](bounded-cv-training.md) | 단일·혼합 세션의 유한 학습 실행기 |
 | [저장 체크포인트 평가](checkpoint-evaluation.md) | 확정 이미지 집합의 모델 평가 실행기 |
 | [OV2640 진단](ov2640-register-diagnostic.md) | 보류된 센서 전용 진단. 외부 카메라 행동 학습의 선행 단계가 아님 |
-| [ROS2 하드웨어 인터페이스](../ros2_ws/src/motionbrain_hardware_interface/README.md) | 추정·실측·확인형 M4 명령의 구현 범위 |
 
 ## 날짜별 실험 증거
 
@@ -43,6 +58,7 @@
 | [2026-10-31 첫 모델 목표 접근](evidence/2026-10-31-first-model-goal-approach.md) | 모델 선택 M2 명령 단발의 목표 오차 변화와 반복 검증 한계 |
 | [2026-11-04 HTTP 응답 지연](evidence/2026-11-04-http-response-gap.md) | 연결 종료·본문 재조립 지연의 구분과 수정 범위 |
 | [2026-11-04 M4 행동 예측 평가](evidence/2026-11-04-m4-action-prediction.md) | 학습 18건·후속 18건, 명령별 평균과 영상 모델 비교, 중단 분모·평가 한계 |
+| [2026-11-04 집게 상대 상태 학습](evidence/2026-11-04-gripper-relative-learning.md) | 첫 M1 8시도·5완료·3실패, 수동 주석 4건 학습·고정 후 1건 평가와 무변화 기준의 한계 |
 | [2026-11-05 관절별 상대 상태 학습](evidence/2026-11-05-multi-joint-relative-learning.md) | 33건 확보·24건 학습·9건 후속 평가, 범위 거절·미구동 실패·미시작과 한계 |
 | [2026-11-06 M3·M4 표식 학습](evidence/2026-11-06-projected-arm-m3-m4-learning.md) | 학습 9건·4건, 고정 후 관측 품질·상태 범위 거절과 미평가 분모 |
 | [2026-11-07 M1 구동 전 예측 확인](relative-action-selection.md#2026-11-07-자세를-분리한-학습과-구동-전-예측-확인) | 자세별 분리 학습, 고정 후 새 1건 비교와 무변화 기준·지원 범위의 한계 |
@@ -52,10 +68,8 @@
 
 ## 공개 미디어
 
+- [프로젝트 개요도](assets/overview.svg) · [English](assets/overview.en.svg): 공개 기하·표시 자세와 수집→예측→제한 실행의 흐름을 표현한 벡터 도식. 실물 사진이나 실시간 연동 화면이 아니다.
 - [원격조작 GIF](assets/demo/motionbrain-demo.gif) · [MP4](assets/demo/motionbrain-demo.mp4): 2026-06-08 고정 태그의 약 54초 편집 시연. 손동작·버튼 원격조작과 조명 동작을 보여주며, 학습 정책의 자율 조작 성과가 아니다. README의 고정 태그 링크와 같은 파일이다.
-- [RViz 모델 이미지](assets/motionbrain-rviz-robotmodel.png): URDF 모델·좌표축 표시 예시. [ROS2 안내](../ros2_ws/src/motionbrain_hardware_interface/README.md)에서 사용하며 실물 자세 추종이나 기구학 보정 정확도의 증거가 아니다.
+- [RViz 모델 이미지](assets/motionbrain-rviz-robotmodel.png): 초기 URDF 모델·좌표축 표시 예시. 현재 외형·사진 근사 자세의 화면과 구분하며 실물 자세 추종이나 기구학 보정 정확도의 증거가 아니다. 현재 모델의 실행법은 [시각화 안내](robot-visualization.md)를 따른다.
 
 영상·그림은 위 범위의 설명 자료이며 현재 장치 연결 상태를 표시하지 않는다.
-
-- [로봇·학습 시각화 도구](robot-visualization.md): RViz·Gazebo·MuJoCo 모델 표시, Rerun 평가 재생, W&B 지표 기록·게시 경로와 한계.
-- [로봇팔 치수 보정](arm-calibration.md): 제조사 사양과 수동 판독의 구분, 공통 기하 프로필·파생 모델 검사와 남은 보정 범위.

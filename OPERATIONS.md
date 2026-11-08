@@ -4,13 +4,17 @@
 
 이 문서는 저장소의 일반 재현 절차다. 장치별 주소·자격 증명·관절 보정값은 각 설치 환경에서 설정한다. 빌드·테스트 통과는 펌웨어 업로드나 모터 구동을 뜻하지 않는다.
 
-현재 목표와 단계는 [시각 행동 학습 설계](docs/visual-action-learning.md), 수집→데이터셋→학습·평가의 사용법은 [관절별 수동 수집](docs/manual-data-collection.md)에 둔다. 예측 입력은 명령 전 영상과 예정 명령이며 실제 출력·후속 센서는 사후 검증과 정답으로 구분한다. 물체와 집게의 상대 상태에서 학습 모델이 정렬·닫기·들기를 이어가는 과정은 미완성이다.
+## 목적별 시작점
 
-기존 M2 [첫 행동 예측](docs/evidence/2026-10-31-first-action-prediction.md)과 [단일 목표 접근](docs/evidence/2026-10-31-first-model-goal-approach.md)은 별도 계약의 결과다. 저장자료 비교는 [오프라인 선택기](docs/offline-action-selection.md), 단발 실물 연결은 [시각 행동 수집기](docs/visual-action-collection.md)의 실행 범위와 저널 절차를 따른다. 아래 일반 운영 명령만으로 실물 수집·자율 제어 전체가 실행되는 것은 아니다.
+| 하려는 일 | 안내 |
+| --- | --- |
+| 장치 없이 검사·펌웨어 빌드 | [빌드](#빌드) |
+| 가상 팔·저장 평가·모델 지표 확인 | [다섯 도구 실행](docs/robot-visualization.md) |
+| 실제 동작의 수집·재생·학습 | [수동 수집](docs/manual-data-collection.md) · [감독 수집](docs/supervised-action-collection.md) |
+| 호스트·Pi 소스와 서비스 적용 | [소스 동기화](#소스-동기화와-장치-적용) · [Pi 서비스 설정](#pi-서비스-설정) |
+| 치수·촬영 기준·M4 근사 기준점 확인 | [실물 보정](docs/arm-calibration.md) |
 
-[유한 출력 프로파일](docs/finite-output-profile.md)은 별도 `esp32dev_m2_finite_trial` 빌드에서 활성화하며 기본 빌드는 비활성이다. 고정 네 조건 펌웨어 업로드와 단발 출력 확인은 수행했지만, 2026-11-04 새 구도 U4 1회는 출력 완료 뒤 후관측 창의 변동 초과로 계측이 거부됐다(명령 1·출력 완료 1·유효 전이 0). 앞선 ARM 전 중단도 보존한다. [무명령 관측 반복성](docs/stationary-repeatability.md)과 함께 조건·분모·한계를 읽어야 하며, 출력 완료를 정확한 움직임·유효 학습 자료로 해석하지 않는다.
-
-로컬 로봇 모델·실험 재생 화면은 [다섯 시각화 도구 실행](docs/robot-visualization.md)을 따른다. 실물 제어 노드를 시작하지 않는 별도 경로이며, 웹 게시와 원본 자료의 취급 범위를 구분한다.
+실물 실행은 각 수집기의 범위·저널·중단 절차를 따른다. [유한 출력 프로파일](docs/finite-output-profile.md)은 별도 `esp32dev_m2_finite_trial` 빌드의 기능이며 기본 빌드에서 비활성이다. [무명령 반복성](docs/stationary-repeatability.md)과 실측 조건을 함께 확인한다. 소프트웨어 검사·출력 완료·학습 자료 적격은 각각 별도 결과다.
 
 ## 빌드
 

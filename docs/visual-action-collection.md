@@ -2,9 +2,11 @@
 
 [시각 행동 학습 설계](visual-action-learning.md) · [운영](../OPERATIONS.md)
 
-명령 하나와 그 전·중·후 원본 프레임, 실행 응답, 실제 출력 기록을 같은 행동 ID로 묶는 최소 수집 코어다. **합성·저장 입력 감사에 더해 Mac 연속 영상·특징점 추적·M2 제한 실행 연결을 구현했다.** 공개 단발 CLI의 통합 계약은 모의 입력으로 검사했다. 별도 M2 반복 실행기에서는 실물 관측·수집을 거쳐 [첫 32개 행동 예측 학습·평가](evidence/2026-10-31-first-action-prediction.md)를 완료했다. 두 실행 경로를 동일한 것으로 취급하지 않으며 예측 기반 실물 제어는 아직 없다.
+명령 하나와 그 전·중·후 원본 프레임, 실행 응답, 실제 출력 기록을 같은 행동 ID로 묶는 최소 수집 코어다. **합성·저장 입력 감사에 더해 Mac 연속 영상·특징점 추적·M2 제한 실행 연결을 구현했다.** 공개 단발 CLI의 통합 계약은 모의 입력으로 검사했다. 별도 M2 반복 실행기에서는 실물 관측·수집을 거쳐 [첫 32개 행동 예측 학습·평가](evidence/2026-10-31-first-action-prediction.md)를 완료했다. 공개 단발 CLI는 예측 기반 실물 제어에 연결하지 않았다.
 
 기존 물체 박스·필수 M4 실측 계약과 다른 `motionbrain.visual_action_session.v1`을 사용한다. M4 센서값이나 물체 검출 결과 없이도 팔 영상을 기록할 수 있다. 기존 수집·학습 도구의 조건이나 적격 판정은 바꾸지 않는다. 수집기 원본 결과의 `trainingEligible=false`, `controlEligible=false`는 유지한다. 이후 별도 투영 방향 데이터 심사에서 32개를 수용했으며, 기존 M4·물체 박스 계약의 적격 판정을 소급 변경한 것은 아니다.
+
+관절을 골라 기록·재생하는 사용자 화면은 [수동 수집](manual-data-collection.md), 촬영별 첫 프레임과 센서 GET을 결합한 선택적 등록은 [감독 수집의 보정 경로](arm-calibration.md#촬영별-첫-프레임-기준-등록)에 설명한다. 각 경로의 관측 계약·적격 판정을 자동으로 합치지 않는다.
 
 ## 장치 없이 실행하기
 
@@ -201,7 +203,7 @@ python3 tools/export_visual_actions_rerun.py .local/visual-actions/pilot-01 \
   --output .local/visual-actions/replay-01/view.rrd
 ```
 
-현재 내보내기 호출 계약은 모의 SDK로 검증했으며 실제 SDK·Viewer 연결은 미검증이다. 도구가 없거나 연결이 지연돼도 원본 기록을 보존하고 관측을 막지 않는다. `.rrd`에도 원본 영상이 포함되므로 비공개로 취급한다. [Rerun 시간축](https://rerun.io/docs/concepts/logging-and-ingestion/timelines)과 [데이터 저장](https://rerun.io/docs/getting-started/data-in)을 따른다.
+이 수집기 형식의 내보내기 호출 계약은 모의 SDK로 검증했으며 실제 SDK·Viewer 연결은 미검증이다. 별도의 고정 평가 어댑터는 실제 SDK·Viewer에서 두 카메라와 예측·오차 재생을 확인했으며 [시각화 안내](robot-visualization.md#실제-고정-평가의-재생과-비교)에 사용법을 둔다. 한 어댑터의 검증을 다른 형식으로 확대하지 않는다. 도구가 없거나 연결이 지연돼도 원본 기록을 보존하고 관측을 막지 않는다. `.rrd`에도 원본 영상이 포함되므로 비공개로 취급한다. [Rerun 시간축](https://rerun.io/docs/concepts/logging-and-ingestion/timelines)과 [데이터 저장](https://rerun.io/docs/getting-started/data-in)을 따른다.
 
 ## M2 상대 방향의 첫 예측 실험
 
@@ -211,4 +213,4 @@ python3 tools/export_visual_actions_rerun.py .local/visual-actions/pilot-01 \
 
 `learning/joint_prediction.py`는 명령 전 상대 방향·속도와 요청 방향·기간으로 명령 시작 4초 뒤의 투영 방향 변화를 예측한다. 실제 출력 로그와 동작 후 값은 입력에 사용하지 않는다. 선형 회귀와 세 릿지 후보의 정규화·적합은 학습 16개만 사용하고, 검증 오차로 후보 하나를 선택한다. 선택에 시험 라벨을 사용하지 않는다. 선택된 후보의 MAE·RMSE·편향·방향 정확도를 무변화·속도 유지 기준선과 비교한다. 적격 여부, 시도 분모와 실패 기록은 별도로 보존한다.
 
-공개 수치 모듈의 회귀 테스트는 합성 자료를 사용한다. 별도 원본 심사를 거친 실제 32개에 이 예측 모듈을 적용한 [첫 결과](evidence/2026-10-31-first-action-prediction.md)는 완료했지만 모델 기반 실물 제어는 미검증이다. 실측 중 시작 구간을 A 7~12°/B 2~7°로 조정하고, 일부 구간의 맞춤 한도·촬영별 등록·정착 대기를 보완했다. 이는 공개 초기 계획 모듈의 기본값을 자동 변경하지 않는다. 일회용 반복 실행기·원본·모델·개별 운영 기록은 공개 트리에 포함하지 않는다.
+공개 수치 모듈의 회귀 테스트는 합성 자료를 사용한다. 별도 원본 심사를 거친 실제 32개에 이 예측 모듈을 적용한 [첫 결과](evidence/2026-10-31-first-action-prediction.md)는 완료했다. 이 공개 수집 경로 자체는 예측 기반 제어에 연결하지 않았으며, 별도 실행기의 [M2 모델 선택 단발 목표 접근](evidence/2026-10-31-first-model-goal-approach.md)과 구분한다. 실측 중 시작 구간을 A 7~12°/B 2~7°로 조정하고, 일부 구간의 맞춤 한도·촬영별 등록·정착 대기를 보완했다. 이는 공개 초기 계획 모듈의 기본값을 자동 변경하지 않는다. 일회용 반복 실행기·원본·모델·개별 운영 기록은 공개 트리에 포함하지 않는다.

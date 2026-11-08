@@ -1,49 +1,72 @@
 # MotionBrain
 
-[한국어](README.md) · [Portfolio](PORTFOLIO.en.md) · [Build and operations](OPERATIONS.en.md)
+[한국어](README.md) · [Portfolio](PORTFOLIO.en.md) · [Build and operations](OPERATIONS.en.md) · [Documentation and evidence (Korean)](docs/README.md)
 
-The kinematic display uses positive upward elevation and a fixed `tool0` independent of jaw opening. Software checks of FK/IK against URDF positions and orientations do not establish physical dimensions or zero calibration. See [coordinate conventions and limits (Korean)](docs/visual-action-learning.md#전체-팔에서-기구학동역학을-쓰는-방법).
+**A personal robotics project that records physical arm motion and predicts the next change from images and planned commands.** Its goal is to compare candidate outcomes to approach, grasp and lift an object.
 
-**A personal robotics project that predicts arm motion from images and planned commands, then compares candidate outcomes to grasp and lift an object.** It connects two cameras and sensors to an ESP32-controlled five-axis DC arm, developing collection, raw-data validation, training, evaluation and bounded execution.
+An ESP32-controlled five-axis DC arm connects an external camera, a gripper-mounted camera and sensors. The project combines a physical **collection → training → prediction → bounded execution** pipeline with **RViz, Gazebo, MuJoCo, Rerun and W&B** for inspecting robot models and evaluation results.
 
-The current stage is **connecting joint-specific prediction into an M1 gripper close → M4 shoulder lift sequence**. Automatic alignment and learned whole-arm grasping/lifting are not complete.
+![MotionBrain physical records, prediction, bounded execution and five visualization tools](docs/assets/overview.en.svg)
 
-## Goal and current stage (2026-11-08)
+*An overview of the architecture and data flow in the public source. It is not a physical photograph or a live integration screen.*
 
-The intended loop is `current visual state + candidate command → predict change → compare with goal → execute → observe again`. The first task connects only the joints it needs, sequentially; simultaneous control of every joint is not a prerequisite.
+The current stage connects joint-specific prediction into **M1 gripper closing → M4 shoulder lifting**. **Continuous autonomous whole-arm grasping and lifting remain incomplete.** Post-freeze evaluation and connected execution of the current M1 integration model are both still at zero.
 
-| Area | Implementation and observed results |
-| --- | --- |
-| Collection and validation | A local Mac UI selects one of M1–M5 for a finite pulse, recording/replaying images, command intent, actual outputs, sensors and failures. Completed storage is separate from training eligibility |
-| Baseline comparison | Six M4 downward conditions, 18 training records and 18 new evaluations after freezing. Per-command mean MAE **0.367°** versus image-plus-command ridge **0.605°**; this visual representation showed no benefit |
-| Lift prediction | With a manually pregrasped object and a fresh reference view, the M4 500ms-candidate model was trained/frozen on four new records and evaluated on two. Object-rise MAE was **2px**, tied with the command mean. Physical selection by this model remains at zero |
-| Close-to-lift integration | A new M1 model was frozen on four records at the current pose: two open and two close. This batch used seven physical commands, four for training and three for preparation. **Post-freeze evaluations, model-selected closes and connected close/lift trials are all zero.** Observation ambiguity and narrow model input support stopped the run |
+## From collection to bounded execution
 
-Current gripper-camera observation tracks features only within a registered view and seed-point contract. It does not establish general object perception, depth or contact detection. Pre-action inputs use visual state available at that time and planned commands; actual outputs and post-action sensors serve execution checks, labels and retrospective analysis. Different joints, poses and observation methods are not automatically combined.
+| Stage | Implemented path | Decision criteria |
+| --- | --- | --- |
+| **1. Collect** | A local Mac UI runs a finite pulse on one of M1–M5, recording and replaying images, commands, actual outputs and sensors | Distinguish requests from actual execution; preserve failures, interruptions and unstarted actions |
+| **2. Train** | Audit raw hashes, observation windows and output history, then train change predictors on data separated by joint, pose and view | Separate completed storage from training eligibility; check training/evaluation overlap |
+| **3. Predict** | Predict each candidate's final state or change from pre-action images and planned commands | Compare with command-mean and no-change baselines; freeze the model before evaluating new data |
+| **4. Execute within limits** | Check supported inputs, observation quality and stop state before executing an eligible candidate and observing again | Do not automatically resend failed or uncertain actions; hold the next step |
 
-An earlier, separate M4 650ms model selected one command for which a physical lift was observed. However, **3.08° of movement exceeded the 3° observational guard, so the original execution remains failed**. The object had been grasped manually; this is neither a result of the current 500ms model nor completed autonomous grasping.
+Prediction uses inputs available before execution. Actual outputs and post-action sensors are kept separate as labels, execution checks and retrospective evidence. Current learning is **supervised action-change prediction and candidate comparison**, rather than a reinforcement-learning policy. The first connection uses only the joints it needs, sequentially; approach poses and motion coverage come afterward.
 
-Representative evidence: [current close-to-lift attempt and stop (Korean)](docs/evidence/2026-11-08-close-lift-integration.md) · [M4 learning, lift observations and failures (Korean)](docs/m4-up-commissioning.md) · [18-record frozen evaluation and baselines (Korean)](docs/evidence/2026-11-04-m4-action-prediction.md) · [M2 single model-selected goal approach (Korean)](docs/evidence/2026-10-31-first-model-goal-approach.md). The [evidence index (Korean)](docs/README.md) retains earlier joint-specific and marker experiments under their own conditions.
+[Collection and replay (Korean)](docs/manual-data-collection.md) · [Learning design (Korean)](docs/visual-action-learning.md) · [Model selection and sequential execution (Korean)](docs/model-grasp-trial.md)
 
-## Architecture
+## Five tools for inspecting models and experiments
 
-```text
-External camera → Mac collection UI → image/command/output/sensor records
-                              │                          │
-                     bounded single-joint command   validation → training/evaluation
-                              ↓                          ↓
-STM32 sensing/teleoperation → ESP32 → 5 DC axes     candidate prediction comparison
-                              ↑
-                        AS5600: M4 angle
+The approximate virtual arm and actual experiment records provide complementary views. **RViz, Gazebo and MuJoCo cover robot models; Rerun and W&B cover observations, predictions and evaluation.**
 
-ESP32-CAM → gripper view / Raspberry Pi perception, dashboard and ROS2
-```
+| Tool | Connected content | What to inspect |
+| --- | --- | --- |
+| **RViz** | URDF appearance, joints, frames and virtual joint sliders | Link placement and joint changes |
+| **Gazebo** | A virtual arm converted from the shared URDF, with display-pose targets | Appearance and pose in a virtual scene |
+| **MuJoCo** | A conversion of the same arm with virtual position actuators | Model structure and virtual joint manipulation |
+| **Rerun** | External/gripper-camera recordings from saved frozen evaluation, with pre-action predictions and measurements | Before/after changes and prediction error per case |
+| **W&B** | Offline model/baseline metrics and selective web publishing of allowed metrics | Training/evaluation counts and method/case comparisons |
 
-ESP32 manages commands, outputs and stop state; the host handles collection, training and evaluation. Only M4 has an angle sensor; the other four axes lack position feedback. The existing physical ROS2 path was validated for operator-confirmed single M4 targets, not whole-arm trajectory tracking. Candidate comparison is not connected to automatic control of every joint.
+The virtual arm is an **approximation of appearance and static pose** informed by OWI-535 photos, assembly drawings and manual dimension readings. It has no live physical-pose connection, calibrated dynamics, arm-link collision or gripper-contact model; virtual training is deferred. Rerun replays saved evaluations, and W&B does not automatically publish every run.
+
+[Setup, viewers and validation scope (Korean)](docs/robot-visualization.md) · [Shared geometry and physical calibration (Korean)](docs/arm-calibration.md)
+
+## Representative results and current status
+
+These experiments use different joints, models and observation conditions. MAE (mean absolute error) averages the magnitude of prediction errors; lower is better. Image-plane angles, sensor angles and pixel errors are not combined into one accuracy measure.
+
+| Experiment | Observed result | Scope |
+| --- | --- | --- |
+| **M2 model-selected goal approach** | One command reduced image-plane goal error from **5.479° to 0.967°** | Three of four attempts that started recording stopped before actuation. A single same-day, same-view result; repeated grasping remains unvalidated |
+| **M4 downward prediction** | Six conditions, **18 training** records and **18 new post-freeze evaluations**. Per-command mean MAE **0.367°**; image-plus-command ridge **0.605°** | Adding this visual representation did not improve prediction |
+| **M4 lift prediction** | With a manually pregrasped object: **4 training** records and **2 post-freeze evaluations** for a 500ms-candidate model. Rise MAE **2px**, tied with command mean | **Zero** physical selections by this model. An earlier, separate 650ms model produced one observed lift, but execution failed the observational guard at **3.08° > 3°** |
+| **M1 close → M4 lift integration** | New M1 model frozen on **4 records**. **7 physical commands**: four training and three preparation | Stopped for ambiguous observation and unsupported model inputs. Post-freeze evaluations, model-selected closes and connected executions: **zero each** |
+
+[M2 goal approach (Korean)](docs/evidence/2026-10-31-first-model-goal-approach.md) · [M4 frozen evaluation (Korean)](docs/evidence/2026-11-04-m4-action-prediction.md) · [Lift models, observations and failures (Korean)](docs/m4-up-commissioning.md) · [Close-to-lift attempt and stop (Korean)](docs/evidence/2026-11-08-close-lift-integration.md)
+
+## Physical system
+
+ESP32 manages commands, outputs and stop state for five DC axes; the host handles collection, validation, training and evaluation. The system also connects STM32 sensing/teleoperation and Raspberry Pi perception, dashboard and ROS2 paths.
+
+- **Observation:** An external camera and an ESP32-CAM above the gripper. Current feature tracking is limited to registered views and reference points; general object recognition, depth and contact detection remain unvalidated.
+- **Feedback:** Only the M4 shoulder has an AS5600 angle sensor. The other four axes lack position feedback.
+- **Physical ROS2 path:** Operator-confirmed single M4 targets have been validated. Whole-arm trajectory tracking remains incomplete.
+
+[Hardware wiring](PIN_MAP.en.md) · [ROS2 hardware interface](ros2_ws/src/motionbrain_hardware_interface/README.en.md)
 
 ## Getting started
 
-Host checks use Python 3.12, `numpy`, `opencv-python-headless`, Node.js (CI: 22) and a C++ compiler. Optional PyTorch checks are skipped without their dependencies. Firmware builds require PlatformIO.
+Start with software checks and firmware builds without connecting a device. Host checks use Python 3.12, `numpy`, `opencv-python-headless`, Node.js (CI: 22) and a C++ compiler. Optional PyTorch checks are skipped without their dependencies; firmware builds require PlatformIO.
 
 ```sh
 python3 -m unittest discover -s tests
@@ -53,36 +76,38 @@ pio run -d firmware/esp32cam
 
 These commands test and build; they do not upload firmware or drive motors. Raw captures and model weights are not in the public repository, so reevaluating experiment scores requires those data.
 
-- **Collection, replay, datasets and training:** [manual collection guide (Korean)](docs/manual-data-collection.md), [learning goals and design (Korean)](docs/visual-action-learning.md)
-- **Bounded execution and observation contracts:** [relative-state prediction (Korean)](docs/relative-action-selection.md), [model-selected sequential trials (Korean)](docs/model-grasp-trial.md), [external-camera marker learning (Korean)](docs/projected-arm-learning.md)
-- **Installation, firmware, services and ROS2:** [operations](OPERATIONS.en.md), [wiring](PIN_MAP.en.md), [ROS2 hardware interface](ros2_ws/src/motionbrain_hardware_interface/README.en.md)
-- **Software checks:** [PlatformIO/Python CI](https://github.com/ParkJsoo/motionbrain/actions/workflows/platformio.yml), [ROS2 CI](https://github.com/ParkJsoo/motionbrain/actions/workflows/ros2.yml). Software checks are separate from physical performance.
+- **Collection and learning:** [Manual collection guide (Korean)](docs/manual-data-collection.md) for the UI, replay, datasets and training
+- **Model and evaluation viewers:** [Visualization guide (Korean)](docs/robot-visualization.md) for virtual-arm display and local evaluation replay
+- **Installation, services and physical execution:** [Operations](OPERATIONS.en.md) for execution conditions and stop verification
+- **Automated checks:** [PlatformIO/Python CI](https://github.com/ParkJsoo/motionbrain/actions/workflows/platformio.yml) · [ROS2 CI](https://github.com/ParkJsoo/motionbrain/actions/workflows/ros2.yml)
 
-Physical collection requires checking current connections, camera setup and movement clearance. Failed or uncertain actions are not automatically resent. Intermittent HTTP latency remains; the collection UI's abort request does not guarantee an immediate physical emergency stop. The collection guide specifies execution conditions and stop verification.
+Physical execution requires checking current connections, cameras and movement clearance. Intermittent HTTP latency remains, and the collection UI's abort request does not guarantee an immediate physical emergency stop. Follow the collection and operations guides for details. Passing software checks and validating physical performance are separate outcomes.
 
-## Whole-arm next steps
+## Calibration and next steps
 
-First establish reliable observation and supported M1 inputs at the current pose, then separately evaluate the frozen model and connect M1 closing, contact review and M4 lifting. Extend to the necessary approach joints and poses afterward.
+The immediate task is to establish reliable observation and supported M1 inputs at the current pose, then evaluate the frozen model and connect **model-selected closing → fresh contact review → M4 lifting**. Extend the necessary approach joints and poses afterward, evaluating repeated successes and failures.
 
-Kinematics will progressively constrain reachability and movement clearance. Whole-arm inverse-kinematics/dynamics control and a reinforcement-learning policy have not been introduced; current learning is supervised action-change prediction and candidate comparison. Contact/dynamics studies in Gazebo or MuJoCo follow geometry and actuator-response calibration; adopting a simulator is not a prerequisite for the first physical connection.
+Kinematic display uses positive upward pitch and a fixed `tool0` independent of jaw opening. Software checks compare FK, IK and URDF positions and orientations against shared geometry; precision physical geometry, joint-zero and camera-extrinsic calibration remain incomplete. The current approximate model is not used to establish collision clearance or permission for physical commands.
 
-RViz, Gazebo and MuJoCo display a photo/manual-informed approximation of the OWI-535 with virtual joints and simple mirrored jaws. The default scene hides diagnostic objects and coordinate axes; this is not precision CAD or a physically calibrated model. Rerun provides two-camera fixed-evaluation replay, and W&B supports offline metrics and selective web publishing. See [viewer setup and limits (Korean)](docs/robot-visualization.md). [Physical calibration (Korean)](docs/arm-calibration.md) uses shared geometry and derivative checks; manual readings cover shoulder height, shoulder-to-elbow-to-wrist lengths and the complete wrist-to-gripper-tip distance. Side-photo proportions also inform a static approximate display pose. An offline tool compares projected rotation in saved video against M4 sensor changes. An optional single-pulse collection path registers the first reference frame of each recording before motor commands. A static sensor/height observation can also generate a read-only coarse M4 reference-anchor candidate. It is not applied to control settings automatically; precision whole-arm joint-zero and camera-extrinsic calibration remain incomplete.
+An optional implemented path registers the first frame of each recording before motor commands and retrospectively audits raw records and output history. Static sensor/height observations also produced a coarse M4 reference candidate pairing a sensor reading of **192.83°** with an elevation of **approximately 56.44°**. The same photo gives approximately **59.44°**, leaving an approximately **3°** residual, and the candidate is disabled. This does not establish precision zero calibration or apply control settings.
+
+[Coordinate conventions and the role of kinematics (Korean)](docs/visual-action-learning.md#전체-팔에서-기구학동역학을-쓰는-방법) · [Calibration procedure and remaining work (Korean)](docs/arm-calibration.md)
 
 ## Code and documentation
 
 | Path | Role |
 | --- | --- |
-| `learning/`, `tools/` | Collection/replay, source validation, visual-state measurement, prediction/evaluation and candidate selection |
+| `learning/`, `tools/` | Collection/replay, source validation, visual measurement, prediction/evaluation, candidate selection and visualization |
 | `src/`, `firmware/` | ESP32 motor control, camera and STM32 firmware |
 | `ros2_ws/src/` | Messages, bridges, control guards, URDF and hardware interface |
-| [Portfolio](PORTFOLIO.en.md) | Problems addressed, design decisions, representative results and limits |
-| [Documentation and evidence index (Korean)](docs/README.md) | Guides and dated measurements |
+| [Portfolio](PORTFOLIO.en.md) | Problems addressed, design decisions and representative results |
+| [Documentation and evidence index (Korean)](docs/README.md) | Guides and dated measurement conditions, failures and denominators |
 
 ## Existing teleoperation demo
 
-![Wired teleoperation demo](https://raw.githubusercontent.com/ParkJsoo/motionbrain/demo-ready-20260608/docs/assets/demo/motionbrain-demo.gif)
+![2026-06-08 wired teleoperation demonstration](https://raw.githubusercontent.com/ParkJsoo/motionbrain/demo-ready-20260608/docs/assets/demo/motionbrain-demo.gif)
 
-[MP4](https://raw.githubusercontent.com/ParkJsoo/motionbrain/demo-ready-20260608/docs/assets/demo/motionbrain-demo.mp4) · Teleoperation at the fixed 2026-06-08 tag, not a grasping demonstration by the current learned model.
+[Watch MP4](https://raw.githubusercontent.com/ParkJsoo/motionbrain/demo-ready-20260608/docs/assets/demo/motionbrain-demo.mp4) · **Teleoperation at the fixed 2026-06-08 tag.** This is not an autonomous grasping demonstration by the current learned model.
 
 ## License
 

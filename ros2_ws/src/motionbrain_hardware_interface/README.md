@@ -2,11 +2,15 @@
 
 [English](README.en.md) · [운영 안내](../../../OPERATIONS.md)
 
-표시·mock·하드웨어 URDF의 팔 pitch축은 `−Y`이며 양의 값은 위쪽 상승각이다. 전체 팔 모델의 `tool0`는 집게 개방과 독립적인 고정 도구 기준이다. ROS pose의 pitch는 상승각의 음수다. 센서 보정값·출력 경로는 이 표시 정합성 수정으로 바뀌지 않으며 실물 보정은 별도 검증한다.
-
 `motionbrain_hardware_interface/MotionBrainHardwareInterface`는 `ros2_control`의 `SystemInterface` 플러그인이다. 전체 관절에 엔코더가 있다고 가정하지 않고, 추정 상태·M4 실측·실물 실행 제안을 구분한다.
 
 현재 [시각 행동 학습 계획](../../../docs/visual-action-learning.md)은 영상과 모터 명령의 결과를 학습하는 별도 연구 경로다. 이 플러그인이 새 시각 모델이나 센서 없는 축의 학습 제어를 이미 제공하는 것은 아니다. 아래 실물 쓰기 범위는 기존 M4 확인형 경로로 유지한다.
+
+## 좌표계와 보정
+
+표시·mock·하드웨어 URDF의 팔 pitch축은 `−Y`이며 양의 값은 위쪽 상승각이다. 전체 팔 모델의 `tool0`는 집게 개방과 독립적인 고정 도구 기준이다. ROS pose의 pitch는 상승각의 음수다. 센서 보정값·출력 경로는 이 표시 정합성 수정으로 바뀌지 않으며 실물 보정은 별도 검증한다.
+
+읽기 전용 [M4 근사 기준점 후보](../../../docs/arm-calibration.md#높이와-센서로-만드는-m4-근사-기준점)는 단일 자세의 높이·센서를 묶은 자료다. 정밀 영점·방향 검증을 대신하지 않으며, 이 문서의 피드백·목표 쓰기 설정에 자동 적용하지 않는다.
 
 ## 모드
 
@@ -61,8 +65,13 @@ ros2 launch motionbrain_hardware_interface m4_measured_state.launch.py \
 
 [2026-07-13 M4 단일 목표 실측](../../../docs/evidence/2026-07-13-m4-physical-ros2-control.md)은 이 경로의 제한된 검증 결과다. 나머지 네 축의 엔코더 기반 제어로 확대하지 않는다.
 
-![RViz 모델 예시](../../../docs/assets/motionbrain-rviz-robotmodel.png)
+<details>
+<summary>초기 URDF/RViz 표시 예시 — 과거 화면</summary>
 
-URDF/RViz 모델 표시 예시이며 실물 추종 정확도의 증거는 아니다.
+![초기 RViz 모델 예시](../../../docs/assets/motionbrain-rviz-robotmodel.png)
+
+초기 모델·좌표축 화면이다. 현재 외형·사진 근사 자세와 구분하며 실물 추종 정확도의 증거는 아니다.
+
+</details>
 
 [RViz·Gazebo·MuJoCo 로컬 화면](../../../docs/robot-visualization.md)은 별도의 가상 모델 경로다. 하드웨어 전송 모드를 시작하지 않으며, 실측 피드백·모터 제어 성과와 구분한다.

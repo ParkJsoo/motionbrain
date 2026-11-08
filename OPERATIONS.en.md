@@ -4,13 +4,17 @@
 
 These are general repository reproduction steps. Device addresses, credentials and joint calibration belong to each installation. Passing builds/tests does not upload firmware or actuate motors.
 
-Current goals and stages are described in the [visual action learning design (Korean)](docs/visual-action-learning.md), and the collection → dataset → training/evaluation workflow is documented in the [manual joint collection guide (Korean)](docs/manual-data-collection.md). Prediction inputs are pre-command images and planned commands; actual outputs and later sensor readings are reserved for evidence and targets. A learned loop that uses object/gripper relative state to align, close, and lift remains incomplete.
+## Choose an entry point
 
-The earlier M2 [action prediction experiment (Korean)](docs/evidence/2026-10-31-first-action-prediction.md) and [single goal-approach trial (Korean)](docs/evidence/2026-10-31-first-model-goal-approach.md) use a separate contract. Follow the [offline selector (Korean)](docs/offline-action-selection.md) for saved-data comparisons and the [visual action collector (Korean)](docs/visual-action-collection.md) for the scope and journal procedure of a finite physical trial. The general commands below do not execute an entire collection or autonomous-control workflow.
+| Task | Guide |
+| --- | --- |
+| Test and build firmware without devices | [Builds](#builds) |
+| Inspect virtual arms, saved evaluations and model metrics | [Five-tool setup (Korean)](docs/robot-visualization.md) |
+| Collect, replay and learn from physical actions | [Manual collection (Korean)](docs/manual-data-collection.md) · [Supervised collection (Korean)](docs/supervised-action-collection.md) |
+| Synchronize host/Pi sources and apply services | [Source synchronization](#source-synchronization-and-device-application) · [Pi services](#pi-service-configuration) |
+| Inspect dimensions, recording references and a coarse M4 anchor | [Physical calibration (Korean)](docs/arm-calibration.md) |
 
-[Finite output profiles (Korean)](docs/finite-output-profile.md) are enabled only in the separate `esp32dev_m2_finite_trial` build; default builds keep them disabled. Four-profile firmware upload and individual output checks were completed, but the new-view U4 trial on 2026-11-04 was rejected by measurement after output completed because post-window variation exceeded its threshold (one command, one completed output, zero eligible transitions). Earlier pre-ARM stops are also preserved. Read the conditions, denominators, and limitations alongside [stationary repeatability diagnostics (Korean)](docs/stationary-repeatability.md); completed output does not establish accurate motion or eligible training data.
-
-Use the [five-tool visualization guide (Korean)](docs/robot-visualization.md) for local robot-model and evaluation views. This separate path starts no physical-control nodes and distinguishes web publishing from private source data.
+Physical execution follows each collector's scope, journal and stop procedure. [Finite output profiles (Korean)](docs/finite-output-profile.md) belong to the separate `esp32dev_m2_finite_trial` build and remain disabled in default builds. Read the measurement conditions alongside [stationary repeatability (Korean)](docs/stationary-repeatability.md). Software checks, completed outputs and training-data eligibility are separate results.
 
 ## Builds
 

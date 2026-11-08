@@ -2,11 +2,15 @@
 
 [한국어](README.md) · [Operations](../../../OPERATIONS.en.md)
 
-Arm pitch axes are `−Y` in the display, mock, and hardware URDFs: positive values raise the arm. Full-arm models use a fixed `tool0` independent of jaw opening. ROS pose pitch is the negative of elevation. This display consistency change does not alter sensor calibration or output paths; physical calibration remains a separate check.
-
 `motionbrain_hardware_interface/MotionBrainHardwareInterface` is a `ros2_control` `SystemInterface` plugin. It separates estimated state, measured M4 feedback, and physical command proposals without assuming encoders on every joint.
 
 The current [visual action learning plan (Korean)](../../../docs/visual-action-learning.md) is a separate research path linking observations and motor-command outcomes. This plugin does not yet provide that visual model or learned control of joints without encoders. Physical writes below remain limited to the existing confirmed M4 path.
+
+## Coordinates and calibration
+
+Arm pitch axes are `−Y` in the display, mock, and hardware URDFs: positive values raise the arm. Full-arm models use a fixed `tool0` independent of jaw opening. ROS pose pitch is the negative of elevation. This display consistency change does not alter sensor calibration or output paths; physical calibration remains a separate check.
+
+The read-only [coarse M4 reference-anchor candidate (Korean)](../../../docs/arm-calibration.md#높이와-센서로-만드는-m4-근사-기준점) binds height and sensor readings in one pose. It does not replace precision zero/direction validation and is not automatically applied to this interface's feedback or target-write configuration.
 
 ## Modes
 
@@ -61,8 +65,13 @@ Physical output passes through the ESP32 state machine, `SafetyGate`, token auth
 
 The [2026-07-13 single-target M4 measurement](../../../docs/evidence/2026-07-13-m4-physical-ros2-control.en.md) is a limited validation of this path. It does not establish encoder-based control of the other four axes.
 
-![RViz model example](../../../docs/assets/motionbrain-rviz-robotmodel.png)
+<details>
+<summary>Early URDF/RViz display — historical view</summary>
 
-This URDF/RViz rendering is not evidence of physical tracking accuracy.
+![Early RViz model example](../../../docs/assets/motionbrain-rviz-robotmodel.png)
+
+This shows the early model and frames, distinct from the current appearance and photo-based approximate pose. It is not evidence of physical tracking accuracy.
+
+</details>
 
 The [local RViz/Gazebo/MuJoCo viewers (Korean)](../../../docs/robot-visualization.md) are a separate virtual-model path. They start no hardware transport modes and do not establish measured feedback or motor-control performance.
