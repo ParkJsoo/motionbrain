@@ -14,6 +14,7 @@ from learning.manual_collection import ManualCollection
 from learning.pipeline_collection import collect_once
 from learning.relative_action_learning import command_key
 from learning.supervised_collection import identifier
+from learning.grasp_observation import GripperObservationSource
 
 
 def verified_helper(plan):
@@ -40,9 +41,15 @@ def validate(path, expected=None):
     plan = json.loads(raw)
     fields = {'schemaVersion', 'helperPath', 'helperSha256', 'controllerUrl', 'deviceId',
               'viewId', 'sessionRoot', 'requestRoot', 'poseContext', 'command'}
-    if not isinstance(plan, dict) or set(plan) != fields or plan['schemaVersion'] != 'motionbrain.pipeline_collection_plan.v1':
+    if not isinstance(plan, dict) or set(plan) not in (fields, fields | {'gripper'}) or plan['schemaVersion'] != 'motionbrain.pipeline_collection_plan.v1':
         raise ValueError('explicit_collection_plan_required')
     command_key(plan['command'])
+    if 'gripper' in plan:
+        config = plan['gripper']
+        if not isinstance(config, dict) or set(config) != {'url', 'bootId'}:
+            raise ValueError('explicit_gripper_capture_configuration_required')
+        # Constructor validates origin/boot only; start/capture are never called here.
+        GripperObservationSource(config['url'], 'static-plan-check', config['bootId'], {}, None)
     if not isinstance(plan['deviceId'], str) or not plan['deviceId'].strip():
         raise ValueError('collection_device_identity_required')
     if not identifier(plan['viewId']):
@@ -77,9 +84,17 @@ def main(argv=None):
     try:
         manager.token = getpass.getpass('장치 인증값(메모리에서만 사용): ')
         recheck_plan(args.plan, digest, plan, manager)
+        factory = None
+        if 'gripper' in plan:
+            config = plan['gripper']
+            def factory(session_id, store):
+                scene = dict(physicalView='paired-gripper-raw', object='unregistered',
+                             poseRegime=plan['poseContext'], landmarks='unregistered_raw_capture')
+                return GripperObservationSource(config['url'], session_id, config['bootId'], scene,
+                                                store, max_captures=2, clock=manager.clock)
         report = collect_once(manager, args.request_id, plan['command'], plan['poseContext'],
                               onsite_confirmed=True, request_root=ROOT/plan['requestRoot'],
-                              approval_plan_sha256=digest)
+                              approval_plan_sha256=digest, gripper_source_factory=factory)
         print(json.dumps(report, ensure_ascii=False))
     finally:
         try:

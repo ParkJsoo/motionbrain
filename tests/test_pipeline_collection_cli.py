@@ -99,6 +99,14 @@ class CollectionCliTests(unittest.TestCase):
         self.assertEqual(manager.token,'')
         self.start.assert_not_called();self.pulse.assert_not_called()
 
+    def test_optional_paired_camera_is_static_checked_without_capture(self):
+        self.plan['gripper']={'url':'http://camera.invalid','bootId':'a'*32};self.save()
+        with patch.object(cli.GripperObservationSource,'capture',side_effect=AssertionError('camera access forbidden')):
+            with contextlib.redirect_stdout(io.StringIO()):cli.main(['--plan',str(self.path)])
+        self.auth.assert_not_called();self.assert_no_dispatch()
+        self.plan['gripper']['bootId']='wrong';self.save()
+        with self.assertRaisesRegex(ValueError,'boot_binding'):cli.validate(self.path)
+
     def test_non_tty_execution_never_requests_secret(self):
         with patch.object(cli.sys.stdin,'isatty',return_value=False),contextlib.redirect_stderr(io.StringIO()):
             with self.assertRaises(SystemExit):self.execute()

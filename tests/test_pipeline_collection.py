@@ -7,6 +7,10 @@ from unittest.mock import patch
 from learning.pipeline_collection import collect_once
 from learning.pipeline_observations import observe_transition
 from tests import test_manual_collection as fixture
+from tests.test_grasp_observation import Camera, BOOT, SCENE
+from learning.grasp_observation import GripperObservationSource
+from learning.manual_collection_dataset import sensor_window, POLICY
+from learning.gripper_camera_dataset import bind_gripper_pair
 
 
 class PipelineCollectionTests(unittest.TestCase):
@@ -100,6 +104,64 @@ class PipelineCollectionTests(unittest.TestCase):
             self.collect()
         self.assertIn('sync', events[:events.index('start')])
 
+    def paired_factory(self, *, before_error=False, after_error=False, delay=0.):
+        cameras = []
+        def factory(session_id, store):
+            camera = Camera(self.manager.clock); cameras.append(camera)
+            original = camera.open
+            def open_camera(request, timeout):
+                self.manager.clock.sleep(delay)
+                if before_error or (after_error and camera.calls):
+                    camera.error = TimeoutError('synthetic paired-camera failure')
+                return original(request, timeout)
+            camera.open = open_camera
+            return GripperObservationSource('http://camera.invalid',session_id,BOOT,SCENE,store,
+                clock=self.manager.clock,opener=camera,max_captures=2)
+        return factory,cameras
+
+    def test_paired_snapshots_keep_original_metadata_and_complete_raw_window(self):
+        factory,cameras=self.paired_factory(delay=5.)
+        report=self.collect(gripper_source_factory=factory)
+        self.assertEqual(report['status'],'recorded')
+        pair=report['gripperPair'];self.assertEqual(pair['status'],'recorded')
+        before=json.loads((Path(pair['path'])/'esp32-before.json').read_text())
+        after=json.loads((Path(pair['path'])/'esp32-after.json').read_text())
+        session=json.loads((Path(report['sessionPath'])/'session.json').read_text())
+        command=next(e for e in session['events'] if e['kind']=='command')
+        receipt=next(e['receipt'] for e in session['events'] if e['kind']=='result')
+        self.assertEqual(before['hostClockId'],session['sessionId'])
+        self.assertLessEqual(before['persistedAt'],command['at']-.1)
+        self.assertGreaterEqual(after['requestStartedAt'],receipt['offAt']+3.2)
+        self.assertGreaterEqual(session['endedAt'],receipt['offAt']+6.5)
+        self.assertGreaterEqual(session['endedAt'],after['persistedAt'])
+        self.assertGreater(after['persistedAt'],receipt['offAt']+6.5)
+        self.assertEqual(len(cameras[0].calls),2)
+        count=len(self.requests);self.assertEqual(self.collect(gripper_source_factory=factory),report)
+        self.assertEqual(len(cameras),1);self.assertEqual(len(self.requests),count)
+
+    def test_paired_pre_failure_never_dispatches_and_preserves_source(self):
+        factory,cameras=self.paired_factory(before_error=True)
+        report=self.collect(gripper_source_factory=factory)
+        self.assertEqual(report['status'],'failed');self.assertTrue(report['offVerified'])
+        self.assertEqual(report['gripperPair']['status'],'rejected')
+        session=json.loads((Path(report['sessionPath'])/'session.json').read_text())
+        self.assertFalse(any(e['kind']=='command' for e in session['events']))
+        self.assertEqual(len(cameras[0].calls),1)
+        self.assertIn('sourceSha256',report)
+
+    def test_paired_post_failure_does_not_fail_or_shorten_raw_recording(self):
+        factory,cameras=self.paired_factory(after_error=True,delay=1.)
+        report=self.collect(gripper_source_factory=factory)
+        self.assertEqual(report['status'],'recorded');self.assertTrue(report['offVerified'])
+        self.assertEqual(report['gripperPair']['status'],'rejected')
+        self.assertTrue(report['gripperPair']['reason'].startswith('after:'))
+        session=json.loads((Path(report['sessionPath'])/'session.json').read_text())
+        self.assertEqual(session['phase'],'completed')
+        receipt=next(e['receipt'] for e in session['events'] if e['kind']=='result')
+        self.assertGreaterEqual(session['endedAt'],receipt['offAt']+6.5)
+        self.assertEqual(len(cameras[0].calls),2)
+        self.assertTrue((Path(report['sessionPath'])/'gripper-camera/capture-0002/capture-failure.json').is_file())
+
     def test_no_onsite_confirmation_never_touches_device(self):
         with self.assertRaisesRegex(ValueError, 'onsite'):
             collect_once(self.manager, 'one', self.command, 'fixed', onsite_confirmed=False,
@@ -129,6 +191,47 @@ class PipelineCollectionTests(unittest.TestCase):
         count = len(self.requests)
         self.assertEqual(self.collect(), report)
         self.assertEqual(len(self.requests), count)
+
+    def check_windows_and_pair(self,report):
+        session=json.loads((Path(report['sessionPath'])/'session.json').read_text())
+        command=next(e for e in session['events'] if e['kind']=='command')
+        receipt=next(e['receipt'] for e in session['events'] if e['kind']=='result')
+        statuses=[e for e in session['events'] if e.get('path') in ('/status','/collection_status')]
+        before=sensor_window(statuses,[command['at']+x for x in POLICY['preSeconds']])
+        after=sensor_window(statuses,[receipt['offAt']+x for x in POLICY['postSeconds']])
+        self.assertGreaterEqual(len(before['samples']),3)
+        self.assertGreaterEqual(len(after['samples']),3)
+        pair=report['gripperPair'];pre=pair['before']
+        self.assertLessEqual(pre['persistedAt'],command['at']-3.5)
+        if pair['status']=='recorded':
+            self.assertGreaterEqual(pair['after']['sourceEarliest'],receipt['offAt']+6.5)
+            row=dict(sessionId=session['sessionId'],inputs={'image':{'frameId':'external-before'}},
+                targets={'image':{'frameId':'external-after'}},evidence=dict(commandAt=command['at'],
+                offReceiptAt=receipt['offAt'],cameraHostBounds=[self.manager.started,session['endedAt']],
+                cameraIdentity={'viewId':'synthetic-external'}))
+            bound=bind_gripper_pair(row,Path(pair['path']))
+            self.assertEqual(bound['evidence']['cameraIdentity']['camera'],'gripper')
+        self.assertEqual(session['phase'],'completed')
+        self.assertGreaterEqual(session['endedAt'],receipt['offAt']+6.5)
+        return len(before['samples']),len(after['samples'])
+
+    def test_M4_slow_paired_cameras_preserve_both_fixed_sensor_windows(self):
+        self.command=dict(joint='shoulder',direction='down',percent=25,durationMs=350)
+        factory,cameras=self.paired_factory(delay=5.)
+        report=self.collect(gripper_source_factory=factory)
+        self.assertEqual(report['status'],'recorded');self.assertEqual(report['gripperPair']['status'],'recorded')
+        counts=self.check_windows_and_pair(report)
+        self.assertEqual(len(cameras[0].calls),2)
+        self.assertEqual(counts, (4, 5))
+
+    def test_M4_slow_post_failure_preserves_sensor_windows_and_raw_recording(self):
+        self.command=dict(joint='shoulder',direction='down',percent=25,durationMs=350)
+        factory,cameras=self.paired_factory(after_error=True,delay=5.)
+        report=self.collect(gripper_source_factory=factory)
+        self.assertEqual(report['status'],'recorded');self.assertEqual(report['gripperPair']['status'],'rejected')
+        counts=self.check_windows_and_pair(report)
+        self.assertEqual(len(cameras[0].calls),2)
+        self.assertEqual(counts, (4, 5))
 
 
 if __name__ == '__main__':
