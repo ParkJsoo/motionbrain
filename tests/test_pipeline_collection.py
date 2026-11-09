@@ -1,10 +1,12 @@
 """실제 ManualCollection/SequencePort + 가짜 장치로 수집 수명주기를 검증한다."""
 import json
+import hashlib
 from pathlib import Path
 import unittest
 from unittest.mock import patch
 
 from learning.pipeline_collection import collect_once
+from learning.experiment_pipeline import encoded
 from learning.pipeline_observations import observe_transition
 from tests import test_manual_collection as fixture
 from tests.test_grasp_observation import Camera, BOOT, SCENE
@@ -232,6 +234,61 @@ class PipelineCollectionTests(unittest.TestCase):
         counts=self.check_windows_and_pair(report)
         self.assertEqual(len(cameras[0].calls),2)
         self.assertEqual(counts, (4, 5))
+
+    def test_before_command_saves_prospective_evidence_without_changing_command(self):
+        factory, _ = self.paired_factory()
+        evidence = self.fixture.root/'prospective.json'
+        def review(manager, pair):
+            self.assertIs(manager, self.manager)
+            self.assertEqual(self.runs(), [])
+            self.assertNotIn('after', pair)
+            self.assertGreaterEqual(manager.clock.monotonic()-pair['before']['persistedAt'], 3.5)
+            evidence.write_text(json.dumps({'at': manager.clock.monotonic(), 'pair': pair}))
+            pair['status'] = 'caller_mutation'
+            self.command['percent'] = 30
+            return dict(joint='gripper', direction='open', percent=30, durationMs=350)
+        report = self.collect(gripper_source_factory=factory, before_command=review)
+        self.assertEqual(report['status'], 'recorded')
+        self.assertTrue(report['request']['beforeCommandReview'])
+        self.assertEqual(report['gripperPair']['status'], 'recorded')
+        session = json.loads((Path(report['sessionPath'])/'session.json').read_text())
+        command = next(e for e in session['events'] if e['kind'] == 'command')
+        self.assertLessEqual(json.loads(evidence.read_text())['at'], command['at'])
+        self.assertEqual(command['pulse']['percent'], 40)
+        self.assertEqual(command['pulse']['direction'], 'close')
+        with self.assertRaisesRegex(ValueError, 'payload_changed'):
+            self.collect(command=dict(joint='gripper', direction='close', percent=40, durationMs=350))
+
+    def test_legacy_request_without_hook_flag_is_returned_without_device_access(self):
+        self.root.mkdir()
+        request = dict(requestId='one', command=self.command, poseContext='fixed-current-view',
+                       preSeconds=3.5, postSeconds=6.5, deviceId=self.manager.device_id,
+                       viewId=self.manager.view_id, controllerUrl=self.manager.controller_url)
+        saved = dict(requestSha256=hashlib.sha256(encoded(request)).hexdigest(),
+                     request=request, status='reserved', mayHaveRun=True, automaticRetry=False)
+        path = self.root/'one.json'
+        for status in ('reserved', 'recorded'):
+            saved['status'] = status
+            path.write_text(json.dumps(saved))
+            self.assertEqual(self.collect(), saved)
+            self.assertEqual(self.requests, [])
+
+    def test_before_command_failure_preserves_raw_and_never_dispatches(self):
+        with self.assertRaisesRegex(ValueError, 'before_command_callback_required'):
+            self.collect(before_command=False)
+        self.assertEqual(self.requests, [])
+        def reject(manager, pair):
+            raise ValueError('synthetic_prospective_rejection')
+        report = self.collect(before_command=reject)
+        self.assertEqual(report['status'], 'failed')
+        self.assertTrue(report['offVerified'])
+        self.assertEqual(self.runs(), [])
+        self.assertIn('synthetic_prospective_rejection', report['reason'])
+        self.assertTrue((Path(report['sessionPath'])/'session.json').is_file())
+        self.assertEqual(len(report['sourceSha256']), 64)
+        count = len(self.requests)
+        self.assertEqual(self.collect(before_command=reject), report)
+        self.assertEqual(len(self.requests), count)
 
 
 if __name__ == '__main__':

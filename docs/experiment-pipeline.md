@@ -77,6 +77,12 @@ OFF 후 6.5초 동안 센서와 외부 영상을 수집한 다음 사후 사진�
 두 카메라의 노출 동기화를 증명하는 것은 아니다. 관측 manifest에는 해당
 `gripper-pair/`의 asset 루트 상대 경로를 `observer.gripperPairRoot`로 지정한다.
 
+Python API의 선택적 `before_command(manager, gripper_pair)`는 사전 수집 구간이
+끝난 뒤 실제 명령 직전에 호출한다. 관측·고정 모델·예측의 해시와 시각을 먼저
+저장하는 용도이며, 반환값으로 예약된 명령을 바꾸지 않는다. 예외가 발생하면
+구동 전에 중단하고 원본·요청 결과를 보존한다. 콜백 사용 여부도 요청 해시에
+결합하며, 기존 콜백 없는 요청의 중복 조회 형식은 유지한다.
+
 ## 원본 재처리
 
 `tools/run_learning_pipeline.py`에 manifest 하나와 비공개 출력 경로를 준다.

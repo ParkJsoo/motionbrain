@@ -18,7 +18,7 @@ from learning.artifacts import ArtifactStore, _read
 
 def collect_once(manager, request_id, command, pose_context, *, onsite_confirmed,
                  request_root, pre_seconds=3.5, post_seconds=6.5, approval_plan_sha256=None,
-                 gripper_source_factory=None):
+                 gripper_source_factory=None, before_command=None):
     """명시적 요청당 최대 한 번 pulse한다. 오류·부분 수집·중복은 자동 재전송하지 않는다.
 
     수동 자료 수집용이며 모델 선택 제어기가 아니다. 요청 ID는 호출자가 지정한다.
@@ -28,6 +28,8 @@ def collect_once(manager, request_id, command, pose_context, *, onsite_confirmed
         raise ValueError('explicit_safe_request_id_required')
     if gripper_source_factory is not None and not callable(gripper_source_factory):
         raise ValueError('gripper_source_factory_required')
+    if before_command is not None and not callable(before_command):
+        raise ValueError('before_command_callback_required')
     command = copy.deepcopy(command)
     command_key(command)
     if not isinstance(pose_context, str) or not 1 <= len(pose_context.strip()) <= 500:
@@ -45,6 +47,8 @@ def collect_once(manager, request_id, command, pose_context, *, onsite_confirmed
                'preSeconds': pre_seconds, 'postSeconds': post_seconds,
                'deviceId': manager.device_id, 'viewId': manager.view_id,
                'controllerUrl': manager.controller_url}
+    if before_command is not None:
+        request['beforeCommandReview'] = True
     if approval_plan_sha256 is not None:
         request['approvalPlanSha256'] = approval_plan_sha256
     if gripper_source_factory is not None:
@@ -122,6 +126,8 @@ def collect_once(manager, request_id, command, pose_context, *, onsite_confirmed
                 report['gripperPair'].update(status='rejected', reason='before:'+type(exc).__name__+':'+str(exc))
                 raise
         wait_until(manager.clock.monotonic()+pre_seconds)
+        if before_command is not None:
+            before_command(manager, copy.deepcopy(report['gripperPair']))
         manager.pulse(command)
         receipt = [e['receipt'] for e in manager.current['events'] if e.get('kind') == 'result'][-1]
         wait_until(receipt['offAt']+post_seconds)
