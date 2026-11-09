@@ -10,6 +10,7 @@ These are general repository reproduction steps. Device addresses, credentials a
 | --- | --- |
 | Test and build firmware without devices | [Builds](#builds) |
 | Inspect virtual arms, saved evaluations and model metrics | [Five-tool setup (Korean)](docs/robot-visualization.md) |
+| Reprocess single-action sources, train by context and evaluate frozen models | [Repeatable experiment pipeline (Korean)](docs/experiment-pipeline.md) |
 | Preview two cameras, landmarks and the measured M4 angle live | [Read-only Rerun preview (Korean)](docs/live-observation.md) |
 | Collect, replay and learn from physical actions | [Manual collection (Korean)](docs/manual-data-collection.md) · [Supervised collection (Korean)](docs/supervised-action-collection.md) |
 | Synchronize host/Pi sources and apply services | [Source synchronization](#source-synchronization-and-device-application) · [Pi services](#pi-service-configuration) |
@@ -165,10 +166,12 @@ Run software verification with `python3 -m unittest discover -s tests`. Browser 
 
 ## Supervised collection
 
-The [manual joint data collection console (Korean)](docs/manual-data-collection.md) runs on the Mac and records/replays video, commands, actual outputs, and sensors for one selected joint among M1–M5. M4 permits downward motion only, and starting the server does not start capture or motion. Automated dataset conversion and sensor-delta learning currently target M4. Selecting every joint does not imply completed measurement or learning for every joint.
+The [manual joint data collection console (Korean)](docs/manual-data-collection.md) runs on the Mac and records/replays video, commands, actual outputs, and sensors for one selected joint among M1–M5. M4 permits downward motion only, and starting the server does not start capture or motion. This UI's automated sensor-label conversion and delta learning target M4. Selecting every joint does not imply completed measurement or learning for every joint.
 
 Initial read-only checks use bounded startup budgets; a same-server failure before capture or writes may be resolved through the authenticated read-only recovery API. Follow the guide for exact conditions and limits. Recovery preserves the failed record and sends no motion/stop commands; it was checked on a physical startup failure, not as a general cure for HTTP failures.
 
 Models were fixed using 18 M4 downward records across six conditions, then evaluated without refitting on 18 later records. MAE was **0.367°** for the per-command mean, **0.595°** for command-only ridge, and **0.605°** for image-and-command ridge. The coarse image representation provided no demonstrated added predictive value. These are sequential same-day poses after a conditional restart. The four pre-motion stopped batches before the successful 18-record batch, plus initial failures and excluded records, are preserved in the [measurement and evaluation record (Korean)](docs/evidence/2026-11-04-m4-action-prediction.md). Independent generalization, repeated control, and learned-policy grasping remain unverified. Offline candidate comparison accepts a target sensor delta but does not generate an object-approach target automatically.
+
+M1 shaft observation, one-dimensional model collection/evaluation and manual contact probes use the separate [experiment pipeline (Korean)](docs/experiment-pipeline.md). Raw collection and observation/training eligibility remain distinct; selecting a joint in the UI or finishing collection does not validate object contact or grasping.
 
 The earlier [single-joint collection blocks and offline measurement path (Korean)](docs/supervised-action-collection.md) executed and measured 17 of 23 planned M2 actions on 2026-11-03; communication/response failures left six unexecuted before RUN. Those development samples use a settled-endpoint contract and are not automatically mixed with the M4 data above, the older 32 M2 samples, or finite-profile data. New physical execution requires current connection/clearance checks and onsite supervision.

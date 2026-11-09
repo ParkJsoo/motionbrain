@@ -42,7 +42,7 @@ docker compose -f tools/visualization/compose.yaml up -d
 
 일부 RViz 버전은 [한 링크의 여러 visual에 첫 재질을 공유하는 문제](https://github.com/ros2/rviz/issues/1293)가 있다. RViz 입력만 색별 고정 표시 링크로 나누어 색을 보존한다. 원래 관절·도구 프레임과 모든 형상의 위치는 그대로이며 추가 `rviz_visual_*` 프레임은 외형 표시용이다. 이 파생물은 MuJoCo·Gazebo 물리 모델 생성에 사용하지 않는다.
 
-세 Viewer의 보기용 관절 목표는 [`display-pose.json`](../tools/visualization/display-pose.json)에 둔다. 현재는 기존 치수와 측면 사진에서 추정한 어깨 63°·팔꿈치 −109°·손목 32°의 정적 근사이며, yaw와 집게 각도는 가정이다. 접힌 자세를 재현하는 표시용 팔꿈치 범위와 실물 제어 범위의 차이는 [사진 근사 절차](arm-calibration.md#사진과-기존-치수로-근사-자세-맞추기)를 참고한다. 실물 현재 자세를 센서로 읽어 표시하는 것이 아니다. 표시용 팔에는 중력을 보상한다(MuJoCo body `gravcomp=1`, Gazebo robot link `gravity=false`)고 지정하되 실제 엔진의 지원 여부와 별개로 물리 보정은 미완료다. Gazebo는 속도 명령과 표시 전용 effort 한도 10을 사용하는 임시 위치 추종기로 목표를 유지한다. 소스 URDF의 effort 계약은 바꾸지 않는다. 이는 실물 PWM·토크·하중 반응이 아니며 동역학 식별에는 사용할 수 없다. 선택적 시험 물체의 중력은 유지한다. 노랑·검정 부품이 구분되도록 배경·조명을 조정하고, 측면 사진과 비교하기 쉽게 기본 시점을 맞췄다.
+세 Viewer의 보기용 관절 목표는 [`display-pose.json`](../tools/visualization/display-pose.json)에 둔다. 현재는 기존 치수와 측면 사진에서 추정한 어깨 63°·팔꿈치 −109°·손목 32°의 정적 근사이며, yaw와 집게 각도는 가정이다. 접힌 자세를 재현하는 표시용 팔꿈치 범위와 실물 제어 범위의 차이는 [사진 근사 절차](arm-calibration.md#사진과-기존-치수로-근사-자세-맞추기)를 참고한다. 이 기본 파일 자체가 실물 센서를 읽지는 않으며, 아래의 명시적 갱신 경로로 마지막 M4 실측값을 반영할 수 있다. 표시용 팔에는 중력을 보상한다(MuJoCo body `gravcomp=1`, Gazebo robot link `gravity=false`)고 지정하되 실제 엔진의 지원 여부와 별개로 물리 보정은 미완료다. Gazebo는 속도 명령과 표시 전용 effort 한도 10을 사용하는 임시 위치 추종기로 목표를 유지한다. 소스 URDF의 effort 계약은 바꾸지 않는다. 이는 실물 PWM·토크·하중 반응이 아니며 동역학 식별에는 사용할 수 없다. 선택적 시험 물체의 중력은 유지한다. 노랑·검정 부품이 구분되도록 배경·조명을 조정하고, 측면 사진과 비교하기 쉽게 기본 시점을 맞췄다.
 
 두 집게는 하나의 개방 입력을 반대 방향으로 따르는 단순 회전 연동이다. ROS는 URDF mimic, MuJoCo는 joint equality, Gazebo Harmonic은 설치된 Bullet Featherstone의 mimic constraint를 사용한다. 실제 집게의 다절 링크·개구폭·접촉·마찰 모델을 식별한 것은 아니다. 외형 개수로 임시 질량이 늘지 않도록 링크별 질량·관성을 한 번만 지정한다.
 
@@ -60,9 +60,21 @@ python tools/visualization/update_pose.py \
 
 초록 상자는 독립 낙하 진단 물체였으며 기본 화면에는 없다. 필요하면 `prepare.py --models-only --physics-test-object --output .local/physics-diagnostic`처럼 별도로 생성한다. 그 물체의 낙하·바닥 접촉은 로봇의 집기 성공을 뜻하지 않는다.
 
+## 수집 파일 추종과 M1 평가 표시
+
+수집기가 저장한 외부 영상 파일을 따라 표시하는 경로는 추가 카메라 요청 없이
+동작한다. 저장 중·수신 지연·수집 종료 후 마지막 기록을 구분하며, 광학 노출에
+동기화된 실시간 영상이나 실물 관절 추종을 뜻하지 않는다.
+
+M1 턱축 모델의 전용 표시기는 원본·사전 예측·고정 모델과 평가 분모를 검증해
+Rerun으로 보낸다. 아래 500ms 들기 평가 어댑터와는 다른 관측 계약이다.
+두 경로의 명령 예시와 검증은 [실험 파이프라인](experiment-pipeline.md#다섯-도구의-역할)을
+따르고, M1 전용 표시기는 [고정 후 평가 절](experiment-pipeline.md#m1-shaft-전용-수집고정-후-평가)을
+참고한다. 여러 화면의 같은 원본을 새 평가 표본으로 세지 않는다.
+
 ## 실제 고정 평가의 재생과 비교
 
-공개 저장소에는 비공개 원본 영상이 없다. 현재 어댑터는 `motionbrain.fixed_scene_lift.short500.v1` 형식의 모델과 평가 원본을 지원한다. 다른 관측 계약이나 M1 원호 모델을 자동 혼합하지 않는다. `EXPERIMENT_DIR`에는 해당 형식의 로컬 원본 폴더를 직접 지정한다.
+공개 저장소에는 비공개 원본 영상이 없다. 이 절의 어댑터는 `motionbrain.fixed_scene_lift.short500.v1` 형식의 모델과 평가 원본을 지원한다. 다른 관측 계약이나 M1 원호 모델을 자동 혼합하지 않는다. `EXPERIMENT_DIR`에는 해당 형식의 로컬 원본 폴더를 직접 지정한다.
 
 ```bash
 .local/venvs/visual-tools/bin/python tools/visualization/prepare.py \

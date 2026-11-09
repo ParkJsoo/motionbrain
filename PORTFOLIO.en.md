@@ -33,6 +33,7 @@ A finite single action is therefore checked through this chain:
 
 - Uncertain commands are not automatically resent. Unstarted, interrupted and failed attempts retain their original denominators.
 - Source hashes, observation windows, output OFF and an empty queue are checked. File integrity and observation validity remain separate decisions.
+- Storage, training and execution eligibility are separate. Successfully saved sources can still lack usable observations; valid training records still require separate model-support and execution checks.
 - Prediction inputs contain only planned commands and pre-action images. Actual outputs and post-action sensors are execution evidence and labels. PWM history is a software record, not an electrical waveform measurement.
 
 HTTP faults were instrumented across lookup, connection, headers and body. A 100ms first-byte wait was distinguished from body reassembly exceeding 0.8s, then waits and response size were adjusted. Intermittent latency remains rather than being concealed by retries.
@@ -71,19 +72,23 @@ Of four attempts that started capture, the preceding three **stopped before moti
 
 [Prediction evaluation (Korean)](docs/evidence/2026-10-31-first-action-prediction.md) · [Goal approach and aborted-attempt denominator (Korean)](docs/evidence/2026-10-31-first-model-goal-approach.md) · [Selector hold/abstain contract (Korean)](docs/offline-action-selection.md)
 
-### Observation and model support blocked close-to-lift integration
+### Separating measured quantities and execution outcomes exposed the close-to-lift bottleneck
 
 The current connector is **model-selected M1 close → fresh contact observation → model-selected M4 lift**. With other joints fixed, it separately checks the close result, output OFF, dual-camera contact evidence and M4 input conditions. Failed or uncertain results block the next action.
 
-When the current pose fell outside the earlier M1 model's support, a separate observation contract used fixed-view object arcs and jaw patches. A new model was frozen on **four records: two open and two close**. An original after-observation failure remained a failure while its sources were re-audited under the new contract. Three subsequent preparation opens still left ambiguous correspondences and unsupported inputs. A high best-match score was insufficient if it could not be distinguished from a competing match.
+Ambiguous object/jaw-tip patches and inputs outside training support blocked further actions. Execution evidence was separated from observation contracts so that sources could be processed again. A separate M1 contract measures shaft separation at a fixed image cross-section, with **a distinct one-dimensional transition format and model**. Missing object-relative XY values are not fabricated, and uncertain shaft measurements remain explicitly rejected. Image cross-section separation is distinct from physical jaw-tip position, object contact and grasp force.
 
-This batch therefore contains **seven physical commands: four for training and three for preparation; zero post-freeze evaluations, zero model-selected closes and zero connected lifts**. Observation thresholds were not lowered to force acceptance, and rejected approximations did not expand model support. The lesson is to establish **reliable observation of the current pose and its relation to the training range** before increasing execution count.
+V1 and the augmented V2 were each frozen before evaluating one new close. On the latest case, V2 ridge shaft-prediction error was **0.18px**, versus **0.03px** for the command mean. Comparing V1 and V2 on that same latest case also failed to establish model improvement. V2 explicitly incorporated the earlier V1 evaluation record into training; that record was not counted again as independent V2 evaluation. Support bounds are preserved, and insufficient observations, unstarted attempts and failures are neither deleted nor accepted by lowering thresholds.
+
+A separate **manual contact test** left the object on the table and failed to retain and lift it. The final M4 probe exceeded its stopping criterion and remained failed, with output OFF verified. The contributions of alignment, contact, friction and force were not isolated. These tests are excluded from model-selected execution results. Shaft-transition prediction and physical contact/retention require separate evidence.
+
+[Shaft-model evaluations and manual contact-test conditions and denominators (Korean)](docs/evidence/2026-11-09-shaft-evaluation-and-contact-probe.md) · [Earlier patch-contract training, preparation and observation-abort records (Korean)](docs/evidence/2026-11-08-close-lift-integration.md) · [Repeatable collection, observation and evaluation structure (Korean)](docs/experiment-pipeline.md)
 
 M4 lifting likewise separates observations from execution verdicts.
 
 | Separate M4 experiment | Observed result and remaining condition |
 | --- | --- |
-| New model with a 500ms candidate | Manually pregrasped object and fresh reference view; four training records and two frozen evaluations. Rise-prediction MAE was 2px, tied with the 2px command mean. Nine commands including three returns ended normally, but this model has selected zero physical executions |
+| 500ms-candidate model from 2026-11-07 | Manually pregrasped object and fresh reference view; four training records and two frozen evaluations. Rise-prediction MAE was 2px, tied with the 2px command mean. Nine commands including three returns ended normally, but this model has selected zero physical executions |
 | Earlier model with a 650ms candidate | Selected up at 50% for 650ms from two candidates. Two cameras observed one lift, but 3.08° of movement exceeded the 3° guard and execution remained failed |
 
 Lifting a manually pregrasped object is not a successful automatic align/close/lift sequence. Visual jaw landmarks and object centers are also not ground truth for depth, contact force or collision clearance.
@@ -96,9 +101,7 @@ Lifting a manually pregrasped object is not a successful automatic align/close/l
 
 If FK, URDF and simulator dimensions change independently, viewers can agree while disagreeing with the physical arm. A [shared geometry source](ros2_ws/src/motionbrain_ros_bridge/motionbrain_ros_bridge/arm_geometry.json) records values, measurement methods, uncertainty and evidence hashes. FK defaults are checked against five whole-arm/M4 URDFs. Generating candidate models from a profile does not automatically alter control settings.
 
-Manual readings supplied a 70mm shoulder height, 90mm shoulder-to-elbow length and approximately 110mm elbow-to-wrist length. The 110mm wrist-to-gripper-tip reading at the measured opening is approximated as a fixed virtual `tool0` length and divided internally into 45+65mm. The intermediate 45mm is not added again; the moving physical fingertip and fixed `tool0` remain distinct. Appearance was constructed from assembly drawings and photographs. Joint-center dimensions, estimated case geometry and uncalibrated camera frames remain distinct.
-
-Stationary height and sensor readings were also compared. An elbow-axis height of **145mm** and existing dimensions imply a shoulder elevation of **approximately 56.44°**, paired with a **192.83°** sensor report from the same stationary interval. The photograph's projected angle was **approximately 59.44°**, leaving about a 3° residual. A coarse single-pose reading was not used to erase that residual or reapply the sensor mounting offset. The candidate is **read-only, `enabled=false`, `controlEligible=false`**, and has not been applied to control.
+Manual measurements, assembly drawings and photographs informed the geometry, while joint-center dimensions remained distinct from estimated appearance. The physical fingertip moves with gripper opening and is not treated as the fixed virtual `tool0`. Comparing dimensions, sensors and photographs at one stationary pose left an **approximately 3° residual**, so the candidate was not adopted as a control correction. Viewer consistency remains distinct from physical measurement accuracy; the [measurement, approximation and calibration-candidate conditions (Korean)](docs/arm-calibration.md) retain the detailed evidence.
 
 ### Giving each tool a specific question
 
@@ -109,6 +112,8 @@ Stationary height and sensor readings were also compared. An elbow-axis height o
 | What was predicted, and what was observed? | Saved dual-camera images, prospective predictions and measurements in Rerun | Replay order is not a synchronized real-time camera/controller clock |
 | Does the model improve on baselines? | Offline W&B metrics and selective publication of allowed metrics | Comparison uses two actual frozen evaluations; raw images and device information are excluded from publication |
 
+MuJoCo, Gazebo and RViz statically reflect the last measured M4 pose while distinguishing assumptions about other joints. Rerun distinguishes saved replay from following collected files; file following makes no additional camera requests and does not imply real-time joint tracking.
+
 The connection supports **frames → observations → predictions → measurements → baselines** using shared evidence. Preparation verifies source/model hashes and observation contracts, then recomputes denominators and errors. Showing the same records in several viewers does not create new evaluation samples.
 
 FK/IK/URDF position and orientation, plus `tool0` after MuJoCo conversion, are compared in software. GUI display and actual Rerun/W&B SDK records are checked separately. These checks do not establish a real-time digital twin, calibrated dynamics, simulation-trained policies or physical grasping performance.
@@ -117,7 +122,7 @@ FK/IK/URDF position and orientation, plus `tool0` after MuJoCo conversion, are c
 
 ## Remaining validation and next decisions
 
-The next physical task is reliable observation and supported M1 inputs at the current pose, followed by separate validation of **new frozen evaluation → model-selected close → fresh contact/support confirmation → model-selected M4 lift**. Necessary approach joints and poses will be expanded sequentially, with repeated results retaining aborts, failures and human intervention.
+The remaining question is whether observation and model selection can connect shaft prediction to physical jaw-tip/object alignment, contact and retention. Independent frozen evaluation remains distinct from model-selected close/lift performance. Necessary approach joints and poses will be expanded while repeated results retain aborts, failures and human intervention.
 
 Current learning is supervised transition prediction and candidate comparison. Whole-arm inverse-kinematics/dynamics control, reinforcement-learning policies, whole-arm position/force feedback and cross-environment generalization remain unverified. Kinematics will support reachability and clearance decisions after multi-pose calibration; dynamics and contact models require separate identification and validation.
 
