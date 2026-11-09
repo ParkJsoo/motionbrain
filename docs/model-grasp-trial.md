@@ -83,6 +83,10 @@ M4 접근처럼 다른 축을 고정한 제한 시험에는 선택 사항인 `ja
 
 ## 닫기와 집기 확인
 
+M4만 움직이고 집게와 다른 관절을 고정하는 구도에서는 `registered_rigid_scene_landmarks.py`의 별도 강체 관측 계약을 사용할 수 있다. 기존 영상 계측기의 정방향·역방향 광류, 강체 적합, 두 고정 배경 검사를 그대로 사용하며 물체는 기존 NCC 품질 조건으로 확인한다. 보이는 강체 특징으로 턱끝 기준점을 옮기므로 가림과 반복 무늬를 피할 수 있지만 M1 개폐에 사용하지 않는다. 새 method와 계약 해시는 기존 패치 계약과 구분되며, 실패한 원본의 재주석은 새 모델의 개발 자료로만 사용한다.
+
+패치 대응 방식에서도 명시적인 `trackingAnchors`를 등록하면 같은 강체의 보이는 패치를 사용하면서 기준점은 패치 밖에 둘 수 있다. 강체 대응 여부는 분석가가 확인하고, 영상 회전은 계속 해당 기준점 중심으로 처리한다. 기존 품질 하한을 낮추거나 실제 접촉·관절각 보정을 뜻하지 않는다.
+
 닫기 진입에는 현재 프레임에 묶인 `closeEntryEvidence`가 필요하다. 필드는 `frameId`, `pixelSha256`, `method=onsite_observation`, `objectBetweenJawsVerified`, `depthVerified`, `clearanceVerified`, `evidenceFile`, `evidenceSha256`다. 세 확인값은 모두 `true`여야 하며, 물체 중심이나 턱 간격만으로 만들지 않는다.
 
 `held` 결과에는 `method=analyst_retention_review`, `contactVerified`, `retentionVerified`, `supportDistinguished`, 두 개 이상의 시간순 `observations`, `evidenceFile`, `evidenceSha256`가 필요하다. 처음과 마지막 관측의 간격이 지정된 보유 확인 기간 이상이어야 하며 마지막 관측은 최신이어야 한다. 바닥에 놓인 물체와 실제 집게에 유지되는 물체를 구분하지 못하면 `unknown`이다. 닫기를 추가 반복해 목표 턱 간격을 억지로 맞추지 않는다.

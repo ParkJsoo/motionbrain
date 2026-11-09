@@ -60,6 +60,24 @@ class RegisteredSceneLandmarksTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'contract_changed'):
             RegisteredSceneLandmarks(self.reg, encoded(altered))
 
+    def test_explicit_rigid_tracking_anchor_can_leave_target_point_outside_patch(self):
+        p = copy.deepcopy(self.p)
+        p['trackingAnchors'] = copy.deepcopy(self.points)
+        target = copy.deepcopy(self.points)
+        target['jawLeft'] = [40, 105]
+        reg = register(self.raw, target, p, self.context)
+        tracker = RegisteredSceneLandmarks(reg, self.raw)
+        shifted = self.moved(dict(jawLeft=[5, -4]))
+        result = tracker.observe(shifted, 'visible-shaft-occluded-tip')
+        np.testing.assert_allclose(result['annotation']['points']['jawLeft'], [45, 101], atol=.05)
+        altered = copy.deepcopy(reg)
+        altered['parameters']['trackingAnchors']['jawLeft'][0] += 1
+        with self.assertRaisesRegex(ValueError, 'contract_changed'):
+            RegisteredSceneLandmarks(altered, self.raw)
+        p['trackingAnchors']['jawLeft'] = [0, 0]
+        with self.assertRaisesRegex(ValueError, 'tracking_anchor_outside_patch'):
+            register(self.raw, target, p, self.context)
+
     def test_invalid_roi_seeds_threshold_and_texture_are_rejected(self):
         mutations = [lambda p: p['searchRois']['object'].__setitem__(0, -1),
                      lambda p: p['searchRois'].__setitem__('object', p['patchRois']['object']),

@@ -21,6 +21,17 @@ class RelativeTests(unittest.TestCase):
         self.rows = [row(0, -4.), row(1, 4.), row(2, 0.)]
         self.model = m.fit(self.rows)
 
+    def test_rigid_M4_observation_cannot_fit_or_predict_gripper_close(self):
+        rows=copy.deepcopy(self.rows)
+        for item in rows:item['context']['landmarks']='registered-scene-rigid-points-v1:'+'a'*64
+        close=dict(joint='gripper',direction='close',percent=40,durationMs=350)
+        model=m.fit(rows)
+        with self.assertRaisesRegex(ValueError,'requires_M4_only'):
+            m.predict(model,[0.,2.,10.],close,rows[0]['context'])
+        for item in rows:item['command']=close
+        with self.assertRaisesRegex(ValueError,'requires_M4_only'):
+            m.fit(rows)
+
     def test_learned_state_changes_choice_and_beats_command_mean(self):
         test = [row(3, 2., group='eval')]
         report = m.evaluate(self.model, test)

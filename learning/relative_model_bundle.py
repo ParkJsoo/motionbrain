@@ -9,7 +9,7 @@ import re
 
 from learning.artifacts import _decode_json
 from learning.manual_collection_dataset import require
-from learning.relative_action_learning import SCHEMA, STATE, command_key
+from learning.relative_action_learning import SCHEMA, STATE, command_key, validate_motion_scope
 
 
 def sha256(raw):
@@ -59,6 +59,7 @@ def validate_model(model):
     for entry in model['models']:
         require(isinstance(entry, dict), 'model_command_parameters_required')
         key = command_key(entry.get('command'))
+        validate_motion_scope(context, entry['command'])
         require(key not in keys, 'duplicate_model_command')
         keys.add(key)
         require(type(entry.get('count')) is int and entry['count'] >= 2,

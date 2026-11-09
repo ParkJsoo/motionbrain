@@ -56,7 +56,7 @@ def _parameters(p):
         'imageShape', 'patchRois', 'searchRois', 'minimumNcc', 'minimumPeakGap',
         'peakExclusionRadius', 'minimumTemplateStd'}
     _require(isinstance(p, dict) and required <= set(p)
-             and set(p) <= required | {'rotationDegrees', 'jawPair'},
+             and set(p) <= required | {'rotationDegrees', 'jawPair', 'trackingAnchors'},
              'scene_parameter_fields')
     shape = p['imageShape']
     _require(isinstance(shape, list) and len(shape) == 2
@@ -64,6 +64,15 @@ def _parameters(p):
              and 32 <= shape[0] <= 1080 and 32 <= shape[1] <= 1920, 'scene_image_shape_invalid')
     _require(all(isinstance(p[k], dict) and set(p[k]) == set(NAMES)
                  for k in ('patchRois', 'searchRois', 'minimumNcc')), 'scene_three_patch_parameters_required')
+    if 'trackingAnchors' in p:
+        _require(isinstance(p['trackingAnchors'], dict) and set(p['trackingAnchors']) == set(NAMES),
+                 'scene_tracking_anchor_names_invalid')
+        for name in NAMES:
+            anchor = p['trackingAnchors'][name]
+            x0, y0, x1, y1 = _rectangle(p['patchRois'][name], shape)
+            _require(isinstance(anchor, list) and len(anchor) == 2 and all(_number(v) for v in anchor)
+                     and x0 <= anchor[0] < x1 and y0 <= anchor[1] < y1,
+                     'scene_tracking_anchor_outside_patch')
     if 'rotationDegrees' in p:
         bank = p['rotationDegrees']
         _require(isinstance(bank, dict) and set(bank) == set(NAMES), 'scene_rotation_names_invalid')
@@ -111,7 +120,10 @@ def _seeds(points, parameters, reference):
         point = points[name]
         x0, y0, x1, y1 = parameters['patchRois'][name]
         _require(isinstance(point, list) and len(point) == 2 and all(_number(v) for v in point)
-                 and x0 <= point[0] < x1 and y0 <= point[1] < y1, 'scene_seed_outside_patch')
+                 and 0 <= point[0] < reference.shape[1] and 0 <= point[1] < reference.shape[0],
+                 'scene_seed_outside_image')
+        if 'trackingAnchors' not in parameters:
+            _require(x0 <= point[0] < x1 and y0 <= point[1] < y1, 'scene_seed_outside_patch')
         _require(float(gray[y0:y1, x0:x1].std()) >= parameters['minimumTemplateStd'],
                  'scene_template_texture_insufficient')
     _require(points['jawLeft'] != points['jawRight'], 'scene_coincident_jaw_points')

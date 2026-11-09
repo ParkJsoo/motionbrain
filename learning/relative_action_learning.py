@@ -15,11 +15,17 @@ STATE = ['objectMinusJawMidXpx', 'objectMinusJawMidYpx', 'jawOpeningPx']
 REGISTERED_METHODS = {
     'registered_template_points': 'registered-template-points-v1:',
     'registered_scene_template_points': 'registered-scene-template-points-v1:',
+    'registered_scene_rigid_points': 'registered-scene-rigid-points-v1:',
 }
 
 
 def registered_landmarks(value):
     return isinstance(value, str) and value.startswith(tuple(REGISTERED_METHODS.values()))
+
+
+def validate_motion_scope(context, command):
+    if str(context.get('landmarks', '')).startswith(REGISTERED_METHODS['registered_scene_rigid_points']):
+        require(command.get('joint') == 'shoulder', 'rigid_observation_requires_M4_only')
 
 
 def vector(value):
@@ -87,6 +93,7 @@ def annotated_transition(row, annotation):
     before = point_state(annotation['before'], row['inputs']['image'])
     after = point_state(annotation['after'], row['targets']['image'])
     command_key(row['inputs']['command'])
+    validate_motion_scope(context, row['inputs']['command'])
     return dict(sessionId=row['sessionId'], captureGroup=annotation['captureGroup'],
                 context=dict(context, cameraIdentity=copy.deepcopy(row['evidence']['cameraIdentity']),
                              imageShape=[row['inputs']['image']['height'], row['inputs']['image']['width']],
@@ -112,6 +119,7 @@ def validate_rows(rows):
         require(len(refs) == 2 and refs[0] != refs[1] and not frames.intersection(refs), 'reused_frame')
         ids.add(row['sessionId']); episodes.add(episode); frames.update(refs)
         vector(row['before']); vector(row['after']); command_key(row['command'])
+        validate_motion_scope(context, row['command'])
     return context
 
 
@@ -146,6 +154,7 @@ def predict(model, state, command, context, *, baseline=False):
     require(model.get('schemaVersion') == SCHEMA and model.get('controlEligible') is False
             and model.get('alpha') == 1., 'offline_model_required')
     require(context == model['context'], 'observation_context_changed')
+    validate_motion_scope(context, command)
     key = command_key(command); x = vector(state)
     candidates = [m for m in model['models'] if command_key(m['command']) == key]
     require(len(candidates) == 1, 'command_without_two_training_transitions')
