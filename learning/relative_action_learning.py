@@ -12,11 +12,21 @@ from learning.artifacts import StorageError
 
 SCHEMA = 'motionbrain.relative_action_ridge.v1'
 STATE = ['objectMinusJawMidXpx', 'objectMinusJawMidYpx', 'jawOpeningPx']
+CROSSSECTION_STATE = ['objectMinusJawMidXpx', 'objectMinusJawMidYpx', 'shaftSeparationPx']
 REGISTERED_METHODS = {
     'registered_template_points': 'registered-template-points-v1:',
     'registered_scene_template_points': 'registered-scene-template-points-v1:',
     'registered_scene_rigid_points': 'registered-scene-rigid-points-v1:',
+    'registered_gripper_crosssection_points': 'registered-gripper-crosssection-v1:',
 }
+
+
+def state_fields(context):
+    """Keep shaft cross-section measurements distinct from jaw-tip opening."""
+    if str(context.get('landmarks', '')).startswith(
+            REGISTERED_METHODS['registered_gripper_crosssection_points']):
+        return CROSSSECTION_STATE.copy()
+    return STATE.copy()
 
 
 def registered_landmarks(value):
@@ -26,6 +36,9 @@ def registered_landmarks(value):
 def validate_motion_scope(context, command):
     if str(context.get('landmarks', '')).startswith(REGISTERED_METHODS['registered_scene_rigid_points']):
         require(command.get('joint') == 'shoulder', 'rigid_observation_requires_M4_only')
+    if str(context.get('landmarks', '')).startswith(
+            REGISTERED_METHODS['registered_gripper_crosssection_points']):
+        require(command.get('joint') == 'gripper', 'crosssection_observation_requires_gripper_only')
 
 
 def vector(value):
@@ -97,7 +110,7 @@ def annotated_transition(row, annotation):
     return dict(sessionId=row['sessionId'], captureGroup=annotation['captureGroup'],
                 context=dict(context, cameraIdentity=copy.deepcopy(row['evidence']['cameraIdentity']),
                              imageShape=[row['inputs']['image']['height'], row['inputs']['image']['width']],
-                             stateFields=STATE),
+                             stateFields=state_fields(context)),
                 command=copy.deepcopy(row['inputs']['command']), before=before, after=after,
                 episode=[row['evidence']['controllerBootId'], row['evidence']['commandId']],
                 frameIds=[row['inputs']['image']['frameId'], row['targets']['image']['frameId']])
@@ -107,6 +120,8 @@ def validate_rows(rows):
     require(isinstance(rows, list) and len(rows) > 0, 'transitions_required')
     ids, episodes, frames = set(), set(), set()
     context = rows[0]['context']
+    if 'stateFields' in context:
+        require(context['stateFields'] == state_fields(context), 'observation_state_fields_changed')
     for row in rows:
         require(row['context'] == context, 'observation_context_changed')
         require(isinstance(row['sessionId'], str) and row['sessionId'] and row['sessionId'] not in ids,
@@ -144,6 +159,9 @@ def fit(rows):
                 trainingCaptureGroups=sorted({r['captureGroup'] for r in rows}),
                 controlEligible=False, independentTest=False, alpha=1.,
                 annotationSemantics=(
+                    'registered_gripper_shaft_crosssection_2d_points_not_jaw_tip_opening_depth_contact_clearance_or_accuracy'
+                    if str(context['landmarks']).startswith(
+                        REGISTERED_METHODS['registered_gripper_crosssection_points']) else
                     'registered_feature_translation_of_analyst_seed_points_not_depth_contact_clearance_or_accuracy'
                     if registered_landmarks(context['landmarks']) else
                     'analyst_2d_points_not_grasp_depth_contact_or_clearance'),

@@ -91,10 +91,10 @@ def _command_entry(model, command):
     return entries[0] if entries else None
 
 
-def _range_deficit(entry, state):
+def _range_deficit(entry, state, context):
     return [dict(field=field, value=value, minimum=lo, maximum=hi,
                  below=max(0., lo-value), above=max(0., value-hi))
-            for field, value, lo, hi in zip(relative.STATE, state, entry['minimum'], entry['maximum'])
+            for field, value, lo, hi in zip(relative.state_fields(context), state, entry['minimum'], entry['maximum'])
             if value < lo or value > hi]
 
 
@@ -136,7 +136,7 @@ def _evaluate(model, rows, allow_ood):
         except ValueError as exc:
             failure = dict(sessionId=row['sessionId'], sourceHash=row['sourceHash'], reason=str(exc))
             if entry:
-                failure['rangeDeficits'] = _range_deficit(entry, x)
+                failure['rangeDeficits'] = _range_deficit(entry, x, row['context'])
             rejected.append(failure)
             item['strictRejection'] = str(exc)
             if allow_ood and str(exc) == 'state_outside_training_range' and entry:

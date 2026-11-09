@@ -4,9 +4,10 @@
 닫는다. 이후 관측기가 점을 찾지 못해도 원본의 수집 결과를 바꾸지 않는다.
 관측 계약이나 주석을 수정한 뒤 같은 원본을 다시 처리할 수 있다.
 
-이 경로는 자료 수집과 개발 재생용이다. 모델을 생성했다는 이유로 실물 제어에
-적격하다고 판단하지 않는다. 장치 연결·촬영·실물 반복 운영의 검증은 아래 소프트웨어
-검사 및 과거 자료 재생과 구분한다.
+원본 재처리 경로는 개발 재생용이며, 아래 M1 shaft 경로는 사전 예측을 남기는
+고정 후 평가를 별도로 지원한다. 모델을 생성했다는 이유로 실물 제어에 적격하다고
+판단하지 않는다. 장치 연결·촬영·실물 반복 운영의 검증은 소프트웨어 검사 및 과거
+자료 재생과 구분한다.
 
 ## 상태를 구분하는 방법
 
@@ -107,9 +108,18 @@ source 경로는 정규화한 뒤 `artifactRoot` 내부인 경우에만 허용�
 분모에서 삭제하지 않는다. 매 실행에서 원본을 다시 감사한다.
 
 관측기의 `kind`는 `registered_scene`, `registered_rigid`, `registered_gripper`,
-`analyst_points`다. 등록 관측은 등록·참조 파일 경로와 각각의 SHA256을 요구한다.
+`registered_gripper_crosssection`, `analyst_points`다. 등록 관측은 등록·참조 파일
+경로와 각각의 SHA256을 요구한다.
 `context`에는 실제 `physicalView`, `object`, `poseRegime`을 지정하고 `captureGroup`으로
 분할 그룹을 연결한다. M4 전용 강체 턱 관측을 M1 명령에 사용하면 거절한다.
+
+`registered_gripper_crosssection`은 320×240 집게 영상의 고정된 상부 단면에서
+양쪽 턱축을 각각 관측하는 M1 전용 계약이다. 턱끝의 작은 템플릿에 물체가 겹치는
+문제에 대응하며, 어두운 영역의 양쪽 경계·폭·여러 행의 일관성을 검사한다.
+복수 후보·대비 부족·가림은 반대쪽 턱이나 고정 간격으로 보충하지 않는다.
+세 번째 상태는 `shaftSeparationPx`이며 기존 `jawOpeningPx`와 구분한다.
+이 간격은 영상 단면의 턱축 중심선 사이 거리로, 턱끝 간격·물리 개구폭·접촉·
+안전 여유가 아니다. 기존 관측 모델과 자동 혼합하지 않으며 M4에는 사용하지 않는다.
 
 수동 주석은 별도 관측 계약이다. 각 프레임의 `frameId`, `pixelSha256`,
 `sourceFrameIds: [그 프레임 ID]`, `inputFrameOnly: true`, `accepted: true`,
@@ -136,6 +146,71 @@ source 경로는 정규화한 뒤 `artifactRoot` 내부인 경우에만 허용�
 오프라인 예측 오차를 별도로 보여줄 뿐, 제어 지원 범위나 평가 합격을 넓히지 않는다.
 사후 재가공의 평가는 `developmentReplay`이며 `evaluationPassed`를 만들지 않는다.
 새로운 고정 후 평가에는 실행 전에 고정된 관측·모델·입력·예측의 시간 증거가 별도로 필요하다.
+
+## M1 shaft 전용 수집·고정 후 평가
+
+물체 검출의 실패가 유효한 턱축 관측까지 막지 않도록, 물체 좌표를 요구하지 않는
+별도 경로를 제공한다. [관측 연결 모듈](../learning/m1_shaft_observations.py)은
+원본 감사와 `RegisteredGripperCrosssection.observe_shaft`의 전후 관측을 연결해
+`motionbrain.m1_shaft_transition.v1` 전이를 만든다. 입력·정답은 각각
+`beforeShaftPx`, `afterShaftPx`이며, 세션·명령·프레임·원본 해시를 함께 보존한다.
+관측 계약은 `registered-gripper-shaft-only-v1:`이고 `stateFields`는
+`["shaftSeparationPx"]`다. 물체는 `not_required / not_observed`로 표시하며
+누락된 XY에 0을 채우지 않는다. 턱축 자체의 가림·잔차·품질 실패는 계속 거절한다.
+
+[1차원 학습 모듈](../learning/m1_shaft_learning.py)의 `fit`, `predict`, `evaluate`는
+현재 고정 구도의 M1 명령과 단면 간격만 다룬다. 명령별 최소 두 전이와 ridge
+`alpha=1`을 사용하고, 학습한 shaft 입력의 최소·최대 범위를 유지한다. 물체 상대
+XY는 예측하거나 지원 범위를 판단하는 데 사용하지 않는다. 기존 3차원 모델과는
+별도 모델이며, 완전한 기존 crosssection 전이를 받더라도 새 scalar 계약과 혼합하지
+않는다. 명령 평균·무변화와 같은 평가 사례에서 비교하며, 학습·평가의 그룹·원본
+해시·세션·동작·프레임 중복을 거절한다. 단독 `evaluate` 호출은 촬영 시점을 증명하지
+않으므로 개발 재생으로 남는다.
+
+[공통 실행기](../tools/run_m1_shaft_campaign.py)는 비공개 계획의 준비 동작·학습·모델
+고정·별도 평가 순서를 단발 요청으로 진행한다. 계획에는 명시적 seed 원본과 해시,
+관측 spec, 실행 코드 해시, 관절·구도 조건, 명령 목록, 동작 수 제한과
+`freezeAfterStep`을 지정한다. 준비 동작은 학습 전이를 만들지 않는다. 고정 시
+`runtime/frozen-model.json`을 canonical JSON으로 저장하며, 이후 평가의 관측·예측을
+명령 전에 기록한다. 실패·불명·범위 밖 입력은 자동 재시도하지 않는다.
+
+현재 현장 조건과 해당 계획의 실행 범위가 확인된 경우에만 서버를 실행한다.
+계획은 새 실험 폴더에 두며, 기존 `runtime/`을 덮어써 재시작하지 않는다.
+
+```bash
+python3 tools/run_m1_shaft_campaign.py --config .local/pipeline/m1-shaft/config.json
+```
+
+기본 인증은 비공개 TTY 입력이다. macOS에서는 사용자가 키체인에 비공개로 등록한
+일반 암호 항목을 `--keychain-service '<service>' --keychain-account '<account>'`로
+명시할 수 있다. [인증 모듈](../learning/macos_credentials.py)은 지정한 항목만 읽고
+인증값을 명령 인수·계획·로그에 넣지 않는다. 실행기는 localhost에만 바인딩하며
+시작만으로 모터 명령을 실행하지 않는다. 상태 조회 후, 응답의 계획 해시와 정확한
+다음 번호로 각 단계를 명시적으로 요청한다.
+
+```bash
+curl --fail-with-body http://127.0.0.1:8769/
+curl --fail-with-body -H 'Content-Type: application/json' \
+  --data '{"index":1,"planSha256":"<확인한 계획 SHA256>"}' \
+  http://127.0.0.1:8769/step
+```
+
+[전용 Rerun 표시기](../tools/visualization/m1_shaft_campaign.py)는 저장된 실행 폴더만
+읽는다. 원본 JPEG·프레임·픽셀 해시와 유효한 양쪽 shaft 점을 검증하며, 개발 seed,
+준비 동작, 미시작·반려와 평가 분모를 구분한다.
+
+```bash
+python3 tools/visualization/m1_shaft_campaign.py \
+  --runtime .local/pipeline/m1-shaft/runtime --output .local/pipeline/m1-shaft/review.rrd
+```
+
+기본은 새 로컬 RRD 저장이며, `--connect rerun+http://127.0.0.1:9876/proxy`를
+명시한 경우에만 로컬 Rerun에 연결한다. 승인된 계획 해시, 명령 전 예측 시각,
+원본과 콜백의 프레임·측정값, 고정 모델 해시와 재계산 예측을 확인한 사례만
+`prospectiveVerified`에 센다. 이 검증은 모델이 명령을 선택했다는 뜻이 아니다.
+실행 당시 코드의 해시는 당시 기록으로 표시하며 현재 파일로 과거 실행을 다시
+판정하지 않는다. 한 번의 고정 후 평가가 반복 운영·관측 일반화·파지·들기를
+보증하지 않으며, 다른 구도나 관절에는 새 계약과 검증이 필요하다.
 
 ## 다섯 도구의 역할
 
@@ -184,7 +259,18 @@ MuJoCo·Gazebo·RViz는 마지막 실측 기반의 정적 근사 자세·좌표�
 영상 5/5와 M1 열기 단발 1회의 전후 사진을 통과했다. 외부 원본 99장과 집게 전후
 사진 2장을 저장했고, OFF·원본·시간 감사를 거쳐 유효 전이 1건을 만들었다.
 같은 요청 재조회는 장치에 접근하지 않았고, 원본 재처리는 동일 결과를 만들었다.
-전이 1건은 학습 최소 지원 수에 부족하며 별도 평가 자료도 없다. 이 결과는
+이 첫 연결의 전이 1건만으로는 학습 최소 지원 수에 부족하고 별도 평가도 없었다. 이 결과는
 집기·들기나 반복 실물 성공률의 증명이 아니다. 이후 느린 집게 촬영이 M4 센서의
 고정 관측창을 막지 않도록 대기 순서를 수정했으며, 수정한 순서의 센서 검증은
 가짜 장치 회귀로 확인했다. 해당 M4 경로의 새 실물 동작은 실행하지 않았다.
+
+이후 별도 M1 shaft 계약의 V1 고정 후 닫기 평가 1건에서는 shaft 예측 절대 오차가
+ridge 1.12px, 명령 평균 0.89px, 무변화 4.18px였다. 이 사례에서 ridge는 명령 평균보다
+개선되지 않았다. 분모 1의 단면 간격 평가이며 다른 시작 상태·구도에서의 일반화나
+물체 접촉·집기·들기 성공을 보여주는 결과는 아니다.
+
+같은 계약의 V2는 V1 평가 자료를 학습에 편입한 뒤 새로운 닫기 사례 1건에서
+비교했다. 이 새 사례의 오차는 V1 ridge 0.17px, V2 ridge 0.18px, V2 명령 평균
+0.03px, 무변화 3.55px였다. 두 모델의 예측은 모두 명령 전에 저장했다.
+V2 학습 자료에서 V1 평가 사례를 제외 평가처럼 다시 세지 않으며, 이 결과는
+V2의 모델 개선이나 물체 접촉·집기·들기 성공을 입증하지 않는다.

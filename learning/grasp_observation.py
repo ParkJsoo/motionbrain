@@ -18,7 +18,8 @@ from learning.artifacts import _read
 from learning.controller_latency import deadline as request_deadline
 from learning.gripper_camera_dataset import POLICY, read_frame
 from learning.manual_collection_dataset import digest, require
-from learning.relative_action_learning import STATE, point_state
+from learning.relative_action_learning import point_state, state_fields
+from learning.registered_gripper_crosssection import SHAFT_PREFIX
 
 
 def _number(value):
@@ -111,7 +112,9 @@ class GripperObservationSource:
             self.previous_capture_us = frame['capturedUs']
             context = dict(scene, cameraIdentity=dict(camera='gripper', cameraBootId=boot,
                 timestampSemantics='first_dma_buffer', observationPolicy=copy.deepcopy(POLICY)),
-                imageShape=[frame['height'], frame['width']], stateFields=copy.deepcopy(STATE))
+                imageShape=[frame['height'], frame['width']],
+                stateFields=(['shaftSeparationPx'] if scene['landmarks'].startswith(SHAFT_PREFIX)
+                             else state_fields(scene)))
             record = dict(frame={k: frame[k] for k in ('frameId', 'pixelSha256', 'width', 'height')},
                 context=context, hostClockId=self.session_id,
                 sourceEarliest=checked_metadata['requestStartedAt'],

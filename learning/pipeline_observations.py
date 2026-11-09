@@ -123,9 +123,11 @@ def observe_transition(source_root, audited_row, observer_spec, *, artifact_root
             from learning.registered_scene_landmarks import RegisteredSceneLandmarks
             from learning.registered_rigid_scene_landmarks import RegisteredRigidSceneLandmarks
             from learning.registered_gripper_landmarks import RegisteredGripperLandmarks
+            from learning.registered_gripper_crosssection import RegisteredGripperCrosssection
             cls = {'registered_scene': RegisteredSceneLandmarks,
                    'registered_rigid': RegisteredRigidSceneLandmarks,
-                   'registered_gripper': RegisteredGripperLandmarks}.get(kind)
+                   'registered_gripper': RegisteredGripperLandmarks,
+                   'registered_gripper_crosssection': RegisteredGripperCrosssection}.get(kind)
             require(cls is not None, 'unsupported_observer_kind')
             registration = _decode_json(_bytes(assets, spec['registrationPath'], spec['registrationSha256']))
             reference = _bytes(assets, spec['referenceImagePath'], spec['referenceImageSha256'])

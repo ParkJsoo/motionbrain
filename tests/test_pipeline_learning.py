@@ -28,6 +28,16 @@ def examples():
 
 
 class PipelineLearningTests(unittest.TestCase):
+    def test_crosssection_range_deficit_names_shaft_separation(self):
+        rows = examples()
+        for item in rows:
+            item['context']['landmarks'] = 'registered-gripper-crosssection-v1:'+'a'*64
+            item['context']['stateFields'] = relative.state_fields(item['context'])
+        rows[-1]['before'][2] = 101.
+        result = run_learning(rows, manifest())['partitions'][0]['evaluation']
+        self.assertEqual(result['inSupportEvaluated'], 0)
+        self.assertEqual(result['strictRejected'][0]['rangeDeficits'][0]['field'], 'shaftSeparationPx')
+
     def test_roundtrip_is_deterministic_and_preserves_inputs(self):
         rows = examples(); original = copy.deepcopy(rows)
         a = run_learning(rows, manifest()); b = run_learning(rows, manifest())

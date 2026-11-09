@@ -9,7 +9,7 @@ import re
 
 from learning.artifacts import _decode_json
 from learning.manual_collection_dataset import require
-from learning.relative_action_learning import SCHEMA, STATE, command_key, validate_motion_scope
+from learning.relative_action_learning import SCHEMA, state_fields, command_key, validate_motion_scope
 
 
 def sha256(raw):
@@ -44,7 +44,7 @@ def validate_model(model):
             and isinstance(context['cameraIdentity'], dict) and bool(context['cameraIdentity'])
             and isinstance(context['imageShape'], list) and len(context['imageShape']) == 2
             and all(type(v) is int and v > 0 for v in context['imageShape'])
-            and context['stateFields'] == STATE, 'complete_observation_context_required')
+            and context['stateFields'] == state_fields(context), 'complete_observation_context_required')
     for field in ('trainingSessionIds', 'trainingCaptureGroups', 'trainingFrameIds'):
         _unique_strings(model.get(field), 'model_training_provenance_required')
     episodes = model.get('trainingEpisodes')

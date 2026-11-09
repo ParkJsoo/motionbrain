@@ -17,6 +17,43 @@ def row(i, x, command=None, group='train'):
 
 
 class RelativeTests(unittest.TestCase):
+    def test_crosssection_state_is_gripper_only_and_cannot_mix_tip_contract(self):
+        rows = copy.deepcopy([row(0, -4.), row(1, 4.)])
+        for item in rows:
+            item['context']['landmarks'] = 'registered-gripper-crosssection-v1:'+'a'*64
+            item['context']['stateFields'] = m.state_fields(item['context'])
+            item['command'] = dict(joint='gripper', direction='close', percent=40, durationMs=350)
+        model = m.fit(rows)
+        self.assertEqual(model['context']['stateFields'][-1], 'shaftSeparationPx')
+        self.assertIn('not_jaw_tip_opening', model['annotationSemantics'])
+        self.assertEqual(len(m.predict(model, [0., 2., 10.], rows[0]['command'], rows[0]['context'])), 3)
+        with self.assertRaisesRegex(ValueError, 'requires_gripper_only'):
+            m.predict(model, [0., 2., 10.], C, rows[0]['context'])
+        wrong = copy.deepcopy(rows)
+        wrong[1]['context']['landmarks'] = 'registered-template-points-v1:'+'a'*64
+        with self.assertRaisesRegex(ValueError, 'context_changed'): m.fit(wrong)
+        for item in wrong:
+            item['context'] = copy.deepcopy(rows[0]['context']); item['command'] = C
+        with self.assertRaisesRegex(ValueError, 'requires_gripper_only'): m.fit(wrong)
+
+    def test_crosssection_annotation_binds_dynamic_state_fields(self):
+        frame = dict(frameId='pre', pixelSha256='h', width=100, height=100)
+        contract = 'registered-gripper-crosssection-v1:'+'b'*64
+        annotation = dict(frameId='pre', pixelSha256='h', accepted=True, inputFrameOnly=True,
+            method='registered_gripper_crosssection_points', registrationSha256='b'*64,
+            parametersSha256='c'*64, referenceImageSha256='d'*64, landmarkContract=contract,
+            points=dict(object=[50, 20], jawLeft=[40, 40], jawRight=[60, 40]))
+        after = dict(annotation, frameId='post')
+        command = dict(joint='gripper', direction='close', percent=40, durationMs=350)
+        source = dict(sessionId='s', inputs=dict(image=frame, command=command),
+            targets=dict(image=dict(frame, frameId='post')),
+            evidence=dict(cameraIdentity={'camera':'gripper'}, controllerBootId='boot', commandId='c'))
+        reviewed = dict(sessionId='s', captureGroup='train', context=dict(CONTEXT, landmarks=contract),
+                        before=annotation, after=after)
+        transition = m.annotated_transition(source, reviewed)
+        self.assertEqual(transition['context']['stateFields'], m.CROSSSECTION_STATE)
+        self.assertEqual(transition['before'], [0., -20., 20.])
+
     def setUp(self):
         self.rows = [row(0, -4.), row(1, 4.), row(2, 0.)]
         self.model = m.fit(self.rows)

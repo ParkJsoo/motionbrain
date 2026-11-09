@@ -25,6 +25,23 @@ def model():
 
 
 class FrozenRelativeTests(unittest.TestCase):
+    def test_crosssection_bundle_requires_shaft_field_and_gripper_scope(self):
+        rows = [row(0, -4.), row(1, 4.)]
+        context = complete_context()
+        context['landmarks'] = 'registered-gripper-crosssection-v1:'+'a'*64
+        context['stateFields'] = learning.state_fields(context)
+        for item in rows:
+            item['context'] = copy.deepcopy(context)
+            item['command'] = dict(joint='gripper', direction='close', percent=40, durationMs=350)
+        value = learning.fit(rows)
+        self.assertEqual(bundle.validate_model(value), value)
+        wrong = copy.deepcopy(value); wrong['context']['stateFields'] = learning.STATE
+        with self.assertRaisesRegex(ValueError, 'complete_observation_context_required'):
+            bundle.validate_model(wrong)
+        wrong = copy.deepcopy(value); wrong['models'][0]['command'] = C
+        with self.assertRaisesRegex(ValueError, 'requires_gripper_only'):
+            bundle.validate_model(wrong)
+
     def test_valid_historical_model_is_unchanged(self):
         value = model()
         self.assertEqual(bundle.validate_model(value), value)

@@ -60,6 +60,29 @@ class PipelineObservationTests(unittest.TestCase):
         self.assertEqual(binding['encoding'],'native_bgra_lossless')
         self.assertEqual(json.loads((self.root/'session.json').read_text()), {'phase':'failed'})
 
+    def test_crosssection_dispatch_preserves_distinct_state_and_deterministic_reprocessing(self):
+        from learning.registered_gripper_crosssection import register
+        image=np.full((240,320,3),220,np.uint8)
+        image[67:133,140:206]=np.random.default_rng(42).integers(40,220,(66,66,3),dtype=np.uint8)
+        image[40:67,76:103]=20;image[40:67,220:247]=20
+        raw=cv2.imencode('.png',image)[1].tobytes()
+        pixels=cv2.cvtColor(image,cv2.COLOR_BGR2BGRA).tobytes()
+        row=copy.deepcopy(self.row)
+        for key in ('inputs','targets'):
+            row[key]['image'].update(width=320,height=240,rawByteLength=len(pixels),pixelSha256=sha(pixels))
+        context={k:v for k,v in self.context.items() if k!='landmarks'}
+        registration=register(raw,[166,95],context)
+        assets=self.root/'assets';assets.mkdir();reg=json.dumps(registration).encode()
+        (assets/'reg.json').write_bytes(reg);(assets/'ref.png').write_bytes(raw)
+        spec=dict(kind='registered_gripper_crosssection',context=context,captureGroup='development',
+            registrationPath='reg.json',registrationSha256=sha(reg),referenceImagePath='ref.png',referenceImageSha256=sha(raw))
+        with patch('learning.pipeline_observations.decode',return_value=pixels):
+            first=observe_transition(self.root,row,spec,artifact_root=assets)
+            second=observe_transition(self.root,row,spec,artifact_root=assets)
+        self.assertEqual(first['status'],'eligible',first.get('reason'))
+        self.assertEqual(first['transition']['context']['stateFields'][-1],'shaftSeparationPx')
+        self.assertEqual(first,second)
+
     def test_missing_jaw_stays_partial_without_imputation(self):
         spec=copy.deepcopy(self.spec);del spec['annotations']['after']['points']['jawRight']
         result=self.run_observation(spec=spec)

@@ -62,7 +62,8 @@ def processor_identity():
              'supervised_collection.py', 'pipeline_evidence.py', 'pipeline_observations.py',
              'pipeline_learning.py', 'manual_collection_dataset.py', 'relative_action_learning.py',
              'relative_model_bundle.py', 'registered_scene_landmarks.py', 'registered_rigid_scene_landmarks.py',
-             'registered_gripper_landmarks.py', 'arm_motion_observation.py', 'gripper_camera_dataset.py',
+             'registered_gripper_landmarks.py', 'registered_gripper_crosssection.py',
+             'arm_motion_observation.py', 'gripper_camera_dataset.py',
              'action_recorder.py', 'supervised_transport.py', 'supervised_measurement.py',
              'lossless_frame.py', 'mac_clock_bridge.py', 'artifacts.py', 'object_arc.py')
     sources = {name: sha(Path(__file__).with_name(name).read_bytes()) for name in names}

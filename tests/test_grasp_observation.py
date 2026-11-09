@@ -60,6 +60,18 @@ class Camera:
 
 
 class ObservationTests(unittest.TestCase):
+    def test_shaft_only_capture_never_declares_object_xy_state(self):
+        self.source.scene_context = dict(SCENE, landmarks='registered-gripper-shaft-only-v1:'+'a'*64)
+        self.source.start(deadline=60.)
+        record = self.source.capture(deadline=60.)
+        self.assertEqual(record['context']['stateFields'], ['shaftSeparationPx'])
+
+    def test_crosssection_capture_uses_actual_shaft_state_context(self):
+        self.source.scene_context = dict(SCENE, landmarks='registered-gripper-crosssection-v1:'+'a'*64)
+        self.source.start(deadline=60.)
+        record = self.source.capture(deadline=60.)
+        self.assertEqual(record['context']['stateFields'], dynamics.CROSSSECTION_STATE)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
