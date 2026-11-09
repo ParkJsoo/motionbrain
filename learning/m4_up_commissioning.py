@@ -26,8 +26,13 @@ from learning import supervised_transport as transport
 
 REPO = Path(__file__).resolve().parents[1]
 SCHEMA = 'motionbrain.m4_up_commissioning.v1'
+CONTACT_PROBE_SCHEMA = 'motionbrain.m4_up_contact_uncertain_probe.v1'
 PULSE = dict(joint='shoulder', motor=4, direction='up', percent=16,
              durationMs=200, expectedPwm=40)
+CONTACT_RESPONSE_PULSE = dict(joint='shoulder', motor=4, direction='up', percent=50,
+                              durationMs=350, expectedPwm=127)
+CONTACT_PROBE_PULSES = (PULSE, CONTACT_RESPONSE_PULSE,
+    dict(joint='shoulder', motor=4, direction='up', percent=50, durationMs=450, expectedPwm=127))
 LIFT_SCHEMA = 'motionbrain.m4_up_manual_lift.v1'
 LIFT_PULSE = dict(joint='shoulder', motor=4, direction='up', percent=50,
                   durationMs=750, expectedPwm=127)
@@ -68,20 +73,25 @@ def validate_scope(scope):
     is_learning = isinstance(scope,dict) and scope.get('schemaVersion') in LEARNING_SCHEMAS
     candidates = (SHORT_CANDIDATES if isinstance(scope,dict) and scope.get('schemaVersion') in
                   (LEARNING_SHORT_SCHEMA,MODEL_SHORT_SCHEMA) else LEARNING_CANDIDATES)
-    extra = {'phase','observationContractSha256','modelPath','modelSha256'} if is_learning else set()
+    is_probe = isinstance(scope, dict) and scope.get('schemaVersion') == CONTACT_PROBE_SCHEMA
+    extra = ({'phase','observationContractSha256','modelPath','modelSha256'} if is_learning
+             else {'contactState'} if is_probe else set())
     require(isinstance(scope, dict) and set(scope) == extra | {
         'schemaVersion', 'trialId', 'controllerUrl', 'controllerBootId', 'hostClockId',
         'implementationSha256', 'context', 'pulse', 'defaultSpeed', 'maxCommands',
         'expectedStartAngleDeg', 'startAngleToleranceDeg', 'maxObservedDeltaDeg',
         'maxSeconds', 'maxObservationAgeSeconds', 'postOffSeconds'}, 'm4_scope_fields')
-    require(scope['schemaVersion'] in (SCHEMA,LIFT_SCHEMA)+LEARNING_SCHEMAS and identifier(scope['trialId'])
+    require(scope['schemaVersion'] in (SCHEMA,LIFT_SCHEMA,CONTACT_PROBE_SCHEMA)+LEARNING_SCHEMAS and identifier(scope['trialId'])
             and identifier(scope['hostClockId']) and isinstance(scope['controllerBootId'], str)
             and re.fullmatch('[0-9a-f]{32}', scope['controllerBootId']) is not None,
             'm4_scope_identity')
     transport.validate_target(scope['controllerUrl'])
     require(scope['implementationSha256'] == implementation_digest(), 'm4_implementation_changed')
-    profile = (next((p for p in candidates if p==scope['pulse']),{})
-               if is_learning else PULSE if scope['schemaVersion']==SCHEMA else LIFT_PULSE)
+    profile = (next((p for p in candidates if p==scope['pulse']),{}) if is_learning
+               else next((p for p in CONTACT_PROBE_PULSES if p==scope['pulse']),{}) if is_probe
+               else PULSE if scope['schemaVersion']==SCHEMA else LIFT_PULSE)
+    if is_probe:
+        require(scope['contactState'] == 'unknown', 'm4_probe_unknown_contact_required')
     if is_learning:
         require(scope['pulse'] in candidates and _hash(scope['observationContractSha256']), 'm4_learning_candidates_required')
         require(scope['phase'] in ('training','evaluation','model_selection')
@@ -92,7 +102,7 @@ def validate_scope(scope):
         else:
             require(_hash(scope['modelSha256']) and isinstance(scope['modelPath'],str)
                     and Path(scope['modelPath']).resolve().is_relative_to((REPO/'.local').resolve()),'m4_frozen_model_binding')
-    require(scope['pulse'] == profile and all(type(scope['pulse'][k]) is type(v) for k, v in profile.items())
+    require(bool(profile) and scope['pulse'] == profile and all(type(scope['pulse'][k]) is type(v) for k, v in profile.items())
             and type(scope['defaultSpeed']) is int and scope['defaultSpeed'] == 255
             and type(scope['maxCommands']) is int and scope['maxCommands'] == 1,
             'm4_exact_single_pulse_required')
@@ -293,6 +303,8 @@ class M4UpCommissioning:
         self.scope = validate_scope(scope); self.digest = plan_digest(self.scope)
         self.selection_kind = ('manual_lift_fixed_profile' if self.scope['schemaVersion']==LIFT_SCHEMA
                                else 'manual_commissioning_fixed_profile')
+        if self.scope['schemaVersion'] == CONTACT_PROBE_SCHEMA:
+            self.selection_kind = 'manual_contact_uncertain_probe_fixed_profile'
         self.learning = self.scope['schemaVersion'] in LEARNING_SCHEMAS
         self.model_selection = self.scope['schemaVersion'] in MODEL_SCHEMAS
         self.candidates = (SHORT_CANDIDATES if self.scope['schemaVersion'] in
@@ -364,7 +376,11 @@ class M4UpCommissioning:
                 and all(type(v) is bool for v in onsite.values()) and onsite['operatorPresent'] and onsite['clearanceVerified'],
                 'm4_onsite_review_required')
         if after_off is None:
-            require(onsite['jawContactVerified'] and onsite['tableSupportVerified'], 'm4_initial_contact_required')
+            if self.scope['schemaVersion'] == CONTACT_PROBE_SCHEMA:
+                require(onsite['tableSupportVerified'] is True and onsite['jawContactVerified'] is False,
+                        'm4_probe_requires_table_support_and_unconfirmed_contact')
+            else:
+                require(onsite['jawContactVerified'] and onsite['tableSupportVerified'], 'm4_initial_contact_required')
         frames = {'external': _external_frame(self.root, record['external'], self.scope),
                   'gripper': _gripper_frame(self.root, record['gripper'], self.scope, 'before' if after_off is None else 'after')}
         for frame in frames.values():
@@ -483,6 +499,8 @@ class M4UpCommissioning:
         report = dict(schemaVersion=self.scope['schemaVersion'], scopeSha256=self.digest, status='failed', errors=[],
             selectionKind=self.selection_kind, mayHaveRun=False,
             finalIdleOffVerified=False, trainingEligible=False, modelSelected=False, graspVerified=False, liftVerified=False)
+        if self.scope['schemaVersion'] == CONTACT_PROBE_SCHEMA:
+            report.update(contactStateBefore='unknown', trialKind='contact_uncertain_probe')
         observer_started = claimed = False; phase = 'journal'
         try:
             self.journal = BoundedActionJournal(str(REPO/'.local/visual-actions/controller-commands.sqlite'), 10000)
@@ -542,7 +560,8 @@ class M4UpCommissioning:
             if self.learning:
                 _,features=self._measure('after',after,frames);report['afterFeatures']=features
                 self.observer.wait_post_window(receipt['offAt'],deadline=self.deadline,tick=lambda:self._tick(True))
-            report['status'] = 'completed'
+            report['status'] = ('probe_completed_contact_unverified'
+                                if self.scope['schemaVersion'] == CONTACT_PROBE_SCHEMA else 'completed')
         except (Exception, KeyboardInterrupt) as exc:
             error = dict(phase=phase, type=type(exc).__name__)
             # Only fixed machine codes, never arbitrary exception messages or

@@ -357,6 +357,60 @@ class CommissioningTests(unittest.TestCase):
         with patch.object(self.store,'write_json',side_effect=write):r=self.run_trial()
         self.assertEqual(r['status'],'failed');self.assertFalse(self.device.requests);self.assertEqual(self.row(),'off_unverified')
 
+    def unconfirmed_contact(self, record):
+        record['onsite']['jawContactVerified']=False
+        raw={k:v for k,v in record.items() if k not in ('evidenceFile','evidenceSha256')}
+        record['evidenceSha256']=self.observer.save(record['evidenceFile'],raw)
+        self.observer.latest_record=copy.deepcopy(record)
+
+    def contact_probe(self):
+        self.scope.update(schemaVersion=m.CONTACT_PROBE_SCHEMA,contactState='unknown',expectedStartAngleDeg=199.95)
+        self.device.angle=199.95
+        self.observer.on_before=self.unconfirmed_contact
+        self.trial=m.M4UpCommissioning(self.scope,self.observer,'private-token',self.store,evidence_root=self.evidence,clock=self.clock)
+        self.trial.port.opener=self.device
+
+    def test_contact_unknown_probe_has_separate_outcome_and_one_fixed_pulse(self):
+        self.contact_probe();self.device.after_run=lambda d:setattr(d,'angle',200.2)
+        r=self.run_trial()
+        self.assertEqual(r['status'],'probe_completed_contact_unverified',r)
+        self.assertEqual(r['contactStateBefore'],'unknown');self.assertEqual(r['trialKind'],'contact_uncertain_probe')
+        self.assertFalse(r['graspVerified']);self.assertFalse(r['liftVerified']);self.assertFalse(r['trainingEligible'])
+        self.assertTrue(r['finalIdleOffVerified']);self.assertEqual(r['receipt']['requestedPulse'],m.PULSE)
+        self.assertEqual(sum(v=={'action':'run'} for _,v in self.posts()),1)
+
+    def test_existing_commissioning_still_rejects_unconfirmed_contact(self):
+        self.observer.on_before=self.unconfirmed_contact
+        r=self.run_trial();self.assertEqual(r['status'],'failed');self.assertTrue(r['finalIdleOffVerified'])
+        self.assertEqual(sum(v=={'action':'run'} for _,v in self.posts()),0)
+
+    def test_contact_unknown_probe_keeps_one_degree_guard_and_stop_off(self):
+        self.contact_probe();self.device.after_run=lambda d:setattr(d,'angle',201.1)
+        r=self.run_trial();self.assertEqual(r['status'],'failed');self.assertTrue(r['finalIdleOffVerified'])
+        self.assertFalse(r['graspVerified']);self.assertFalse(r['liftVerified'])
+        self.assertEqual(sum(v=={'action':'run'} for _,v in self.posts()),1)
+
+    def test_contact_response_350_is_explicit_preset_and_legacy_schema_rejects_it(self):
+        self.scope['pulse']=copy.deepcopy(m.CONTACT_RESPONSE_PULSE);self.contact_probe()
+        r=self.run_trial();self.assertEqual(r['status'],'probe_completed_contact_unverified',r)
+        self.assertEqual(r['receipt']['requestedPulse'],m.CONTACT_RESPONSE_PULSE)
+        self.assertTrue(r['finalIdleOffVerified']);self.assertFalse(r['modelSelected'])
+        self.assertFalse(r['graspVerified']);self.assertFalse(r['liftVerified'])
+        self.assertEqual(sum(v=={'action':'run'} for _,v in self.posts()),1)
+        legacy=scope();legacy['pulse']=copy.deepcopy(m.CONTACT_RESPONSE_PULSE)
+        with self.assertRaises(ValueError):m.validate_scope(legacy)
+        for duration in (349,351,500):
+            bad=copy.deepcopy(self.scope);bad['pulse']['durationMs']=duration
+            with self.subTest(duration=duration),self.assertRaises(ValueError):m.validate_scope(bad)
+
+    def test_contact_response_350_keeps_one_degree_abort_and_verified_off(self):
+        self.scope['pulse']=copy.deepcopy(m.CONTACT_RESPONSE_PULSE);self.contact_probe()
+        self.device.after_run=lambda d:setattr(d,'angle',201.1)
+        r=self.run_trial();self.assertEqual(r['status'],'failed');self.assertTrue(r['finalIdleOffVerified'])
+        self.assertFalse(r['graspVerified']);self.assertFalse(r['liftVerified'])
+        self.assertEqual(sum(v=={'action':'run'} for _,v in self.posts()),1)
+        self.assertIn(('/command',{'cmd':'stop'}),self.posts())
+
     def lift_trial(self):
         self.scope.update(schemaVersion=m.LIFT_SCHEMA,pulse=copy.deepcopy(m.LIFT_PULSE))
         self.trial=m.M4UpCommissioning(self.scope,self.observer,'private-token',self.store,evidence_root=self.evidence,clock=self.clock)
@@ -378,6 +432,33 @@ class CommissioningTests(unittest.TestCase):
 
 
 class ScopeTests(unittest.TestCase):
+    def test_contact_probe_450_preset_is_explicit_and_legacy_stays_restricted(self):
+        s=scope();s.update(schemaVersion=m.CONTACT_PROBE_SCHEMA,contactState='unknown',expectedStartAngleDeg=200.03)
+        s['pulse']=dict(m.CONTACT_RESPONSE_PULSE,durationMs=450)
+        self.assertEqual(m.validate_scope(s)['pulse']['durationMs'],450)
+        for duration in (449,451,500):
+            bad=copy.deepcopy(s);bad['pulse']['durationMs']=duration
+            with self.subTest(duration=duration),self.assertRaises(ValueError):m.validate_scope(bad)
+        old=scope();old['pulse']=copy.deepcopy(s['pulse'])
+        with self.assertRaises(ValueError):m.validate_scope(old)
+
+    def test_contact_probe_requires_exact_unknown_scope_and_unchanged_limits(self):
+        s=scope();s.update(schemaVersion=m.CONTACT_PROBE_SCHEMA,contactState='unknown',expectedStartAngleDeg=199.95)
+        self.assertEqual(m.validate_scope(s)['pulse'],m.PULSE)
+        for key,value in [('contactState','verified'),('maxObservedDeltaDeg',3.),('maxCommands',2),('extra',True)]:
+            bad=copy.deepcopy(s);bad[key]=value
+            with self.subTest(key=key),self.assertRaises(ValueError):m.validate_scope(bad)
+        empty=copy.deepcopy(s);empty['pulse']={}
+        with self.assertRaises(ValueError):m.validate_scope(empty)
+        missing=copy.deepcopy(s);del missing['contactState']
+        with self.assertRaises(ValueError):m.validate_scope(missing)
+        for key,value in [('percent',17),('durationMs',201),('expectedPwm',41)]:
+            bad=copy.deepcopy(s);bad['pulse'][key]=value
+            with self.subTest(pulse=key),self.assertRaises(ValueError):m.validate_scope(bad)
+        s['schemaVersion']=m.SCHEMA
+        with self.assertRaises(ValueError):m.validate_scope(s)
+
+
     def test_manual_lift_is_separate_exact_profile_and_general_up_stays_rejected(self):
         s=scope();s.update(schemaVersion=m.LIFT_SCHEMA,pulse=copy.deepcopy(m.LIFT_PULSE))
         self.assertEqual(m.validate_scope(s)['pulse']['expectedPwm'],127)

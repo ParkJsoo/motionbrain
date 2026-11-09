@@ -15,7 +15,7 @@ import warnings
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 from learning.artifacts import ArtifactStore, _decode_json, _read
-from learning.m4_up_commissioning import M4UpCommissioning, _external_frame, _gripper_frame, validate_scope
+from learning.m4_up_commissioning import M4UpCommissioning, CONTACT_PROBE_SCHEMA, _external_frame, _gripper_frame, validate_scope
 from learning.m4_up_observer import M4DualCameraObserver, sha
 from learning.manual_collection_dataset import require
 from learning.supervised_collection import plan_digest
@@ -68,8 +68,10 @@ class AttestedBeforeReviewer:
         require(attestation['scopeSha256']==plan_digest(scope) and attestation['trialId']==scope['trialId']
                 and attestation['context']==scope['context'] and attestation['stable'] is True,
                 'operator_attestation_scope_changed')
+        expected_onsite=dict(operatorPresent=True,clearanceVerified=True,tableSupportVerified=True,
+                            jawContactVerified=scope['schemaVersion']!=CONTACT_PROBE_SCHEMA)
         require(set(attestation['onsite'])=={'operatorPresent','clearanceVerified','jawContactVerified','tableSupportVerified'}
-                and all(v is True for v in attestation['onsite'].values())
+                and all(attestation['onsite'][key] is value for key,value in expected_onsite.items())
                 and isinstance(attestation['confirmedAt'],str) and attestation['confirmedAt']
                 and type(attestation['expectedOutputSequence']) is int and attestation['expectedOutputSequence']>0,
                 'operator_attestation_required')
@@ -82,6 +84,8 @@ class AttestedBeforeReviewer:
                 and source.get('physicalPoseUnchangedConfirmed') is True
                 and isinstance(source.get('userInstruction'),str) and bool(source['userInstruction']),
                 'explicit_user_confirmation_source_required')
+        self.review_basis=('explicit_authorization_for_contact_unknown_probe'
+                           if scope['schemaVersion']==CONTACT_PROBE_SCHEMA else 'user_onsite_attestation_for_fixed_manual_command')
         self.attestation,self.digest=copy.deepcopy(attestation),attestation_sha
         self.store,self.sequence_reader,self.after_reviewer=store,sequence_reader,after_reviewer
         self.used=False
@@ -90,7 +94,7 @@ class AttestedBeforeReviewer:
         require(not self.used,'operator_attestation_consumed');self.used=True
         require(self.sequence_reader()==self.attestation['expectedOutputSequence'],'operator_context_output_changed')
         self.store.write_json('before-operator-attestation-binding.json',dict(
-            reviewBasis='user_onsite_attestation_for_fixed_manual_command',currentFramesReviewed=False,
+            reviewBasis=self.review_basis,currentFramesReviewed=False,
             attestation=self.attestation,attestationSha256=self.digest,sourceRequest=request))
         return {k:copy.deepcopy(self.attestation[k]) for k in ('context','stable','onsite')}
 
@@ -182,7 +186,7 @@ def main(argv=None):
         trial=M4UpCommissioning(scope,observer,token,store,evidence_root=store.root)
         result=trial.run(confirmed_scope_sha256=a.confirm_scope_sha256)
     print(json.dumps(dict(status=result['status'],resultDirectory=str(store.root),mode=a.mode)),flush=True)
-    return 0 if result['status']=='completed' else 2
+    return 0 if result['status'] in ('completed','probe_completed_contact_unverified') else 2
 
 
 if __name__=='__main__':

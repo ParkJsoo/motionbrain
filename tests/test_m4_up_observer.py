@@ -207,6 +207,39 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(sum(v=={'action':'run'} for _,v in self.device.requests),1)
         with self.assertRaisesRegex(ValueError,'consumed'):reviewer({'label':'before'},deadline=60,tick=lambda:None)
 
+    def test_unknown_contact_attestation_accepts_only_false_contact_and_preserves_raw_path(self):
+        old_scope=copy.deepcopy(self.scope)
+        self.scope.update(schemaVersion=core.CONTACT_PROBE_SCHEMA,contactState='unknown')
+        att=self.attestation();att['onsite']['jawContactVerified']=False
+        with patch.object(cli,'ROOT',self.repo):
+            reviewer=cli.AttestedBeforeReviewer(self.scope,att,'hash',self.store,lambda:trial.port.last_sequence,self.review)
+            bad=copy.deepcopy(att);bad['onsite']['jawContactVerified']=True
+            with self.assertRaisesRegex(ValueError,'operator_attestation_required'):
+                cli.AttestedBeforeReviewer(self.scope,bad,'hash',self.store,lambda:5,self.review)
+            old=copy.deepcopy(att);old.update(scopeSha256=plan_digest(old_scope),trialId=old_scope['trialId'],context=old_scope['context'])
+            with self.assertRaisesRegex(ValueError,'operator_attestation_required'):
+                cli.AttestedBeforeReviewer(old_scope,old,'hash',self.store,lambda:5,self.review)
+        observer=self.adapter();observer.reviewer=reviewer
+        trial=core.M4UpCommissioning(self.scope,observer,'private-token',self.store,evidence_root=self.store.root,clock=self.clock)
+        trial.port.opener=self.device
+        result=trial.run(confirmed_scope_sha256=plan_digest(self.scope))
+        self.assertEqual(result['status'],'probe_completed_contact_unverified',result)
+        self.assertTrue(result['finalIdleOffVerified']);self.assertFalse(result['graspVerified']);self.assertFalse(result['liftVerified'])
+        evidence=_decode_json(_read(self.store.root,'before-operator-attestation-binding.json'))
+        self.assertFalse(evidence['currentFramesReviewed']);self.assertIn('contact_unknown',evidence['reviewBasis'])
+        self.assertEqual(sum(v=={'action':'run'} for _,v in self.device.requests),1)
+
+    def test_cli_unknown_probe_completed_outcome_returns_success_without_claiming_grasp(self):
+        config=self.repo/'.local/config.json';config.write_text(json.dumps(dict(scope=self.scope,camera=self.config)))
+        result=dict(status='probe_completed_contact_unverified')
+        with (patch.object(cli,'ROOT',self.repo),patch.object(cli.sys.stdin,'isatty',return_value=True),
+              patch.object(cli.getpass,'getpass',return_value='synthetic-token'),patch.object(cli,'M4DualCameraObserver'),
+              patch.object(cli,'M4UpCommissioning') as trial,patch('builtins.print')):
+            trial.return_value.run.return_value=result
+            code=cli.main(['run','--config',str(config),'--output-dir',str(self.repo/'.local/cli-new'),
+                           '--confirm-scope-sha256',plan_digest(self.scope)])
+        self.assertEqual(code,0);self.assertFalse(self.device.requests)
+
     def test_attestation_scope_and_changed_output_block_before_decision(self):
         att=self.attestation()
         with patch.object(cli,'ROOT',self.repo):
