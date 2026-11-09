@@ -10,6 +10,7 @@ These are general repository reproduction steps. Device addresses, credentials a
 | --- | --- |
 | Test and build firmware without devices | [Builds](#builds) |
 | Inspect virtual arms, saved evaluations and model metrics | [Five-tool setup (Korean)](docs/robot-visualization.md) |
+| Preview two cameras, landmarks and the measured M4 angle live | [Read-only Rerun preview (Korean)](docs/live-observation.md) |
 | Collect, replay and learn from physical actions | [Manual collection (Korean)](docs/manual-data-collection.md) · [Supervised collection (Korean)](docs/supervised-action-collection.md) |
 | Synchronize host/Pi sources and apply services | [Source synchronization](#source-synchronization-and-device-application) · [Pi services](#pi-service-configuration) |
 | Inspect dimensions, recording references and a coarse M4 anchor | [Physical calibration (Korean)](docs/arm-calibration.md) |

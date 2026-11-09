@@ -10,6 +10,7 @@
 | --- | --- |
 | 장치 없이 검사·펌웨어 빌드 | [빌드](#빌드) |
 | 가상 팔·저장 평가·모델 지표 확인 | [다섯 도구 실행](docs/robot-visualization.md) |
+| 두 카메라·관측점·실측 M4 실시간 표시 | [읽기 전용 Rerun](docs/live-observation.md) |
 | 실제 동작의 수집·재생·학습 | [수동 수집](docs/manual-data-collection.md) · [감독 수집](docs/supervised-action-collection.md) |
 | 호스트·Pi 소스와 서비스 적용 | [소스 동기화](#소스-동기화와-장치-적용) · [Pi 서비스 설정](#pi-서비스-설정) |
 | 치수·촬영 기준·M4 근사 기준점 확인 | [실물 보정](docs/arm-calibration.md) |
