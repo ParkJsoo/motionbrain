@@ -46,6 +46,18 @@ docker compose -f tools/visualization/compose.yaml up -d
 
 두 집게는 하나의 개방 입력을 반대 방향으로 따르는 단순 회전 연동이다. ROS는 URDF mimic, MuJoCo는 joint equality, Gazebo Harmonic은 설치된 Bullet Featherstone의 mimic constraint를 사용한다. 실제 집게의 다절 링크·개구폭·접촉·마찰 모델을 식별한 것은 아니다. 외형 개수로 임시 질량이 늘지 않도록 링크별 질량·관성을 한 번만 지정한다.
 
+마지막으로 확인한 M4 센서값을 세 표시 도구에 반영하려면, 검토한 단일 근사 기준점과 측정 근거를 명시한다. 실측값·출처·환산 자세는 `.local/`에만 저장하며 나머지 네 관절은 기존 가정값을 유지한다.
+
+```bash
+python tools/visualization/update_pose.py \
+  --sensor-deg <마지막_M4_센서값> --anchor .local/<근사_기준점.json> \
+  --evidence .local/<측정_근거> --output .local/<현재_표시_자세.json> --apply-viewers
+.local/venvs/visual-tools/bin/mjpython tools/visualization/mujoco_viewer.py \
+  .local/visual-tools/model.xml --pose-file .local/<현재_표시_자세.json>
+```
+
+`--apply-viewers`는 이미 실행 중인 `motionbrain-visual-rviz`와 `motionbrain-visual-gazebo`만 갱신한다. RViz는 첫 적용 때 표시용 발행기로 전환하며 컨테이너를 한 번 재시작한다. 이후 같은 자세 파일을 갱신하면 MuJoCo와 RViz가 다시 읽고, Gazebo에는 저장 자세를 다시 전달한다. 화면에는 마지막 M4 값의 근사 환산·다른 관절 미확인·실시간 추종 아님·동역학 미보정을 표시한다. 이 경로는 실물 ROS 노드·센서 통신·모터 명령을 사용하지 않으며, 기준점의 비활성 제어 보정을 활성화하지 않는다.
+
 초록 상자는 독립 낙하 진단 물체였으며 기본 화면에는 없다. 필요하면 `prepare.py --models-only --physics-test-object --output .local/physics-diagnostic`처럼 별도로 생성한다. 그 물체의 낙하·바닥 접촉은 로봇의 집기 성공을 뜻하지 않는다.
 
 ## 실제 고정 평가의 재생과 비교

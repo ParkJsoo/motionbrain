@@ -27,6 +27,9 @@ else
     python3 /opt/motionbrain/rviz_appearance.py /workspace/ros2_ws/src/motionbrain_description/urdf/motionbrain.urdf >/tmp/motionbrain-rviz.urdf
     ros2 run robot_state_publisher robot_state_publisher --ros-args \
       -p robot_description:="$(cat /tmp/motionbrain-rviz.urdf)" >/tmp/robot-state.log 2>&1 &
+    if [[ -f /opt/motionbrain/runtime-pose.json ]]; then
+        python3 /opt/motionbrain/display_pose_publisher.py /opt/motionbrain/runtime-pose.json >/tmp/joints.log 2>&1 &
+    else
     mapfile -t pose_args < <(python3 - <<'PYPOSE'
 import json
 for name, value in json.load(open('/opt/motionbrain/display-pose.json'))['joints'].items():
@@ -35,6 +38,7 @@ for name, value in json.load(open('/opt/motionbrain/display-pose.json'))['joints
 PYPOSE
     )
     ros2 run joint_state_publisher_gui joint_state_publisher_gui --ros-args "${pose_args[@]}" >/tmp/joints.log 2>&1 &
+    fi
     rviz2 -d /workspace/ros2_ws/src/motionbrain_description/rviz/motionbrain.rviz >/tmp/rviz.log 2>&1 &
 fi
 trap 'kill $(jobs -pr) 2>/dev/null || true' EXIT INT TERM

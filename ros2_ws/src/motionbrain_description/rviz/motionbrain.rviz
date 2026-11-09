@@ -22,6 +22,11 @@ Visualization Manager:
       Enabled: false
       Name: TF
       Marker Scale: 0.08
+    - Class: rviz_default_plugins/Marker
+      Enabled: true
+      Name: Last measured M4 display status
+      Topic:
+        Value: /motionbrain/display_status
   Enabled: true
   Global Options:
     Background Color: 222; 228; 235
