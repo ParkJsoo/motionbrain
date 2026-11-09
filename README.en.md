@@ -25,6 +25,8 @@ Prediction uses inputs available before execution. Actual outputs and post-actio
 
 [Collection and replay (Korean)](docs/manual-data-collection.md) · [Learning design (Korean)](docs/visual-action-learning.md) · [Model selection and sequential execution (Korean)](docs/model-grasp-trial.md)
 
+The [repeatable experiment pipeline (Korean)](docs/experiment-pipeline.md) separates raw single-action collection from later observation and reruns source audits, context-specific training, baseline evaluation and model-version comparisons from an explicit manifest. Software and historical replay verification remain separate from physical operation in a new camera view.
+
 ## Five tools for inspecting models and experiments
 
 The approximate virtual arm and actual experiment records provide complementary views. **RViz, Gazebo and MuJoCo cover robot models; Rerun and W&B cover observations, predictions and evaluation.**

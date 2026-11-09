@@ -25,6 +25,8 @@ ESP32 기반 5축 DC 로봇팔에 외부 카메라·집게 위 카메라와 센�
 
 [수집·재생 안내](docs/manual-data-collection.md) · [학습 설계](docs/visual-action-learning.md) · [모델 선택과 순차 실행](docs/model-grasp-trial.md)
 
+[반복 실험 파이프라인](docs/experiment-pipeline.md)은 단발 원본 수집을 사후 관측과 분리하고, 명시적 manifest로 원본 감사·관측·구도별 학습·기준선 및 모델 버전 비교를 재실행한다. 소프트웨어·과거 원본 재생 검증과 새 구도의 실물 운영 검증은 구분한다.
+
 ## 다섯 도구로 모델과 실험을 확인하기
 
 실물을 근사한 가상 팔과 실제 실험 기록을 서로 다른 관점에서 확인한다. **RViz·Gazebo·MuJoCo는 로봇 모델**, **Rerun·W&B는 관측·예측·평가**를 담당한다.
