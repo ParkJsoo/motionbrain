@@ -168,6 +168,69 @@ class BatchTests(unittest.TestCase):
         r=self.campaign().run();self.assertEqual(r['validTransitions'],1)
         self.assertEqual(r['conditions'][1]['blockedReason'],'batch_reused_source_episode_or_frame')
 
+    def test_reused_paired_camera_frame_does_not_inflate_quota(self):
+        original=self.driver.execute
+        def execute(c,r,**kwargs):
+            result=original(c,r,**kwargs)
+            result['dataIdentity']['pairedFrameIds']=['same-grip-before','same-grip-after']
+            return result
+        self.driver.execute=execute
+        result=self.campaign().run()
+        self.assertEqual(result['validTransitions'],1)
+        self.assertEqual(result['conditions'][1]['blockedReason'],'batch_reused_source_episode_or_frame')
+
+    def test_m4_up_requires_explicit_route_and_exact_commissioning_pulse(self):
+        c=self.p['conditions'][3]
+        c['command']=dict(joint='shoulder',direction='up',percent=16,durationMs=200)
+        self.p['runtime']={'conditionBindings':{c['id']:{'route':'m4_up',
+            'scopePath':'.local/m4-scope.json','scopeSha256':'a'*64}}}
+        checked=validate_plan(self.p)
+        self.assertIn(c['id'],[r['id'] for r in checked['ready']])
+        c['command']['durationMs']=201
+        self.assertIn(c['id'],[r['conditionId'] for r in validate_plan(self.p)['rejected']])
+
+    def test_motion_guard_fault_quarantines_joint_not_just_condition_id(self):
+        other=copy.deepcopy(self.p['conditions'][3]);other.update(id='same-joint-new-scope',captureGroup='other')
+        self.p['conditions'].append(other)
+        self.driver.actions['c3']={'observation':'rejected','failureScope':'joint',
+            'blockedJoint':'shoulder','failureReason':'m4_observed_excursion'}
+        result=self.campaign().run()
+        self.assertEqual(result['validTransitions'],4)
+        self.assertEqual([c for c,_ in self.driver.calls],['c0','c1','c2','c3','c4'])
+        self.assertEqual(result['conditions'][-1]['blockedReason'],'batch_joint_quarantined:m4_observed_excursion')
+
+    def test_reconcile_only_never_observes_or_dispatches(self):
+        c=self.campaign()
+        self.assertEqual(c.run(reconcile_only=True)['status'],'reconciled')
+        self.assertEqual((self.driver.observations,self.driver.calls),(0,[]))
+
+    def test_changed_optional_support_reconciles_original_reserved_condition(self):
+        c=self.campaign();original=c._finish
+        c._finish=lambda *args:(_ for _ in ()).throw(RuntimeError('crash'))
+        with self.assertRaises(RuntimeError):c.run()
+        c.close()
+        self.driver.condition_support=lambda condition:'reviewer_not_available' if condition['id']=='c0' else None
+        d=self.campaign()
+        result=d.run(reconcile_only=True)
+        self.assertEqual((result['status'],result['validTransitions']),('reconciled',1))
+        self.assertEqual((self.driver.observations,len(self.driver.calls)),(1,1))
+        self.assertEqual(d.run()['status'],'runtime_support_changed')
+        self.assertEqual(len(self.driver.calls),1)
+
+    def test_joint_quarantine_survives_temporary_support_change_during_reconcile(self):
+        other=copy.deepcopy(self.p['conditions'][0]);other.update(id='same-gripper-new-scope',captureGroup='other')
+        self.p['conditions'].append(other)
+        self.driver.actions['c0']={'observation':'rejected','failureScope':'joint','blockedJoint':'gripper'}
+        c=self.campaign();c._finish=lambda *args:(_ for _ in ()).throw(RuntimeError('crash'))
+        with self.assertRaises(RuntimeError):c.run()
+        c.close()
+        self.driver.condition_support=lambda x:'unavailable' if x['id']==other['id'] else None
+        d=self.campaign();d.run(reconcile_only=True);d.close()
+        del self.driver.condition_support
+        result=self.campaign().run()
+        self.assertEqual(result['validTransitions'],4)
+        self.assertNotIn(other['id'],[x[0] for x in self.driver.calls])
+
     def test_evaluation_requires_prospective_evidence(self):
         self.p['conditions'][0].update(phase='evaluation',captureGroup='eval0')
         r=self.campaign().run();self.assertEqual(r['validTransitions'],4)

@@ -113,6 +113,31 @@ class BatchLearningTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'learning_observer_context_required'):
             fit(broken)
 
+    def test_paired_camera_frame_identity_leakage_rejected_without_changing_state(self):
+        training = copy.deepcopy(self.training)
+        for index, record in enumerate(training):
+            record['pairedFrameIds'] = ['grip'+str(index)+'a', 'grip'+str(index)+'b']
+        model = fit(training)
+        self.assertEqual(len(model['stateFields']), 6)
+        evaluation = copy.deepcopy(self.evaluation)
+        evaluation['pairedFrameIds'] = ['grip0a', 'new-grip']
+        with self.assertRaisesRegex(ValueError, 'training_evaluation_overlap:frameIds'):
+            evaluate(model, [evaluation])
+        evaluation['pairedFrameIds'] = ['new-grip-before', 'new-grip-after']
+        self.assertEqual(evaluate(model, [evaluation])['evaluated'], 1)
+
+    def test_retention_supplemental_frame_leakage_rejected(self):
+        training=copy.deepcopy(self.training)
+        training[0]['supplementalFrameIds']=['retention-ext','retention-grip']
+        model=fit(training)
+        evaluation=copy.deepcopy(self.evaluation)
+        evaluation['supplementalFrameIds']=['retention-grip','new-retention-frame']
+        with self.assertRaisesRegex(ValueError,'training_evaluation_overlap:frameIds'):
+            evaluate(model,[evaluation])
+        evaluation['supplementalFrameIds']=['new-retention-frame','new-retention-frame']
+        with self.assertRaisesRegex(ValueError,'supplemental_frame_identity_invalid'):
+            evaluate(model,[evaluation])
+
 
 if __name__ == '__main__':
     unittest.main()

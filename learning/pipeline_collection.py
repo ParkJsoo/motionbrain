@@ -18,7 +18,7 @@ from learning.artifacts import ArtifactStore, _read
 
 def collect_once(manager, request_id, command, pose_context, *, onsite_confirmed,
                  request_root, pre_seconds=3.5, post_seconds=6.5, approval_plan_sha256=None,
-                 gripper_source_factory=None, before_command=None):
+                 gripper_source_factory=None, before_command=None, after_capture=None):
     """명시적 요청당 최대 한 번 pulse한다. 오류·부분 수집·중복은 자동 재전송하지 않는다.
 
     수동 자료 수집용이며 모델 선택 제어기가 아니다. 요청 ID는 호출자가 지정한다.
@@ -30,6 +30,8 @@ def collect_once(manager, request_id, command, pose_context, *, onsite_confirmed
         raise ValueError('gripper_source_factory_required')
     if before_command is not None and not callable(before_command):
         raise ValueError('before_command_callback_required')
+    if after_capture is not None and not callable(after_capture):
+        raise ValueError('after_capture_callback_required')
     command = copy.deepcopy(command)
     command_key(command)
     if not isinstance(pose_context, str) or not 1 <= len(pose_context.strip()) <= 500:
@@ -49,6 +51,8 @@ def collect_once(manager, request_id, command, pose_context, *, onsite_confirmed
                'controllerUrl': manager.controller_url}
     if before_command is not None:
         request['beforeCommandReview'] = True
+    if after_capture is not None:
+        request['afterCaptureReview'] = True
     if approval_plan_sha256 is not None:
         request['approvalPlanSha256'] = approval_plan_sha256
     if gripper_source_factory is not None:
@@ -138,6 +142,17 @@ def collect_once(manager, request_id, command, pose_context, *, onsite_confirmed
             except Exception as exc:
                 # Camera/processing failure never shortens the external raw post window.
                 report['gripperPair'].update(status='rejected', reason='after:'+type(exc).__name__+':'+str(exc))
+        if after_capture is not None:
+            # Extra observation occurs while the original external recorder is live.
+            # Its rejection never erases an already received command or valid pair.
+            try:
+                extra = after_capture(manager, copy.deepcopy(report['gripperPair']), gripper)
+                if not isinstance(extra, dict):
+                    raise ValueError('after_capture_result_required')
+                encoded(extra)  # Validate a finite, persistable report before accepting it.
+                report['afterCapture'] = copy.deepcopy(extra)
+            except Exception as exc:
+                report['afterCapture'] = dict(status='rejected', reason=type(exc).__name__)
         session = manager.finish()
         off = session['finalIdleOffVerified'] is True
         report.update(status=('unknown_output' if not off else

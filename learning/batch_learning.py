@@ -58,8 +58,17 @@ def _rows(rows):
         refs = row.get('frameIds')
         require(isinstance(refs, list) and len(refs) == 2 and all(isinstance(v, str) and v for v in refs)
                 and len(set(refs)) == 2, 'before_after_frame_ids_required')
+        paired = row.get('pairedFrameIds', [])
+        require(isinstance(paired, list) and len(paired) in (0, 2) and
+                all(isinstance(v, str) and v for v in paired) and
+                len(set(refs+paired)) == len(refs)+len(paired), 'paired_frame_identity_invalid')
+        supplemental = row.get('supplementalFrameIds', [])
+        require(isinstance(supplemental,list) and len(supplemental) <= 128 and
+                all(isinstance(v,str) and v for v in supplemental) and
+                len(set(refs+paired+supplemental)) == len(refs)+len(paired)+len(supplemental),
+                'supplemental_frame_identity_invalid')
         for key in seen:
-            identity = set(refs) if key == 'frameIds' else {row[key]}
+            identity = set(refs+paired+supplemental) if key == 'frameIds' else {row[key]}
             require(not seen[key] & identity, 'duplicate_training_identity:'+key)
             seen[key].update(identity)
         vector(row.get('before'), len(fields)); vector(row.get('after'), len(fields))

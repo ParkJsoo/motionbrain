@@ -76,7 +76,12 @@ def validate_plan(plan):
                     'batch_command_fields')
             require(command['joint'] in PROFILES, 'batch_joint_unsupported')
             limits = PROFILES[command['joint']]['directions'].get(command['direction'])
-            require(limits is not None, 'batch_direction_unsupported')
+            if limits is None:
+                binding = plan.get('runtime', {}).get('conditionBindings', {}).get(c['id'], {})
+                require(isinstance(binding, dict) and binding.get('route') == 'm4_up', 'batch_direction_unsupported')
+                from learning.batch_m4 import validate_route_command
+                validate_route_command(command, binding)
+                limits = (0, command['percent'], command['durationMs'])
             require(type(command['percent']) is int and 1 <= command['percent'] <= limits[1]
                     and type(command['durationMs']) is int and 100 <= command['durationMs'] <= limits[2],
                     'batch_command_limits')
@@ -135,8 +140,7 @@ class Campaign:
             ''')
             prior = self._get('planHash')
             require(prior is None or prior == self.compiled['planSha256'], 'batch_saved_plan_changed')
-            if prior is not None:
-                require(self._get('compiledHash') == digest(self.compiled), 'batch_runtime_support_changed')
+            self.support_changed = prior is not None and self._get('compiledHash') != digest(self.compiled)
             with self.db:
                 if prior is None:
                     self._set('planHash', self.compiled['planSha256'])
@@ -177,7 +181,7 @@ class Campaign:
 
     def _counts(self):
         rows = self.db.execute('SELECT condition_id,phase,status,result FROM attempts').fetchall()
-        counts = {c['id']:dict(attempts=0, eligible=0) for c in self.compiled['ready']}
+        counts = {c['id']:dict(attempts=0, eligible=0) for c in self.plan['conditions']}
         totals = dict(reservedCommands=len(rows), preparationCommands=0,
                       completedExecutions=0, notDispatched=0, unknownExecutions=0, validTransitions=0)
         for cid, phase, status, raw in rows:
@@ -213,7 +217,7 @@ class Campaign:
                     status=status or ('halted' if self._get('halted') else
                                       'needs_reconciliation' if totals['unknownExecutions'] else 'ready'),
                     haltedReason=self._get('halted'), elapsedSeconds=elapsed, jointCoverage=coverage,
-                    conditions=conditions, rejectedConditions=self.compiled['rejected'], **totals,
+                    conditions=conditions, rejectedConditions=self.compiled['rejected'], runtimeSupportChanged=self.support_changed, **totals,
                     automaticRetry=False, modelSelected=False, physicalSuccessClaimed=False)
 
     def _finish(self, condition, request, result):
@@ -223,20 +227,27 @@ class Campaign:
         require(type(r.get('offVerified')) is bool and type(r.get('journalClear')) is bool, 'batch_output_proof')
         require(r.get('capture') in ('recorded', 'partial', 'failed')
                 and r.get('observation') in ('eligible', 'rejected'), 'batch_data_outcome')
+        require(r.get('failureScope') in (None,'condition','joint','global'), 'batch_failure_scope')
+        if r.get('failureScope') == 'joint':
+            require(r.get('blockedJoint') in JOINTS and r['blockedJoint'] == condition['command']['joint'],
+                    'batch_failed_joint_binding')
         clean = r['offVerified'] and r['journalClear']
-        eligible = (r['execution'] == 'completed' and clean and r['capture'] == 'recorded'
+        eligible = (r.get('failureScope') not in ('joint','global')
+                    and r['execution'] == 'completed' and clean and r['capture'] == 'recorded'
                     and r['observation'] == 'eligible')
         if condition['phase'] == 'evaluation':
             eligible = eligible and r.get('prospectiveEvidenceVerified') is True
         # Preparation is a completed move, never a training transition.
-        accepted = eligible if condition['phase'] != 'preparation' else r['execution'] == 'completed' and clean
+        accepted = eligible if condition['phase'] != 'preparation' else (
+            r.get('failureScope') not in ('joint','global') and r['execution'] == 'completed' and clean)
         identity = r.get('transitionId')
         if accepted and condition['phase'] != 'preparation':
             require(isinstance(identity, str) and re.fullmatch(r'[a-f0-9]{64}', identity), 'batch_transition_identity')
         keys = []
         if accepted and condition['phase'] != 'preparation':
             data = r.get('dataIdentity')
-            require(isinstance(data, dict) and set(data) == {'sourceHash','sessionId','episodeId','frameIds'},
+            require(isinstance(data, dict) and {'sourceHash','sessionId','episodeId','frameIds'} <= set(data)
+                    and set(data) <= {'sourceHash','sessionId','episodeId','frameIds','pairedFrameIds','supplementalFrameIds'},
                     'batch_data_identity_required')
             require(isinstance(data['sourceHash'], str) and re.fullmatch(r'[a-f0-9]{64}', data['sourceHash']),
                     'batch_source_hash_required')
@@ -245,7 +256,16 @@ class Campaign:
             refs = data['frameIds']
             require(isinstance(refs, list) and len(refs) == 2 and all(isinstance(f,str) and f for f in refs)
                     and refs[0] != refs[1], 'batch_frame_identity_required')
-            keys = [(k,data[k]) for k in ('sourceHash','sessionId','episodeId')]+[('frameId',f) for f in refs]
+            paired = data.get('pairedFrameIds', [])
+            require(isinstance(paired, list) and len(paired) in (0,2)
+                    and all(isinstance(f,str) and f for f in paired)
+                    and len(set(refs+paired)) == len(refs)+len(paired), 'batch_paired_frame_identity_required')
+            supplemental = data.get('supplementalFrameIds', [])
+            require(isinstance(supplemental, list) and len(supplemental) <= 128
+                    and all(isinstance(f,str) and f for f in supplemental)
+                    and len(set(refs+paired+supplemental)) == len(refs)+len(paired)+len(supplemental),
+                    'batch_supplemental_frame_identity_required')
+            keys = [(k,data[k]) for k in ('sourceHash','sessionId','episodeId')]+[('frameId',f) for f in refs+paired+supplemental]
         with self.db:
             if accepted and condition['phase'] != 'preparation':
                 if any(self.db.execute('SELECT 1 FROM data_keys WHERE kind=? AND value=?', key).fetchone()
@@ -264,6 +284,13 @@ class Campaign:
                             ('finished', encoded(r).decode(), request, 'reserved'))
             if r['execution'] == 'unknown' or not clean:
                 self._set('halted', 'batch_unresolved_execution_or_output')
+            if r.get('failureScope') == 'global':
+                self._set('halted', 'batch_global_execution_fault')
+            if r.get('failureScope') == 'joint':
+                for candidate in self.plan['conditions']:
+                    command = candidate.get('command')
+                    if isinstance(command, dict) and command.get('joint') == r['blockedJoint']:
+                        self._block(candidate['id'], 'batch_joint_quarantined:'+str(r.get('failureReason','execution_guard')))
             if not accepted:
                 self._block(condition['id'], r.get('reason', 'batch_condition_rejected'))
 
@@ -281,7 +308,8 @@ class Campaign:
                 and all(n in self.plan['nodes'] for n in nodes), 'batch_current_node_unknown')
         return set(nodes)
 
-    def run(self):
+    def run(self, *, reconcile_only=False):
+        require(type(reconcile_only) is bool, 'batch_reconcile_flag')
         with self._locked():
             started = self.clock.monotonic()
             base_elapsed = self._get('elapsedSeconds')
@@ -293,21 +321,30 @@ class Campaign:
             try:
                 if self._get('halted'):
                     return self.report('halted')
+                original_conditions = {c['id']:c for c in self.plan['conditions']}
                 conditions = {c['id']:c for c in self.compiled['ready']}
                 # Reconcile immutable old evidence only; never call execute for a reserved slot.
                 for request, cid in self.db.execute("SELECT request_id,condition_id FROM attempts WHERE status='reserved'").fetchall():
                     resolver = getattr(self.driver, 'reconcile', None)
-                    result = resolver(copy.deepcopy(conditions[cid]), request) if callable(resolver) else None
+                    try:
+                        result = resolver(copy.deepcopy(original_conditions[cid]), request) if callable(resolver) else None
+                    except Exception:
+                        self._halt('batch_reconciliation_unavailable')
+                        return self.report('halted')
                     if result is None:
                         self._halt('batch_reserved_execution_unresolved')
                         return self.report('halted')
                     try:
-                        self._finish(conditions[cid], request, result)
+                        self._finish(original_conditions[cid], request, result)
                     except Exception:
                         self._halt('batch_reconciliation_invalid')
                         return self.report('halted')
                 if self._get('halted'):
                     return self.report('halted')
+                if reconcile_only:
+                    return self.report('reconciled')
+                if self.support_changed:
+                    return self.report('runtime_support_changed')
                 while True:
                     counts, totals = self._counts()
                     remaining = [c for c in conditions.values() if counts[c['id']]['eligible'] < c['target']

@@ -16,7 +16,7 @@ from learning.batch_runtime import BatchRuntime, private_path, validate_runtime
 from learning.macos_credentials import load_keychain_secret
 
 
-def inspect_plan(path, repository=ROOT):
+def inspect_plan(path, repository=ROOT, *, m4_reviewer_factory=None):
     path = Path(path).resolve(strict=True)
     if not path.is_relative_to((Path(repository)/'.local').resolve()):
         raise ValueError('private_batch_plan_required')
@@ -24,7 +24,7 @@ def inspect_plan(path, repository=ROOT):
     checked = validate_plan(plan)
     runtime = validate_runtime(plan, repository)
     # Construction validates runtime files but never opens a camera or keychain.
-    driver = BatchRuntime(plan, repository, path.parent/'runtime', lambda: None)
+    driver = BatchRuntime(plan, repository, path.parent/'runtime', lambda: None, m4_reviewer_factory=m4_reviewer_factory)
     ready, rejected = [], list(checked['rejected'])
     for condition in checked['ready']:
         reason = driver.validate_condition(condition)
@@ -43,26 +43,41 @@ def main(argv=None):
     parser.add_argument('--plan-sha')
     parser.add_argument('--output', type=Path)
     parser.add_argument('--execute', action='store_true')
+    parser.add_argument('--reconcile-only', action='store_true', help='기존 영속 원본·원장만 재대조하며 기기·키체인에 접근하지 않음')
+    parser.add_argument('--interactive-m4-review', action='store_true', help='M4 전용 경로에서 기존 원본 결합 파일 검토를 명시적으로 사용')
     parser.add_argument('--onsite-confirmed', action='store_true')
     parser.add_argument('--keychain-service', default='MotionBrain.local.controller')
     parser.add_argument('--keychain-account', default='esp32-controller')
     args = parser.parse_args(argv)
-    plan, checked = inspect_plan(args.plan)
+    reviewer_factory = None
+    if args.interactive_m4_review:
+        def reviewer_factory(scope, store):
+            from tools.m4_up_trial import FileReviewer
+            return FileReviewer(store)
+    plan, checked = inspect_plan(args.plan, m4_reviewer_factory=reviewer_factory)
     if args.plan_sha is not None and args.plan_sha != checked['planSha256']:
         parser.error('계획 SHA가 일치하지 않습니다')
-    if not args.execute:
+    if args.execute and args.reconcile_only:
+        parser.error('실물 실행과 읽기 전용 재대조는 함께 선택할 수 없습니다')
+    if not args.execute and not args.reconcile_only:
         print(json.dumps(checked, ensure_ascii=False))
         return checked
-    if not args.plan_sha or not args.onsite_confirmed:
+    if args.reconcile_only and not args.plan_sha:
+        parser.error('읽기 전용 재대조에는 고정 계획 SHA가 필요합니다')
+    if not args.reconcile_only and (not args.plan_sha or not args.onsite_confirmed):
         parser.error('실행에는 고정 계획 SHA와 현재 현장 확인이 필요합니다')
-    if not checked['ready']:
+    if not args.reconcile_only and not checked['ready']:
         parser.error('실행 가능한 조건이 없습니다')
     output = args.output or args.plan.resolve().parent/'runtime'
     output = private_path(ROOT, str(output))
+    if args.reconcile_only and not (output/'campaign.sqlite').is_file():
+        parser.error('읽기 전용 재대조에는 기존 캠페인 진행 원장이 필요합니다')
     original_hash = checked['planSha256']
     def credential():
+        if args.reconcile_only:
+            raise RuntimeError('reconciliation_credential_access_forbidden')
         return load_keychain_secret(args.keychain_service, args.keychain_account)
-    driver = BatchRuntime(plan, ROOT, output, credential)
+    driver = BatchRuntime(plan, ROOT, output, credential, m4_reviewer_factory=reviewer_factory)
     def stop(*_):
         raise KeyboardInterrupt()
     previous = {sig:signal.signal(sig, stop) for sig in (signal.SIGINT, signal.SIGTERM)}
@@ -75,7 +90,7 @@ def main(argv=None):
             raise ValueError('batch_plan_changed_before_start')
         campaign = Campaign(plan, output, driver,
                             lock_path=private_path(ROOT, plan['runtime']['dispatchLockPath']))
-        result = campaign.run()
+        result = campaign.run(reconcile_only=True) if args.reconcile_only else campaign.run()
         print(json.dumps(result, ensure_ascii=False))
         return result
     finally:

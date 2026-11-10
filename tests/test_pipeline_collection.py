@@ -31,6 +31,31 @@ class PipelineCollectionTests(unittest.TestCase):
     def runs(self):
         return [r for r in self.requests if r[0] == 'POST' and r[1].endswith('/sequence')]
 
+    def test_after_capture_runs_before_external_close_and_duplicate_never_repeats(self):
+        seen=[]
+        def after(manager,pair,source):
+            self.assertEqual(manager.current['phase'],'recording')
+            self.assertIsNone(source)
+            self.assertTrue(any(e.get('kind')=='result' for e in manager.current['events']))
+            manager.tick();seen.append(True)
+            return dict(status='recorded',entries=[])
+        result=self.collect(after_capture=after)
+        self.assertEqual(result['status'],'recorded')
+        self.assertEqual(result['afterCapture']['status'],'recorded')
+        self.assertEqual(self.collect(after_capture=after),result)
+        self.assertEqual(seen,[True])
+        with self.assertRaisesRegex(ValueError,'payload_changed'):
+            self.collect()
+
+    def test_extra_capture_failure_preserves_completed_base_raw(self):
+        def after(*args):raise ValueError('additional_camera_failed')
+        result=self.collect(after_capture=after)
+        self.assertEqual(result['status'],'recorded')
+        self.assertTrue(result['offVerified'])
+        self.assertEqual(result['afterCapture']['status'],'rejected')
+        self.assertEqual(sum(path=='/sequence' and payload=={'action':'run'}
+                             for path,payload in self.device.requests),1)
+
     def test_raw_is_closed_before_processing_and_same_request_never_runs_twice(self):
         result = self.collect()
         self.assertEqual(result['status'], 'recorded'); self.assertTrue(result['offVerified'])

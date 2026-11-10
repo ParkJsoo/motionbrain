@@ -49,6 +49,9 @@ def partition(row):
 
 
 def load_transition(repository, entry, split):
+    if isinstance(entry, dict) and entry.get('sourceKind') == 'm4_scope':
+        from learning.batch_m4 import load_learning_transition
+        return load_learning_transition(repository, entry, split)
     require(isinstance(entry, dict) and set(entry) == {
         'transitionPath', 'transitionSha256', 'sourcePath', 'sourceSha256'}, 'transition_manifest_fields')
     transition = read_hashed(private_path(repository, entry['transitionPath']), entry['transitionSha256'])
@@ -107,15 +110,28 @@ def load_transition(repository, entry, split):
         observer_hash = spec_hash
         require(joint in observed.get('states', {}), 'transition_joint_state_missing')
         states[side] = observed['states'][joint]
-        require(states[side].get('state') == transition.get(side+'State') and
-                states[side].get('stateFields') == transition.get('stateFields'),
-                'transition_derived_state_changed')
+        if not transition.get('gripperPair', {}).get('before'):
+            require(states[side].get('state') == transition.get(side+'State') and
+                    states[side].get('stateFields') == transition.get('stateFields'),
+                    'transition_derived_state_changed')
     expected = dict(sessionId=original['sessionId'], episodeId=':'.join(audit['execution']['episode']),
                     sourceHash=entry['sourceSha256'], frameIds=[frame['frameId'],
                     original['targets']['image']['frameId']], captureGroup=transition.get('captureGroup'),
                     joint=joint, context={**context, 'observerSha256': observer_hash},
                     stateFields=transition['stateFields'], before=transition['beforeState'],
                     after=transition['afterState'], command=audit['execution']['command'])
+    if transition.get('gripperPair', {}).get('before'):
+        from learning.batch_runtime import audit_pair_transition
+        fused = audit_pair_transition(source, original, transition, repository)
+        require(all(transition[k] == fused[k] for k in ('beforeState','afterState','stateFields')),
+                'transition_fused_state_changed')
+        expected.update(stateFields=fused['stateFields'], before=fused['beforeState'], after=fused['afterState'],
+                        context={**expected['context'], **fused['extraContext']},
+                        pairedFrameIds=fused['pairedFrameIds'], pairedSourceHashes=fused['pairedSourceHashes'])
+    if transition.get('supplementalObservations', {}).get('status') == 'recorded':
+        from learning.batch_runtime import audit_retention_transition
+        supplemental = audit_retention_transition(source, original, transition, repository)
+        expected['supplementalFrameIds'] = supplemental
     require(transition.get('command') == expected['command'] and
             transition.get('sessionId') == expected['sessionId'] and
             transition.get('episodeId') == audit['execution']['episode'] and
@@ -138,7 +154,7 @@ def check_identities(training, evaluation):
         current_groups = set()
         for row in rows:
             for key in seen:
-                values = set(row[key]) if key == 'frameIds' else {row[key]}
+                values = set(row[key]+row.get('pairedFrameIds', [])+row.get('supplementalFrameIds', [])) if key == 'frameIds' else {row[key]}
                 require(not (seen[key] & values), 'manifest_identity_overlap:'+key)
                 seen[key].update(values)
             current_groups.add(row['captureGroup'])
