@@ -45,6 +45,14 @@ def private_path(repository, value):
     return path
 
 
+def _require_dispatch_observer(spec):
+    # The registered scene adapter has only stationary replay evidence. Its
+    # accepted result is not motion-tracking admission for any live route.
+    require(not (isinstance(spec,dict) and spec.get('schemaVersion') ==
+                 'motionbrain.batch_registered_observer.v1'),
+            'registered_observer_stationary_only')
+
+
 def validate_runtime(plan, repository):
     """파일·계약만 검사한다. 카메라/HTTP/키체인/프로세스를 시작하지 않는다."""
     repository = Path(repository).resolve()
@@ -60,7 +68,9 @@ def validate_runtime(plan, repository):
     spec_path = private_path(repository, config['observerSpecPath'])
     raw = spec_path.read_bytes()
     require(sha(raw) == config['observerSpecSha256'], 'runtime_observer_spec_hash_changed')
-    spec = validate_spec(json.loads(raw))
+    parsed = json.loads(raw)
+    _require_dispatch_observer(parsed)
+    spec = validate_spec(parsed)
     require(spec['viewId'] == plan['viewId'] and spec['poseRegime'] == config['poseContext']
             and spec['cameraIdentity'] == config['deviceId'], 'runtime_observer_context_mismatch')
     bindings = config.get('conditionBindings', {})
@@ -69,9 +79,10 @@ def validate_runtime(plan, repository):
         gripper = config['gripper']
         require(isinstance(gripper, dict) and set(gripper) <= {'url','bootId','required','observerSpecPath','observerSpecSha256','retentionCaptures'} and {'url','bootId'} <= set(gripper), 'runtime_gripper_configuration')
         require(type(gripper.get('required', True)) is bool, 'runtime_gripper_required_boolean')
-        # Constructor validates the origin/boot binding without capture or HTTP.
-        GripperObservationSource(gripper['url'], 'batch-static-check', gripper['bootId'], {}, None)
         _gripper_spec(repository, config, spec)
+        # Reject stationary-only nested observers before even constructing a
+        # camera source. This constructor otherwise checks only origin/boot.
+        GripperObservationSource(gripper['url'], 'batch-static-check', gripper['bootId'], {}, None)
         if 'retentionCaptures' in gripper:
             retention = gripper['retentionCaptures']
             require(isinstance(retention,dict) and set(retention) == {'count','intervalSeconds'} and
@@ -132,6 +143,7 @@ def _gripper_spec(repository, config, spec):
     require(isinstance(value, dict), 'runtime_gripper_observer_spec_required')
     if value.get('kind') == 'camera_local_hsv':
         require(set(value) == {'kind','spec'}, 'runtime_gripper_local_hsv_fields')
+        _require_dispatch_observer(value['spec'])
         spec_value = validate_spec(value['spec'])
         require(spec_value['cameraIdentity'] == 'gripper:'+gripper['bootId'] and
                 spec_value['viewId'] == spec['viewId']+':gripper' and

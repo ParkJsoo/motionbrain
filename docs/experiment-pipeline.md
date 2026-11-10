@@ -28,6 +28,8 @@
 
 `learning/batch_campaign.py`는 M1~M5의 조건을 순차 선택하는 유한 실행기다. 단발 실행은 기존 `collect_once`·`ManualCollection`·`SequencePort`를 재사용한다. 자동 조건 순회는 수집 정책이며 학습 모델이 목표 동작을 선택한 성과가 아니다. 일반 수집과 M4 상향 전용 scope를 구분하며 접촉·파지·들기 검토를 자동 통과시키지 않는다. 바뀐 물체·외부 카메라 구도는 새 관측 계약으로 등록해야 하며 과거 모델·원본 검토를 그대로 적용하지 않는다.
 
+새 구도의 정지 특징점은 [등록 관측 어댑터](../learning/batch_template_observation.py)의 `motionbrain.batch_registered_observer.v1` 계약으로 기존 `validate_spec`·`observe_frame` API에 연결할 수 있다. 기준 PNG·BGRA 픽셀·등록 구현의 해시를 고정하고 기존 등록기의 대비·중복·왕복·12px 이동 제한을 재사용한다. 배경 특징 최소 두 개와 팔 특징을 검사하며, 물체 색상 관측도 함께 구성할 수 있다. 기준 PNG는 최대 8MiB다. 정지 영상에서의 등록 통과는 움직임 추적·측정 정확도·학습·제어 적격을 뜻하지 않는다. 이 계약은 현재 실물 배치 실행에서 `registered_observer_stationary_only`로 차단되며, 집게 카메라 설정에 중첩해도 실행할 수 없다. 실제 움직임과 가림에 대한 검증 및 실행 적격 연결은 별도 후속 작업이다.
+
 ### 계획과 진행 관리
 
 비공개 계획의 형식은 `motionbrain.batch_campaign.v1`이다. 다음을 실행 전에 고정한다.

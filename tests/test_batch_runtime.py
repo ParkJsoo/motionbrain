@@ -73,6 +73,45 @@ class BatchRuntimeTests(unittest.TestCase):
             self.runtime.observe()
         self.assertEqual(self.credentials,[])
 
+    def stationary_registered_spec(self):
+        from tests.test_batch_template_observation import RegisteredBatchObservationTests
+        RegisteredBatchObservationTests.setUpClass()
+        spec=copy.deepcopy(RegisteredBatchObservationTests.spec)
+        for name in ('viewId','poseRegime','object','load','cameraIdentity'):
+            spec[name]=self.spec[name]
+        return spec
+
+    def test_stationary_registered_external_observer_cannot_admit_dispatch(self):
+        spec=self.stationary_registered_spec()
+        self.spec_path.write_bytes(encoded(spec))
+        plan=copy.deepcopy(self.plan)
+        plan['runtime']['observerSpecSha256']=hashlib.sha256(self.spec_path.read_bytes()).hexdigest()
+        with patch('learning.batch_runtime.SequencePort',side_effect=AssertionError('controller')) as controller, \
+             patch('learning.batch_runtime.ManualCollection',side_effect=AssertionError('collection')) as collection, \
+             patch('learning.batch_runtime.GripperObservationSource',side_effect=AssertionError('camera')) as camera:
+            with self.assertRaisesRegex(ValueError,'registered_observer_stationary_only'):
+                validate_runtime(plan,self.repository)
+            with self.assertRaisesRegex(ValueError,'registered_observer_stationary_only'):
+                BatchRuntime(plan,self.repository,self.private/'stationary-runtime',self.credential)
+        controller.assert_not_called();collection.assert_not_called();camera.assert_not_called()
+        self.assertEqual(self.credentials,[])
+        self.assertFalse((self.private/'stationary-runtime').exists())
+
+    def test_stationary_registered_observer_cannot_bypass_via_gripper_wrapper(self):
+        spec=self.stationary_registered_spec()
+        spec.update(cameraIdentity='gripper:'+'a'*32,viewId=self.spec['viewId']+':gripper')
+        path=self.private/'stationary-gripper.json'
+        path.write_bytes(encoded(dict(kind='camera_local_hsv',spec=spec)))
+        plan=copy.deepcopy(self.plan)
+        plan['runtime']['gripper']=dict(url='http://camera.invalid',bootId='a'*32,
+            observerSpecPath='.local/stationary-gripper.json',observerSpecSha256=hashlib.sha256(path.read_bytes()).hexdigest())
+        with patch('learning.batch_runtime.SequencePort',side_effect=AssertionError('controller')) as controller, \
+             patch('learning.batch_runtime.GripperObservationSource',side_effect=AssertionError('camera')) as camera:
+            with self.assertRaisesRegex(ValueError,'registered_observer_stationary_only'):
+                BatchRuntime(plan,self.repository,self.private/'stationary-pair-runtime',self.credential)
+        controller.assert_not_called();camera.assert_not_called()
+        self.assertEqual(self.credentials,[])
+
     def test_object_or_load_requires_explicit_interaction_binding(self):
         for field,value in [('load','held'),('object','cylinder')]:
             spec=copy.deepcopy(self.spec);spec[field]=value

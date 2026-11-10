@@ -36,9 +36,9 @@ def _private(repository, value):
     return path
 
 
-def _read_json(path, expected_hash):
+def _read_json(path, expected_hash, *, max_bytes=1024*1024):
     raw = path.read_bytes()
-    require(len(raw) <= 1024*1024 and sha(raw) == expected_hash, 'interaction_review_bytes_changed')
+    require(len(raw) <= max_bytes and sha(raw) == expected_hash, 'interaction_review_bytes_changed')
     return json.loads(raw), raw
 
 
@@ -53,7 +53,7 @@ def validate_binding(plan, condition, binding, repository, *, purpose='dispatch'
                    plan=copy.deepcopy(plan), repository=repository, purpose=purpose)
     config = plan['runtime']
     spec_path = _private(repository, config['observerSpecPath'])
-    spec, _ = _read_json(spec_path, config['observerSpecSha256'])
+    spec, _ = _read_json(spec_path, config['observerSpecSha256'], max_bytes=12*1024*1024)
     generic = binding.get('route', 'generic') == 'generic'
     if purpose == 'dispatch' and generic and binding['interaction'] == 'contact_probe':
         exact = dict(joint='gripper',direction='close',percent=40,durationMs=350)
