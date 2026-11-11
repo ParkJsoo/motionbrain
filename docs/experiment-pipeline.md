@@ -232,6 +232,42 @@ source 경로는 정규화한 뒤 `artifactRoot` 내부인 경우에만 허용�
 사후 재가공의 평가는 `developmentReplay`이며 `evaluationPassed`를 만들지 않는다.
 새로운 고정 후 평가에는 실행 전에 고정된 관측·모델·입력·예측의 시간 증거가 별도로 필요하다.
 
+## 집게 3점의 파일 전용 배치 관측
+
+`learning.batch_runtime.observe_gripper_frame_offline(repository, external_spec,
+gripper_config, folder, side, session_id)`는 저장한 JPEG와 프레임 메타데이터만 읽는다.
+`side`는 기존 원본의 `frame`, `before`, `after`를 사용한다. `gripper_config`에는
+`bootId`, `required: true`, `observerSpecPath`, `observerSpecSha256`을 지정한다.
+관측 설정 파일은 다음 필드를 갖는다. 모든 경로는 저장소의 `.local/` 안에 둔다.
+
+```json
+{
+  "kind": "registered_gripper_points_stationary",
+  "registrationPath": ".local/scene/gripper-registration.json",
+  "registrationSha256": "<등록 파일의 SHA-256>",
+  "referenceImagePath": ".local/scene/reference.jpg",
+  "referenceImageSha256": "<기준 JPEG의 SHA-256>",
+  "context": {"viewId": "<외부 구도>", "poseRegime": "<자세 조건>", "object": "<물체>", "load": "<하중 조건>"},
+  "maxAgeSeconds": 10
+}
+```
+
+등록·기준 영상 해시, 외부 관측의 네 가지 문맥, 카메라 부팅 ID와 원본 픽셀을
+검사한다. 물체 표면 기준점에서 양턱 투영점 중점까지의 x·y 상대 위치와
+양턱 투영점 간격을 각각 `objectMinusJawMidXpx`, `objectMinusJawMidYpx`,
+`projectedJawSeparationPx`로 반환한다. 기존 배치 전이 재감사는 이 관측을 다시 계산하며,
+M1의 외부 특징에 `gripper:` 이름공간으로 결합한다. 다른 관절의 상태에 자동 추가하지
+않으며, 기존 턱축 전용 모델과 같은 관측 계약으로 취급하지 않는다.
+
+파일 전용 API의 시간 검사는 저장 당시 요청~저장 구간을 검사하며 현재 영상의
+신선함을 보증하지 않는다. 가림·검색 경계·모호한 일치·기하 조건 실패는 거절한다.
+정지 재생 통과와 합성 자료의 학습 연결 검증은 실제 움직임 학습 실적이 아니다.
+이 설정은 실물 `BatchRuntime`에서 `registered_gripper_observer_stationary_only`로
+차단된다. 실행기·인증·촬영을 시작하지 않으며, 움직임 추적·측정 정확도·접촉·깊이·
+파지력·실물 성공을 검증하지 않는다. `trainingEligible`, `controlEligible`,
+`motionTrackingVerified`는 모두 `false`다. 실제 수집에 쓰려면 별도 움직임 검증과
+실행 적격 계약을 구현해야 한다.
+
 ## M1 shaft 전용 수집·고정 후 평가
 
 물체 검출의 실패가 유효한 턱축 관측까지 막지 않도록, 물체 좌표를 요구하지 않는

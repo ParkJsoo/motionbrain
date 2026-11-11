@@ -23,6 +23,7 @@ from learning.lossless_frame import decode
 from learning.grasp_observation import GripperObservationSource
 from learning.gripper_camera_dataset import bind_gripper_pair, read_frame as read_gripper_frame
 from learning.registered_gripper_crosssection import RegisteredGripperCrosssection
+from learning.registered_gripper_landmarks import RegisteredGripperLandmarks
 from learning.manual_collection import ManualCollection
 from learning.pipeline_collection import collect_once
 from learning.pipeline_evidence import ingest_session
@@ -79,7 +80,9 @@ def validate_runtime(plan, repository):
         gripper = config['gripper']
         require(isinstance(gripper, dict) and set(gripper) <= {'url','bootId','required','observerSpecPath','observerSpecSha256','retentionCaptures'} and {'url','bootId'} <= set(gripper), 'runtime_gripper_configuration')
         require(type(gripper.get('required', True)) is bool, 'runtime_gripper_required_boolean')
-        _gripper_spec(repository, config, spec)
+        other = _gripper_spec(repository, config, spec)
+        require(other is None or other['kind'] != 'registered_gripper_points_stationary',
+                'registered_gripper_observer_stationary_only')
         # Reject stationary-only nested observers before even constructing a
         # camera source. This constructor otherwise checks only origin/boot.
         GripperObservationSource(gripper['url'], 'batch-static-check', gripper['bootId'], {}, None)
@@ -150,6 +153,21 @@ def _gripper_spec(repository, config, spec):
                 all(spec_value[k] == spec[k] for k in ('poseRegime','object','load')), 'runtime_gripper_observer_context_changed')
         other = dict(kind='camera_local_hsv', spec=spec_value, cameraIdentity=spec_value['cameraIdentity'],
                      maxAgeSeconds=spec_value['maxAgeSeconds'], joints=spec_value['joints'])
+    elif value.get('kind') == 'registered_gripper_points_stationary':
+        require(set(value) == {'kind','registrationPath','registrationSha256','referenceImagePath',
+                'referenceImageSha256','context','maxAgeSeconds'}, 'runtime_gripper_points_fields')
+        registration_raw = private_path(repository,value['registrationPath']).read_bytes()
+        reference_raw = private_path(repository,value['referenceImagePath']).read_bytes()
+        require(sha(registration_raw) == value['registrationSha256'] and
+                sha(reference_raw) == value['referenceImageSha256'], 'runtime_gripper_registration_hash_changed')
+        RegisteredGripperLandmarks(json.loads(registration_raw), reference_raw)
+        require(value['context'] == {k:spec[k] for k in ('viewId','poseRegime','object','load')},
+                'runtime_gripper_registration_context_changed')
+        require(type(value['maxAgeSeconds']) in (int,float) and 0 < value['maxAgeSeconds'] <= 10,
+                'runtime_gripper_points_age')
+        other = dict(value, cameraIdentity='gripper:'+gripper['bootId'],
+                     joints={'gripper':dict(stateFields=[dict(name=name) for name in
+                         ('objectMinusJawMidXpx','objectMinusJawMidYpx','projectedJawSeparationPx')])})
     elif value.get('kind') == 'registered_gripper_shaft_only':
         require(set(value) == {'kind','registrationPath','registrationSha256','referenceImagePath','referenceImageSha256','context','maxAgeSeconds'}, 'runtime_gripper_shaft_fields')
         registration_raw = private_path(repository,value['registrationPath']).read_bytes()
@@ -545,6 +563,17 @@ class BatchRuntime:
         spec = self.gripper_spec
         registration = json.loads(private_path(self.repository,spec['registrationPath']).read_bytes())
         reference = private_path(self.repository,spec['referenceImagePath']).read_bytes()
+        if spec['kind'] == 'registered_gripper_points_stationary':
+            observed = RegisteredGripperLandmarks(registration,reference).observe(raw,frame['frameId'])
+            require(observed['pixelSha256'] == frame['pixelSha256'], 'batch_gripper_points_pixels_changed')
+            # Registered annotations use canonical BGRA pixels; HSV above uses BGR.
+            derived['pixelSha256'] = frame['pixelSha256']
+            return dict(status='accepted', states={'gripper':dict(state=observed['state'],
+                        stateFields=[f['name'] for f in spec['joints']['gripper']['stateFields']])},
+                        nodeMatches=[],frameBinding=derived,specSha256=observer_digest(spec),
+                        annotation=observed['annotation'],quality=observed['quality'],
+                        semantics='projected_surface_relative_to_jaw_corners_not_depth_contact_or_force',
+                        motionTrackingVerified=False,trainingEligible=False,controlEligible=False)
         observed = RegisteredGripperCrosssection(registration,reference).observe_shaft(raw,frame['frameId'])
         require(observed['pixelSha256'] == frame['pixelSha256'], 'batch_gripper_shaft_pixels_changed')
         return dict(status='accepted', states={'gripper':dict(state=[observed['shaftSeparationPx']],stateFields=['shaftSeparationPx'])},
@@ -1030,6 +1059,21 @@ class BatchRuntime:
             self.probe.token = ''
             self.probe = None
         self.token = None
+
+
+def observe_gripper_frame_offline(repository, external_spec, gripper_config, folder, side, session_id):
+    """저장 프레임만 관측한다. 실행기·인증·카메라를 생성하지 않는다."""
+    repository, folder = Path(repository).resolve(), Path(folder).resolve()
+    require(folder.is_relative_to((repository/'.local').resolve()), 'private_pair_source_required')
+    spec = validate_spec(external_spec)
+    config = dict(gripper=copy.deepcopy(gripper_config))
+    other = _gripper_spec(repository, config, spec)
+    require(other is not None and other['kind'] == 'registered_gripper_points_stationary',
+            'offline_gripper_points_observer_required')
+    runtime = object.__new__(BatchRuntime)
+    runtime.repository, runtime.config, runtime.spec = repository, config, spec
+    runtime.gripper_spec, runtime.clock_id = other, session_id
+    return runtime._observe_gripper(folder, side, session_id, historical=True)
 
 
 def audit_pair_transition(source, row, transition, repository):
