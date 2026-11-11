@@ -37,11 +37,15 @@ def install_validation_scope(manager, repository, scope_binding):
 
 
 def _scope(scope):
-    require(isinstance(scope,dict) and set(scope)=={'schemaVersion','development','observerBinding','maxLabelTolerancePx'}
+    require(isinstance(scope,dict) and set(scope) in ({'schemaVersion','development','observerBinding','maxLabelTolerancePx'},
+        {'schemaVersion','development','observerBinding','maxLabelTolerancePx','collectionDomain'})
         and scope['schemaVersion']=='motionbrain.motion_validation_scope.v1'
         and isinstance(scope['development'],list) and bool(scope['development'])
         and number(scope['maxLabelTolerancePx']) and 0<scope['maxLabelTolerancePx']<=3,
         'admission_validation_scope_schema')
+    if 'collectionDomain' in scope:
+        from learning.batch_collection_domain import validate_domain
+        validate_domain(scope['collectionDomain'])
 
 
 def build_admission(repository, manifest):

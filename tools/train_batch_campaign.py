@@ -176,7 +176,7 @@ def run_manifest(manifest_path, output, *, repository=ROOT):
     manifest_raw = manifest_path.read_bytes()
     manifest = _decode_json(manifest_raw)
     require(isinstance(manifest, dict) and set(manifest) <= {
-        'schemaVersion', 'training', 'evaluation', 'frozenModels'} and manifest.get('schemaVersion') == SCHEMA,
+        'schemaVersion', 'training', 'evaluation', 'frozenModels', 'fixedCommandEvaluation'} and manifest.get('schemaVersion') == SCHEMA,
         'batch_training_manifest_schema')
     for key in ('training', 'evaluation', 'frozenModels'):
         require(isinstance(manifest.get(key, []), list), 'manifest_list_required:'+key)
@@ -185,6 +185,13 @@ def run_manifest(manifest_path, output, *, repository=ROOT):
     require(not output.exists(), 'new_output_directory_required')
     require(not (manifest_path.is_relative_to(output) or output == manifest_path.parent),
             'output_must_not_contain_input_manifest')
+    fixed_binding = manifest.get('fixedCommandEvaluation')
+    if fixed_binding is not None:
+        require(not manifest.get('training') and len(manifest.get('frozenModels', [])) == 1,
+                'fixed_evaluation_single_frozen_model_required')
+        from learning.batch_fixed_evaluation import load_freeze
+        freeze, frozen = load_freeze(repository, fixed_binding)
+        require(manifest['frozenModels'][0] == freeze['model'], 'fixed_evaluation_frozen_binding_changed')
     loaded, provenance = {}, {}
     for split in ('training', 'evaluation'):
         loaded[split], provenance[split] = [], []
@@ -213,6 +220,35 @@ def run_manifest(manifest_path, output, *, repository=ROOT):
                   deviceAccess=False, credentialAccess=False, motorCommands=0,
                   prospectiveEvidenceVerified=False, observationRecomputed=False,
                   evaluationPassed=None, controlEligible=False)
+    fixed_proofs = {}
+    if fixed_binding is not None:
+        from learning.batch_fixed_evaluation import audit_proof
+        for entry, row in zip(manifest.get('evaluation', []), loaded['evaluation']):
+            require('sourceKind' not in entry, 'fixed_evaluation_runtime_source_required')
+            transition = read_hashed(private_path(repository, entry['transitionPath']), entry['transitionSha256'])
+            require(transition.get('fixedCommandEvaluation') == fixed_binding, 'fixed_evaluation_transition_freeze_changed')
+            # Recompute the external pixels too; generic legacy loading only
+            # binds its saved external observation, while paired jaws are replayed.
+            from learning.batch_runtime import BatchRuntime, validate_spec
+            pair = transition['gripperPair']
+            observer = pair['externalObserverBinding']
+            runtime = object.__new__(BatchRuntime)
+            runtime.repository = repository
+            runtime.spec = validate_spec(read_hashed(private_path(repository, observer['path']), observer['sha256']))
+            runtime.config = dict(observerSpecPath=observer['path'], observerSpecSha256=observer['sha256'],
+                                  deviceId=runtime.spec['cameraIdentity'], poseContext=runtime.spec['poseRegime'])
+            runtime.plan = dict(viewId=runtime.spec['viewId'])
+            runtime.clock_id = transition['before']['derivedMetadata']['clockId']
+            source = private_path(repository, entry['sourcePath'])
+            for side in ('before', 'after'):
+                evidence = transition[side]
+                actual = runtime._observe_native(source/'native-camera', evidence['source']['frame'], historical=True)
+                require(actual == evidence, 'fixed_evaluation_original_pixels_changed')
+            fixed_proofs[row['sessionId']] = audit_proof(repository,
+                private_path(repository, entry['sourcePath']), transition, frozen, fixed_binding)
+        report['kind'] = 'prospectiveFixedCommandEvaluation'
+        report['prospectiveEvidenceVerified'] = bool(fixed_proofs)
+        report['observationRecomputed'] = bool(fixed_proofs)
     serialized = {}
     for key, model in models.items():
         sha = model_sha256(model)
@@ -221,13 +257,20 @@ def run_manifest(manifest_path, output, *, repository=ROOT):
         name = 'models/'+sha+'.json'
         serialized[name] = raw
         rows = evaluations.pop(key, [])
-        result = evaluate(model, rows) if rows else None
+        if fixed_binding is not None and rows:
+            from learning.batch_fixed_evaluation import evaluate as fixed_evaluate
+            result = fixed_evaluate(model, rows, fixed_proofs)
+            report['prospectiveEvidenceVerified'] &= result['prospectiveEvidenceVerified']
+        else:
+            result = evaluate(model, rows) if rows else None
         report['models'].append(dict(partitionId=key, joint=model['joint'], context=model['context'],
                                      stateFields=model['stateFields'], path=name, sha256=sha,
                                      supportedCommands=len(model['models']), deficits=model['deficits'],
                                      evaluation=result))
     for key, rows in evaluations.items():
         report['unmatchedEvaluation'].append(dict(partitionId=key, listed=len(rows), reason='no_matching_model'))
+    if evaluations:
+        report['prospectiveEvidenceVerified'] = False
     # Validate all inputs and run fitting/evaluation before creating any output.
     output.mkdir(parents=True, exist_ok=False)
     for name, raw in serialized.items():

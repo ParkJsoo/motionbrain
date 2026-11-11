@@ -282,6 +282,8 @@ class Campaign:
             r['accepted'] = bool(accepted)
             self.db.execute('UPDATE attempts SET status=?,result=? WHERE request_id=? AND status=?',
                             ('finished', encoded(r).decode(), request, 'reserved'))
+            if r.get('followupStopReason'):
+                self._set('halted', 'batch_observed_response_outside_collection_domain')
             if r['execution'] == 'unknown' or not clean:
                 self._set('halted', 'batch_unresolved_execution_or_output')
             if r.get('failureScope') == 'global':

@@ -24,6 +24,11 @@ class ModelDecisionRuntime(BatchRuntime):
     """기존 단발 실행 직전 동일 모델의 후보 선택을 새 수집 영상으로 재확인한다."""
     decision_binding = None
 
+    def __init__(self, plan, *args, **kwargs):
+        require(not ({'collectionAdmission','fixedCommandEvaluation'} & set(plan.get('runtime',{}))),
+                'model_runtime_manual_collection_mode_forbidden')
+        super().__init__(plan, *args, **kwargs)
+
     def _before_review_config(self):
         config=self.config.get('beforeReviewer')
         if config is None:return None
@@ -171,6 +176,8 @@ class BatchModelRunner:
         for stage in stages:
             runtime=self.runtimes[stage['id']]
             require(isinstance(runtime,ModelDecisionRuntime),'model_runtime_adapter_required')
+            require('collectionAdmission' not in runtime.config and 'fixedCommandEvaluation' not in runtime.config,
+                    'model_runtime_manual_collection_mode_forbidden')
             if stage['kind'] in ('close','lift'):
                 require('afterReviewer' in runtime.config, 'model_runtime_live_after_reviewer_required')
             require(self.root.is_relative_to((runtime.repository/'.local').resolve()),'model_runtime_private_root')

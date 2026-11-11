@@ -262,6 +262,11 @@ class ManualCollection:
                 if hashlib.sha256(scope_raw).hexdigest() != self.current['validationScopeSha256']:
                     raise ValueError('commissioning_validation_scope_changed')
                 intent['validationScopeSha256'] = self.current['validationScopeSha256']
+            if 'fixedEvaluationProofSha256' in self.current:
+                proof_raw = _read(self.store.root, 'batch-fixed-prospective.json')
+                if hashlib.sha256(proof_raw).hexdigest() != self.current['fixedEvaluationProofSha256']:
+                    raise ValueError('fixed_evaluation_prospective_changed')
+                intent['fixedEvaluationProofSha256'] = self.current['fixedEvaluationProofSha256']
             self.store.write_json(f'command-{self.command_count:03d}-intent.json', intent)
             self._event(intent)
             guard = {} if before_run is None else {'before_run': before_run}

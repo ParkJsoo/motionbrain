@@ -71,6 +71,12 @@ def validate_runtime(plan, repository):
     require(sha(raw) == config['observerSpecSha256'], 'runtime_observer_spec_hash_changed')
     parsed = json.loads(raw)
     admission = None
+    collection_admission = None
+    require(not ('motionAdmission' in config and 'collectionAdmission' in config),'runtime_multiple_admission_modes')
+    if 'collectionAdmission' in config:
+        from learning.batch_collection_domain import verify_collection_admission
+        collection_admission=verify_collection_admission(repository,config['collectionAdmission'])
+        admission=collection_admission['observerAgreement']
     if 'motionAdmission' in config:
         from learning.batch_motion_admission import verify_admission
         admission = verify_admission(repository, config['motionAdmission'])
@@ -99,14 +105,34 @@ def validate_runtime(plan, repository):
                     'runtime_retention_capture_contract')
 
     if admission is not None:
-        from learning.batch_motion_admission import require_scope
+        if collection_admission is not None:
+            from learning.batch_collection_domain import require_scope
+            scope_artifact=collection_admission
+        else:
+            from learning.batch_motion_admission import require_scope
+            scope_artifact=admission
         other = _gripper_spec(repository, config, spec)
         for condition in plan['conditions']:
             require(bindings.get(condition['id'], {}).get('route', 'generic') == 'generic',
                     'admission_generic_route_only')
             command = condition['command']
-            require_scope(admission, command, _model_context(config, spec, other),
+            if collection_admission is not None:
+                require(spec['load']=='empty' and bindings.get(condition['id'],{}).get('interaction')=='noncontact',
+                        'runtime_collection_noncontact_empty_only')
+            require_scope(scope_artifact, command, _model_context(config, spec, other),
                           _model_fields(spec, other, command['joint']))
+
+    if collection_admission is not None:
+        from learning.batch_collection_domain import validate_manual_authorization
+        validate_manual_authorization(repository,plan,config.get('manualCollectionAuthorization'))
+    if 'fixedCommandEvaluation' in config:
+        from learning.batch_fixed_evaluation import load_freeze
+        require(collection_admission is not None and all(c['phase']=='evaluation' for c in plan['conditions']),
+                'runtime_fixed_evaluation_collection_plan_required')
+        freeze,frozen=load_freeze(repository,config['fixedCommandEvaluation'])
+        for c in plan['conditions']:
+            require(model_sha256(_load_model(repository,config,spec,c['command']['joint']))==model_sha256(frozen),
+                    'runtime_fixed_evaluation_model_changed')
 
     require(private_path(repository, config['journalPath']) == (repository/'.local/visual-actions/controller-commands.sqlite').resolve(), 'runtime_shared_journal_required')
     lock_name = sha(plan['controllerBootId'].encode())+'.lock'
@@ -151,7 +177,7 @@ def validate_runtime(plan, repository):
     unsupported = []
     return dict(status='runtime_checked_no_device_access', helper=helper, spec=spec,
                 config=config, unsupported=unsupported, modelProblems=problems, routeProblems=route_problems,
-                motionAdmission=admission)
+                motionAdmission=admission,collectionAdmission=collection_admission)
 
 
 def _gripper_spec(repository, config, spec):
@@ -261,6 +287,7 @@ class BatchRuntime:
         checked = validate_runtime(plan, self.repository)
         self.config, self.spec, self.helper = checked['config'], checked['spec'], checked['helper']
         self.motion_admission = checked['motionAdmission']
+        self.collection_admission = checked['collectionAdmission']
         self.model_problems = checked['modelProblems']
         self.route_problems = checked['routeProblems']
         self.m4_reviewer_factory = m4_reviewer_factory
@@ -279,6 +306,7 @@ class BatchRuntime:
     def _verify(self):
         checked = validate_runtime(self.plan, self.repository)
         self.motion_admission = checked['motionAdmission']
+        self.collection_admission = checked['collectionAdmission']
         require(checked['config'] == self.config and checked['spec'] == self.spec, 'runtime_binding_changed')
 
     def _token(self):
@@ -300,6 +328,12 @@ class BatchRuntime:
         return names, values
 
     def _admission_scope(self, command, fields, state, *, side='before'):
+        if 'collectionAdmission' in self.config:
+            from learning.batch_collection_domain import require_scope
+            from learning.batch_motion_admission import _read
+            require(_read(self.repository,self.config['collectionAdmission'])==self.collection_admission,
+                    'collection_admission_changed_after_validation')
+            require_scope(self.collection_admission,command,self._context(),fields,state,side=side)
         if 'motionAdmission' in self.config:
             from learning.batch_motion_admission import require_scope, _read
             admission = self.motion_admission
@@ -669,9 +703,15 @@ class BatchRuntime:
             self.latest_before = evidence
             from learning.batch_interaction import validate_binding, before_command
             binding = self._before_binding(manager, pair, condition, evidence)
-            checked = validate_binding(self.plan, condition, binding, self.repository)
-            self.interaction_token = before_command(manager, pair, condition, binding, self.deadline_wall,
-                checked=checked, clock=self.clock)
+            if 'collectionAdmission' in self.config:
+                from learning.batch_collection_domain import before_command as collection_before
+                self.interaction_token=collection_before(manager,self.repository,self.plan,condition,
+                    self.config['manualCollectionAuthorization'],self.deadline_wall,self.clock,
+                    external=evidence,paired=paired,gripper_max_age=self.gripper_spec['maxAgeSeconds'])
+            else:
+                checked = validate_binding(self.plan, condition, binding, self.repository)
+                self.interaction_token = before_command(manager, pair, condition, binding, self.deadline_wall,
+                    checked=checked, clock=self.clock)
             manager.store.write_json('batch-interaction-before.json', self.interaction_token.report)
             joint = condition['command']['joint']
             names, values = self._states(result, None if paired is None else paired['observation'], joint)
@@ -682,7 +722,17 @@ class BatchRuntime:
                 row = dict(sessionId=manager.current['sessionId'],
                            before=values, command=condition['command'],
                            context=self._context(), beforePersistedAt=evidence['derivedMetadata']['persistedAt'])
-                proof = prospective_evidence(model, row, self.clock.monotonic())
+                if 'fixedCommandEvaluation' in self.config:
+                    from learning.batch_fixed_evaluation import load_freeze,prospective_evidence as fixed_prospective,seal_before
+                    freeze,frozen=load_freeze(self.repository,self.config['fixedCommandEvaluation'])
+                    require(model_sha256(frozen)==model_sha256(model),'fixed_evaluation_model_changed')
+                    row['stateFields']=names
+                    frames=[{k:evidence['derivedMetadata'][k] for k in ('frameId','pixelSha256','capturedAt','persistedAt')},
+                        {k:paired['observation']['frameBinding'][k] for k in ('frameId','pixelSha256','capturedAt','persistedAt')}]
+                    proof=fixed_prospective(model,freeze,row,frames,self.clock.monotonic())
+                    seal_before(manager,proof)
+                else:
+                    proof = prospective_evidence(model, row, self.clock.monotonic())
                 manager.store.write_json('batch-prospective.json', dict(
                     proof=proof, beforeFrameId=frame['frameId'], beforePixelSha256=frame['pixelSha256']))
             self._deadline()
@@ -692,6 +742,11 @@ class BatchRuntime:
         return self._binding(condition)
 
     def _validate_interaction_binding(self, condition, binding, route):
+        if 'collectionAdmission' in self.config:
+            from learning.batch_collection_domain import validate_manual_authorization
+            require(route=='generic' and binding.get('interaction')=='noncontact' and self.spec['load']=='empty',
+                    'runtime_collection_noncontact_empty_only')
+            return validate_manual_authorization(self.repository,self.plan,self.config['manualCollectionAuthorization'])
         if route == 'm4_up':
             from learning.batch_m4 import validate_binding
         else:
@@ -850,6 +905,8 @@ class BatchRuntime:
         binding = self._binding(condition)
         report = dict(status='not_reviewed', contactState='unknown', graspVerified=False,
                       liftVerified=False, retainedLift=False)
+        if 'collectionAdmission' in self.config:
+            return report
         has_path, has_sha = 'afterReviewPath' in binding, 'afterReviewSha256' in binding
         live = 'afterReviewer' in self.config
         if not has_path and not has_sha and not live:
@@ -1011,7 +1068,21 @@ class BatchRuntime:
                     names, values_before = self._states(a, paired.get('beforeObservation'), joint)
                     _, values_after = self._states(b, paired.get('afterObservation'), joint)
                     self._admission_scope(condition['command'], names, values_before)
-                    self._admission_scope(condition['command'], names, values_after, side='after')
+                    followup_stop = None
+                    try:
+                        self._admission_scope(condition['command'], names, values_after, side='after')
+                        if 'collectionAdmission' in self.config:
+                            from learning.batch_collection_domain import require_transition
+                            require_transition(self.collection_admission,condition['command'],names,values_before,values_after)
+                    except ValueError as exc:
+                        if 'collectionAdmission' not in self.config or str(exc) not in {
+                            'collection_domain_state_outside_declared_bounds','collection_domain_delta_rejected'}:
+                            raise
+                        # A measured unexpected response is still a learning target.
+                        # Stop subsequent motion without dropping its prediction error.
+                        followup_stop = str(exc)
+                    if followup_stop:
+                        transition['followupStopReason'] = followup_stop
                     transition['stateFields'] = names
                     transition['beforeState'] = values_before
                     transition['afterState'] = values_after
@@ -1033,12 +1104,21 @@ class BatchRuntime:
                     if condition['phase'] == 'evaluation':
                         prospective = json.loads(_read(source, 'batch-prospective.json'))
                         require(prospective['beforeFrameId'] == frame['frameId'] and prospective['beforePixelSha256'] == frame['pixelSha256'], 'batch_prospective_frame_changed')
-                        transition['evaluation'] = evaluate(self._model(joint), [transition['learningRow']],
-                            prospective={row['sessionId']:prospective['proof']})
+                        if 'fixedCommandEvaluation' in self.config:
+                            from learning.batch_fixed_evaluation import audit_proof,evaluate as fixed_evaluate
+                            proof=audit_proof(self.repository,source,transition,self._model(joint),self.config['fixedCommandEvaluation'])
+                            require(prospective['proof']==proof,'fixed_evaluation_duplicate_proof_changed')
+                            transition['fixedCommandEvaluation']=copy.deepcopy(self.config['fixedCommandEvaluation'])
+                            transition['evaluation']=fixed_evaluate(self._model(joint),[transition['learningRow']],{row['sessionId']:proof})
+                        else:
+                            transition['evaluation'] = evaluate(self._model(joint), [transition['learningRow']],
+                                prospective={row['sessionId']:prospective['proof']})
                         require(transition['evaluation']['prospectiveEvidenceVerified'] is True, 'batch_prospective_evaluation_rejected')
                         result['prospectiveEvidenceVerified'] = True
                     transition_id = sha(encoded(transition))
                     self._save(self.root/'transitions'/(transition_id+'.json'), transition)
+                    if followup_stop:
+                        result['followupStopReason'] = followup_stop
                     result.update(observation='eligible', transitionId=transition_id, reason='verified_transition_recorded',
                         dataIdentity={k:copy.deepcopy(transition['learningRow'][k]) for k in ('sourceHash','sessionId','episodeId','frameIds')})
                     if 'pairedFrameIds' in transition['learningRow']:
@@ -1081,6 +1161,8 @@ class BatchRuntime:
                     require(paired == transition['gripperPair'], 'batch_gripper_pair_changed')
                 require(transition['sourceSha256'] == report['sourceSha256']
                         and transition['conditionId'] == condition['id'], 'batch_transition_source_changed')
+                if transition.get('followupStopReason'):
+                    result['followupStopReason'] = transition['followupStopReason']
                 result.update(observation='eligible', transitionId=saved['transitionId'], reason='reconciled_verified_transition',
                     dataIdentity={k:copy.deepcopy(transition['learningRow'][k]) for k in ('sourceHash','sessionId','episodeId','frameIds')})
                 if 'pairedFrameIds' in transition['learningRow']:

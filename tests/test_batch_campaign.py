@@ -59,6 +59,16 @@ class BatchTests(unittest.TestCase):
         x=Campaign(p or self.p,self.root/folder,driver or self.driver,lock_path=self.root/'shared.lock',clock=self.clock)
         self.instances.append(x);return x
 
+    def test_measured_outside_response_is_counted_but_never_continued(self):
+        self.driver.actions['c0'] = {'followupStopReason':'collection_domain_delta_rejected'}
+        campaign = self.campaign()
+        result = campaign.run()
+        self.assertEqual(result['status'], 'halted')
+        self.assertEqual(result['validTransitions'], 1)
+        self.assertEqual(len(self.driver.calls), 1)
+        campaign.run()
+        self.assertEqual(len(self.driver.calls), 1)
+
     def test_all_five_joints_and_180_transitions_without_device(self):
         for c in self.p['conditions']:c.update(target=36,maxAttempts=36)
         r=self.campaign().run()
