@@ -126,6 +126,9 @@ def _validate_common_spec(spec, *, schema, extra_fields, landmark_validator):
 
 
 def validate_spec(spec):
+    if isinstance(spec, dict) and spec.get('schemaVersion') == 'motionbrain.batch_background_registered_observer.v1':
+        from learning import batch_background_observation
+        return batch_background_observation.validate_spec(spec)
     if isinstance(spec, dict) and spec.get('schemaVersion') == 'motionbrain.batch_registered_observer.v1':
         from learning.batch_template_observation import validate_spec as validate_registered
         return validate_registered(spec)
@@ -244,6 +247,9 @@ def observe_frame(image_bytes, frame_metadata, spec, context, now, clock_id):
     Matching requires every feature's uncertainty interval inside its node bounds.
     All joint matches are returned; no arbitrary winner resolves overlaps.
     """
+    if isinstance(spec, dict) and spec.get('schemaVersion') == 'motionbrain.batch_background_registered_observer.v1':
+        from learning import batch_background_observation
+        return batch_background_observation.observe_frame(image_bytes, frame_metadata, spec, context, now, clock_id)
     if isinstance(spec, dict) and spec.get('schemaVersion') == 'motionbrain.batch_registered_observer.v1':
         from learning.batch_template_observation import observe_frame as observe_registered
         return observe_registered(image_bytes, frame_metadata, spec, context, now, clock_id)

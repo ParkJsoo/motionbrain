@@ -49,8 +49,8 @@ def private_path(repository, value):
 def _require_dispatch_observer(spec):
     # The registered scene adapter has only stationary replay evidence. Its
     # accepted result is not motion-tracking admission for any live route.
-    require(not (isinstance(spec,dict) and spec.get('schemaVersion') ==
-                 'motionbrain.batch_registered_observer.v1'),
+    require(not (isinstance(spec,dict) and spec.get('schemaVersion') in (
+                 'motionbrain.batch_registered_observer.v1','motionbrain.batch_background_registered_observer.v1')),
             'registered_observer_stationary_only')
 
 
@@ -70,6 +70,8 @@ def validate_runtime(plan, repository):
     raw = spec_path.read_bytes()
     require(sha(raw) == config['observerSpecSha256'], 'runtime_observer_spec_hash_changed')
     parsed = json.loads(raw)
+    require(parsed.get('schemaVersion') != 'motionbrain.batch_background_registered_observer.v1',
+            'background_observer_development_only_no_live_dispatch')
     admission = None
     collection_admission = None
     require(not ('motionAdmission' in config and 'collectionAdmission' in config),'runtime_multiple_admission_modes')
