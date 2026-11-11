@@ -20,6 +20,7 @@ from learning.manual_collection_dataset import require
 from learning import object_arc as arc
 
 SCHEMA = 'motionbrain.registered_gripper_landmarks.v1'
+JAW_SCHEMA = 'motionbrain.registered_jaw_landmarks.v1'
 METHOD = 'registered_template_points'
 LANDMARK_PREFIX = 'registered-template-points-v1:'
 NAMES = ('object', 'jawLeft', 'jawRight')
@@ -131,6 +132,21 @@ def register(reference_jpeg, points, parameters=None):
     return reg
 
 
+def register_jaws(reference_jpeg, points, parameters):
+    """현재 정지 영상의 실제 양턱만 등록한다. 물체 점은 생성하지 않는다."""
+    p = copy.deepcopy(parameters)
+    _parameters(p)
+    gray,pixel_sha = _image(reference_jpeg,p['imageShape'])
+    require(isinstance(points,dict) and set(points)=={'jawLeft','jawRight'},'registered_two_jaw_points_required')
+    reg=dict(schemaVersion=JAW_SCHEMA,imageShape=p['imageShape'],points=copy.deepcopy(points),
+        parameters=p,parametersSha256=_digest(p),referenceImageSha256=_sha(reference_jpeg),
+        referencePixelSha256=pixel_sha,seedSemantics='analyst_projected_jaw_corners_not_measured_accuracy',
+        trainingEligible=False,controlEligible=False)
+    reg['registrationSha256']=_digest(reg)
+    RegisteredGripperLandmarks(reg,reference_jpeg).observe_jaws(reference_jpeg,'registration-self-check')
+    return reg
+
+
 class RegisteredGripperLandmarks:
     def __init__(self, registration, reference_jpeg):
         self.registration = copy.deepcopy(registration)
@@ -140,14 +156,15 @@ class RegisteredGripperLandmarks:
 
     @property
     def landmark_contract(self):
-        return LANDMARK_PREFIX + self.registration['registrationSha256']
+        prefix = 'registered-jaw-points-v1:' if self.registration['schemaVersion']==JAW_SCHEMA else LANDMARK_PREFIX
+        return prefix + self.registration['registrationSha256']
 
     def verify(self):
         r = self.registration
         require(isinstance(r, dict) and set(r) == {'schemaVersion', 'imageShape', 'points',
             'parameters', 'parametersSha256', 'referenceImageSha256', 'referencePixelSha256',
             'seedSemantics', 'trainingEligible', 'controlEligible', 'registrationSha256'}
-            and r['schemaVersion'] == SCHEMA and r['trainingEligible'] is False
+            and r['schemaVersion'] in (SCHEMA,JAW_SCHEMA) and r['trainingEligible'] is False
             and r['controlEligible'] is False, 'registered_contract_fields')
         require(_digest({k: v for k, v in r.items() if k != 'registrationSha256'}) == r['registrationSha256']
                 and _digest(r['parameters']) == r['parametersSha256']
@@ -156,9 +173,10 @@ class RegisteredGripperLandmarks:
         require(r['imageShape'] == r['parameters']['imageShape'], 'registered_shape_binding_changed')
         gray, pixel_sha = _image(self.reference_jpeg, r['imageShape'])
         require(pixel_sha == r['referencePixelSha256'], 'registered_reference_pixels_changed')
-        require(isinstance(r['points'], dict) and set(r['points']) == set(NAMES),
+        names = ('jawLeft','jawRight') if r['schemaVersion']==JAW_SCHEMA else NAMES
+        require(isinstance(r['points'], dict) and set(r['points']) == set(names),
                 'registered_three_seed_points_required')
-        for name in NAMES:
+        for name in names:
             x0, y0, x1, y1 = r['parameters']['rois'][name]
             xy = r['points'][name]
             require(isinstance(xy, list) and len(xy) == 2 and all(_number(v) for v in xy)
@@ -172,6 +190,7 @@ class RegisteredGripperLandmarks:
         return True
 
     def observe(self, jpeg, frame_id):
+        require(self.registration['schemaVersion']==SCHEMA,'object_observation_requires_three_point_registration')
         return self._observe(jpeg, frame_id, jaws_only=False)
 
     def observe_jaws(self, jpeg, frame_id):

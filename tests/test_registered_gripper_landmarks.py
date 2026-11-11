@@ -36,6 +36,18 @@ class RegisteredLandmarksTests(unittest.TestCase):
             image[y0+dy:y1+dy, x0+dx:x1+dx] = self.image[y0:y1, x0:x1]
         return encoded(image)
 
+    def test_jaw_only_registration_has_no_object_and_rejects_three_point_use(self):
+        from learning.registered_gripper_landmarks import register_jaws
+        image=self.image.copy();image[74:120,139:179]=127
+        raw=encoded(image)
+        reg=register_jaws(raw,{k:self.points[k] for k in ('jawLeft','jawRight')},default_parameters())
+        tracker=RegisteredGripperLandmarks(reg,raw)
+        self.assertEqual(set(reg['points']),{'jawLeft','jawRight'})
+        self.assertEqual(len(tracker.observe_jaws(raw,'fresh')['state']),5)
+        with self.assertRaisesRegex(ValueError,'requires_three_point'):tracker.observe(raw,'fresh')
+        reg['points']['jawLeft'][0]+=1
+        with self.assertRaisesRegex(ValueError,'contract_changed'):RegisteredGripperLandmarks(reg,raw)
+
     def test_jaws_remain_observable_without_object_and_keep_original_thresholds(self):
         image=self.image.copy();image[74:120,139:179]=127
         raw=encoded(image)

@@ -101,6 +101,10 @@ class BatchGripperPointsTests(unittest.TestCase):
                 self.source/'gripper-pair','before','session')
 
     def test_jaw_only_contract_fuses_five_states_and_remains_dispatch_blocked(self):
+        from learning.registered_gripper_landmarks import register_jaws
+        self.registration=register_jaws(self.raw,{k:v for k,v in self.registration['points'].items() if k!='object'},self.registration['parameters'])
+        (self.f.private/'points.json').write_bytes(encoded(self.registration))
+        self.wrapper['registrationSha256']=sha(encoded(self.registration))
         self.wrapper['kind']='registered_gripper_jaws_stationary';self.bind()
         obs=observe_gripper_frame_offline(self.f.repository,self.f.spec,self.runtime.config['gripper'],
             self.source/'gripper-pair','before','session')

@@ -270,6 +270,11 @@ M1의 외부 특징에 `gripper:` 이름공간으로 결합한다. 다른 관절
 
 ### 물체 없는 양턱 관측과 실제 원본 전이
 
+`register_jaws(reference_jpeg, points, parameters)`는 물체 점 없이 실제 양턱 두 점만
+새 기준 영상에 등록한다. `points`는 `jawLeft`, `jawRight`만 포함하며 기존 품질·검색
+제한을 유지한다. 기준은 행동 전에 고정하며 사후 결과에 맞춰 바꾸지 않는다.
+이 양턱 전용 등록은 3점 `observe`에 전달하면 거절된다.
+
 `registered_gripper_jaws_stationary`는 같은 등록 파일·기준 JPEG·NCC·모호성·검색
 경계 기준을 사용하면서 물체 점을 관측 대상에서 제외한다. `observe_jaws`는
 양턱 x·y 좌표와 투영 간격의 다섯 상태를 반환한다. 물체 없는 상태를 가짜 물체
