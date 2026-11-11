@@ -224,6 +224,10 @@ def run_manifest(manifest_path, output, *, repository=ROOT):
     if fixed_binding is not None:
         from learning.batch_fixed_evaluation import audit_proof
         for entry, row in zip(manifest.get('evaluation', []), loaded['evaluation']):
+            if entry.get('sourceKind') == 'registered_jaws':
+                from learning.batch_fixed_evaluation import audit_jaw_proof
+                fixed_proofs[row['sessionId']] = audit_jaw_proof(repository,entry,frozen,fixed_binding)
+                continue
             require('sourceKind' not in entry, 'fixed_evaluation_runtime_source_required')
             transition = read_hashed(private_path(repository, entry['transitionPath']), entry['transitionSha256'])
             require(transition.get('fixedCommandEvaluation') == fixed_binding, 'fixed_evaluation_transition_freeze_changed')

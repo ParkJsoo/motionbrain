@@ -102,6 +102,41 @@ def audit_proof(repository,source,transition,model,freeze_binding):
     return proof
 
 
+def audit_jaw_proof(repository,entry,model,freeze_binding):
+    """양턱 5D는 집게 원본으로, 외부는 인과적 원본 증거로만 재감사한다."""
+    from learning.registered_jaw_transition import load_learning_transition
+    from learning.gripper_camera_dataset import read_frame
+    from learning.manual_collection_dataset import select_frames,POLICY
+    row,_=load_learning_transition(Path(repository).resolve(),entry,'evaluation')
+    freeze,frozen=load_freeze(repository,freeze_binding)
+    require(model_sha256(model)==model_sha256(frozen),'fixed_evaluation_expected_model_changed')
+    source=private_path(Path(repository).resolve(),entry['sourcePath'])
+    session_raw=read_source(source,'session.json');session=json.loads(session_raw)
+    require(sha(session_raw)==row['sourceHash'],'fixed_evaluation_original_session_changed')
+    intent=json.loads(read_source(source,'command-001-intent.json'))
+    raw=read_source(source,'batch-fixed-prospective.json');proof=json.loads(raw);identity=sha(raw)
+    require(intent.get('fixedEvaluationProofSha256')==identity and session.get('fixedEvaluationProofSha256')==identity and
+        dict(kind='fixed_evaluation_proof',sha256=identity,at=proof['preparedAt']) in session['events'] and
+        proof['preparedAt']<intent['at']==row['commandAt'],'fixed_evaluation_original_precommand_seal_required')
+    grip,metadata,_=read_frame(source/'gripper-pair','before',row['sessionId'])
+    require(grip['frameId']==row['pairedFrameIds'][0] and
+        0<=row['commandAt']-metadata['requestStartedAt']<=10.,'fixed_jaw_input_stale_or_changed')
+    frames=[dict(frameId=grip['frameId'],pixelSha256=grip['pixelSha256'],
+        capturedAt=metadata['requestStartedAt'],persistedAt=metadata['persistedAt'])]
+    require(isinstance(proof.get('inputFrames'),list) and len(proof['inputFrames'])==2,'fixed_jaw_two_source_frames_required')
+    external_id=proof['inputFrames'][1]['frameId']
+    window=[row['commandAt']+offset for offset in POLICY['preSeconds']]
+    eligible=select_frames(session['frames'],window,row['commandAt'])
+    matches=[frame for frame in eligible if frame['frameId']==external_id]
+    require(len(matches)==1,'fixed_jaw_external_not_in_original_pre_window')
+    external=matches[0]
+    frames.append(dict(frameId=external['frameId'],pixelSha256=external['pixelSha256'],
+        capturedAt=external['sourceEarliest'],persistedAt=external['stdoutReadAt']+external['persistenceMs']/1000))
+    expected=prospective_evidence(model,freeze,row,frames,proof['preparedAt'])
+    require(proof==expected,'fixed_jaw_prospective_evidence_changed')
+    return proof
+
+
 def evaluate(model,rows,proofs):
     validate_model(model);first,identities=_rows(rows)
     require(all(first[k]==model[k] for k in ('joint','context','stateFields')),'fixed_evaluation_context_changed')

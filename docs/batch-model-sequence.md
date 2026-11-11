@@ -126,7 +126,7 @@ python3 tools/file_review_server.py \
 python3 tools/train_batch_campaign.py --manifest .local/future-evaluation/manifest.json --output .local/future-evaluation/report
 ```
 
-manifest의 평가 항목은 기존 일반 `batch_visual_transition.v1` runtime 전이와 원본 경로·해시를 사용한다. CLI는 양 카메라 원본을 다시 관측하고, 입력 픽셀·시간·원본 intent의 사전 봉인·모델 해시·학습 자료와의 원본/촬영 그룹 분리를 확인한다. 모델 지원 범위 안팎을 나누되 세 예측의 평가는 같은 정답 묶음을 쓴다. 제외 수와 사유를 보존하며 범위 밖 성능이 좋아도 제어 적격으로 승격하지 않는다.
+manifest의 평가 항목은 기존 일반 `batch_visual_transition.v1` runtime 전이 또는 `sourceKind=registered_jaws`의 양턱 5D 전이와 원본 경로·해시를 사용한다. 양턱 전이는 실제 집게 before를 첫 입력으로, 외부 카메라의 원본 pre-window 프레임을 두 번째 증거로 봉인한다. 외부 좌표를 모델 입력으로 합치지 않으며, 집게 request→command 10초 한도와 두 원본의 모델 고정 이후 촬영·명령 이전 영속 저장을 재검사한다. CLI는 양 카메라 원본을 다시 관측하고, 입력 픽셀·시간·원본 intent의 사전 봉인·모델 해시·학습 자료와의 원본/촬영 그룹 분리를 확인한다. 모델 지원 범위 안팎을 나누되 세 예측의 평가는 같은 정답 묶음을 쓴다. 제외 수와 사유를 보존하며 범위 밖 성능이 좋아도 제어 적격으로 승격하지 않는다.
 
 이 연결의 소프트웨어 시험과 실물 영역 확장·자동 수집·고정 후 평가의 성공은 별개다. 독립 확대 표본과 현장 확인 출처가 없는 영역은 실행할 수 없으며, 실패로 중단한 기존 실물 계획을 이 모드로 다시 활성화하지 않는다.
 
