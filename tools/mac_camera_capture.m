@@ -132,6 +132,46 @@ static BOOL durable(NSString *path, NSData *data) {
 }
 static BOOL syncDirectory(NSString *dir) { int fd=open(dir.fileSystemRepresentation,O_RDONLY); if(fd<0)return NO; BOOL ok=fsync(fd)==0; close(fd);return ok; }
 static void emit(id obj) { NSData *d=json(obj); if(d){fwrite(d.bytes,1,d.length,stdout);fputc('\n',stdout);fflush(stdout);} }
+// Optional, read-only diagnostics. Getter read times do not establish exposure-time state.
+static BOOL opticalDiagnosticsOption(int *argc,const char *argv[]) {
+    BOOL enabled=*argc>1&&!strcmp(argv[*argc-1],"--optical-diagnostics");
+    if(enabled)(*argc)--;
+    return enabled;
+}
+
+static NSDictionary *opticalDiagnosticsRecord(AVCaptureDevice *device,NSString *sessionId,
+                                               NSString *phase,id frameId,id callbackTime) {
+    double begin=hostNow();
+    NSMutableDictionary *state=[@{
+        @"focusMode":@(device.focusMode),@"adjustingFocus":@(device.adjustingFocus),
+        @"focusLockedSupported":@([device isFocusModeSupported:AVCaptureFocusModeLocked]),
+        @"focusAutoSupported":@([device isFocusModeSupported:AVCaptureFocusModeAutoFocus]),
+        @"focusContinuousSupported":@([device isFocusModeSupported:AVCaptureFocusModeContinuousAutoFocus]),
+        @"exposureMode":@(device.exposureMode),@"adjustingExposure":@(device.adjustingExposure),
+        @"whiteBalanceMode":@(device.whiteBalanceMode),@"adjustingWhiteBalance":@(device.adjustingWhiteBalance),
+        @"lensPosition":@{@"status":@"unknown_api_unavailable_macos"},
+        @"videoZoomFactor":@{@"status":@"unknown_api_unavailable_macos"},
+        @"videoStabilizationMode":@{@"status":@"unknown_api_unavailable_macos"},
+        @"videoFieldOfView":@{@"status":@"unknown_api_unavailable_macos"}
+    } mutableCopy];
+    if(@available(macOS 12.3,*)){
+        state[@"centerStageEnabled"]=@(AVCaptureDevice.centerStageEnabled);
+        state[@"centerStageControlMode"]=@(AVCaptureDevice.centerStageControlMode);
+        state[@"centerStageActive"]=@(device.centerStageActive);
+        state[@"centerStageSupported"]=@(device.activeFormat.centerStageSupported);
+    }else state[@"centerStage"]=@{@"status":@"unknown_os_unavailable"};
+    if(@available(macOS 12.0,*)){
+        state[@"portraitEffectEnabled"]=@(AVCaptureDevice.portraitEffectEnabled);
+        state[@"portraitEffectActive"]=@(device.portraitEffectActive);
+    }else state[@"portraitEffect"]=@{@"status":@"unknown_os_unavailable"};
+    return @{@"schemaVersion":@"motionbrain.mac_camera_optical_diagnostics.v1",
+        @"sessionId":sessionId,@"deviceUniqueId":device.uniqueID,@"phase":phase,
+        @"sourceFrameId":frameId?:[NSNull null],@"callbackHostSeconds":callbackTime?:[NSNull null],
+        @"readStartedHostSeconds":@(begin),@"readCompletedHostSeconds":@(hostNow()),
+        @"state":state,@"semantics":@"getter_state_at_read_time_not_exposure_time",
+        @"settingsChanged":@NO,@"controlEligible":@NO,@"observationAdmissionChanged":@NO};
+}
+
 static NSArray *devices(void) {
     return [AVCaptureDeviceDiscoverySession discoverySessionWithDeviceTypes:@[AVCaptureDeviceTypeBuiltInWideAngleCamera,AVCaptureDeviceTypeExternal,AVCaptureDeviceTypeContinuityCamera] mediaType:AVMediaTypeVideo position:AVCaptureDevicePositionUnspecified].devices;
 }
@@ -160,6 +200,7 @@ static NSDictionary *deviceInfo(AVCaptureDevice *d) {
 @property double initialRotation;
 @property BOOL finished;
 @property BOOL streamMode;
+@property BOOL opticalDiagnostics;
 @property NSUInteger frameLimit, sampledOutFrames;
 @property unsigned long long byteLimit, savedBytes;
 @property double measurementLimit, sampleInterval, lastSelectedCallback;
@@ -263,11 +304,24 @@ static NSDictionary *deviceInfo(AVCaptureDevice *d) {
             @"captureHostBoundsCalibrated":@NO,@"controlEligible":@NO,@"trainingEligible":@NO} mutableCopy];
         [metadata addEntriesFromDictionary:storage];
         NSData *meta=json(metadata);
+        NSString *opticalFile=nil;NSData *opticalRaw=nil;
+        if(self.opticalDiagnostics){
+            opticalFile=[NSString stringWithFormat:@"frame-%04lu-optical.json",(unsigned long)index];
+            NSMutableDictionary *optical=[opticalDiagnosticsRecord(self.device,self.sessionId,@"frame",
+                metadata[@"sourceFrameId"],@(callback)) mutableCopy];
+            optical[@"metadataFile"]=metadataFile;optical[@"metadataSha256"]=digest(meta);
+            optical[@"imageFile"]=imageFile;optical[@"imageSha256"]=imageHash;
+            opticalRaw=json(optical);
+        }
         BOOL saved=durable([self.directory stringByAppendingPathComponent:imageFile],payload) &&
-            durable([self.directory stringByAppendingPathComponent:metadataFile],meta) && syncDirectory(self.directory);
+            durable([self.directory stringByAppendingPathComponent:metadataFile],meta) &&
+            (!self.opticalDiagnostics || (opticalRaw && durable([self.directory stringByAppendingPathComponent:opticalFile],opticalRaw))) &&
+            syncDirectory(self.directory);
         double complete=hostNow(),ms=(complete-storageStart)*1000;
         NSMutableDictionary *receipt=[@{@"frameIndex":@(index),@"metadataFile":metadataFile,@"metadataSha256":digest(meta),
             @"imageFile":imageFile,@"imageSha256":imageHash,@"persistenceMs":@(ms),@"storageCompleteHostSeconds":@(complete),@"durable":@(saved)} mutableCopy];
+        if(self.opticalDiagnostics){receipt[@"opticalDiagnosticsFile"]=opticalFile;
+            receipt[@"opticalDiagnosticsSha256"]=opticalRaw?digest(opticalRaw):@"";}
         self.savedBytes+=payload.length;
         [self.receipts addObject:receipt]; emit(@{@"event":@"frame",@"receipt":receipt});
         self.lastPTS=pts;self.lastHostPTS=hostPTS;self.lastCallback=callback;
@@ -298,8 +352,9 @@ int main(int argc,const char *argv[]){@autoreleasepool{
         NSMutableArray *list=[NSMutableArray array];for(AVCaptureDevice *d in devices())[list addObject:deviceInfo(d)];
         emit(@{@"devices":list,@"authorizationStatus":@([AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo])});return 0;
     }
+    BOOL opticalDiagnostics=opticalDiagnosticsOption(&argc,argv);
     BOOL streamMode=argc==10 && !strcmp(argv[1],"--stream");
-    if(!streamMode && (argc!=6||strcmp(argv[1],"--capture"))){fprintf(stderr,"usage: --capture DEVICE OUTPUT SESSION VIEW | --stream DEVICE OUTPUT SESSION VIEW FRAMES SECONDS FPS BYTES\n");return 2;}
+    if(!streamMode && (argc!=6||strcmp(argv[1],"--capture"))){fprintf(stderr,"usage: --capture DEVICE OUTPUT SESSION VIEW | --stream DEVICE OUTPUT SESSION VIEW FRAMES SECONDS FPS BYTES [--optical-diagnostics]\n");return 2;}
     unsigned long long frameLimit=21,seconds=10,fps=30,byteLimit=0;
     if(streamMode){
         const char *arguments[]={argv[6],argv[7],argv[8],argv[9]};
@@ -332,7 +387,7 @@ int main(int argc,const char *argv[]){@autoreleasepool{
     if(!selected||!selected.isContinuityCamera){fprintf(stderr,"selected Continuity Camera unavailable; no fallback\n");return 4;}
     Probe *probe=[Probe new];probe.directory=dir;probe.sessionId=sessionId;probe.viewId=viewId;probe.device=selected;probe.launchTime=launch;probe.receipts=[NSMutableArray array];
     probe.warmupTrace=[NSMutableArray array];probe.droppedTrace=[NSMutableArray array];
-    probe.streamMode=streamMode;probe.frameLimit=(NSUInteger)frameLimit;probe.measurementLimit=(double)seconds;probe.sampleInterval=1.0/(double)fps;probe.byteLimit=byteLimit;
+    probe.opticalDiagnostics=opticalDiagnostics;probe.streamMode=streamMode;probe.frameLimit=(NSUInteger)frameLimit;probe.measurementLimit=(double)seconds;probe.sampleInterval=1.0/(double)fps;probe.byteLimit=byteLimit;
     AVCaptureSession *session=[AVCaptureSession new];probe.session=session;
     [session beginConfiguration];
     if(![session canSetSessionPreset:AVCaptureSessionPreset640x480]){fprintf(stderr,"640x480 preset unavailable\n");return 5;}
@@ -355,6 +410,12 @@ int main(int argc,const char *argv[]){@autoreleasepool{
         config[@"storageEncoding"]=@"apple-lzbitmap-bgra8-v1";
         config[@"frameSchemaVersion"]=@"motionbrain.mac_camera_frame.v2";
     }
+    if(opticalDiagnostics){
+        config[@"opticalDiagnostics"]=@{@"enabled":@YES,@"settingsChanged":@NO,
+            @"schemaVersion":@"motionbrain.mac_camera_optical_diagnostics.v1"};
+        if(!durable([dir stringByAppendingPathComponent:@"optical-before-start.json"],
+            json(opticalDiagnosticsRecord(selected,sessionId,@"beforeStart",nil,nil))))return 6;
+    }
     if(!durable([dir stringByAppendingPathComponent:@"session.json"],json(config))||!syncDirectory(dir))return 6;
     double startRunningBegin=hostNow();[session startRunning];double startRunningEnd=hostNow();
     // Main thread owns lifecycle; callbacks and deadline state are serialized on queue.
@@ -367,6 +428,10 @@ int main(int argc,const char *argv[]){@autoreleasepool{
     double stopRunningBegin=hostNow();[session stopRunning];double stopRunningEnd=hostNow();
     [output setSampleBufferDelegate:nil queue:NULL];dispatch_sync(queue,^{});
     double callbackQueueDrained=hostNow();
+    if(opticalDiagnostics && !durable([dir stringByAppendingPathComponent:@"optical-after-stop.json"],
+        json(opticalDiagnosticsRecord(selected,sessionId,@"afterStop",nil,nil)))){
+        probe.reason=@"optical_diagnostics_storage_failed";
+    }
     NSString *status=completionStatus(probe.reason,streamMode);
     BOOL success=[status isEqualToString:@"completed"];
     BOOL operatorStop=streamMode&&[probe.reason isEqualToString:@"operator_stop"];

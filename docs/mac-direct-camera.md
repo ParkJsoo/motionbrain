@@ -198,3 +198,19 @@ python3 tools/evaluate_mac_camera_detection.py --capture-dir 'datasets/mac_camer
 ## 화면 표식 오프라인 검증
 
 추가 계측 장비 없이 화면의 새 표식으로 노출 구간을 제한하는 조건과 ESP32-CAM 처리 경로의 한계는 [화면 표식의 오프라인 시간 검증](optical-challenge-offline.md)에 정리했다. 합성 픽셀·시간 모델만 검사하며 실제 노출 상한, 촬영 경로 또는 학습 적격을 인증하지 않는다.
+
+## 선택형 읽기 전용 광학 상태 진단
+
+`mac_camera_capture`의 기존 `--capture` 또는 `--stream` 인수 맨 뒤에 `--optical-diagnostics`를 붙이면 설정을 변경하지 않고 광학 관련 공개 macOS 속성을 기록한다. 기본값은 꺼짐이다. 모터 제어·앵커 재중심화·관측 허용 범위 변경을 수행하지 않는다.
+
+```sh
+.local/bin/mac_camera_capture --stream DEVICE NEW_OUTPUT SESSION VIEW 40 8 5 100000000 --optical-diagnostics
+```
+
+시작 전 `optical-before-start.json`, 저장 프레임마다 `frame-NNNN-optical.json`, 정지 후 `optical-after-stop.json`을 만든다. 프레임 진단에는 원본 frame ID, image/metadata 파일 해시, callback 시각과 getter를 읽은 시작·종료 host 시각을 연결한다. 진단 파일의 경로·해시는 해당 receipt에도 남고, 진단 저장은 기존 영속 저장 시간 예산에 포함된다. 진단을 켜도 기존 `actualConfiguration`과 그 해시의 의미는 바뀌지 않는다.
+
+읽는 값은 초점 모드·지원 모드·초점 조정 중 여부, 노출·화이트밸런스 모드와 조정 중 여부, Center Stage 지원·활성·사용자/앱 제어 모드, Portrait 효과 활성 상태다. native macOS 공개 API에서 사용할 수 없는 렌즈 위치·줌·영상 안정화·FOV는 명시적으로 미상으로 기록한다. 실제 장치가 초점 잠금을 지원하는지 등은 읽기 전까지 알 수 없다.
+
+이 값은 **getter를 읽을 때의 상태**이며 해당 영상의 광학 노출 순간 상태를 증명하지 않는다. 같은 구성 해시에서 배경 전체의 배율·평행 이동이 달라지는지 기존 원본 영상 분석과 함께 비교한다. 변화가 보이더라도 초점·자동 구도·물리 이동 중 원인을 이 진단만으로 확정하지 않는다. 초점 잠금이나 사용자 전역 효과 변경은 별도 실행 범위이며 이 옵션에는 setter가 없다. 진단 통과가 관측·실물 실행 적격을 대신하지 않는다.
+
+이 옵션의 첫 모터 없는 단기 실측에서는 저장 프레임 38/38의 sidecar·receipt·영상·metadata 해시와 frame ID·시각 결합을 확인했다. Center Stage는 지원되지만 enabled/active는 38/38 거짓, Portrait 효과도 거짓이었다. 현재 연결에서 초점 Locked/Auto/Continuous 지원은 모두 거짓으로 노출됐다. 따라서 `focusMode=0`, `adjustingFocus=false`를 실제 렌즈가 고정됐다는 증거로 읽거나 초점 잠금 setter를 시도하지 않는다. 이 결과는 해당 실행의 getter 상태이며, 과거 영상의 배율 변화 원인이나 iPhone 내부 광학 안정성을 확정하지 않는다. 모터 명령·광학 설정 변경은 0회였다.
