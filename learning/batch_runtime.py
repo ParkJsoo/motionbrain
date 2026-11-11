@@ -81,7 +81,7 @@ def validate_runtime(plan, repository):
         require(isinstance(gripper, dict) and set(gripper) <= {'url','bootId','required','observerSpecPath','observerSpecSha256','retentionCaptures'} and {'url','bootId'} <= set(gripper), 'runtime_gripper_configuration')
         require(type(gripper.get('required', True)) is bool, 'runtime_gripper_required_boolean')
         other = _gripper_spec(repository, config, spec)
-        require(other is None or other['kind'] != 'registered_gripper_points_stationary',
+        require(other is None or other['kind'] not in ('registered_gripper_points_stationary','registered_gripper_jaws_stationary'),
                 'registered_gripper_observer_stationary_only')
         # Reject stationary-only nested observers before even constructing a
         # camera source. This constructor otherwise checks only origin/boot.
@@ -153,7 +153,7 @@ def _gripper_spec(repository, config, spec):
                 all(spec_value[k] == spec[k] for k in ('poseRegime','object','load')), 'runtime_gripper_observer_context_changed')
         other = dict(kind='camera_local_hsv', spec=spec_value, cameraIdentity=spec_value['cameraIdentity'],
                      maxAgeSeconds=spec_value['maxAgeSeconds'], joints=spec_value['joints'])
-    elif value.get('kind') == 'registered_gripper_points_stationary':
+    elif value.get('kind') in ('registered_gripper_points_stationary','registered_gripper_jaws_stationary'):
         require(set(value) == {'kind','registrationPath','registrationSha256','referenceImagePath',
                 'referenceImageSha256','context','maxAgeSeconds'}, 'runtime_gripper_points_fields')
         registration_raw = private_path(repository,value['registrationPath']).read_bytes()
@@ -167,7 +167,9 @@ def _gripper_spec(repository, config, spec):
                 'runtime_gripper_points_age')
         other = dict(value, cameraIdentity='gripper:'+gripper['bootId'],
                      joints={'gripper':dict(stateFields=[dict(name=name) for name in
-                         ('objectMinusJawMidXpx','objectMinusJawMidYpx','projectedJawSeparationPx')])})
+                         (('jawLeftXpx','jawLeftYpx','jawRightXpx','jawRightYpx','projectedJawSeparationPx')
+                          if value['kind'] == 'registered_gripper_jaws_stationary' else
+                          ('objectMinusJawMidXpx','objectMinusJawMidYpx','projectedJawSeparationPx'))])})
     elif value.get('kind') == 'registered_gripper_shaft_only':
         require(set(value) == {'kind','registrationPath','registrationSha256','referenceImagePath','referenceImageSha256','context','maxAgeSeconds'}, 'runtime_gripper_shaft_fields')
         registration_raw = private_path(repository,value['registrationPath']).read_bytes()
@@ -563,6 +565,14 @@ class BatchRuntime:
         spec = self.gripper_spec
         registration = json.loads(private_path(self.repository,spec['registrationPath']).read_bytes())
         reference = private_path(self.repository,spec['referenceImagePath']).read_bytes()
+        if spec['kind'] == 'registered_gripper_jaws_stationary':
+            observed = RegisteredGripperLandmarks(registration,reference).observe_jaws(raw,frame['frameId'])
+            require(observed['pixelSha256'] == frame['pixelSha256'], 'batch_gripper_points_pixels_changed')
+            derived['pixelSha256'] = frame['pixelSha256']
+            return dict(status='accepted',states={'gripper':dict(state=observed['state'],stateFields=observed['stateFields'])},
+                nodeMatches=[],frameBinding=derived,specSha256=observer_digest(spec),
+                points=observed['points'],quality=observed['quality'],landmarkContract=observed['landmarkContract'],
+                semantics=observed['semantics'],motionTrackingVerified=False,trainingEligible=False,controlEligible=False)
         if spec['kind'] == 'registered_gripper_points_stationary':
             observed = RegisteredGripperLandmarks(registration,reference).observe(raw,frame['frameId'])
             require(observed['pixelSha256'] == frame['pixelSha256'], 'batch_gripper_points_pixels_changed')
@@ -629,7 +639,7 @@ class BatchRuntime:
             manager.store.write_json('batch-before-observation.json', evidence)
             self.latest_before = evidence
             from learning.batch_interaction import validate_binding, before_command
-            binding = self._binding(condition)
+            binding = self._before_binding(manager, pair, condition, evidence)
             checked = validate_binding(self.plan, condition, binding, self.repository)
             self.interaction_token = before_command(manager, pair, condition, binding, self.deadline_wall,
                 checked=checked, clock=self.clock)
@@ -647,6 +657,16 @@ class BatchRuntime:
                     proof=proof, beforeFrameId=frame['frameId'], beforePixelSha256=frame['pixelSha256']))
             self._deadline()
         return check
+
+    def _before_binding(self, manager, pair, condition, evidence):
+        return self._binding(condition)
+
+    def _validate_interaction_binding(self, condition, binding, route):
+        if route == 'm4_up':
+            from learning.batch_m4 import validate_binding
+        else:
+            from learning.batch_interaction import validate_binding
+        return validate_binding(self.plan, condition, binding, self.repository)
 
     def validate_condition(self, condition):
         binding = self.config.get('conditionBindings', {}).get(condition['id'])
@@ -670,7 +690,7 @@ class BatchRuntime:
             else:
                 from learning.batch_interaction import validate_binding
                 require(binding['interaction'] != 'noncontact' or self.spec['load'] == 'empty', 'runtime_interaction_load_mismatch')
-            validate_binding(self.plan, condition, binding, self.repository)
+            self._validate_interaction_binding(condition, binding, route)
         except (ValueError, KeyError, OSError, StorageError) as exc:
             return 'runtime_interaction_rejected:'+type(exc).__name__
         joint = condition['command']['joint']
@@ -1068,7 +1088,7 @@ def observe_gripper_frame_offline(repository, external_spec, gripper_config, fol
     spec = validate_spec(external_spec)
     config = dict(gripper=copy.deepcopy(gripper_config))
     other = _gripper_spec(repository, config, spec)
-    require(other is not None and other['kind'] == 'registered_gripper_points_stationary',
+    require(other is not None and other['kind'] in ('registered_gripper_points_stationary','registered_gripper_jaws_stationary'),
             'offline_gripper_points_observer_required')
     runtime = object.__new__(BatchRuntime)
     runtime.repository, runtime.config, runtime.spec = repository, config, spec

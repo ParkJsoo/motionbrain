@@ -45,7 +45,7 @@ def _read_json(path, expected_hash, *, max_bytes=1024*1024):
 def validate_binding(plan, condition, binding, repository, *, purpose='dispatch'):
     """파일·원본 계약 선언만 검사한다. 실제 현재 판독·촬영·HTTP를 하지 않는다."""
     repository = Path(repository).resolve()
-    require(purpose in ('dispatch','label'), 'interaction_binding_purpose')
+    require(purpose in ('dispatch','label','declaration'), 'interaction_binding_purpose')
     require(isinstance(binding, dict) and binding.get('interaction') in
             ('noncontact', 'contact_probe', 'grasped'), 'interaction_binding_kind')
     require(binding.get('route', 'generic') in ('generic','m4_up'), 'interaction_binding_route')
@@ -55,7 +55,7 @@ def validate_binding(plan, condition, binding, repository, *, purpose='dispatch'
     spec_path = _private(repository, config['observerSpecPath'])
     spec, _ = _read_json(spec_path, config['observerSpecSha256'], max_bytes=12*1024*1024)
     generic = binding.get('route', 'generic') == 'generic'
-    if purpose == 'dispatch' and generic and binding['interaction'] == 'contact_probe':
+    if purpose in ('dispatch','declaration') and generic and binding['interaction'] == 'contact_probe':
         exact = dict(joint='gripper',direction='close',percent=40,durationMs=350)
         require(condition.get('command') == exact, 'interaction_original_contact_probe_command_required')
         conditions = plan.get('conditions')
@@ -71,7 +71,7 @@ def validate_binding(plan, condition, binding, repository, *, purpose='dispatch'
                         candidate['maxAttempts'] > 0, 'interaction_original_contact_probe_command_required')
                 total += candidate['maxAttempts']
         require(total <= 6, 'interaction_contact_probe_six_command_budget')
-    if purpose == 'dispatch' and generic and binding['interaction'] == 'grasped':
+    if purpose in ('dispatch','declaration') and generic and binding['interaction'] == 'grasped':
         command = condition.get('command', {})
         require(not (command.get('joint') == 'gripper' and command.get('direction') == 'close'),
                 'interaction_no_repeated_close_after_contact')
@@ -79,6 +79,8 @@ def validate_binding(plan, condition, binding, repository, *, purpose='dispatch'
         require(spec['load'] == 'empty', 'interaction_noncontact_empty_load_required')
         if spec['object'] == 'none':
             return checked
+    if purpose == 'declaration':
+        return checked  # Dispatch still requires a complete current source-bound review.
     path = _private(repository, binding.get('reviewPath'))
     envelope, raw = _read_json(path, binding.get('reviewSha256'))
     fields = {'schemaVersion', 'conditionId', 'stage', 'interaction', 'outcome',
@@ -193,6 +195,7 @@ def _seal_legacy_record(root, record, snapshots):
 
 def verify_review(checked, *, now, output_sequence, after_off=None):
     """Verify saved original evidence, preserving unknown/contact/retention distinctions."""
+    require(checked.get('purpose') in ('dispatch','label'), 'interaction_verified_review_required')
     require(number(now) and type(output_sequence) is int, 'interaction_current_state_required')
     if checked['interaction'] == 'noncontact' and 'envelope' not in checked:
         report = dict(interaction='noncontact', contactState='not_reviewed', tableContactReady=False,

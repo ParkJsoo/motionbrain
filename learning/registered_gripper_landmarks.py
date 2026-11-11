@@ -172,12 +172,19 @@ class RegisteredGripperLandmarks:
         return True
 
     def observe(self, jpeg, frame_id):
+        return self._observe(jpeg, frame_id, jaws_only=False)
+
+    def observe_jaws(self, jpeg, frame_id):
+        """등록된 양턱만 관측한다. 물체 누락을 가짜 점으로 채우지 않는다."""
+        return self._observe(jpeg, frame_id, jaws_only=True)
+
+    def _observe(self, jpeg, frame_id, *, jaws_only):
         started = time.monotonic()
         require(isinstance(frame_id, str) and 0 < len(frame_id) <= 160, 'registered_frame_id_required')
         self.verify()
         gray, pixel_sha = _image(jpeg, self.registration['imageShape'])
         p = self.registration['parameters']; points, quality, shifts = {}, {}, {}
-        for name in NAMES:
+        for name in (('jawLeft', 'jawRight') if jaws_only else NAMES):
             x0, y0, x1, y1 = p['rois'][name]; dx, dy = p['searchRadii'][name]
             if name == 'object' and 'objectArc' in p:
                 reference_arc = arc.extract_object_arc(self.reference_jpeg, p['objectArc']['parameters'])
@@ -220,6 +227,18 @@ class RegisteredGripperLandmarks:
             shifts[name] = shift
             points[name] = [a+b for a, b in zip(self.registration['points'][name], shift)]
             quality[name] = dict(ncc=float(peak), alternativeNcc=second, peakGap=float(gap), shiftPx=shift)
+        if jaws_only:
+            left, right = (np.asarray(points[n], dtype=float) for n in ('jawLeft','jawRight'))
+            opening = float(np.linalg.norm(right-left))
+            require(left[0] < right[0] and abs(right[1]-left[1]) <= p['maximumJawYDifferencePx']
+                    and p['minimumOpeningPx'] <= opening <= p['maximumOpeningPx'],
+                    'registered_landmark_geometry_changed')
+            return dict(state=[*left.tolist(),*right.tolist(),opening], points=points,
+                stateFields=['jawLeftXpx','jawLeftYpx','jawRightXpx','jawRightYpx','projectedJawSeparationPx'],
+                frameId=frame_id,pixelSha256=pixel_sha,imageSha256=_sha(jpeg),quality=quality,
+                landmarkContract='registered-jaw-points-v1:'+self.registration['registrationSha256'],
+                measurementAccuracyVerified=False,liveMotionTrackingVerified=False,
+                semantics='projected_jaw_corners_only_not_object_contact_depth_or_force')
         obj, left, right = (np.asarray(points[n], dtype=float) for n in NAMES)
         midpoint = (left+right)/2
         base = self.registration['points']

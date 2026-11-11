@@ -100,6 +100,15 @@ class BatchGripperPointsTests(unittest.TestCase):
             observe_gripper_frame_offline(self.f.repository,self.f.spec,self.runtime.config['gripper'],
                 self.source/'gripper-pair','before','session')
 
+    def test_jaw_only_contract_fuses_five_states_and_remains_dispatch_blocked(self):
+        self.wrapper['kind']='registered_gripper_jaws_stationary';self.bind()
+        obs=observe_gripper_frame_offline(self.f.repository,self.f.spec,self.runtime.config['gripper'],
+            self.source/'gripper-pair','before','session')
+        self.assertEqual(len(obs['states']['gripper']['state']),5)
+        self.assertEqual(set(obs['points']),{'jawLeft','jawRight'})
+        plan=copy.deepcopy(self.f.plan);plan['runtime']=copy.deepcopy(self.runtime.config)
+        with self.assertRaisesRegex(ValueError,'stationary_only'):validate_runtime(plan,self.f.repository)
+
     def test_live_runtime_blocked_before_device_or_credential_access(self):
         plan=copy.deepcopy(self.f.plan);plan['runtime']=copy.deepcopy(self.runtime.config)
         with patch('learning.batch_runtime.GripperObservationSource',side_effect=AssertionError('camera')) as camera, \

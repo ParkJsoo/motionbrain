@@ -404,12 +404,14 @@ def load_learning_transition(repository,entry,split):
 
 
 class BatchM4Route:
-    def __init__(self,plan,repository,root,credential,reviewer_factory=None,*,observer_spec,frozen_model=None,after_result=None,clock=time):
+    def __init__(self,plan,repository,root,credential,reviewer_factory=None,*,observer_spec,frozen_model=None,after_result=None,before_dispatch=None,clock=time):
         self.plan,self.repository,self.root=copy.deepcopy(plan),Path(repository).resolve(),Path(root).resolve()
         require(self.root.is_relative_to((self.repository/'.local').resolve()),'m4_private_root_required')
         self.credential,self.reviewer_factory,self.spec,self.clock=credential,reviewer_factory,validate_spec(observer_spec),clock
         self.active=None
         self.after_result=after_result
+        require(before_dispatch is None or callable(before_dispatch),'m4_before_dispatch_callback')
+        self.before_dispatch=before_dispatch
         require(after_result is None or callable(after_result),'m4_after_result_callback')
         self.model_provider=frozen_model if callable(frozen_model) else None
         self.frozen_model=copy.deepcopy(frozen_model) if frozen_model is not None and not callable(frozen_model) else None
@@ -477,6 +479,8 @@ class BatchM4Route:
                         store.write_json('batch-prospective.json',evidence)
                         owner.generic_record=copy.deepcopy(record)
                         owner.generic_evidence=copy.deepcopy(evidence)
+                        if route.before_dispatch is not None:
+                            route.before_dispatch(copy.deepcopy(feature),store)
                     else:
                         require(owner.generic_record==record,'m4_generic_pinned_input_changed')
                 if after_off is not None and retention is not None and not owner.retention_collected:

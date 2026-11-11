@@ -36,6 +36,18 @@ class RegisteredLandmarksTests(unittest.TestCase):
             image[y0+dy:y1+dy, x0+dx:x1+dx] = self.image[y0:y1, x0:x1]
         return encoded(image)
 
+    def test_jaws_remain_observable_without_object_and_keep_original_thresholds(self):
+        image=self.image.copy();image[74:120,139:179]=127
+        raw=encoded(image)
+        with self.assertRaises(ValueError):self.tracker.observe(raw,'absent-object')
+        result=self.tracker.observe_jaws(raw,'absent-object')
+        self.assertEqual(set(result['points']),{'jawLeft','jawRight'})
+        self.assertEqual(len(result['state']),5)
+        self.assertNotEqual(result['landmarkContract'],self.tracker.landmark_contract)
+        self.assertFalse(result['liveMotionTrackingVerified'])
+        image[96:157,82:157]=127
+        with self.assertRaises(ValueError):self.tracker.observe_jaws(encoded(image),'hidden-jaw')
+
     def test_original_pixel_binding_and_small_translation(self):
         shifts = dict(object=[1, 1], jawLeft=[-7, -5], jawRight=[7, -5])
         result = self.tracker.observe(self.move_patches(shifts), 'fresh-frame')

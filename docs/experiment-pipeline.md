@@ -268,6 +268,24 @@ M1의 외부 특징에 `gripper:` 이름공간으로 결합한다. 다른 관절
 `motionTrackingVerified`는 모두 `false`다. 실제 수집에 쓰려면 별도 움직임 검증과
 실행 적격 계약을 구현해야 한다.
 
+### 물체 없는 양턱 관측과 실제 원본 전이
+
+`registered_gripper_jaws_stationary`는 같은 등록 파일·기준 JPEG·NCC·모호성·검색
+경계 기준을 사용하면서 물체 점을 관측 대상에서 제외한다. `observe_jaws`는
+양턱 x·y 좌표와 투영 간격의 다섯 상태를 반환한다. 물체 없는 상태를 가짜 물체
+좌표로 채우지 않으며, 물체 상대 3점이나 턱축 전용 상태와 계약을 구분한다.
+파일 전용 API와 배치 전이 재감사에서 사용할 수 있고, 실물 배치 실행은 계속
+차단된다. 관측 성공 자체가 실제 움직임·측정 정확도·제어 적격을 증명하지 않는다.
+
+`learning.registered_jaw_transition.build_transition(source, source_sha256,
+registration, reference, context, capture_group)`은 기존 실행·촬영·영상 원본 감사와
+두 카메라 전후 시간 검사를 통과한 M1 단발 원본에서 양턱 전이를 만든다.
+`context`는 `viewId`, `poseRegime`, `object`, `load`를 실제 수집 조건으로 지정한다.
+반환된 `learningRow`는 기존 `learning.batch_learning.fit` 입력이며 원본 세션·실행·
+외부 프레임·집게 프레임 식별자를 유지한다. 학습 표본이 한 건이면 기존 학습기는
+모델을 만들지 않고 명령별 표본 부족을 반환한다. 관측 전이 생성, 학습 충분성,
+고정 후 평가, 실물 후보 실행의 적격은 각각 검증해야 한다.
+
 ## M1 shaft 전용 수집·고정 후 평가
 
 물체 검출의 실패가 유효한 턱축 관측까지 막지 않도록, 물체 좌표를 요구하지 않는
