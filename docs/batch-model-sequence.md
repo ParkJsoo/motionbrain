@@ -50,6 +50,23 @@ report = runner.run(confirmed_scope_sha256=approved_scope_sha256)
 
 위 `review`는 형식 축약이며, 실제로는 기존 `batch_interaction.verify_review`가 요구하는 전체 원본 검토 envelope여야 한다. `stage`, `conditionId`, 현재 `outputSequence`, 원본 파일 해시·프레임 결합·관측 문맥을 모두 검증한다. 요청에 없는 프레임이나 잘못된 해시, 누락·지연 응답은 실행을 막는다. 검토 대기 중에도 기존 세션 tick·마감 검사를 유지한다. `declaration` 검사는 계획 준비용이며 실행 증거로 쓸 수 없다. 사후 검토는 기존 `afterReviewer` 파일 프로토콜을 그대로 사용한다.
 
+## 원본 검토 응답 제출
+
+`learning.batch_review_response`는 사람이 실제로 판독해 작성한 기존 검토 envelope를 파일 응답으로 제출한다. 영상 판독이나 접촉·파지 판단을 생성하는 도구가 아니다. 요청·조건·명령·출력 순서·세션·원본 해시와 프레임 연결을 검사하고 기존 `verify_review`로 인과관계와 유효기간을 검증한다. 판정 불가(`unknown`)와 실패(`failed`)를 그대로 보존한다. 기존 응답은 덮어쓰지 않으며 제출 근거에 사람 검토 여부를 기록한다.
+
+```sh
+python3 -m learning.batch_review_response \
+  --repository /absolute/path/to/motionbrain \
+  --plan /absolute/path/to/motionbrain/.local/plan.json \
+  --request /absolute/path/to/motionbrain/.local/session/batch-before-review-request.json \
+  --review /absolute/path/to/motionbrain/.local/session/operator-review.json \
+  --operator-reviewed
+```
+
+사후 검토는 실제 `batch-after-review-request.json`과 사후 envelope를 지정한다. 상대 원본 경로가 실행기의 envelope 복사 이후에도 같도록 검토 파일은 요청과 같은 디렉터리에 둔다. 닫기·들기 단계는 계획에 `afterReviewer`가 없으면 생성 시점에 차단한다. 설정이 있다는 사실은 응답하는 검토자가 실행 중임을 보장하지 않는다.
+
+**사람이 처음 영상을 확인하는 대화형 경로는 아직 연결되지 않았다.** 현행 요청 응답 제한은 최대 3초이며, 이 제출기는 그 제한이나 영상 유효기간을 늘리지 않는다. 늦은 검토·이전 출력의 검토는 실패로 남긴다. 준비된 판독자가 없는 상황에서 이 CLI만 추가해 접근→닫기→들기가 실사용 가능하다고 볼 수 없다. 대화형 검토에는 사전 장면 확인 후 새 스냅샷을 요청하고 그 실제 프레임을 다시 검토하는 연결이 필요하다. 이전 프레임의 사람 판단을 새 프레임에 복사하거나 정적 검토를 최신 검토로 취급해서는 안 된다.
+
 ## 검증 범위와 남은 실물 조건
 
 합성 모델·원본 fixture로 후보/정지 비교, 단계 전이, 실제 원본 검토 연결, 시간 지연, 실패·중단·정리 실패, 중복 실행 방지를 검증한다. 3단계 통합 fixture는 장치 backend·모델 로딩·정적 계약 검사를 주입하고, 기존 원본 contact/retention 검증 결과로 접근→닫기→들기를 연결한다. retention 원본 변조 때는 완료와 재실행을 막는다. 정적 실행 계약과 M4 장치 어댑터는 각각 기존 회귀로 검증한다. 이는 로봇의 집기 성공을 의미하지 않는다. 새 등록 외부 영상과 집게 양턱 계약은 정지 영상만 검증했으므로 기존 stationary 실행 차단을 유지한다. 이 계약으로 실제 제어하려면 작은 움직임에서 추적·시점 일관성을 검증해야 한다. 한 건의 양턱 전이는 모델 선택 성능을 평가하기에 부족하다. 접촉·깊이·파지력·실제 들림 검증과 관절·자세별 학습 자료는 별도로 확보해야 한다.

@@ -204,7 +204,7 @@ class BeforeReviewConnectionTests(unittest.TestCase):
 class ThreeStageBackendTests(unittest.TestCase):
     setUp = BatchModelRuntimeTests.setUp
     """Sequence integration with injected device backend and real original review verifier."""
-    def _three_stage(self, *, damage_retention=False):
+    def _three_stage(self, *, damage_retention=False, omit_after_reviewer=False):
         from learning import batch_interaction as interaction
         from learning.batch_campaign import digest as plan_digest
         from tests.test_batch_interaction import BatchConfirmedContactTests
@@ -230,6 +230,8 @@ class ThreeStageBackendTests(unittest.TestCase):
             runtime.plan=copy.deepcopy(runtime.plan);runtime.plan['conditions']=[condition]
             runtime.config=copy.deepcopy(runtime.config)
             runtime.config['conditionBindings']={kind:dict(route='m4_up' if kind=='lift' else 'generic',interaction='grasped' if kind=='lift' else 'contact_probe')}
+            if not omit_after_reviewer:
+                runtime.config['afterReviewer']=dict(kind='file',protocolVersion=1,maxWaitSeconds=3)
             runtime.plan['runtime']=runtime.config;runtime.plan_sha=plan_digest(runtime.plan)
             runtime.model=model;runtime.executions=0;runtime.observations=0
             # Device backend adapters are injected; scope/file validation is covered
@@ -253,6 +255,12 @@ class ThreeStageBackendTests(unittest.TestCase):
         runner=BatchModelRunner('three-stage',stages,runtimes,conditions,models,self.f.private/'three-stage')
         result=runner.run(confirmed_scope_sha256=runner.scope_sha256)
         return runner,result,runtimes
+
+    def test_contact_sequence_without_live_after_review_fails_before_device_access(self):
+        with self.assertRaisesRegex(ValueError,'live_after_reviewer_required'):
+            self._three_stage(omit_after_reviewer=True)
+        self.assertEqual(self.runtime.executions,0)
+        self.assertEqual(self.runtime.observations,0)
 
     def test_three_stage_backend_with_original_contact_and_retention_reviews(self):
         runner,result,runtimes=self._three_stage()

@@ -171,6 +171,8 @@ class BatchModelRunner:
         for stage in stages:
             runtime=self.runtimes[stage['id']]
             require(isinstance(runtime,ModelDecisionRuntime),'model_runtime_adapter_required')
+            if stage['kind'] in ('close','lift'):
+                require('afterReviewer' in runtime.config, 'model_runtime_live_after_reviewer_required')
             require(self.root.is_relative_to((runtime.repository/'.local').resolve()),'model_runtime_private_root')
             candidates=self.conditions[stage['id']]
             require(isinstance(candidates,list) and bool(candidates),'model_runtime_conditions_required')
