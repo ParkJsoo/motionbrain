@@ -169,6 +169,20 @@ def collect_once(manager, request_id, command, pose_context, *, onsite_confirmed
             except BaseException:
                 pass  # The manager's durable journal continues to block unresolved output.
         session = manager.current or {}
+        events=session.get('events',[])
+        receipts=[e.get('receipt',{}) for e in events if e.get('kind')=='result']
+        errors=[e for e in events if e.get('kind')=='http_error' and
+                e.get('path','').split('?')[0] in ('/status','/collection_status','/action_outputs') and
+                e.get('error') in ('TimeoutError','RemoteDisconnected','URLError')]
+        report['failureEvidence']=dict(commandReceiptRecorded=bool(receipts),
+            receiptOffVerified=bool(receipts) and receipts[-1].get('offVerified') is True,
+            sourceSessionFile='session.json',
+            sessionError=session.get('error') if session.get('error') in (
+                'recording_or_controller_monitor_failed','command_failed_no_retry','terminal_persistence_failed') else 'unclassified')
+        if errors:
+            e=errors[-1]
+            report['failureEvidence']['lastReadFailure']=dict(endpoint=e['path'].split('?')[0],
+                error=e['error'],at=e.get('at'),requestStartedAt=e.get('requestStartedAt'))
         report.update(status='interrupted' if isinstance(exc, (KeyboardInterrupt, SystemExit)) else 'failed',
                       offVerified=session.get('finalIdleOffVerified', False))
         if not report['offVerified']:

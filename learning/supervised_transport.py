@@ -138,6 +138,8 @@ class SequencePort:
         self.last_dispatch_after = None
         self.last_off_at = None
         self._quiet_retry_off_proof = False
+        self._quiet_read_recovery_used = False
+        self._last_http_failure_serial = None
         self._before_run = None
 
     def _save(self, path, value, emergency=False):
@@ -149,6 +151,7 @@ class SequencePort:
                 raise
 
     def _call(self, path, payload=None, *, emergency=False, run=False, quiet_disconnect_retry=False, request_timeout=None, quiet_monitor_timeout=False, initial_output_read=False):
+        self._last_http_failure_serial = None
         endpoint = urllib.parse.urlsplit(path).path
         if endpoint not in ('/status', '/collection_status', '/sequence', '/actions', '/action_outputs', '/command', '/motor'):
             raise ValueError('unsupported_endpoint')
@@ -167,7 +170,7 @@ class SequencePort:
         if quiet_monitor_timeout and not (self._quiet_retry_off_proof and self._active_pulse is None
                 and not self.evidence_failed and endpoint in ('/status', '/collection_status', '/action_outputs')
                 and payload is None and not emergency and not run
-                and (request_timeout is None or endpoint == '/action_outputs')):
+                ):
             raise ValueError('quiet_monitor_timeout_scope')
         maximum = max(self.timeout, 1.5) if quiet_monitor_timeout or initial_output_read else self.timeout
         budget = maximum if request_timeout is None else min(maximum, request_timeout)
@@ -248,6 +251,7 @@ class SequencePort:
             # Error text may originate outside this module; retain type only.
             self._save(name + '-error.json', {'error': type(exc).__name__,
                        'endedAt': self.clock.monotonic()}, True)
+            self._last_http_failure_serial = self.serial
             raise
 
     def _check_status(self, status, expected, pulse=None, baseline_angle=None):
@@ -346,9 +350,9 @@ class SequencePort:
             raise ValueError('collection_status_schema_invalid')
         return status
 
-    def _outputs(self, *, quiet=False, **kwargs):
+    def _outputs(self, *, quiet=False, deadline=None, **kwargs):
         if not self.compact_reads:
-            payload = self._call('/action_outputs', **kwargs)
+            payload = self._call('/action_outputs', request_timeout=None if deadline is None else deadline-self.clock.monotonic(), **kwargs)
             return payload, self._consume(payload, quiet=quiet)
         started = self.clock.monotonic()
         bootstrap = self.last_sequence is None
@@ -362,6 +366,8 @@ class SequencePort:
                             and not self.off_verified and self.last_snapshot is None)
         extended_quiet = kwargs.get('quiet_monitor_timeout') is True
         drain_budget = 8. if bootstrap_budget else (max(self.timeout, 1.5) if extended_quiet else self.timeout)
+        if deadline is not None:
+            drain_budget = min(drain_budget, deadline-self.clock.monotonic())
         new = []
         pages = []
         # A full ring fits in sixteen pages. Both elapsed time and page count
@@ -431,37 +437,55 @@ class SequencePort:
             raise
         return snapshot
 
-    def check_idle(self, *, allow_quiet_disconnect_retry=False, allow_quiet_monitor_timeout=False):
-        """Read-only quiet-window check; caller controls the polling frequency.
+    def check_idle(self, *, allow_quiet_disconnect_retry=False, allow_quiet_monitor_timeout=False,
+                   allow_quiet_read_recovery=False):
+        """Quiet monitor only: one fresh GET verification after a transient read failure.
 
-        Only the manual session's idle monitor opts into one disconnect recovery.
-        Finalization and existing collection paths retain single-attempt reads.
+        Recovery is limited to one per port/session and 4.5s total per check.
+        Prior OFF enables recovery, but never substitutes for current evidence.
+        No writes, active pulse, finalization, or malformed evidence may recover.
         """
-        if type(allow_quiet_monitor_timeout) is not bool:
+        if type(allow_quiet_monitor_timeout) is not bool or type(allow_quiet_read_recovery) is not bool:
             raise ValueError('quiet_monitor_timeout_invalid')
         if allow_quiet_monitor_timeout and allow_quiet_disconnect_retry is not True:
             raise ValueError('quiet_monitor_timeout_scope')
-        # A prior OFF proof enables transport recovery, never certification of a
-        # new quiet window. A failed fresh read still permits emergency cleanup.
+        if allow_quiet_read_recovery and not (allow_quiet_monitor_timeout and allow_quiet_disconnect_retry):
+            raise ValueError('quiet_read_recovery_scope')
         self._quiet_retry_off_proof = (allow_quiet_disconnect_retry is True
                                       and self.off_verified and self._active_pulse is None
                                       and not self.evidence_failed)
-        # A new quiet window invalidates a successful finish proof, but must
-        # never re-enable cleanup writes after a failed, already attempted finish.
         if self._finish_result:
             self._finished = False
         self.off_verified = False
         try:
             extended = allow_quiet_monitor_timeout and self._quiet_retry_off_proof
-            status = self._status(quiet_disconnect_retry=self._quiet_retry_off_proof and not extended,
-                                  quiet_monitor_timeout=extended)
-            self._check_status(status, 'IDLE')
-            self._outputs(quiet=True, quiet_disconnect_retry=self._quiet_retry_off_proof and not extended,
-                          quiet_monitor_timeout=extended)
-            if self.last_outputs != {i: 0 for i in range(1, 6)}:
-                raise ValueError('driver_off_not_proven')
-            self.off_verified = True
-            return status
+            recovery = extended and allow_quiet_read_recovery and not self._quiet_read_recovery_used
+            deadline = self.clock.monotonic()+4.5 if recovery else None
+            for attempt in range(2 if recovery else 1):
+                try:
+                    status = self._status(quiet_disconnect_retry=self._quiet_retry_off_proof and not extended,
+                        quiet_monitor_timeout=extended,
+                        **({'request_timeout':deadline-self.clock.monotonic()} if deadline is not None else {}))
+                    self._check_status(status, 'IDLE')
+                    self._outputs(quiet=True, quiet_disconnect_retry=self._quiet_retry_off_proof and not extended,
+                                  quiet_monitor_timeout=extended, deadline=deadline)
+                    if self.last_outputs != {i: 0 for i in range(1, 6)}:
+                        raise ValueError('driver_off_not_proven')
+                    self.off_verified = True
+                    return status
+                except (TimeoutError, http.client.RemoteDisconnected, urllib.error.URLError) as exc:
+                    transient = isinstance(exc,(TimeoutError,http.client.RemoteDisconnected)) or (
+                        isinstance(exc,urllib.error.URLError) and isinstance(exc.reason,TimeoutError))
+                    if (not recovery or attempt or not transient or self.evidence_failed or
+                            self._last_http_failure_serial != self.serial or
+                            self._active_pulse is not None or self.clock.monotonic() >= deadline):
+                        raise
+                    self._quiet_read_recovery_used = True
+                    self._save(f'quiet-monitor-{self.serial:06d}-recovery-intent.json',dict(
+                        reason=type(exc).__name__,failedRequestSerial=self.serial,
+                        startedAt=self.clock.monotonic(),deadline=deadline,
+                        lastVerifiedSequence=self.last_sequence,readOnly=True,
+                        offVerified=False,maxRecoveriesPerSession=1))
         finally:
             self._quiet_retry_off_proof = False
 

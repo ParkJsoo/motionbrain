@@ -42,7 +42,7 @@ class RecordingPort(SequencePort):
         super()._save(path, value, emergency)
         # Only successfully persisted retry evidence enters the viewer. These
         # attempts are also kept as immutable raw files by the base transport.
-        if path.endswith(('-attempt-1-error.json', '-attempt-2-intent.json')):
+        if path.endswith(('-attempt-1-error.json', '-attempt-2-intent.json', '-recovery-intent.json')):
             self.observer(dict(kind='http_retry', at=value.get('endedAt', value.get('startedAt')),
                                path=self._observed_path, payload=copy.deepcopy(self._observed_payload),
                                attempt=1 if path.endswith('-error.json') else 2,
@@ -293,7 +293,8 @@ class ManualCollection:
                 self.finish()
                 return
             self.camera.check()
-            self.port.check_idle(allow_quiet_disconnect_retry=True, allow_quiet_monitor_timeout=True)
+            self.port.check_idle(allow_quiet_disconnect_retry=True, allow_quiet_monitor_timeout=True,
+                                 allow_quiet_read_recovery=True)
             self.last_poll = self.clock.monotonic()
         except Exception:
             self.current['error'] = 'recording_or_controller_monitor_failed'

@@ -315,6 +315,42 @@ class PipelineCollectionTests(unittest.TestCase):
         self.assertEqual(self.collect(before_command=reject), report)
         self.assertEqual(len(self.requests), count)
 
+    def _post_off_timeout(self, count):
+        factory=self.manager.port_factory;failed=[]
+        def port_factory(*args,**kwargs):
+            port=factory(*args,**kwargs);original=port.opener.open
+            def opened(request,timeout):
+                completed=any(e.get('kind')=='result' for e in (self.manager.current or {}).get('events',[]))
+                if completed and '/action_outputs' in request.full_url and len(failed)<count:
+                    failed.append(timeout);self.manager.clock.sleep(timeout);raise TimeoutError('fixture read timeout')
+                return original(request,timeout)
+            port.opener=type('RecoveryFixture',(),{'open':staticmethod(opened)})()
+            return port
+        self.manager.port_factory=port_factory
+        return failed
+
+    def test_post_off_read_recovery_preserves_complete_capture_and_single_run(self):
+        failed=self._post_off_timeout(1);result=self.collect()
+        self.assertEqual(result['status'],'recorded');self.assertEqual(len(failed),1)
+        session=json.loads((Path(result['sessionPath'])/'session.json').read_bytes())
+        receipt=next(e['receipt'] for e in session['events'] if e['kind']=='result')
+        self.assertGreaterEqual(session['endedAt']-receipt['offAt'],6.5)
+        self.assertEqual(sum(e.get('kind')=='http_error' for e in session['events']),1)
+        self.assertEqual(sum(e.get('kind')=='http_retry' for e in session['events']),1)
+        self.assertEqual(sum(p=='/sequence' and b=={'action':'run'} for p,b in self.device.requests),1)
+        self.assertEqual(self.collect(),result)
+
+    def test_two_post_off_failures_stop_with_explicit_receipt_and_read_diagnosis(self):
+        failed=self._post_off_timeout(2);result=self.collect()
+        self.assertEqual(result['status'],'failed');self.assertEqual(len(failed),2)
+        evidence=result['failureEvidence']
+        self.assertTrue(evidence['commandReceiptRecorded']);self.assertTrue(evidence['receiptOffVerified'])
+        self.assertEqual(evidence['lastReadFailure']['endpoint'],'/action_outputs')
+        self.assertEqual(evidence['lastReadFailure']['error'],'TimeoutError')
+        self.assertEqual(evidence['sessionError'],'recording_or_controller_monitor_failed')
+        self.assertEqual(sum(p=='/sequence' and b=={'action':'run'} for p,b in self.device.requests),1)
+        self.assertEqual(self.collect(),result)
+
 
 if __name__ == '__main__':
     unittest.main()

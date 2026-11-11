@@ -929,5 +929,76 @@ class CompactTransportTests(unittest.TestCase):
         device.append(4, 0);device.entries[-1]['atMs']=0
         with self.assertRaisesRegex(ValueError, 'time_regressed'): port.check_idle()
 
+    def test_one_quiet_read_recovery_rechecks_status_and_ring_without_writes(self):
+        port,device,store=self.setup_port();port.preflight();original=port.opener.open;calls=[]
+        def once(request,timeout):
+            path=urllib.parse.urlsplit(request.full_url).path;calls.append(path)
+            if path=='/action_outputs' and calls.count(path)==1:
+                device.clock.sleep(timeout);raise TimeoutError()
+            return original(request,timeout)
+        port.opener.open=once;before=len(device.requests)
+        port.check_idle(allow_quiet_disconnect_retry=True,allow_quiet_monitor_timeout=True,allow_quiet_read_recovery=True)
+        self.assertEqual(calls,['/collection_status','/action_outputs','/collection_status','/action_outputs'])
+        self.assertTrue(port.off_verified);self.assertTrue(port._quiet_read_recovery_used)
+        self.assertTrue(all(payload is None for _,payload in device.requests[before:]))
+        self.assertTrue(any(k.endswith('recovery-intent.json') for k in store.rows))
+        calls.clear()
+        with self.assertRaises(TimeoutError):
+            port.check_idle(allow_quiet_disconnect_retry=True,allow_quiet_monitor_timeout=True,allow_quiet_read_recovery=True)
+        self.assertEqual(calls,['/collection_status','/action_outputs'])
+
+    def test_quiet_recovery_total_deadline_and_repeated_failure(self):
+        port,device,store=self.setup_port();port.preflight();started=device.clock.now;calls=[]
+        def fail(request,timeout):
+            calls.append(timeout);device.clock.sleep(timeout);raise TimeoutError()
+        port.opener.open=fail
+        with self.assertRaises(TimeoutError):
+            port.check_idle(allow_quiet_disconnect_retry=True,allow_quiet_monitor_timeout=True,allow_quiet_read_recovery=True)
+        self.assertEqual(len(calls),2);self.assertLessEqual(device.clock.now-started,4.5)
+        self.assertFalse(port.off_verified)
+
+    def test_quiet_recovery_never_accepts_new_output_or_gap_or_boot_change(self):
+        for bad in ('nonzero','gap','boot','sensor'):
+            port,device,_=self.setup_port();port.preflight();original=port.opener.open;failed=False
+            def fail(request,timeout):
+                nonlocal failed
+                if not failed:
+                    failed=True
+                    if bad=='nonzero':device.append(1,10);device.append(1,0)
+                    elif bad=='gap':
+                        for _ in range(129):device.append(1,0)
+                    elif bad=='boot':device.boot='changed'
+                    else:device.sensor_age=151
+                    raise TimeoutError()
+                return original(request,timeout)
+            port.opener.open=fail
+            with self.subTest(bad=bad),self.assertRaises(ValueError):
+                port.check_idle(allow_quiet_disconnect_retry=True,allow_quiet_monitor_timeout=True,allow_quiet_read_recovery=True)
+            self.assertFalse(port.off_verified)
+
+    def test_quiet_read_recovery_has_no_active_or_unproven_scope(self):
+        for kind in ('active','off','evidence'):
+            port,device,_=self.setup_port();port.preflight();calls=[]
+            if kind=='active':port._active_pulse=pulse()
+            elif kind=='off':port.off_verified=False
+            else:port.evidence_failed=True
+            def fail(request,timeout):calls.append(timeout);raise TimeoutError()
+            port.opener.open=fail
+            with self.assertRaises(TimeoutError):
+                port.check_idle(allow_quiet_disconnect_retry=True,allow_quiet_monitor_timeout=True,allow_quiet_read_recovery=True)
+            self.assertEqual(len(calls),1);self.assertFalse(port._quiet_read_recovery_used)
+
+    def test_successful_http_but_expired_drain_is_not_a_read_recovery(self):
+        port,device,store=self.setup_port();port.preflight();original=port.opener.open
+        def slow(request,timeout):
+            result=original(request,timeout)
+            if '/action_outputs' in request.full_url:device.clock.sleep(timeout)
+            return result
+        port.opener.open=slow
+        with self.assertRaises(TimeoutError):
+            port.check_idle(allow_quiet_disconnect_retry=True,allow_quiet_monitor_timeout=True,allow_quiet_read_recovery=True)
+        self.assertFalse(port._quiet_read_recovery_used)
+        self.assertFalse(any(k.endswith('recovery-intent.json') for k in store.rows))
+
 
 if __name__ == '__main__': unittest.main()

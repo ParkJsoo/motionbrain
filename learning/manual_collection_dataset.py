@@ -98,16 +98,104 @@ def audit_camera(ev, plan, session):
                        configuration=list(rec.configuration), helperSha256=plan['helperSha256'])
 
 
-def audit_http(ev, session, command, receipt):
+def _http_records(ev, session):
+    """Keep every failed GET and its bounded quiet recovery in the source audit."""
     events = [e for e in session['events'] if e.get('kind') == 'http']
-    require(not any(e.get('kind') in ('http_error','http_retry') for e in session['events']), 'http_failure_or_retry')
-    files = list(ev.root.glob('http-*'))
-    require(len(files) == len(events)*2, 'http_evidence_count_or_retry')
+    failures = [e for e in session['events'] if e.get('kind') == 'http_error']
+    retries = [e for e in session['events'] if e.get('kind') == 'http_retry']
+    recovery_files = list(ev.root.glob('quiet-monitor-*-recovery-intent.json'))
+    recovery = None
+    if failures or retries or recovery_files:
+        require(len(failures) == len(retries) == len(recovery_files) == 1, 'http_failure_or_retry')
+        recovery = ev.json(recovery_files[0].name)
+        require(set(recovery) == {'reason','failedRequestSerial','startedAt','deadline',
+                'lastVerifiedSequence','readOnly','offVerified','maxRecoveriesPerSession'} and
+                recovery['readOnly'] is True and recovery['offVerified'] is False and
+                type(recovery['maxRecoveriesPerSession']) is int and recovery['maxRecoveriesPerSession'] == 1 and
+                type(recovery['failedRequestSerial']) is int and recovery['failedRequestSerial'] > 1 and
+                type(recovery['lastVerifiedSequence']) is int and recovery['lastVerifiedSequence'] > 0 and
+                recovery['reason'] in ('TimeoutError','RemoteDisconnected','URLError') and
+                finite(recovery['startedAt']) and finite(recovery['deadline']), 'quiet_recovery_contract')
+        serial = recovery['failedRequestSerial']; name = f'http-{serial:06d}'
+        require(recovery_files[0].name == f'quiet-monitor-{serial:06d}-recovery-intent.json', 'quiet_recovery_file')
+        intent = ev.json(name+'-intent.json'); error = ev.json(name+'-error.json')
+        require(intent['method'] == 'GET' and intent['payload'] is None and
+                intent['path'].split('?')[0] in ('/status','/collection_status','/action_outputs') and
+                error['error'] == recovery['reason'], 'quiet_recovery_read_only')
+        times = [recovery['deadline']-4.5, failures[0]['requestStartedAt'], intent['startedAt'], error['endedAt'],
+                 failures[0]['at'], recovery['startedAt'], recovery['deadline']]
+        require(all(finite(t) for t in times) and times == sorted(times) and
+                recovery['startedAt'] < recovery['deadline'], 'quiet_recovery_timing')
+        require(failures[0] == dict(kind='http_error', at=failures[0]['at'],
+                requestStartedAt=failures[0]['requestStartedAt'], path=intent['path'],payload=None,error=error['error']) and
+                retries[0] == dict(kind='http_retry',at=recovery['startedAt'],path=intent['path'],payload=None,
+                attempt=2,evidenceFile=recovery_files[0].name,detail=recovery), 'quiet_recovery_event_binding')
+    serials = [i for i in range(1, len(events)+len(failures)+1)
+               if recovery is None or i != recovery['failedRequestSerial']]
+    expected = {f'http-{i:06d}-{suffix}.json' for i in serials for suffix in ('intent','response')}
+    if recovery:
+        expected.update(f"http-{recovery['failedRequestSerial']:06d}-{suffix}.json" for suffix in ('intent','error'))
+    require({p.name for p in ev.root.glob('http-*')} == expected, 'http_evidence_count_or_retry')
+    return list(zip(serials, events)), recovery
+
+
+def _audit_quiet_recovery(records, recovery, command, receipt, session, boot):
+    if recovery is None:
+        return
+    serial = recovery['failedRequestSerial']; start = recovery['deadline']-4.5
+    earlier = [e for i,e in records if i < serial]
+    failure = next(e for e in session['events'] if e.get('kind') == 'http_error')
+    require(earlier and earlier[-1]['responseReceivedAt'] <= failure['requestStartedAt'],
+            'quiet_recovery_failure_chronology')
+    later = [e for i,e in records if i > serial]
+    require(later and later[0]['path'] in ('/status','/collection_status') and
+            later[0]['requestStartedAt'] >= recovery['startedAt'], 'quiet_recovery_fresh_status')
+    resumed = [later[0]]
+    for event in later[1:]:
+        require(event['path'].split('?')[0] == '/action_outputs' and event['payload'] is None,
+                'quiet_recovery_output_read_required')
+        resumed.append(event)
+        if not event['response'].get('hasMore',False):
+            break
+    require(len(resumed) >= 2 and not resumed[-1]['response'].get('hasMore',False) and
+            resumed[-1]['responseReceivedAt'] <= recovery['deadline'], 'quiet_recovery_deadline')
+    end = resumed[-1]['responseReceivedAt']
+    results = [e for e in session['events'] if e.get('kind') == 'result']
+    post = len(results) == 1 and results[0]['at'] <= start and receipt['offAt'] <= results[0]['at']
+    require(end < command['at'] or post, 'quiet_recovery_during_command')
+    window = [e for _,e in records if e['responseReceivedAt'] >= start and e['requestStartedAt'] <= end]
+    require(all(e['payload'] is None and e['path'].split('?')[0] in
+                ('/status','/collection_status','/action_outputs') for e in window), 'quiet_recovery_write_in_window')
+    # A successful prior quiet snapshot is mandatory, not just a claimed OFF flag.
+    statuses = [e for e in earlier if e['path'] in ('/status','/collection_status') and e['responseReceivedAt'] <= start]
+    outputs = [e for e in earlier if e['path'].split('?')[0] == '/action_outputs']
+    require(statuses and any(e['responseReceivedAt'] <= start and not e['response'].get('hasMore',False)
+                            for e in outputs), 'quiet_recovery_prior_off_missing')
+    port = object.__new__(SequencePort)
+    port.boot_id=boot; port.last_sequence=None; port._known_entries={}; port._last_output_time=None
+    port.last_outputs={}; port._active_pulse=None
+    port._check_status(statuses[-1]['response'],'IDLE')
+    prior_off = False
+    for e in outputs:
+        port._consume(e['response'])
+        if e['responseReceivedAt'] <= start and not e['response'].get('hasMore',False):
+            prior_off = port.last_outputs == {i:0 for i in range(1,6)}
+    require(prior_off, 'quiet_recovery_prior_output_not_off')
+    require(port.last_outputs == {i:0 for i in range(1,6)} and
+            port.last_sequence == recovery['lastVerifiedSequence'], 'quiet_recovery_prior_output_changed')
+    port._check_status(resumed[0]['response'],'IDLE')
+    for e in resumed[1:]:
+        port._consume(e['response'],quiet=True)
+    require(port.last_outputs == {i:0 for i in range(1,6)}, 'quiet_recovery_output_not_off')
+
+
+def audit_http(ev, session, command, receipt):
+    records, recovery = _http_records(ev, session)
     boot = None; output = {}; baseline = session['outputBaselineSequence']
     require(type(baseline) is int and baseline > 0, 'output_baseline')
     posts = []; statuses = []; last_queue = None; run_bounds = None
     previous_response = None; first_clear_bounds = None; previous_event = None; initial_latest = None; off_latest = None
-    for i, event in enumerate(events, 1):
+    for i, event in records:
         name = f'http-{i:06d}'
         intent = ev.json(name+'-intent.json'); response = ev.json(name+'-response.json')
         path = intent['path']; payload = intent['payload']; parsed = response_json(response['rawUtf8'], path)
@@ -175,6 +263,7 @@ def audit_http(ev, session, command, receipt):
     require(trace == [e for e in entries if baseline < e['sequence'] <= off_latest], 'receipt_trace_incomplete')
     require(all(e['pwm']==0 for e in entries if e['sequence']>trace[-1]['sequence']), 'output_after_receipt')
     require(all(e['motor']==pulse['motor'] or e['pwm']==0 for e in entries if e['sequence']>baseline), 'other_joint_output')
+    _audit_quiet_recovery(records, recovery, command, receipt, session, boot)
     return statuses, entries, boot
 
 
