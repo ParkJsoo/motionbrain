@@ -440,3 +440,51 @@ MuJoCo·Gazebo·RViz는 마지막 실측 기반의 정적 근사 자세·좌표�
 [2026-11-09 실측 기록](evidence/2026-11-09-shaft-evaluation-and-contact-probe.md)에 둔다.
 사용법·처리 계약과 날짜별 실험 결과를 분리하며, 과거의 관측 통과를 새 자세의
 관측 성공이나 제어 적격으로 간주하지 않는다.
+
+### 수동 원본을 배치 실행 모델과 같은 관측 계약으로 연결
+
+`learning.batch_commissioning.build_transition(repository, source, source_sha256,
+binding, capture_group, phase='training')`은 완료된 수동 단발 원본을 재감사하고
+외부 영상과 집게 영상을 다시 관측한다. `binding`에는 기존 런타임과 동일한
+`observerSpecPath`, `observerSpecSha256`, `gripper` 설정을 넣는다. 등록·기준 이미지·
+원본 파일의 해시, 카메라 구도·기기·부팅 식별자, 원본 `poseContext`와 관측
+`poseRegime` 일치, 전후 시간 구간을 검사한다. 물체·하중은 원본 센서로 검증된
+값이 아닌 분석자의 명시적 선언이며 결과의 `contextEvidence`에 구분한다.
+반환한 행의 상태 이름과 관측 context는 배치 실행기의 결합 계약을 그대로 사용하므로
+같은 설정으로 학습한 모델을 `_load_model`에서 읽을 수 있다. 실행 적격과는 별개다.
+
+학습 manifest 항목의 `sourceKind`를 `commissioning_fused`로 지정하고
+`transitionPath`, `transitionSha256`, `sourcePath`, `sourceSha256`를 함께 기록한다.
+`tools/train_batch_campaign.py`는 원본 재감사와 관측 재계산 결과가 저장 전이와
+일치할 때만 학습·개발 평가에 사용한다. 관측 거절은 원인과 확보된 관측을 남긴
+`status='rejected'` 결과이며 학습 행을 만들지 않는다. 원본 손상·감사 실패는 예외다.
+호출자는 거절 결과와 예외를 실제 수집 시도 원장에 보존해야 한다.
+
+이 경로는 사후 기본 프레임 선택을 사용하는 `developmentReplay`다. 기존 원본에
+실행 전 관측 선택 파일이나 예측 원장을 소급 작성하지 않는다. `evaluation` 분할도
+고정 후 실물 평가의 증거가 아니며, 양턱 단독 모델과 결합 모델은 서로 다른 계약이다.
+정지 전용 관측의 실물 차단은 유지된다. 실제 움직임 추적 검증, 새 수집의 실행 전
+입력 고정, 관측 적격 승인, 접촉·집기·들기 검증은 별도로 필요하다.
+
+## 양턱 단독 전이의 개발 학습
+
+`registered_jaw_transition.build_transition(..., phase="training")` 또는 `phase="evaluation"`으로 만든 전이는 기존 `tools/train_batch_campaign.py`의 `sourceKind: "registered_jaws"` 입력으로 읽는다. 기본 `phase="development"`인 기존 진단 전이는 분할이 확정된 학습 자료로 자동 승격하지 않는다. 항목에는 다음 필드를 명시한다.
+
+```json
+{
+  "sourceKind": "registered_jaws",
+  "transitionPath": ".local/example/transition.json",
+  "transitionSha256": "전이 파일 SHA-256",
+  "sourcePath": ".local/example/source",
+  "sourceSha256": "원본 session.json SHA-256",
+  "registrationPath": ".local/example/registration.json",
+  "registrationSha256": "등록 파일 SHA-256",
+  "referenceImagePath": ".local/example/reference.jpg",
+  "referenceImageSha256": "등록 영상 SHA-256",
+  "captureGroup": "사전에 구분한 촬영 묶음"
+}
+```
+
+로더는 실행·촬영 원본과 OFF를 다시 감사하고, 고정 등록 영상과 실제 양턱 전후 원본에서 관측을 다시 계산한다. 저장된 좌표만 바꾸거나 전이 파일 해시를 다시 계산해도 재계산 결과와 다르면 거부한다. 등록·영상 해시, 분할, 촬영 묶음도 검증하며 실패 복구 자료를 받아들이지 않는다. 문맥은 원본의 외부 카메라 `viewId`와 `session.json.poseContext`에 일치해야 하고, 이 양턱 단독 경로는 `object="none"`, `load="empty"`만 받는다. 학습·평가 사이 원본·프레임·촬영 묶음 중복 검사는 기존 CLI와 같다.
+
+이 경로의 결과는 **양턱 단독 개발 재생(`developmentReplay`)**이다. 외부 자세와 집게 관측을 결합한 실물 실행기의 상태·문맥과 다르므로 해당 모델을 실물 후보 선택에 바로 사용할 수 없다. 평가 분할도 고정 후 실물 평가를 뜻하지 않는다. 원본을 사후 재생해 만든 전이는 실행 전 입력을 미리 고정했다는 증거를 새로 만들지 않으며, 추적 검증·제어 자격을 부여하지 않는다.

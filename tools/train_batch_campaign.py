@@ -49,6 +49,12 @@ def partition(row):
 
 
 def load_transition(repository, entry, split):
+    if isinstance(entry, dict) and entry.get('sourceKind') == 'commissioning_fused':
+        from learning.batch_commissioning import load_learning_transition
+        return load_learning_transition(repository, entry, split)
+    if isinstance(entry, dict) and entry.get('sourceKind') == 'registered_jaws':
+        from learning.registered_jaw_transition import load_learning_transition
+        return load_learning_transition(repository, entry, split)
     if isinstance(entry, dict) and entry.get('sourceKind') == 'm4_scope':
         from learning.batch_m4 import load_learning_transition
         return load_learning_transition(repository, entry, split)
