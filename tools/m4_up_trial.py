@@ -36,10 +36,16 @@ class FileReviewer:
         request_name=f'{label}-review-request.json'
         self.store.write_json(request_name,request)
         request_sha=sha(_read(self.store.root,request_name))
+        published_at=self.clock.monotonic()
+        expires_at=min(deadline,request['sourceEarliest']+9.) if label=='before' else deadline
+        self.store.write_json(f'{label}-review-timing.json',dict(requestSha256=request_sha,
+            sourceEarliest=request['sourceEarliest'],publishedAt=published_at,expiresAt=expires_at,
+            sourceAgeAtPublicationSeconds=published_at-request['sourceEarliest'],
+            remainingAtPublicationSeconds=max(0.,expires_at-published_at)))
         print(json.dumps(dict(reviewRequired=label,request=str(self.store.root/request_name),
                              requestSha256=request_sha,previews=request['previews'])),flush=True)
         decision_name=f'{label}-review-decision.json'
-        while self.clock.monotonic() < min(deadline,request['sourceEarliest']+9. if label=='before' else deadline):
+        while self.clock.monotonic() < expires_at:
             tick()
             path=self.store.root/decision_name
             if path.exists() or path.is_symlink():
@@ -99,17 +105,19 @@ class AttestedBeforeReviewer:
         return {k:copy.deepcopy(self.attestation[k]) for k in ('context','stable','onsite')}
 
 
-def capture_check(scope,camera,store,*,clock=time):
+def capture_check(scope,camera,store,*,clock=time,review_only=False):
     # Placeholder is never used as a credential: this port rejects every POST.
     port=ReadOnlyPort(scope['controllerUrl'],'unused-camera-check-no-write',scope['controllerBootId'],store,
                       compact_reads=True,clock=clock)
     def unreviewed(request,**kwargs):
         return dict(context=copy.deepcopy(scope['context']),stable=False,
                     onsite={k:False for k in ('operatorPresent','clearanceVerified','jawContactVerified','tableSupportVerified')})
-    observer=M4DualCameraObserver(scope,camera,store,unreviewed,clock=clock)
-    report=dict(status='failed',mode='capture_check',controllerWrites=0,modelSelected=False,
+    require(type(review_only) is bool,'camera_check_review_mode_required')
+    reviewer=FileReviewer(store,clock=clock) if review_only else unreviewed
+    observer=M4DualCameraObserver(scope,camera,store,reviewer,clock=clock)
+    report=dict(status='failed',mode='read_only_review_check' if review_only else 'capture_check',controllerWrites=0,modelSelected=False,
                 graspVerified=False,liftVerified=False,liveMotionAuthorized=False,errors=[])
-    started=False;baseline=None;deadline=clock.monotonic()+60.
+    started=False;baseline=None;deadline=clock.monotonic()+60.;phase='preflight'
     def tick():
         require(clock.monotonic()<deadline,'camera_check_deadline')
         if started:observer.check()
@@ -118,17 +126,35 @@ def capture_check(scope,camera,store,*,clock=time):
         require(port.last_sequence==baseline,'camera_check_output_history_changed')
     try:
         port.preflight();baseline=port.last_sequence
-        started=True;observer.start(deadline=deadline)
-        before=observer.observe(after_off=None,deadline=deadline,tick=tick)
-        tick();quiet_at=clock.monotonic()
-        after=observer.observe(after_off=quiet_at,deadline=deadline,tick=tick)
-        for label,record in [('before',before),('after',after)]:
+        phase='camera_start';started=True;observer.start(deadline=deadline)
+        phase='before_review';before=observer.observe(after_off=None,deadline=deadline,tick=tick)
+        tick();quiet_at=None if review_only else clock.monotonic()
+        observations=[('before',before)]
+        if not review_only:
+            phase='after_observation';after=observer.observe(after_off=quiet_at,deadline=deadline,tick=tick)
+            observations.append(('after',after))
+        phase='verify_observations'
+        for label,record in observations:
+            if review_only:
+                require(record.get('context') == scope['context'] and record.get('stable') is False and
+                        isinstance(record.get('onsite'),dict) and
+                        set(record['onsite'])=={'operatorPresent','clearanceVerified','jawContactVerified','tableSupportVerified'} and
+                        all(v is False for v in record['onsite'].values()), 'camera_check_unknown_review_required')
             frames=dict(external=_external_frame(store.root,record['external'],scope),
                         gripper=_gripper_frame(store.root,record['gripper'],scope,label))
             if label=='after':require(all(f['sourceEarliest']>=quiet_at+3. for f in frames.values()),'camera_check_post_too_early')
             report[label]=frames
         report.update(status='completed',quietObservationAt=quiet_at)
-    except (Exception,KeyboardInterrupt) as exc:report['errors'].append(type(exc).__name__)
+        if review_only:report.update(reviewConsumed=True,reviewOutcome='unknown')
+    except (Exception,KeyboardInterrupt) as exc:
+        report['errors'].append(type(exc).__name__)
+        detail=dict(phase=phase,type=type(exc).__name__)
+        allowed={'camera_review_expired_no_run','camera_review_too_large','camera_review_binding_changed',
+                 'camera_review_request_changed','camera_check_deadline','camera_check_start_angle_changed',
+                 'camera_check_output_history_changed','camera_check_unknown_review_required',
+                 'camera_check_post_too_early','m4_camera_wait_expired','m4_native_stream_failed'}
+        if isinstance(exc,ValueError) and str(exc) in allowed:detail['code']=str(exc)
+        report['failureDetails']=[detail]
     finally:
         if started:
             try:report['observerClose']=observer.close()
@@ -147,7 +173,7 @@ def capture_check(scope,camera,store,*,clock=time):
 
 def main(argv=None):
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('mode',choices=['capture-check','run'])
+    p.add_argument('mode',choices=['capture-check','review-check','run'])
     p.add_argument('--config',type=Path,required=True)
     p.add_argument('--output-dir',type=Path,required=True)
     p.add_argument('--confirm-scope-sha256')
@@ -176,7 +202,8 @@ def main(argv=None):
             input('토큰 입력 완료 · 촬영 시작 대기 (에이전트가 준비 후 Enter): ')
     store=ArtifactStore(a.output_dir)
     store.write_json('trial-config.json',config)
-    if a.mode=='capture-check':result=capture_check(scope,config['camera'],store)
+    if a.mode in ('capture-check','review-check'):
+        result=capture_check(scope,config['camera'],store,review_only=a.mode=='review-check')
     else:
         reviewer=FileReviewer(store)
         if attested is not None:

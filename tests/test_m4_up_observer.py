@@ -104,6 +104,70 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(result['status'],'completed',result);self.assertTrue(result['finalIdleOffVerified'])
         self.assertTrue(all(v is None for _,v in self.device.requests));self.assertEqual(self.gripper.count,2)
         self.assertFalse(result['liveMotionAuthorized'])
+    def test_read_only_review_check_consumes_unknown_and_never_posts_or_recaptures(self):
+        import contextlib, io
+        real=cli.ReadOnlyPort;write_original=self.store.write_json
+        def factory(*args,**kwargs):
+            port=real(*args,**kwargs);port.opener=self.device;return port
+        def write(name,value):
+            result=write_original(name,value)
+            if name=='before-review-request.json':
+                request_sha=cli.sha(_read(self.store.root,name))
+                write_original('before-review-decision.json',dict(requestSha256=request_sha,
+                    decision=dict(context=copy.deepcopy(self.scope['context']),stable=False,
+                    onsite={k:False for k in ('operatorPresent','clearanceVerified','jawContactVerified','tableSupportVerified')})))
+            return result
+        with patch.object(cli,'ReadOnlyPort',side_effect=factory), \
+             patch.object(self.store,'write_json',side_effect=write), \
+             patch.object(cli,'M4UpCommissioning',side_effect=AssertionError('no motor core')), \
+             contextlib.redirect_stdout(io.StringIO()):
+            result=cli.capture_check(self.scope,self.config,self.store,clock=self.clock,review_only=True)
+        self.assertEqual(result['status'],'completed',result)
+        self.assertEqual(result['mode'],'read_only_review_check')
+        self.assertTrue(result['reviewConsumed']);self.assertEqual(result['reviewOutcome'],'unknown')
+        self.assertTrue(all(v is None for _,v in self.device.requests))
+        self.assertEqual(self.gripper.count,1);self.assertFalse(result['liveMotionAuthorized'])
+        self.assertFalse((self.store.root/'after-review-request.json').exists())
+
+    def _read_only_review_rejects(self, decision):
+        real=cli.ReadOnlyPort
+        def factory(*args,**kwargs):
+            port=real(*args,**kwargs);port.opener=self.device;return port
+        with patch.object(cli,'ReadOnlyPort',side_effect=factory), \
+             patch.object(cli,'FileReviewer',return_value=lambda *a,**kw:copy.deepcopy(decision)), \
+             patch.object(cli,'M4UpCommissioning',side_effect=AssertionError('no motor core')):
+            result=cli.capture_check(self.scope,self.config,self.store,clock=self.clock,review_only=True)
+        self.assertEqual(result['status'],'failed',result)
+        self.assertFalse(result.get('reviewConsumed',False))
+        self.assertEqual(result['failureDetails'][0]['code'],'camera_check_unknown_review_required')
+        self.assertTrue(all(v is None for _,v in self.device.requests))
+        self.assertEqual(self.gripper.count,1)
+
+    def test_read_only_review_rejects_affirmative_response(self):
+        self._read_only_review_rejects(dict(context=copy.deepcopy(self.scope['context']),stable=True,
+            onsite={k:True for k in ('operatorPresent','clearanceVerified','jawContactVerified','tableSupportVerified')}))
+
+    def test_read_only_review_rejects_other_scene_unknown_response(self):
+        context=copy.deepcopy(self.scope['context']);context['object']='other'
+        self._read_only_review_rejects(dict(context=context,stable=False,
+            onsite={k:False for k in ('operatorPresent','clearanceVerified','jawContactVerified','tableSupportVerified')}))
+
+    def test_read_only_expired_review_records_bounded_reason_and_original_deadline(self):
+        import contextlib,io
+        real=cli.ReadOnlyPort
+        def factory(*args,**kwargs):
+            port=real(*args,**kwargs);port.opener=self.device;return port
+        with patch.object(cli,'ReadOnlyPort',side_effect=factory), contextlib.redirect_stdout(io.StringIO()):
+            result=cli.capture_check(self.scope,self.config,self.store,clock=self.clock,review_only=True)
+        self.assertEqual(result['status'],'failed')
+        self.assertEqual(result['failureDetails'],[dict(phase='before_review',type='ValueError',code='camera_review_expired_no_run')])
+        timing=_decode_json(_read(self.store.root,'before-review-timing.json'))
+        self.assertEqual(timing['expiresAt'],timing['sourceEarliest']+9.)
+        self.assertLessEqual(timing['remainingAtPublicationSeconds'],9.)
+        self.assertFalse((self.store.root/'before-review-decision.json').exists())
+        self.assertEqual(self.gripper.count,1)
+        self.assertTrue(all(v is None for _,v in self.device.requests))
+
     def test_check_and_latest_do_not_capture_or_modify_pinned_review(self):
         observer=self.adapter();self.assertIsNone(self.native.started)
         observer.start(deadline=60)

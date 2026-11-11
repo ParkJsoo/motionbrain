@@ -86,6 +86,14 @@ class FileReviewConsoleTests(unittest.TestCase):
         (self.root/'before-external.png').write_bytes((self.root/'after-external.png').read_bytes())
         with self.assertRaisesRegex(ValueError,'preview_pixels_changed'):self.console.status()
 
+    def test_read_only_mode_allows_only_unknown_and_identifies_non_motion_test(self):
+        self.console.read_only_review=True
+        self.assertTrue(self.console.status()['readOnlyReview'])
+        payload=self.payload();payload['outcome']='reviewed'
+        with self.assertRaisesRegex(ValueError,'read_only_unknown'):self.console.submit(payload)
+        payload['outcome']='unknown'
+        self.assertEqual(self.console.submit(payload)['outcome'],'unknown')
+
     def test_loopback_http_to_actual_file_reviewer_consumption(self):
         server=ReviewServer(('127.0.0.1',0),self.console)
         thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()

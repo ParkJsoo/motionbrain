@@ -69,8 +69,9 @@ def main():
     parser.add_argument('--scope',type=Path,required=True)
     parser.add_argument('--request-root',type=Path,required=True)
     parser.add_argument('--port',type=int,default=8766)
+    parser.add_argument('--read-only-review',action='store_true',help='모터 없는 판독 시험: 판정 불가 응답만 허용')
     args = parser.parse_args()
-    manager = FileReviewConsole(ROOT,args.scope,args.request_root)
+    manager = FileReviewConsole(ROOT,args.scope,args.request_root,read_only_review=args.read_only_review)
     with ReviewServer(('127.0.0.1',args.port),manager) as server:
         print(f'판독 화면: http://127.0.0.1:{server.server_port} (촬영·구동 없음)',flush=True)
         try: server.serve_forever(poll_interval=.1)

@@ -17,7 +17,9 @@ from learning.experiment_pipeline import encoded
 
 
 class FileReviewConsole:
-    def __init__(self, repository, scope_path, request_root, *, clock=time):
+    def __init__(self, repository, scope_path, request_root, *, clock=time, read_only_review=False):
+        core.require(type(read_only_review) is bool, 'review_console_mode_required')
+        self.read_only_review = read_only_review
         self.repository = Path(repository).resolve()
         self.scope_path = Path(scope_path).resolve(strict=True)
         self.root = Path(request_root).resolve()
@@ -84,11 +86,11 @@ class FileReviewConsole:
     def status(self):
         current = self._load()
         if current is None:
-            return dict(status='waiting')
+            return dict(status='waiting',readOnlyReview=self.read_only_review)
         label = current['request']['label']
         consumed = (self.root/(label+'-review-decision.json')).exists()
         remaining = current['expiresAt']-self.clock.monotonic()
-        return dict(status='submitted' if consumed else 'expired' if remaining<=0 else 'ready',
+        return dict(readOnlyReview=self.read_only_review,status='submitted' if consumed else 'expired' if remaining<=0 else 'ready',
             requestSha256=current['sha'],label=label,remainingSeconds=max(0.,remaining),
             action={k:self.scope['pulse'][k] for k in ('joint','direction','percent','durationMs')},
             scene={k:self.scope['context'][k] for k in ('object','poseRegime')},
@@ -114,6 +116,8 @@ class FileReviewConsole:
         core.require(isinstance(onsite,dict) and set(onsite) ==
             {'operatorPresent','clearanceVerified','jawContactVerified','tableSupportVerified'} and
             all(type(v) is bool for v in onsite.values()), 'review_console_onsite_invalid')
+        core.require(not self.read_only_review or payload['outcome']=='unknown',
+                     'review_console_read_only_unknown_required')
         if payload['outcome'] == 'unknown':
             core.require(payload['stable'] is False and not any(onsite.values()), 'review_console_unknown_not_affirmative')
         core.require(all(core.sha(_read(self.root,name)) == expected for name,expected in current['hashes'].items()),
