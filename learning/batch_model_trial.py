@@ -71,7 +71,8 @@ class BatchModelSequence:
                 require(command['joint']==model['joint'], 'decision_stage_joint')
                 is_close=command['joint']=='gripper' and command['direction']=='close'
                 is_lift=command['joint']=='shoulder' and command['direction']=='up'
-                require(is_close==(stage['kind']=='close') and is_lift==(stage['kind']=='lift'), 'decision_stage_command_kind')
+                require(is_close==(stage['kind']=='close') and
+                        (stage['kind']!='lift' or is_lift), 'decision_stage_command_kind')
             # Validate dimensions, positive tolerances and the command set without a prediction.
             vector(stage['target'],len(model['stateFields']))
             tol=vector(stage['tolerance'],len(model['stateFields']))

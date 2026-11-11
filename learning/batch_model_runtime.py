@@ -181,7 +181,16 @@ class BatchModelRunner:
                 require(condition in runtime.plan['conditions'] and condition['phase']=='evaluation', 'model_runtime_pinned_evaluation_condition')
                 require(runtime.validate_condition(condition) is None,'model_runtime_condition_rejected')
                 m4=runtime._binding(condition).get('route')=='m4_up'
-                require(m4==(stage['kind']=='lift'),'model_runtime_lift_route_required')
+                require(stage['kind']!='lift' or
+                        (m4 and runtime._binding(condition).get('interaction')=='grasped'),
+                        'model_runtime_lift_route_required')
+                if m4 and stage['kind']!='lift':
+                    require(stage['kind']=='position' and runtime._binding(condition).get('interaction')=='noncontact',
+                            'model_runtime_position_noncontact_route_required')
+            require(len({runtime._binding(c).get('route','generic') for c in candidates})==1,
+                    'model_runtime_mixed_stage_routes')
+            for condition in candidates:
+                m4=runtime._binding(condition).get('route')=='m4_up'
                 model=runtime._m4_model() if m4 else runtime._model(condition['command']['joint'])
                 require(model_sha256(model)==model_sha256(models[stage['modelId']]),'model_runtime_frozen_model_changed')
         self.scope=dict(trialId=trial_id,stages=copy.deepcopy(stages),conditions=self.conditions,
@@ -248,7 +257,8 @@ class BatchModelRunner:
                 require(clock.monotonic()<end,'model_runtime_deadline')
                 stage=self.sequence.stages[self.sequence.index];runtime=self.runtimes[stage['id']]
                 model=self.sequence.models[stage['modelId']]
-                observation=runtime.observe_model(model,m4=stage['kind']=='lift')
+                m4=runtime._binding(self.conditions[stage['id']][0]).get('route')=='m4_up'
+                observation=runtime.observe_model(model,m4=m4)
                 decision=self.sequence.propose(observation,now=clock.monotonic())
                 report['decisions'].append(decision)
                 store.write_json('decision-'+str(len(report['decisions']))+'.json',decision)
@@ -272,7 +282,7 @@ class BatchModelRunner:
                 audit,recorded_after=self._after(runtime,result,condition)
                 # The recorded target can be old after finalization/review. Reobserve
                 # rather than treating a historical target or prediction as current.
-                after=runtime.observe_model(model,m4=stage['kind']=='lift')
+                after=runtime.observe_model(model,m4=m4)
                 store.write_json('after-observation-'+str(len(report['results']))+'.json',
                                  dict(recorded=recorded_after,current=after))
                 self.sequence.complete(request['requestId'],audit,after,now=clock.monotonic())

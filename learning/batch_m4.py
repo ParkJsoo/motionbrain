@@ -55,7 +55,7 @@ def validate_route_command(command, binding):
     return True
 
 
-def validate_binding(plan, condition, binding, repository):
+def validate_binding(plan, condition, binding, repository, *, recorded=False):
     validate_route_command(condition['command'], binding)
     require(set(binding) in ({'route','interaction','scopePath','scopeSha256','camera'},
                             {'route','interaction','scopePath','scopeSha256','camera','retentionCaptures'}), 'm4_binding_fields')
@@ -72,10 +72,13 @@ def validate_binding(plan, condition, binding, repository):
     scope_path = private_path(repository, binding['scopePath'])
     raw = scope_path.read_bytes()
     require(sha(raw) == binding['scopeSha256'], 'm4_scope_file_changed')
-    scope = core.validate_scope(_decode_json(raw))
-    require(scope['schemaVersion'] in (core.SCHEMA, core.LIFT_SCHEMA, core.CONTACT_PROBE_SCHEMA),
+    scope = (core.validate_recorded_scope if recorded else core.validate_scope)(_decode_json(raw))
+    require(scope['schemaVersion'] in (core.SCHEMA, core.LIFT_SCHEMA, core.CONTACT_PROBE_SCHEMA, core.NONCONTACT_SCHEMA),
             'm4_legacy_learning_scope_not_generic_batch')
-    expected_interaction = 'contact_probe' if scope['schemaVersion'] == core.CONTACT_PROBE_SCHEMA else 'grasped'
+    expected_interaction = ('noncontact' if scope['schemaVersion'] == core.NONCONTACT_SCHEMA else
+                            'contact_probe' if scope['schemaVersion'] == core.CONTACT_PROBE_SCHEMA else 'grasped')
+    require(scope['schemaVersion'] != core.NONCONTACT_SCHEMA or 'retentionCaptures' not in binding,
+            'm4_noncontact_retention_not_supported')
     require(binding['interaction'] == expected_interaction, 'm4_interaction_scope_mismatch')
     require(condition['command'] == {k:scope['pulse'][k] for k in condition['command']}, 'm4_scope_command_changed')
     require(scope['controllerUrl'] == plan['runtime']['controllerUrl'] and
@@ -98,8 +101,8 @@ def audit_source(root, expected_result_sha, expected_scope_sha=None):
     require(sha(result_raw) == expected_result_sha, 'm4_result_hash_changed')
     if expected_scope_sha is not None:
         require(sha(scope_raw) == expected_scope_sha, 'm4_source_scope_file_changed')
-    scope = core.validate_scope(_decode_json(scope_raw))
-    require(scope['schemaVersion'] in (core.SCHEMA, core.LIFT_SCHEMA, core.CONTACT_PROBE_SCHEMA), 'm4_batch_source_schema')
+    scope = core.validate_recorded_scope(_decode_json(scope_raw))
+    require(scope['schemaVersion'] in (core.SCHEMA, core.LIFT_SCHEMA, core.CONTACT_PROBE_SCHEMA, core.NONCONTACT_SCHEMA), 'm4_batch_source_schema')
     result = _decode_json(result_raw)
     expected_status = 'probe_completed_contact_unverified' if scope['schemaVersion'] == core.CONTACT_PROBE_SCHEMA else 'completed'
     require(result.get('schemaVersion') == scope['schemaVersion'] and result.get('scopeSha256') == plan_digest(scope),
@@ -132,7 +135,10 @@ def audit_source(root, expected_result_sha, expected_scope_sha=None):
         require(set(onsite) == {'operatorPresent','clearanceVerified','jawContactVerified','tableSupportVerified'}
                 and all(type(v) is bool for v in onsite.values()) and
                 onsite['operatorPresent'] and onsite['clearanceVerified'], 'm4_source_onsite_missing')
-        if label == 'before':
+        if scope['schemaVersion'] == core.NONCONTACT_SCHEMA:
+            require(not onsite['jawContactVerified'] and not onsite['tableSupportVerified'],
+                    'm4_source_noncontact_semantics_changed')
+        elif label == 'before':
             require(onsite['tableSupportVerified'] is True and onsite['jawContactVerified'] is
                     (scope['schemaVersion'] != core.CONTACT_PROBE_SCHEMA), 'm4_source_contact_semantics_changed')
         require(record['external'].get('root')=='external','m4_source_external_root_changed')
@@ -343,6 +349,8 @@ def make_transition(root, audited, spec, condition):
     spec=validate_spec(spec);scope=audited['scope'];ctx=scope['context']
     require(spec['cameraIdentity']==ctx['externalDeviceId'] and spec['viewId']==ctx['externalViewId'] and
             spec['poseRegime']==ctx['poseRegime'] and spec['object']==ctx['object'],'m4_generic_observer_context_changed')
+    require(scope['schemaVersion'] != core.NONCONTACT_SCHEMA or spec['load'] == 'empty',
+            'm4_noncontact_observer_load_changed')
     require(condition['command']==audited['execution']['command'],'m4_generic_command_changed')
     before=_feature(root,audited['pairs']['before'],spec,scope['hostClockId'])
     after=_feature(root,audited['pairs']['after'],spec,scope['hostClockId'])
@@ -364,7 +372,8 @@ def make_transition(root, audited, spec, condition):
                 observerSpec=spec,condition=copy.deepcopy(condition),conditionId=condition['id'],
                 phase=condition['phase'],captureGroup=condition['captureGroup'],
                 learningRow=row,before=before,after=after,controlEligible=False,modelSelected=False,
-                contactState='unknown' if scope['schemaVersion']==core.CONTACT_PROBE_SCHEMA else 'confirmed_by_supplied_reviewer')
+                contactState=('noncontact_empty' if scope['schemaVersion']==core.NONCONTACT_SCHEMA else
+                    'unknown' if scope['schemaVersion']==core.CONTACT_PROBE_SCHEMA else 'confirmed_by_supplied_reviewer'))
     if supplemental is not None:transition['supplementalObservations']=supplemental
     if condition['phase']=='evaluation':
         model=validate_model(_decode_json(_read(root,'batch-frozen-model.json')))
@@ -423,6 +432,9 @@ class BatchM4Route:
 
     def execute(self,condition,request_id,binding,*,deadline_wall):
         checked=validate_binding(self.plan,condition,binding,self.repository)
+        require(checked['scope']['schemaVersion'] != core.NONCONTACT_SCHEMA or
+                (self.spec['load'] == 'empty' and self.spec['object'] == 'none'),
+                'm4_noncontact_observer_load_changed')
         require(callable(self.reviewer_factory),'m4_explicit_reviewer_required')
         require(self.clock.time()<deadline_wall,'batch_dispatch_deadline_expired')
         if condition['phase']=='evaluation' and self.frozen_model is None and self.model_provider is not None:
@@ -531,7 +543,7 @@ class BatchM4Route:
         if any(error.get('code')=='m4_observed_excursion' for error in report.get('errors',[]) if isinstance(error,dict)):
             result.update(failureScope='joint',blockedJoint='shoulder',failureReason='m4_observed_excursion')
         try:
-            require(report.get('scopeSha256')==plan_digest(core.validate_scope(_decode_json(_read(folder,'scope.json')))),
+            require(report.get('scopeSha256')==plan_digest(core.validate_recorded_scope(_decode_json(_read(folder,'scope.json')))),
                     'm4_result_scope_changed')
             if report.get('commandOutcome')=='receipt_recorded':
                 ev=Evidence(folder);scope=ev.json('scope.json')
@@ -554,7 +566,7 @@ class BatchM4Route:
                 result['capture']='recorded'
             except (ValueError,KeyError,TypeError,OSError,StorageError):
                 pass
-            checked=validate_binding(self.plan,condition,binding,self.repository)
+            checked=validate_binding(self.plan,condition,binding,self.repository,recorded=True)
             audited=audit_source(folder,result_sha)
             result['capture']='recorded'
             require(audited['scope']==checked['scope'],'m4_source_original_scope_changed')
@@ -576,5 +588,5 @@ class BatchM4Route:
         saved=_decode_json(_read(folder,'batch-binding.json'))
         require(saved['requestId']==request_id and saved['condition']==condition and saved['binding']==binding,
                 'm4_batch_saved_binding_changed')
-        validate_binding(self.plan,condition,binding,self.repository)
+        validate_binding(self.plan,condition,binding,self.repository,recorded=True)
         return self._classify(condition,request_id,binding,folder)

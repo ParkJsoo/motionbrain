@@ -26,6 +26,7 @@ from learning import supervised_transport as transport
 
 REPO = Path(__file__).resolve().parents[1]
 SCHEMA = 'motionbrain.m4_up_commissioning.v1'
+NONCONTACT_SCHEMA = 'motionbrain.m4_up_noncontact.v1'
 CONTACT_PROBE_SCHEMA = 'motionbrain.m4_up_contact_uncertain_probe.v1'
 PULSE = dict(joint='shoulder', motor=4, direction='up', percent=16,
              durationMs=200, expectedPwm=40)
@@ -74,14 +75,15 @@ def validate_scope(scope):
     candidates = (SHORT_CANDIDATES if isinstance(scope,dict) and scope.get('schemaVersion') in
                   (LEARNING_SHORT_SCHEMA,MODEL_SHORT_SCHEMA) else LEARNING_CANDIDATES)
     is_probe = isinstance(scope, dict) and scope.get('schemaVersion') == CONTACT_PROBE_SCHEMA
+    is_noncontact = isinstance(scope, dict) and scope.get('schemaVersion') == NONCONTACT_SCHEMA
     extra = ({'phase','observationContractSha256','modelPath','modelSha256'} if is_learning
-             else {'contactState'} if is_probe else set())
+             else {'contactState'} if is_probe else {'load'} if is_noncontact else set())
     require(isinstance(scope, dict) and set(scope) == extra | {
         'schemaVersion', 'trialId', 'controllerUrl', 'controllerBootId', 'hostClockId',
         'implementationSha256', 'context', 'pulse', 'defaultSpeed', 'maxCommands',
         'expectedStartAngleDeg', 'startAngleToleranceDeg', 'maxObservedDeltaDeg',
         'maxSeconds', 'maxObservationAgeSeconds', 'postOffSeconds'}, 'm4_scope_fields')
-    require(scope['schemaVersion'] in (SCHEMA,LIFT_SCHEMA,CONTACT_PROBE_SCHEMA)+LEARNING_SCHEMAS and identifier(scope['trialId'])
+    require(scope['schemaVersion'] in (SCHEMA,LIFT_SCHEMA,CONTACT_PROBE_SCHEMA,NONCONTACT_SCHEMA)+LEARNING_SCHEMAS and identifier(scope['trialId'])
             and identifier(scope['hostClockId']) and isinstance(scope['controllerBootId'], str)
             and re.fullmatch('[0-9a-f]{32}', scope['controllerBootId']) is not None,
             'm4_scope_identity')
@@ -89,7 +91,7 @@ def validate_scope(scope):
     require(scope['implementationSha256'] == implementation_digest(), 'm4_implementation_changed')
     profile = (next((p for p in candidates if p==scope['pulse']),{}) if is_learning
                else next((p for p in CONTACT_PROBE_PULSES if p==scope['pulse']),{}) if is_probe
-               else PULSE if scope['schemaVersion']==SCHEMA else LIFT_PULSE)
+               else PULSE if scope['schemaVersion'] in (SCHEMA, NONCONTACT_SCHEMA) else LIFT_PULSE)
     if is_probe:
         require(scope['contactState'] == 'unknown', 'm4_probe_unknown_contact_required')
     if is_learning:
@@ -116,10 +118,33 @@ def validate_scope(scope):
     ctx = scope['context']
     require(isinstance(ctx, dict) and set(ctx) == {
         'physicalView', 'poseRegime', 'object', 'supportMode', 'externalDeviceId',
-        'externalViewId', 'gripperCameraBootId'} and ctx['supportMode'] == 'table_supported'
+        'externalViewId', 'gripperCameraBootId'} and
+        ctx['supportMode'] == ('empty_no_object' if is_noncontact else 'table_supported')
         and all(isinstance(v, str) and bool(v) for v in ctx.values())
         and re.fullmatch('[0-9a-f]{32}', ctx['gripperCameraBootId']) is not None,
         'm4_current_contact_context_required')
+    if is_noncontact:
+        require(ctx['object'] == 'none' and scope['load'] == 'empty', 'm4_noncontact_empty_no_object_required')
+    return copy.deepcopy(scope)
+
+
+# 비접촉 scope 추가 직전 구현. 완료 원본의 오프라인 재감사 전용이며
+# 실행 승인·현재 구현 검사를 대체하지 않는다.
+RECORDED_IMPLEMENTATION_DIGESTS = frozenset({
+    'ed3333408c4662d442c7bd61bec579c1da16dd8e9eae79448f261f57d9b249ba',
+})
+
+
+def validate_recorded_scope(scope):
+    """알려진 이전 원본만 현재의 동일 안전 계약으로 검사하고 원본을 반환한다."""
+    require(isinstance(scope, dict), 'm4_scope_fields')
+    if scope.get('implementationSha256') == implementation_digest():
+        return validate_scope(scope)
+    require(scope.get('implementationSha256') in RECORDED_IMPLEMENTATION_DIGESTS and
+            scope.get('schemaVersion') != NONCONTACT_SCHEMA, 'm4_recorded_implementation_unknown')
+    candidate = copy.deepcopy(scope)
+    candidate['implementationSha256'] = implementation_digest()
+    validate_scope(candidate)
     return copy.deepcopy(scope)
 
 
@@ -305,6 +330,8 @@ class M4UpCommissioning:
                                else 'manual_commissioning_fixed_profile')
         if self.scope['schemaVersion'] == CONTACT_PROBE_SCHEMA:
             self.selection_kind = 'manual_contact_uncertain_probe_fixed_profile'
+        if self.scope.get('schemaVersion') == NONCONTACT_SCHEMA:
+            self.selection_kind = 'manual_noncontact_fixed_profile'
         self.learning = self.scope['schemaVersion'] in LEARNING_SCHEMAS
         self.model_selection = self.scope['schemaVersion'] in MODEL_SCHEMAS
         self.candidates = (SHORT_CANDIDATES if self.scope['schemaVersion'] in
@@ -375,7 +402,10 @@ class M4UpCommissioning:
         require(isinstance(onsite, dict) and set(onsite) == {'operatorPresent', 'clearanceVerified', 'jawContactVerified', 'tableSupportVerified'}
                 and all(type(v) is bool for v in onsite.values()) and onsite['operatorPresent'] and onsite['clearanceVerified'],
                 'm4_onsite_review_required')
-        if after_off is None:
+        if self.scope.get('schemaVersion') == NONCONTACT_SCHEMA:
+            require(not onsite['jawContactVerified'] and not onsite['tableSupportVerified'],
+                    'm4_noncontact_review_required')
+        elif after_off is None:
             if self.scope['schemaVersion'] == CONTACT_PROBE_SCHEMA:
                 require(onsite['tableSupportVerified'] is True and onsite['jawContactVerified'] is False,
                         'm4_probe_requires_table_support_and_unconfirmed_contact')
@@ -501,6 +531,8 @@ class M4UpCommissioning:
             finalIdleOffVerified=False, trainingEligible=False, modelSelected=False, graspVerified=False, liftVerified=False)
         if self.scope['schemaVersion'] == CONTACT_PROBE_SCHEMA:
             report.update(contactStateBefore='unknown', trialKind='contact_uncertain_probe')
+        if self.scope.get('schemaVersion') == NONCONTACT_SCHEMA:
+            report.update(contactStateBefore='noncontact_empty', trialKind='noncontact_position')
         observer_started = claimed = False; phase = 'journal'
         try:
             self.journal = BoundedActionJournal(str(REPO/'.local/visual-actions/controller-commands.sqlite'), 10000)

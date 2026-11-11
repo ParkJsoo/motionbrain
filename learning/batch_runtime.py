@@ -132,6 +132,9 @@ def validate_runtime(plan, repository):
             try:
                 from learning.batch_m4 import validate_binding as validate_m4_binding
                 route = validate_m4_binding(plan, condition, binding, repository)
+                if binding.get('interaction') == 'noncontact':
+                    require(spec['object'] == 'none' and spec['load'] == 'empty',
+                            'runtime_m4_noncontact_empty_context_required')
                 require(route['scope']['context']['object'] == spec['object'] and
                         route['scope']['context']['poseRegime'] == spec['poseRegime'] and
                         route['scope']['context']['externalDeviceId'] == config['deviceId'], 'runtime_m4_observer_context_changed')

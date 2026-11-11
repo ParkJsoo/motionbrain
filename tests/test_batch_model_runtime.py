@@ -204,7 +204,7 @@ class BeforeReviewConnectionTests(unittest.TestCase):
 class ThreeStageBackendTests(unittest.TestCase):
     setUp = BatchModelRuntimeTests.setUp
     """Sequence integration with injected device backend and real original review verifier."""
-    def _three_stage(self, *, damage_retention=False, omit_after_reviewer=False):
+    def _three_stage(self, *, damage_retention=False, omit_after_reviewer=False, lift_interaction='grasped'):
         from learning import batch_interaction as interaction
         from learning.batch_campaign import digest as plan_digest
         from tests.test_batch_interaction import BatchConfirmedContactTests
@@ -229,7 +229,7 @@ class ThreeStageBackendTests(unittest.TestCase):
             runtime=copy.copy(self.runtime);runtime.clock=clock;runtime.root=self.f.private/kind
             runtime.plan=copy.deepcopy(runtime.plan);runtime.plan['conditions']=[condition]
             runtime.config=copy.deepcopy(runtime.config)
-            runtime.config['conditionBindings']={kind:dict(route='m4_up' if kind=='lift' else 'generic',interaction='grasped' if kind=='lift' else 'contact_probe')}
+            runtime.config['conditionBindings']={kind:dict(route='m4_up' if kind=='lift' else 'generic',interaction=lift_interaction if kind=='lift' else 'contact_probe')}
             if not omit_after_reviewer:
                 runtime.config['afterReviewer']=dict(kind='file',protocolVersion=1,maxWaitSeconds=3)
             runtime.plan['runtime']=runtime.config;runtime.plan_sha=plan_digest(runtime.plan)
@@ -261,6 +261,11 @@ class ThreeStageBackendTests(unittest.TestCase):
             self._three_stage(omit_after_reviewer=True)
         self.assertEqual(self.runtime.executions,0)
         self.assertEqual(self.runtime.observations,0)
+
+    def test_lift_cannot_use_noncontact_scope(self):
+        with self.assertRaisesRegex(ValueError,'lift_route_required'):
+            self._three_stage(lift_interaction='noncontact')
+        self.assertEqual(self.runtime.executions,0)
 
     def test_three_stage_backend_with_original_contact_and_retention_reviews(self):
         runner,result,runtimes=self._three_stage()
