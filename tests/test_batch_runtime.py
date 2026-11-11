@@ -689,6 +689,7 @@ class BatchRuntimeTests(unittest.TestCase):
                 condition.update(id=joint+'-test',fromNodes=[joint+'-node'])
                 condition['command']=dict(joint=joint,direction=next(iter(profile['directions'])),percent=20,durationMs=200)
                 plan['conditions']=[condition]
+                plan['nodes']=[joint+'-node']
                 runtime=BatchRuntime(plan,self.repository,self.private/('runtime-'+joint),self.credential,clock=fixture.clock)
                 self.addCleanup(runtime.close)
                 def before(manager,pair):

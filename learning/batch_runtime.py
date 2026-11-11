@@ -725,6 +725,8 @@ class BatchRuntime:
         self._deadline()
         require(self.validate_condition(condition) is None, 'runtime_condition_not_supported')
         require(journal_clear(self.journal), 'batch_shared_journal_blocked')
+        from learning.batch_dispatch_budget import reserve
+        reserve(self.repository, self.plan, condition, request_id)
         binding = self._binding(condition)
         if binding.get('route') == 'm4_up':
             return self._m4_route().execute(condition, request_id, binding, deadline_wall=deadline_wall)

@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import copy
+from contextlib import ExitStack
 import json
 import time
 import uuid
@@ -232,7 +233,14 @@ class BatchModelRunner:
         end=clock.monotonic()+self.max_seconds;wall=clock.time()+self.max_seconds
         report=dict(status='running',decisions=[],results=[],modelSelected=True,physicalSuccessClaimed=False)
         counts={}
+        locks=ExitStack()
         try:
+            from learning.batch_campaign import Campaign
+            from learning.batch_runtime import private_path
+            paths={private_path(r.repository,r.config['dispatchLockPath']) for r in self.runtimes.values()}
+            for path in sorted(paths):
+                path.parent.mkdir(parents=True,exist_ok=True)
+                locks.enter_context(Campaign._Lock(path))
             while self.sequence.index<len(self.sequence.stages):
                 self._verify_bindings()
                 require(clock.monotonic()<end,'model_runtime_deadline')
@@ -277,6 +285,7 @@ class BatchModelRunner:
                 closed.add(id(runtime))
                 try:runtime.close()
                 except BaseException as exc:cleanup_errors.append(type(exc).__name__)
+            locks.close()
             if cleanup_errors:
                 report.update(status='cleanup_failed',cleanupErrors=cleanup_errors,automaticRetry=False)
             report['completedStages']=self.sequence.index

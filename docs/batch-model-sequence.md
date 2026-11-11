@@ -32,6 +32,8 @@ report = runner.run(confirmed_scope_sha256=approved_scope_sha256)
 
 각 `stages` 항목은 `id`, `kind`, `modelId`, `commands`, `target`, `tolerance`, `maxCommands`를 가진다. `models`는 모델 ID별 실제 `batch_learning` 모델이다. `conditions`는 단계 ID별 기존 계획에 포함된 evaluation 조건 목록이며, 명령 순서가 해당 단계의 `commands`와 같아야 한다. 위치 단계 예산은 1~4회, 접촉·들기 단계는 1회다. 전체 계획의 시간·시도·명령 제한도 유지한다. 들기는 `m4_up` 경로만 허용한다. 같은 실행 디렉터리는 중단 후에도 재실행되지 않는다.
 
+모델 실행도 수동 배치와 동일한 제어기별 dispatch 잠금을 사용한다. 실제 배치 실행 진입점은 저장소의 `.local/batch-dispatch-budgets/`에 계획 해시별 예약을 남겨 조건·전체·준비 명령 예산을 함께 제한한다. 예약 이후 실패나 미시작이어도 예산을 돌려주지 않는다. 새 실행 폴더나 trial ID로 같은 계획의 명령 예산을 초기화할 수 없다. 이 원장은 도입 이후 예약을 기록하며 과거 실물 시도를 자동 복원하지 않는다. 새 계획의 허용은 기존 실패 명령 재전송 허용이 아니며 기존 실행 원장 확인이 필요하다.
+
 ## 단계 사이의 사전 검토
 
 앞 단계 출력 이후에는 이전 `outputSequence`에 대한 접촉 검토를 재사용할 수 없다. 동적 검토를 사용할 generic 실행 계획의 `runtime.beforeReviewer`는 다음 형식이다.

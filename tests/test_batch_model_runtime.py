@@ -70,6 +70,18 @@ class BatchModelRuntimeTests(unittest.TestCase):
         with self.assertRaises(FileExistsError):self.runner.run(confirmed_scope_sha256=self.runner.scope_sha256)
         self.assertEqual(self.runtime.executions,1)
 
+    def test_shared_campaign_lock_prevents_model_observation_and_dispatch(self):
+        from learning.batch_campaign import Campaign
+        from learning.batch_runtime import private_path
+        path=private_path(self.runtime.repository,self.runtime.config['dispatchLockPath'])
+        path.parent.mkdir(parents=True,exist_ok=True)
+        with Campaign._Lock(path):
+            result=self.runner.run(confirmed_scope_sha256=self.runner.scope_sha256)
+        self.assertEqual(result['status'],'halted')
+        self.assertIn('dispatcher_already_running',result['reason'])
+        self.assertEqual(self.runtime.observations,0)
+        self.assertEqual(self.runtime.executions,0)
+
     def test_wrong_scope_never_observes_or_executes(self):
         with self.assertRaisesRegex(ValueError,'explicit_scope'):
             self.runner.run(confirmed_scope_sha256='wrong')
