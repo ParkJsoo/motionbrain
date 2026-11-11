@@ -70,7 +70,12 @@ def validate_runtime(plan, repository):
     raw = spec_path.read_bytes()
     require(sha(raw) == config['observerSpecSha256'], 'runtime_observer_spec_hash_changed')
     parsed = json.loads(raw)
-    _require_dispatch_observer(parsed)
+    admission = None
+    if 'motionAdmission' in config:
+        from learning.batch_motion_admission import verify_admission
+        admission = verify_admission(repository, config['motionAdmission'])
+    if admission is None:
+        _require_dispatch_observer(parsed)
     spec = validate_spec(parsed)
     require(spec['viewId'] == plan['viewId'] and spec['poseRegime'] == config['poseContext']
             and spec['cameraIdentity'] == config['deviceId'], 'runtime_observer_context_mismatch')
@@ -81,7 +86,7 @@ def validate_runtime(plan, repository):
         require(isinstance(gripper, dict) and set(gripper) <= {'url','bootId','required','observerSpecPath','observerSpecSha256','retentionCaptures'} and {'url','bootId'} <= set(gripper), 'runtime_gripper_configuration')
         require(type(gripper.get('required', True)) is bool, 'runtime_gripper_required_boolean')
         other = _gripper_spec(repository, config, spec)
-        require(other is None or other['kind'] not in ('registered_gripper_points_stationary','registered_gripper_jaws_stationary'),
+        require(admission is not None or other is None or other['kind'] not in ('registered_gripper_points_stationary','registered_gripper_jaws_stationary'),
                 'registered_gripper_observer_stationary_only')
         # Reject stationary-only nested observers before even constructing a
         # camera source. This constructor otherwise checks only origin/boot.
@@ -92,6 +97,16 @@ def validate_runtime(plan, repository):
                     type(retention['count']) is int and retention['count'] == 2 and
                     type(retention['intervalSeconds']) in (int,float) and 1 <= retention['intervalSeconds'] <= 3,
                     'runtime_retention_capture_contract')
+
+    if admission is not None:
+        from learning.batch_motion_admission import require_scope
+        other = _gripper_spec(repository, config, spec)
+        for condition in plan['conditions']:
+            require(bindings.get(condition['id'], {}).get('route', 'generic') == 'generic',
+                    'admission_generic_route_only')
+            command = condition['command']
+            require_scope(admission, command, _model_context(config, spec, other),
+                          _model_fields(spec, other, command['joint']))
 
     require(private_path(repository, config['journalPath']) == (repository/'.local/visual-actions/controller-commands.sqlite').resolve(), 'runtime_shared_journal_required')
     lock_name = sha(plan['controllerBootId'].encode())+'.lock'
@@ -132,7 +147,8 @@ def validate_runtime(plan, repository):
                 route_problems[condition['id']] = str(exc) if isinstance(exc, ValueError) else type(exc).__name__
     unsupported = []
     return dict(status='runtime_checked_no_device_access', helper=helper, spec=spec,
-                config=config, unsupported=unsupported, modelProblems=problems, routeProblems=route_problems)
+                config=config, unsupported=unsupported, modelProblems=problems, routeProblems=route_problems,
+                motionAdmission=admission)
 
 
 def _gripper_spec(repository, config, spec):
@@ -241,6 +257,7 @@ class BatchRuntime:
         require(self.root.is_relative_to((self.repository/'.local').resolve()), 'private_batch_root_required')
         checked = validate_runtime(plan, self.repository)
         self.config, self.spec, self.helper = checked['config'], checked['spec'], checked['helper']
+        self.motion_admission = checked['motionAdmission']
         self.model_problems = checked['modelProblems']
         self.route_problems = checked['routeProblems']
         self.m4_reviewer_factory = m4_reviewer_factory
@@ -258,6 +275,7 @@ class BatchRuntime:
 
     def _verify(self):
         checked = validate_runtime(self.plan, self.repository)
+        self.motion_admission = checked['motionAdmission']
         require(checked['config'] == self.config and checked['spec'] == self.spec, 'runtime_binding_changed')
 
     def _token(self):
@@ -277,6 +295,14 @@ class BatchRuntime:
             require(paired is not None and paired.get('status') == 'accepted' and joint in paired['states'], 'batch_gripper_state_rejected')
             values += paired['states'][joint]['state']
         return names, values
+
+    def _admission_scope(self, command, fields, state, *, side='before'):
+        if 'motionAdmission' in self.config:
+            from learning.batch_motion_admission import require_scope, _read
+            admission = self.motion_admission
+            require(_read(self.repository, self.config['motionAdmission']) == admission,
+                    'admission_artifact_changed_after_validation')
+            require_scope(admission, command, self._context(), fields, state, side=side)
 
     def _model(self, joint):
         return _load_model(self.repository, self.config, self.spec, joint)
@@ -646,6 +672,7 @@ class BatchRuntime:
             manager.store.write_json('batch-interaction-before.json', self.interaction_token.report)
             joint = condition['command']['joint']
             names, values = self._states(result, None if paired is None else paired['observation'], joint)
+            self._admission_scope(condition['command'], names, values)
             if condition['phase'] == 'evaluation':
                 model = self._model(condition['command']['joint'])
                 joint = condition['command']['joint']
@@ -980,6 +1007,8 @@ class BatchRuntime:
                     paired = transition.get('gripperPair', {})
                     names, values_before = self._states(a, paired.get('beforeObservation'), joint)
                     _, values_after = self._states(b, paired.get('afterObservation'), joint)
+                    self._admission_scope(condition['command'], names, values_before)
+                    self._admission_scope(condition['command'], names, values_after, side='after')
                     transition['stateFields'] = names
                     transition['beforeState'] = values_before
                     transition['afterState'] = values_after

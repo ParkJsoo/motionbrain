@@ -64,7 +64,7 @@ class CommissioningTests(unittest.TestCase):
                     image[3:8,x:x+5]=patch
             return image
         with patch('tests.test_experiment_pipeline.np.zeros',side_effect=pixels):
-            digest=fixture(source,sid,0,'train')
+            digest=fixture(source,sid,0,'train',validation_scope=getattr(self,'validation_scope',None))
         session_path=source/'session.json';session=json.loads(session_path.read_bytes())
         session['poseContext']='local';session_path.write_bytes(encoded(session));digest=sha(session_path.read_bytes())
         from learning.pipeline_evidence import ingest_session

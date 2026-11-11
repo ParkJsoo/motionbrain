@@ -26,7 +26,7 @@ def sha(raw):
     return hashlib.sha256(raw).hexdigest()
 
 
-def fixture(root, sid, x, group, *, failed=False):
+def fixture(root, sid, x, group, *, failed=False, validation_scope=None):
     store = ArtifactStore(root); clock = Clock(); device = Controller(clock); device.boot = 'a'*32
     port = SequencePort('http://127.0.0.1:8181', 'unused-test-value', device.boot, store, clock=clock)
     port.opener = device; events = []; call = port._call
@@ -37,8 +37,19 @@ def fixture(root, sid, x, group, *, failed=False):
         return response
     port._call = observed; port.preflight()
     for _ in range(4): clock.sleep(.8); port._status()
+    validation_sha = None
+    if validation_scope is not None:
+        from learning.batch_motion_admission import install_validation_scope
+        manager=type('ScopeFixture',(),{})()
+        manager.current=dict(sessionId=sid,phase='recording',events=events)
+        manager.command_count=0;manager.clock=clock;manager.store=store
+        manager._event=lambda event:events.append(event)
+        install_validation_scope(manager,root.parent.parent,validation_scope)
+        validation_sha=manager.current['validationScopeSha256']
+        clock.sleep(.01)
     at = clock.monotonic()
     intent = dict(kind='command', at=at, commandId=sid+'-001', pulse=pulse('gripper','close',40,350))
+    if validation_sha is not None: intent['validationScopeSha256']=validation_sha
     events.append(intent); store.write_json('command-001-intent.json', intent)
     receipt = port.execute(intent['pulse'], lambda: None)
     result = dict(kind='result', at=clock.monotonic(), commandId=sid+'-001', receipt=receipt)
@@ -84,6 +95,7 @@ def fixture(root, sid, x, group, *, failed=False):
         datasetEligible=False,trainingPerformed=False,finalIdleOffVerified=True,outputBaselineSequence=5,
         events=events,endedAt=clock.monotonic(),frames=recorder.frames,
         recording=dict(reason=None,recordedFrames=len(times),terminalStatus='completed',clockBridge=dict(hostClockId=sid)))
+    if validation_sha is not None: session['validationScopeSha256']=validation_sha
     store.write_json('session.json',session)
     return sha((root/'session.json').read_bytes())
 

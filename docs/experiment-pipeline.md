@@ -488,3 +488,37 @@ binding, capture_group, phase='training')`은 완료된 수동 단발 원본을 
 로더는 실행·촬영 원본과 OFF를 다시 감사하고, 고정 등록 영상과 실제 양턱 전후 원본에서 관측을 다시 계산한다. 저장된 좌표만 바꾸거나 전이 파일 해시를 다시 계산해도 재계산 결과와 다르면 거부한다. 등록·영상 해시, 분할, 촬영 묶음도 검증하며 실패 복구 자료를 받아들이지 않는다. 문맥은 원본의 외부 카메라 `viewId`와 `session.json.poseContext`에 일치해야 하고, 이 양턱 단독 경로는 `object="none"`, `load="empty"`만 받는다. 학습·평가 사이 원본·프레임·촬영 묶음 중복 검사는 기존 CLI와 같다.
 
 이 경로의 결과는 **양턱 단독 개발 재생(`developmentReplay`)**이다. 외부 자세와 집게 관측을 결합한 실물 실행기의 상태·문맥과 다르므로 해당 모델을 실물 후보 선택에 바로 사용할 수 없다. 평가 분할도 고정 후 실물 평가를 뜻하지 않는다. 원본을 사후 재생해 만든 전이는 실행 전 입력을 미리 고정했다는 증거를 새로 만들지 않으며, 추적 검증·제어 자격을 부여하지 않는다.
+
+### 독립 움직임 판독으로 한정된 관측 실행 범위 등록
+
+`learning.batch_motion_admission`은 정지 통과를 자동 승격하지 않는다. 먼저
+`motionbrain.motion_validation_scope.v1` 파일에 `development` manifest 항목,
+`observerBinding`, `maxLabelTolerancePx`를 고정한다. 새 수동 촬영 세션에서
+`install_validation_scope(manager, repository, {'path': ..., 'sha256': ...})`를
+명령 전에 호출한다. 이 함수는 모터를 움직이지 않고 원본 폴더에 범위 파일과 설치
+이벤트를 기록한다. 실제 `ManualCollection.pulse`는 해당 파일의 해시를 명령 의도
+기록에 묶으며, 설치 뒤 파일이 바뀌면 실행하지 않는다. 이미 명령을 보낸 세션에는
+설치할 수 없다. 사전 범위 기록이 없는 기존 수동 자료는 개발자료로만 사용한다.
+
+`build_admission(repository, manifest)`의 입력은 `development`, `holdout`,
+`validationScope`다. `holdout` 항목은 `transition`과 `labels` 파일 결합이다.
+전이는 `commissioning_fused`의 `evaluation` 항목을 사용하고, 라벨은
+`method='manual_projected_state_review'`, `reviewer`, 원본 `sourceHash`,
+`frameIds`, `pairedFrameIds`, `stateFields`, 수동 판독 `before`, `after`,
+고정값과 동일한 `tolerancePx`, `visible=true`, `identityVerified=true`를 포함한다.
+라벨 파일은 `path`와 `sha256`으로 지정한다. 수동 라벨은 영상에서 같은 점의 식별과
+투영 변화를 검토한 근거이며, 계측 정확도나 접촉·파지력을 인증하지 않는다.
+
+검증기는 원본·관측을 재감사하고 사전 범위 파일→설치 이벤트→명령 의도→실제
+dispatch 시간 순서를 대조한다. 개발과 검증의 원본·실행·프레임·촬영 그룹이 겹치면
+거절한다. 각 명령마다 독립 원본 두 건 이상에서 라벨과 관측이 고정 허용치 내에
+일치하고, 투영 변화가 허용치의 두 배를 넘어 방향까지 일치해야 한다. 결과의
+명령별 입력·출력 상태 범위는 실제 검증 관측의 최솟값·최댓값이며 임의로 넓히지 않는다.
+
+검증 결과 파일을 런타임 `motionAdmission={'path': ..., 'sha256': ...}`에 지정하면
+준비 단계에서 원본 재감사를 수행한다. 실행 직전에는 같은 승인 파일과 관절·명령·
+관측 계약·입력 범위를 확인하고, 실행 뒤에는 결과 범위를 확인한다. 무승인 정지
+관측의 기존 차단은 유지되며, 현재 연결은 일반 단발 경로에 한정된다. 별도 M4
+실행 경로에는 이를 자동 적용하지 않는다. 개발 원본을 검증 목록으로 옮기거나
+사후 timestamp만 붙여 통과시키지 않는다. 이 기능 구현·합성 회귀 통과는 실제
+장치의 움직임 검증 통과가 아니며, 실제 승인 자료는 새로 수집·판독해야 한다.
