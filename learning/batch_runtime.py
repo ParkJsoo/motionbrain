@@ -129,7 +129,7 @@ def validate_runtime(plan, repository):
         validate_manual_authorization(repository,plan,config.get('manualCollectionAuthorization'))
     if 'fixedCommandEvaluation' in config:
         from learning.batch_fixed_evaluation import load_freeze
-        require(collection_admission is not None and all(c['phase']=='evaluation' for c in plan['conditions']),
+        require(all(c['phase']=='evaluation' for c in plan['conditions']),
                 'runtime_fixed_evaluation_collection_plan_required')
         freeze,frozen=load_freeze(repository,config['fixedCommandEvaluation'])
         for c in plan['conditions']:
@@ -729,9 +729,10 @@ class BatchRuntime:
                     freeze,frozen=load_freeze(self.repository,self.config['fixedCommandEvaluation'])
                     require(model_sha256(frozen)==model_sha256(model),'fixed_evaluation_model_changed')
                     row['stateFields']=names
-                    frames=[{k:evidence['derivedMetadata'][k] for k in ('frameId','pixelSha256','capturedAt','persistedAt')},
-                        {k:paired['observation']['frameBinding'][k] for k in ('frameId','pixelSha256','capturedAt','persistedAt')}]
-                    proof=fixed_prospective(model,freeze,row,frames,self.clock.monotonic())
+                    frames=[{k:evidence['derivedMetadata'][k] for k in ('frameId','pixelSha256','capturedAt','persistedAt')}]
+                    if paired is not None:
+                        frames.append({k:paired['observation']['frameBinding'][k] for k in ('frameId','pixelSha256','capturedAt','persistedAt')})
+                    proof=fixed_prospective(model,freeze,row,frames,self.clock.monotonic(),input_count=len(frames))
                     seal_before(manager,proof)
                 else:
                     proof = prospective_evidence(model, row, self.clock.monotonic())
@@ -1085,6 +1086,7 @@ class BatchRuntime:
                         followup_stop = str(exc)
                     if followup_stop:
                         transition['followupStopReason'] = followup_stop
+                    transition['externalObserverBinding'] = dict(path=self.config['observerSpecPath'],sha256=self.config['observerSpecSha256'])
                     transition['stateFields'] = names
                     transition['beforeState'] = values_before
                     transition['afterState'] = values_after

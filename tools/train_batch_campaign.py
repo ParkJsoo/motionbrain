@@ -234,11 +234,13 @@ def run_manifest(manifest_path, output, *, repository=ROOT):
             # Recompute the external pixels too; generic legacy loading only
             # binds its saved external observation, while paired jaws are replayed.
             from learning.batch_runtime import BatchRuntime, validate_spec
-            pair = transition['gripperPair']
-            observer = pair['externalObserverBinding']
+            observer = transition.get('externalObserverBinding') or transition.get('gripperPair',{}).get('externalObserverBinding')
+            require(isinstance(observer,dict), 'fixed_evaluation_external_observer_required')
             runtime = object.__new__(BatchRuntime)
             runtime.repository = repository
             runtime.spec = validate_spec(read_hashed(private_path(repository, observer['path']), observer['sha256']))
+            from learning.batch_observation import digest as spec_digest
+            require(spec_digest(runtime.spec) == transition['before']['observation']['specSha256'], 'fixed_evaluation_observer_binding_changed')
             runtime.config = dict(observerSpecPath=observer['path'], observerSpecSha256=observer['sha256'],
                                   deviceId=runtime.spec['cameraIdentity'], poseContext=runtime.spec['poseRegime'])
             runtime.plan = dict(viewId=runtime.spec['viewId'])

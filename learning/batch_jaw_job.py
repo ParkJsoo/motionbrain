@@ -1,4 +1,6 @@
-"""기존 Campaign 두 단계와 공식 학습/고정 평가를 연결하는 유한 M1 작업.
+"""기존 Campaign 두 단계와 공식 학습/고정 평가를 연결하는 단일 관절 작업.
+
+기존 양턱 schema와 API를 보존하며 공통 작업은 관절별 독립 모델을 사용한다.
 
 명령은 수집 계획이 선택한다. 모델 자동 제어 승격·실패 재송·표본 자동 보충은 없다.
 """
@@ -17,12 +19,13 @@ from learning.batch_learning import command_key
 from tools.train_batch_campaign import run_manifest
 
 SCHEMA = 'motionbrain.bounded_jaw_job.v1'
+JOINT_SCHEMA = 'motionbrain.bounded_joint_job.v1'
 
 
 def validate_job(config):
     require(isinstance(config, dict) and set(config) == {'schemaVersion','jobId','outputRoot',
         'dispatchLockPath','maxPhysicalCommands','maxSeconds','trainingPlan','evaluationPlan','driver'}, 'jaw_job_schema')
-    require(config['schemaVersion'] == SCHEMA and isinstance(config['jobId'], str) and config['jobId'], 'jaw_job_identity')
+    require(config['schemaVersion'] in (SCHEMA, JOINT_SCHEMA) and isinstance(config['jobId'], str) and config['jobId'], 'jaw_job_identity')
     require(type(config['maxPhysicalCommands']) is int and 0 < config['maxPhysicalCommands'] <= 10000 and
             type(config['maxSeconds']) is int and 0 < config['maxSeconds'] <= 86400, 'jaw_job_budget')
     plans = [config['trainingPlan'], config['evaluationPlan']]
@@ -30,8 +33,9 @@ def validate_job(config):
     for phase, plan in zip(('training','evaluation'), plans):
         compiled = validate_plan(plan)
         require(not compiled['rejected'], 'jaw_job_unsupported_conditions')
-        require(all(c['phase'] == phase and c['command']['joint'] == 'gripper' for c in plan['conditions']), 'jaw_job_phase_joint')
+        require(all(c['phase'] == phase and (config['schemaVersion'] == JOINT_SCHEMA or c['command']['joint'] == 'gripper') for c in plan['conditions']), 'jaw_job_phase_joint')
         groups.append({c['captureGroup'] for c in plan['conditions']})
+    require(len({c['command']['joint'] for p in plans for c in p['conditions']}) == 1, 'jaw_job_joint_partition_required')
     require(plans[0]['campaignId'] != plans[1]['campaignId'] and not groups[0] & groups[1], 'jaw_job_phase_identity_overlap')
     require(all(plans[0][k] == plans[1][k] for k in ('controllerBootId','viewId')), 'jaw_job_scene_changed')
     require(sum(p['budgets']['maxPhysicalCommands'] for p in plans) <= config['maxPhysicalCommands'], 'jaw_job_combined_budget')
@@ -57,7 +61,7 @@ class _FailClosed:
 
 
 class JawJob:
-    def __init__(self, repository, config, driver_factory, *, clock=time):
+    def __init__(self, repository, config, driver_factory, *, clock=time, deadline_wall=None):
         self.repository = Path(repository).resolve()
         self.config = validate_job(config)
         self.root = private_path(self.repository, config['outputRoot'])
@@ -66,6 +70,7 @@ class JawJob:
                 'jaw_job_shared_dispatch_lock_required')
         self.root.mkdir(parents=True, exist_ok=True)
         self.factory, self.clock = driver_factory, clock
+        self.deadline_wall = deadline_wall
         if 'authorization' in config['driver']:
             auth=self._read_binding(config['driver']['authorization'])
             require(auth.get('maxPhysicalCommands') == config['maxPhysicalCommands'] and
@@ -94,7 +99,7 @@ class JawJob:
             r=json.loads(raw)
             require(r.get('accepted') is True, 'jaw_job_invalid_attempt')
             e=r.get('manifestEntry')
-            require(isinstance(e,dict) and e.get('sourceKind') == 'registered_jaws', 'jaw_job_source_entry_required')
+            require(isinstance(e,dict) and (e.get('sourceKind') == 'registered_jaws' or (self.config['schemaVersion'] == JOINT_SCHEMA and set(e) == {'transitionPath','transitionSha256','sourcePath','sourceSha256'})), 'jaw_job_source_entry_required')
             entries.append(e)
         require(bool(entries), 'jaw_job_no_data')
         return entries
@@ -114,7 +119,7 @@ class JawJob:
                     require(train.db.execute('SELECT COUNT(*) FROM attempts').fetchone()[0] == 0, 'jaw_job_unowned_existing_campaign')
                     with train.db:
                         train._set('jobHash',digest(self.config)); train._set('jobPhase','training')
-                        train._set('jobDeadline',self.clock.time()+self.config['maxSeconds'])
+                        train._set('jobDeadline',min(self.clock.time()+self.config['maxSeconds'], self.deadline_wall if self.deadline_wall is not None else float('inf')))
                 phase=train._get('jobPhase')
                 # A published freeze can be recovered, never issued again at a new time.
                 if phase == 'freezing' and (self.root/'freeze.json').exists():
@@ -215,7 +220,7 @@ class JawJob:
         for key in ('jobModel','jobFreeze','jobTrainingReport','jobEvaluationReport'):
             binding=train._get(key)
             if binding is not None: self._read_binding(binding)
-        return dict(schemaVersion='motionbrain.bounded_jaw_job_report.v1',jobId=self.config['jobId'],
+        return dict(schemaVersion=('motionbrain.bounded_joint_job_report.v1' if self.config['schemaVersion'] == JOINT_SCHEMA else 'motionbrain.bounded_jaw_job_report.v1'),jobId=self.config['jobId'],
             status=train._get('jobPhase'),reason=train._get('jobReason'),cleanupFailed=bool(train._get('jobCleanupFailed')),model=train._get('jobModel'),
             freeze=train._get('jobFreeze'),trainingReport=train._get('jobTrainingReport'),
             evaluationReport=train._get('jobEvaluationReport'),automaticRetry=False,

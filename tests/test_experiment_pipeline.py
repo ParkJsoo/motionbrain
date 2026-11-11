@@ -26,7 +26,8 @@ def sha(raw):
     return hashlib.sha256(raw).hexdigest()
 
 
-def fixture(root, sid, x, group, *, failed=False, validation_scope=None):
+def fixture(root, sid, x, group, *, failed=False, validation_scope=None, command=None):
+    command = command or dict(joint='gripper',direction='close',percent=40,durationMs=350)
     store = ArtifactStore(root); clock = Clock(); device = Controller(clock); device.boot = 'a'*32
     port = SequencePort('http://127.0.0.1:8181', 'unused-test-value', device.boot, store, clock=clock)
     port.opener = device; events = []; call = port._call
@@ -48,7 +49,7 @@ def fixture(root, sid, x, group, *, failed=False, validation_scope=None):
         validation_sha=manager.current['validationScopeSha256']
         clock.sleep(.01)
     at = clock.monotonic()
-    intent = dict(kind='command', at=at, commandId=sid+'-001', pulse=pulse('gripper','close',40,350))
+    intent = dict(kind='command', at=at, commandId=sid+'-001', pulse=pulse(command['joint'],command['direction'],command['percent'],command['durationMs']))
     if validation_sha is not None: intent['validationScopeSha256']=validation_sha
     events.append(intent); store.write_json('command-001-intent.json', intent)
     receipt = port.execute(intent['pulse'], lambda: None)
@@ -58,7 +59,7 @@ def fixture(root, sid, x, group, *, failed=False, validation_scope=None):
     port.finish()
     camera = dict(deviceId='synthetic-device', sessionId=sid, viewId='fixed-view',
                   maxFrames=500, seconds=60, sampleFps=8, maxBytes=10_000_000, width=32, height=32)
-    store.write_json('plan.json', dict(sessionId=sid, joint='gripper', camera=camera, helperSha256='f'*64))
+    store.write_json('plan.json', dict(sessionId=sid, joint=command['joint'], camera=camera, helperSha256='f'*64))
     native = root/'native-camera'; native.mkdir()
     recorder = ActionRecorder(native, 'unused', camera); recorder.started=0.
     recorder.offset_low=-.000001; recorder.offset_high=.000001
@@ -90,7 +91,7 @@ def fixture(root, sid, x, group, *, failed=False, validation_scope=None):
     (native/'terminal.json').write_text(json.dumps(terminal))
     lines.append(dict(event='terminal',status='completed',reason='duration_complete'))
     (native/'helper.stdout').write_text('\n'.join(json.dumps(line) for line in lines)+'\n')
-    session=dict(schemaVersion='motionbrain.manual_collection.v1',sessionId=sid,joint='gripper',
+    session=dict(schemaVersion='motionbrain.manual_collection.v1',sessionId=sid,joint=command['joint'],
         phase='failed' if failed else 'completed',error='operator_stopped' if failed else None,
         datasetEligible=False,trainingPerformed=False,finalIdleOffVerified=True,outputBaselineSequence=5,
         events=events,endedAt=clock.monotonic(),frames=recorder.frames,

@@ -52,20 +52,20 @@ def predictions(model,before,command,context):
         controlEligible=False,selectionSemantics='predeclared_command_not_model_selected')
 
 
-def prospective_evidence(model,freeze,row,input_frames,prepared_at):
+def prospective_evidence(model,freeze,row,input_frames,prepared_at, *, input_count=2):
     require(row.get('stateFields')==model['stateFields'] and freeze['modelSha256']==model_sha256(model),
             'fixed_evaluation_contract_changed')
     require(number(prepared_at), 'fixed_evaluation_input_time')
-    require(isinstance(input_frames,list) and len(input_frames)==2 and
+    require(isinstance(input_frames,list) and input_count in (1,2) and len(input_frames)==input_count and
         all(isinstance(f,dict) and set(f)=={'frameId','pixelSha256','capturedAt','persistedAt'} and
             isinstance(f['frameId'],str) and f['frameId'] and isinstance(f['pixelSha256'],str) and
             len(f['pixelSha256'])==64 and all(c in '0123456789abcdef' for c in f['pixelSha256']) and
             number(f['capturedAt']) and number(f['persistedAt']) and
             freeze['frozenAt']<f['capturedAt']<=f['persistedAt']<=prepared_at for f in input_frames) and
-        len({f['frameId'] for f in input_frames})==2,'fixed_evaluation_new_persisted_inputs_required')
+        len({f['frameId'] for f in input_frames})==input_count,'fixed_evaluation_new_persisted_inputs_required')
     require(number(prepared_at) and number(row.get('beforePersistedAt')) and row['beforePersistedAt']==input_frames[0]['persistedAt'],
             'fixed_evaluation_input_time')
-    return dict(schemaVersion=PROOF_SCHEMA,sessionId=row['sessionId'],modelSha256=model_sha256(model),
+    return dict(**({'inputMode':'external_native_only'} if input_count==1 else {}),schemaVersion=PROOF_SCHEMA,sessionId=row['sessionId'],modelSha256=model_sha256(model),
         freeze=copy.deepcopy(freeze),beforeStateSha256=digest(row['before']),commandSha256=digest(row['command']),
         predictions=predictions(model,row['before'],row['command'],row['context']),
         inputFrames=copy.deepcopy(input_frames),beforePersistedAt=row['beforePersistedAt'],preparedAt=prepared_at)
@@ -95,9 +95,10 @@ def audit_proof(repository,source,transition,model,freeze_binding):
     frames=[]
     meta=transition['before']['derivedMetadata']
     frames.append({k:meta[k] for k in ('frameId','pixelSha256','capturedAt','persistedAt')})
-    paired=transition['gripperPair']['beforeObservation']['frameBinding']
-    frames.append({k:paired[k] for k in ('frameId','pixelSha256','capturedAt','persistedAt')})
-    expected=prospective_evidence(model,freeze,row,frames,proof['preparedAt'])
+    if transition.get('gripperPair',{}).get('beforeObservation'):
+        paired=transition['gripperPair']['beforeObservation']['frameBinding']
+        frames.append({k:paired[k] for k in ('frameId','pixelSha256','capturedAt','persistedAt')})
+    expected=prospective_evidence(model,freeze,row,frames,proof['preparedAt'],input_count=len(frames))
     require(proof==expected,'fixed_evaluation_prospective_evidence_changed')
     return proof
 
@@ -148,7 +149,7 @@ def evaluate(model,rows,proofs):
     for row in rows:
         try:
             proof=proofs[row['sessionId']]
-            expected=prospective_evidence(model,proof['freeze'],row,proof['inputFrames'],proof['preparedAt'])
+            expected=prospective_evidence(model,proof['freeze'],row,proof['inputFrames'],proof['preparedAt'],input_count=1 if proof.get('inputMode')=='external_native_only' else 2)
             require(proof==expected and proof['preparedAt']<row['commandAt'],'fixed_evaluation_proof_changed')
             prediction=proof['predictions'];group='insideControlSupport' if prediction['insideControlSupport'] else 'outsideControlSupport'
             for key in groups['all']:
