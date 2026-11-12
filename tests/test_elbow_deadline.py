@@ -7,9 +7,34 @@ from learning.pipeline_learning import run_learning
 from learning.relative_model_bundle import validate_model
 from learning.supervised_transport import ELBOW_DEADLINE_POLICY as POLICY
 from learning.supervised_transport import ELBOW_PLATEAU_POLICY
+from learning.supervised_transport import ELBOW_FINE_POLICY
 
 
 class ElbowDeadlineTests(unittest.TestCase):
+    def test_fine_profile_deadline_and_limits(self):
+        for direction in ('up','down'):
+            port,device,store=fixture.TransportTests().setup_port()
+            result=port.execute(fixture.pulse('elbow',direction,60,450),lambda:None,
+                                monitor_policy=ELBOW_FINE_POLICY)
+            stop=next(r for n,r in store.rows.items() if n.endswith('-intent.json') and r['payload']=={'cmd':'stop'})
+            self.assertAlmostEqual(stop['startedAt'],result['dispatchAfter']+.45)
+            self.assertTrue(result['offVerified'] and result['monitorStatusVerified'])
+        for command in [fixture.pulse('elbow','up',60,350),fixture.pulse('elbow','down',61,450),
+                        fixture.pulse('wrist','up',60,450),fixture.pulse('shoulder','down',35,450)]:
+            port,device,_=fixture.TransportTests().setup_port()
+            with self.assertRaisesRegex(ValueError,'unsupported_monitor'):
+                port.execute(command,lambda:None,monitor_policy=ELBOW_FINE_POLICY)
+            self.assertFalse(device.requests)
+
+    def test_fine_model_uses_its_own_timing_condition(self):
+        rows=examples()[:2]
+        for row in rows:
+            row['command']=dict(joint='elbow',direction='up',percent=60,durationMs=450)
+            row['context']['executionTimingPolicy']=ELBOW_FINE_POLICY
+        report=run_learning(rows,manifest());model=report['partitions'][0]['model'];validate_model(model)
+        model['models'][0]['command']['durationMs']=350
+        with self.assertRaisesRegex(ValueError,'unsupported_monitor'):validate_model(model)
+
     def test_malformed_policy_is_rejected_without_device_access(self):
         port,device,_=fixture.TransportTests().setup_port()
         with self.assertRaisesRegex(ValueError,'unsupported_monitor'):

@@ -28,6 +28,7 @@ JOINTS = {
 WRIST_DEADLINE_POLICY = 'wrist-deadline-550-v1'
 ELBOW_DEADLINE_POLICY = 'elbow-deadline-350-v1'
 ELBOW_PLATEAU_POLICY = 'elbow-plateau-650-v1'
+ELBOW_FINE_POLICY = 'elbow-fine-450-v1'
 WRIST_READ_BUDGET_REVISION = 'shared-command-deadline-v2'
 
 
@@ -36,7 +37,8 @@ def validate_monitor_policy(pulse, policy):
         return
     wrist = (policy == WRIST_DEADLINE_POLICY and pulse['joint'] == 'wrist'
              and pulse['durationMs'] == 550)
-    elbow_profiles = {ELBOW_DEADLINE_POLICY: (60, 350), ELBOW_PLATEAU_POLICY: (35, 650)}
+    elbow_profiles = {ELBOW_DEADLINE_POLICY: (60, 350), ELBOW_PLATEAU_POLICY: (35, 650),
+                      ELBOW_FINE_POLICY: (60, 450)}
     elbow = (isinstance(policy, str) and policy in elbow_profiles and pulse['joint'] == 'elbow'
              and pulse['direction'] in ('up', 'down')
              and type(pulse['percent']) is int and type(pulse['durationMs']) is int
