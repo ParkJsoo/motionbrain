@@ -25,6 +25,14 @@ JOINTS = {
     'base': (5, {'left': 1, 'right': -1}),
 }
 
+WRIST_DEADLINE_POLICY = 'wrist-deadline-550-v1'
+
+
+def validate_monitor_policy(pulse, policy):
+    if policy is not None and (policy != WRIST_DEADLINE_POLICY
+            or pulse['joint'] != 'wrist' or pulse['durationMs'] != 550):
+        raise ValueError('unsupported_monitor_timing_policy')
+
 
 def validate_target(value):
     parsed = urllib.parse.urlsplit(value)
@@ -150,9 +158,13 @@ class SequencePort:
             if not emergency:
                 raise
 
-    def _call(self, path, payload=None, *, emergency=False, run=False, quiet_disconnect_retry=False, request_timeout=None, quiet_monitor_timeout=False, initial_output_read=False):
+    def _call(self, path, payload=None, *, emergency=False, run=False, quiet_disconnect_retry=False, request_timeout=None, quiet_monitor_timeout=False, initial_output_read=False, read_deadline=None):
         self._last_http_failure_serial = None
         endpoint = urllib.parse.urlsplit(path).path
+        if read_deadline is not None and (not finite_number(read_deadline)
+                or payload is not None or emergency or run or quiet_disconnect_retry
+                or endpoint not in ('/status', '/collection_status', '/action_outputs')):
+            raise ValueError('readonly_monitor_deadline_required')
         if endpoint not in ('/status', '/collection_status', '/sequence', '/actions', '/action_outputs', '/command', '/motor'):
             raise ValueError('unsupported_endpoint')
         if '?' in path and (endpoint != '/action_outputs' or payload is not None):
@@ -174,6 +186,8 @@ class SequencePort:
             raise ValueError('quiet_monitor_timeout_scope')
         maximum = max(self.timeout, 1.5) if quiet_monitor_timeout or initial_output_read else self.timeout
         budget = maximum if request_timeout is None else min(maximum, request_timeout)
+        if read_deadline is not None:
+            budget = min(budget, read_deadline-self.clock.monotonic())
         if budget <= 0:
             raise TimeoutError('request_deadline')
         self.serial += 1
@@ -191,10 +205,18 @@ class SequencePort:
         request = urllib.request.Request(self.url + path, data=body, headers=headers,
                                          method=event['method'])
         try:
+            # Durable intent writes consume the same absolute read budget.
+            # Never open a new socket after the monitor's stop deadline.
+            if read_deadline is not None:
+                budget = min(budget, read_deadline-self.clock.monotonic())
+                if budget <= 0:
+                    raise TimeoutError('request_deadline')
             with deadline(budget):
                 started = self.clock.monotonic()
                 for attempt in range(2):
                     remaining = budget - (self.clock.monotonic() - started)
+                    if read_deadline is not None:
+                        remaining = min(remaining, read_deadline-self.clock.monotonic())
                     if remaining <= 0:
                         raise TimeoutError('request_deadline')
                     try:
@@ -244,6 +266,8 @@ class SequencePort:
             self._save(name + '-response.json', {'httpStatus': code,
                 'receivedAt': self.clock.monotonic(), 'rawUtf8': raw.decode('utf-8'),
                 'parsed': parsed}, emergency)
+            if read_deadline is not None and self.clock.monotonic() >= read_deadline:
+                raise TimeoutError('request_deadline')
             if payload is not None and parsed.get('success') is not True:
                 raise ValueError('command_rejected')
             return parsed
@@ -525,16 +549,47 @@ class SequencePort:
             self._finish_result = self._stop_and_clear(restore_default=True, emergency=True)
         return self._finish_result
 
-    def execute(self, pulse, tick, *, before_run=None):
+    def execute(self, pulse, tick, *, before_run=None, monitor_policy=None):
         """Execute once; an optional guard may reject just before RUN is sent.
 
         The guard runs after the RUN intent is durable and inside its request
         deadline. It must raise to reject; no return value grants authority or
         replaces the caller's own authorization and observation checks.
         """
-        return self._execute_validated(validate_pulse(pulse), tick, before_run=before_run)
+        return self._execute_validated(validate_pulse(pulse), tick, before_run=before_run,
+                                       monitor_policy=monitor_policy)
 
-    def _execute_validated(self, pulse, tick, *, before_run=None, stop_when=None):
+    def _monitor_wrist_deadline(self, end, tick):
+        verified = False
+        while self.clock.monotonic() < end:
+            tick()
+            remaining = end-self.clock.monotonic()
+            if remaining <= 0:
+                break
+            # After one complete safety check, reserve the tail for local
+            # camera checks and STOP rather than another blocking HTTP read.
+            if verified and remaining <= .2:
+                self.clock.sleep(min(.02, remaining))
+                continue
+            read_end = min(end, self.clock.monotonic()+.2)
+            self._outputs(deadline=read_end, read_deadline=read_end)
+            remaining = end-self.clock.monotonic()
+            if remaining <= 0:
+                break
+            if verified and remaining <= .2:
+                continue
+            read_end = min(end, self.clock.monotonic()+.2)
+            status = self._status(request_timeout=read_end-self.clock.monotonic(),
+                                  read_deadline=read_end)
+            self._check_status(status, 'ARMED', self._active_pulse, None)
+            verified = True
+            self.clock.sleep(min(.05, max(0., end-self.clock.monotonic())))
+        if not verified:
+            raise ValueError('active_safety_status_not_verified')
+        if self.clock.monotonic()-end > .02:
+            raise TimeoutError('monitor_deadline_overrun')
+
+    def _execute_validated(self, pulse, tick, *, before_run=None, stop_when=None, monitor_policy=None):
         """Shared finite body for internally validated, narrowly scoped adapters.
 
         General callers must use execute(). The commissioning adapter validates
@@ -544,6 +599,9 @@ class SequencePort:
             raise ValueError('before_run_callback_required')
         if stop_when is not None and not callable(stop_when):
             raise ValueError('stop_when_callback_required')
+        validate_monitor_policy(pulse, monitor_policy)
+        if monitor_policy is not None and stop_when is not None:
+            raise ValueError('monitor_policy_does_not_support_return_goal')
         self.may_have_run = False
         self.last_dispatch_before = None
         self.last_dispatch_after = None
@@ -579,7 +637,9 @@ class SequencePort:
             after = self.last_dispatch_after
             # Poll outputs first after RUN so a slow status response cannot
             # needlessly age the 128-entry output ring before its first drain.
-            while True:
+            if monitor_policy is not None:
+                self._monitor_wrist_deadline(after+pulse['durationMs']/1000, tick)
+            while monitor_policy is None:
                 tick()
                 self._outputs()
                 status = self._status()
@@ -613,6 +673,8 @@ class SequencePort:
             receipt = {'dispatchBefore': before, 'dispatchAfter': after, 'offAt': off,
                     'outputTrace': trace, 'offVerified': True, 'motor': pulse['motor'],
                     'requestedPulse': pulse}
+            if monitor_policy is not None:
+                receipt.update(monitorTimingPolicy=monitor_policy, monitorStatusVerified=True)
             if stop_when is not None:
                 receipt.update(stoppedEarly=stopped_early,
                                stopReason='observed_return_goal' if stopped_early else 'requested_period_complete')

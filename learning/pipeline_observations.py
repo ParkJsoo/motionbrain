@@ -151,6 +151,8 @@ def observe_transition(source_root, audited_row, observer_spec, *, artifact_root
                     sourceHash=source_hash, sourceRoot=str(root),
                     observationContractSha256=observer.binding,
                     developmentObservationOnly=True, recoveryDevelopmentOnly=True)
+                if row['evidence'].get('executionTimingPolicy') is not None:
+                    transition['context']['executionTimingPolicy'] = row['evidence']['executionTimingPolicy']
                 validate_rows([transition], allow_development_observations=True)
                 result.update(status='eligible', transition=transition, trainingEligible=True,
                     developmentObservationOnly=True,

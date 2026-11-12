@@ -53,6 +53,12 @@ def _single_command(ev, session, plan):
     _require(receipt.get('offVerified') is True and session.get('finalIdleOffVerified') is True,
              'receipt_and_terminal_off_required')
     validate_execution(dict(receipt, pulse=pulse), pulse)
+    policy = command.get('monitorTimingPolicy')
+    _require(receipt.get('monitorTimingPolicy') == policy, 'monitor_timing_policy_mismatch')
+    if policy is not None:
+        from learning.supervised_transport import validate_monitor_policy
+        validate_monitor_policy(pulse, policy)
+        _require(receipt.get('monitorStatusVerified') is True, 'active_monitor_status_required')
     times = [command['at'], receipt['dispatchBefore'], receipt['dispatchAfter'],
              receipt['offAt'], result['at'], session['endedAt']]
     _require(all(finite(t) for t in times) and times == sorted(times), 'command_timing')
@@ -209,6 +215,8 @@ def ingest_session(root, expected_sha256, *, allow_failed_development=False):
                 cameraHostBounds=[frames[0]['sourceEarliest'], session['endedAt']]),
             sourceHash=expected_sha256, recoveryDevelopmentOnly=bool(failed), originalDatasetEligible=False,
             trainingPerformed=False, controlEligible=False)
+        if command.get('monitorTimingPolicy') is not None:
+            row['evidence']['executionTimingPolicy'] = command['monitorTimingPolicy']
         report['visual'] = dict(status='verified', row=row, reason=None)
     except ERRORS as exc: report['visual']['reason'] = _reason(exc)
     return report

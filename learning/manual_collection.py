@@ -17,7 +17,7 @@ from learning.action_journal import BoundedActionJournal
 from learning.action_recorder import ActionRecorder
 from learning.artifacts import ArtifactStore, _decode_json, _read
 from learning.supervised_collection import PROFILES, identifier
-from learning.supervised_transport import SequencePort, validate_target
+from learning.supervised_transport import SequencePort, validate_target, validate_monitor_policy
 
 SCHEMA = 'motionbrain.manual_collection.v1'
 REPO = Path(__file__).resolve().parents[1]
@@ -242,13 +242,14 @@ class ManualCollection:
             raise ValueError('session_command_budget_reached')
         return dict(**payload, motor=profile['motor'], expectedPwm=sign*(payload['percent']*255//100))
 
-    def pulse(self, payload, *, before_run=None):
+    def pulse(self, payload, *, before_run=None, monitor_policy=None):
         """선택적으로 RUN 직전의 비차단 관측·선택 가드를 전달한다."""
         if before_run is not None and not callable(before_run):
             raise ValueError('before_run_callback_required')
         if self.busy or not self.current or self.current['phase'] != 'recording':
             raise ValueError('recording_required')
         pulse = self._validate_pulse(payload)
+        validate_monitor_policy(pulse, monitor_policy)
         self.busy = True
         try:
             self.camera.check()
@@ -257,6 +258,8 @@ class ManualCollection:
             self.command_count += 1
             cid = f"{self.current['sessionId']}-{self.command_count:03d}"
             intent = dict(kind='command', at=self.clock.monotonic(), commandId=cid, pulse=pulse)
+            if monitor_policy is not None:
+                intent['monitorTimingPolicy'] = monitor_policy
             if 'validationScopeSha256' in self.current:
                 scope_raw = _read(self.store.root, 'commissioning-validation-scope.json')
                 if hashlib.sha256(scope_raw).hexdigest() != self.current['validationScopeSha256']:
@@ -270,6 +273,8 @@ class ManualCollection:
             self.store.write_json(f'command-{self.command_count:03d}-intent.json', intent)
             self._event(intent)
             guard = {} if before_run is None else {'before_run': before_run}
+            if monitor_policy is not None:
+                guard['monitor_policy'] = monitor_policy
             receipt = self.port.execute(pulse, self.camera.check, **guard)
             event = dict(kind='result', at=self.clock.monotonic(), commandId=cid, receipt=receipt)
             self.store.write_json(f'command-{self.command_count:03d}-result.json', event)

@@ -41,6 +41,10 @@ def development_observation(context):
 
 
 def validate_motion_scope(context, command, *, allow_development_observations=False):
+    if 'executionTimingPolicy' in context:
+        from learning.supervised_transport import validate_monitor_policy
+        require(context['executionTimingPolicy'] is not None, 'execution_timing_policy_required')
+        validate_monitor_policy(command, context['executionTimingPolicy'])
     require(type(allow_development_observations) is bool, 'explicit_development_boolean_required')
     require(not development_observation(context) or allow_development_observations,
             'development_observation_not_admitted')
