@@ -92,14 +92,68 @@ manifest의 최상위 필드는 다음과 같다.
    고정 후 새 수집 자료를 별도로 평가한다. 실제 후보 선택 제어와 집기·들기
    성공은 그 뒤의 별도 실물 검증이다.
 
-현재 개발용 관측기의 출력을 기존 학습기·실물 수집기에 곧바로 끼워 넣는
-어댑터는 제공하지 않는다. 계약 및 수집 시각·예정 명령 근거가 부족하면
-주석과 관측 결과는 개발자료로 유지한다.
+개발용 관측 결과를 원본 수집 증거에 연결하는 읽기 전용 어댑터는 아래와 같다.
+계약 및 수집 시각·예정 명령 근거가 부족하면 주석과 관측 결과는 개발자료로
+유지한다. 실물 구동이나 행동 학습 적격을 만드는 어댑터는 제공하지 않는다.
+
+## fresh 원본과 단발 수집 증거 연결
+
+`learning/development_gripper_source.py`는 기존 `read_frame`과
+`bind_gripper_pair`를 재사용한다. 파일 해시뿐 아니라 카메라 부팅 ID,
+`fresh=1` 요청·`after_request` 응답, 카메라 프레임 순서, 호스트 시계 식별자와
+요청·수신·저장 순서를 검사한다. 저장 시각을 카메라의 정확한 노출 시각으로
+바꾸지 않는다.
+
+관측기 바인딩은 `motionbrain.development_gripper_source_binding.v1`이며
+`context`, `references`, `configurationSha256`을 포함한다. 기준 영상 항목은
+재생 manifest와 같은 `id`, 상대 `path`, `sha256`, `points`, `rois`다.
+설정 해시는 기준 영상·정책·문맥에 연결되며, 바인딩 파일 자체도 별도의 SHA256으로
+검사한다. 현재 구도 선언은 설정과 일치해야 하지만 선언이 실제 구도의 독립
+판독을 대신하지는 않는다.
+
+다음 명령은 저장된 `esp32-frame.jpg/json`만 다시 검사한다. 기본값으로 촬영하지 않는다.
+
+```sh
+python3 tools/check_development_gripper_source.py \
+  --config .local/development-gripper/source-check.json \
+  --frame-root .local/development-gripper/saved-capture \
+  --output .local/development-gripper/source-check-01
+```
+
+검사 설정에는 `schemaVersion=motionbrain.development_gripper_source_check.v1`,
+`.local/` 아래 `assetRoot`, `observerBindingPath`, `observerBindingSha256`,
+`cameraBootId`, `sessionId`, `actualScene`, `maxAgeSeconds`, `cameraUrl`을 명시한다.
+`actualScene`은 `physicalView`, `object`, `poseRegime`, `landmarks`이며
+`landmarks`는 `development-gripper-visible-v1:` 뒤에 관측기 설정 해시를 붙인다.
+
+현장 조건을 확인하고 새 정지 영상의 읽기 전용 촬영이 허용된 경우에만
+`--frame-root` 대신 **`--capture`**를 사용한다. 기존 `GripperObservationSource`로
+최대 한 번 GET 촬영하고 원본과 metadata를 보존한 뒤 닫는다. 재시도·프로필 변경·
+ARM·모터 명령은 없다. 정적 설정 오류는 촬영 전에 거절한다.
+
+저장 재생의 신선도는 당시의 저장 시각 기준일 뿐 현재 신선도가 아니며,
+`savedReceiptReplayOnly=true`, `currentFreshnessVerified=false`로 구분한다.
+현재 읽기 전용 촬영의 신선도 검사가 통과해도 움직임 추적 적격과는 다르다.
+
+기존 실험 파이프라인의 새 관측 `kind=development_gripper`에는 `context`,
+`captureGroup`, `gripperPairRoot`, `observerBindingPath`, `observerBindingSha256`,
+`cameraBootId`를 지정한다. 기존 수집기의 사전 저장 명령과 OFF 시각,
+카메라 전후 창을 그대로 검사한다. pair 검사 전후 네 원본 파일을 고정하고
+관측 때 읽은 전체 프레임·metadata까지 대조하므로 같은 프레임 ID의 시각/영상
+변경으로 사후 프레임이 사전 입력이 되는 것을 거절한다.
+
+결과는 `development_only` 또는 `partial_development`로 저장하고 학습 전이는
+생성하지 않는다. 새 상태 필드는 `objectVisibleMinusCornerMidXpx`,
+`objectVisibleMinusCornerMidYpx`, `visibleCornerHorizontalSpanPx`다.
+마지막 항목은 기존 `jawOpeningPx`의 유클리드 거리와 다르다. 이 개발 namespace는
+기존 `fit`·`predict`에서 명시적으로 차단해 실수로 서로 다른 의미를 섞지 않는다.
+기존 수집기의 예정 명령·실제 출력 기록, 원본 종료와 중복 실행 차단은 유지한다.
 
 ## 소프트웨어 검사
 
 ```sh
 python3 -m unittest discover -s tests -p 'test_development_gripper_observer.py'
+python3 -m unittest discover -s tests -p 'test_development_gripper_source.py'
 ```
 
 합성 영상의 변화·중복 후보·가림·잘림·문맥과 해시 변경, 기준 영상이 없는

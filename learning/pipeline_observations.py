@@ -100,6 +100,24 @@ def observe_transition(source_root, audited_row, observer_spec, *, artifact_root
         require(audited_row.get('sourceHash', source_hash) == source_hash, 'audited_source_hash_changed')
         row = copy.deepcopy(audited_row)
         spec = copy.deepcopy(observer_spec)
+        if spec.get('kind') == 'development_gripper':
+            from learning.development_gripper_source import load_observer, observe_saved_pair, scene_context
+            require(set(spec) == {'kind', 'context', 'captureGroup', 'gripperPairRoot',
+                                 'observerBindingPath', 'observerBindingSha256', 'cameraBootId'},
+                    'development_pipeline_observer_fields')
+            require(isinstance(spec['captureGroup'], str) and spec['captureGroup'],
+                    'development_capture_group_required')
+            observer = load_observer(assets, spec['observerBindingPath'], spec['observerBindingSha256'])
+            require(spec['context'] == scene_context(observer), 'development_pipeline_context_changed')
+            # 상대 경로 검사는 기존 원본 읽기 정책을 재사용한다.
+            _read(assets, spec['gripperPairRoot']+'/esp32-before.json')
+            pair = observe_saved_pair(observer, row, assets/spec['gripperPairRoot'],
+                actual_scene=spec['context'], camera_boot_id=spec['cameraBootId'])
+            result.update(status='development_only' if pair['status'] == 'complete_development'
+                          else 'partial_development', contractSha256=observer.binding,
+                perFrame=pair['perFrame'], developmentObservation=pair,
+                reason=pair['reason'], transition=None, trainingEligible=False)
+            return result
         pair_root = spec.get('gripperPairRoot')
         if pair_root is not None:
             # _read's relative-path validation prevents absolute paths and traversal.

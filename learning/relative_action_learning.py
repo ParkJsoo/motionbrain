@@ -23,6 +23,9 @@ REGISTERED_METHODS = {
 
 def state_fields(context):
     """Keep shaft cross-section measurements distinct from jaw-tip opening."""
+    if str(context.get('landmarks', '')).startswith('development-gripper-visible-v1:'):
+        from learning.development_gripper_observer import STATE_FIELDS
+        return STATE_FIELDS.copy()
     if str(context.get('landmarks', '')).startswith(
             REGISTERED_METHODS['registered_gripper_crosssection_points']):
         return CROSSSECTION_STATE.copy()
@@ -34,6 +37,8 @@ def registered_landmarks(value):
 
 
 def validate_motion_scope(context, command):
+    require(not str(context.get('landmarks', '')).startswith('development-gripper-visible-v1:'),
+            'development_observation_not_admitted')
     if str(context.get('landmarks', '')).startswith(REGISTERED_METHODS['registered_scene_rigid_points']):
         require(command.get('joint') == 'shoulder', 'rigid_observation_requires_M4_only')
     if str(context.get('landmarks', '')).startswith(

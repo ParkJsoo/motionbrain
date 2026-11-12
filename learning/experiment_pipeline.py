@@ -63,6 +63,8 @@ def processor_identity():
              'pipeline_learning.py', 'manual_collection_dataset.py', 'relative_action_learning.py',
              'relative_model_bundle.py', 'registered_scene_landmarks.py', 'registered_rigid_scene_landmarks.py',
              'registered_gripper_landmarks.py', 'registered_gripper_crosssection.py',
+             'development_gripper_observer.py', 'development_gripper_source.py',
+             'batch_observation.py',
              'arm_motion_observation.py', 'gripper_camera_dataset.py',
              'action_recorder.py', 'supervised_transport.py', 'supervised_measurement.py',
              'lossless_frame.py', 'mac_clock_bridge.py', 'artifacts.py', 'object_arc.py')

@@ -14,6 +14,9 @@ import numpy as np
 from learning.batch_observation import digest, number, require
 
 SCHEMA = 'motionbrain.development_gripper_observer.v1'
+LANDMARK_PREFIX = 'development-gripper-visible-v1:'
+STATE_FIELDS = ['objectVisibleMinusCornerMidXpx', 'objectVisibleMinusCornerMidYpx',
+                'visibleCornerHorizontalSpanPx']
 CONTEXT = {'viewId', 'poseRegime', 'object'}
 JAWS = ('jawLeft', 'jawRight')
 
