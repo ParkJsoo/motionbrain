@@ -117,6 +117,12 @@ def collect_once(manager, request_id, command, pose_context, *, onsite_confirmed
         report['sessionId'] = manager.current['sessionId']
         report['status'] = 'recording'
         atomic(path, encoded(report))
+        # M4 needs its original sensor window after a possibly slow camera
+        # capture. Other joints can keep the external baseline first and take
+        # their prospective image close to dispatch.
+        fresh_before = gripper_source_factory is not None and command['joint'] != 'shoulder'
+        if fresh_before:
+            wait_until(manager.clock.monotonic()+pre_seconds)
         if gripper_source_factory is not None:
             try:
                 gripper = gripper_source_factory(report['sessionId'], ArtifactStore(manager.store.root/'gripper-camera'))
@@ -129,7 +135,8 @@ def collect_once(manager, request_id, command, pose_context, *, onsite_confirmed
             except Exception as exc:
                 report['gripperPair'].update(status='rejected', reason='before:'+type(exc).__name__+':'+str(exc))
                 raise
-        wait_until(manager.clock.monotonic()+pre_seconds)
+        # Preserve the source binder's pre-command timing margin.
+        wait_until(manager.clock.monotonic()+(.2 if fresh_before else pre_seconds))
         if before_command is not None:
             before_command(manager, copy.deepcopy(report['gripperPair']))
         manager.pulse(command)

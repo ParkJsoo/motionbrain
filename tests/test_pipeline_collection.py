@@ -267,7 +267,8 @@ class PipelineCollectionTests(unittest.TestCase):
             self.assertIs(manager, self.manager)
             self.assertEqual(self.runs(), [])
             self.assertNotIn('after', pair)
-            self.assertGreaterEqual(manager.clock.monotonic()-pair['before']['persistedAt'], 3.5)
+            self.assertGreaterEqual(manager.clock.monotonic()-manager.started, 3.5)
+            self.assertLess(manager.clock.monotonic()-pair['before']['persistedAt'], .4)
             evidence.write_text(json.dumps({'at': manager.clock.monotonic(), 'pair': pair}))
             pair['status'] = 'caller_mutation'
             self.command['percent'] = 30
