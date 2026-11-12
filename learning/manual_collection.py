@@ -167,6 +167,78 @@ class ManualCollection:
         finally:
             self.busy = False
 
+    def recover_failed_run_readonly(self, session_id, source_sha256, controller_boot_id):
+        """소유한 실패 RUN의 현재 OFF만 확인한다. 원결과·정답·명령은 복구하지 않는다."""
+        if (self.busy or self.current is not None or self.port is not None or self.camera is not None
+                or self.store is not None or not identifier(session_id)):
+            raise ValueError('failed_run_readonly_recovery_idle_owner_required')
+        controller_boot_id = _boot_identity({'bootId': controller_boot_id})
+        root = self.root/session_id
+        raw = _read(self.root, session_id+'/session.json')
+        if hashlib.sha256(raw).hexdigest() != source_sha256:
+            raise ValueError('failed_run_recovery_source_changed')
+        original = _decode_json(raw)
+        plan = _decode_json(_read(self.root, session_id+'/plan.json'))
+        events = original.get('events', [])
+        runs = [e for e in events if e.get('kind') == 'http' and e.get('path') == '/sequence'
+                and e.get('payload') == {'action': 'run'} and e.get('response', {}).get('success') is True]
+        boots = {e.get('response', {}).get('bootId') for e in events
+                 if e.get('kind') == 'http' and e.get('path') == '/actions'}
+        if (original.get('schemaVersion') != SCHEMA or original.get('sessionId') != session_id
+                or original.get('phase') != 'failed' or original.get('error') != 'command_failed_no_retry'
+                or original.get('finalIdleOffVerified') is not False or len(runs) != 1
+                or len([e for e in events if e.get('kind') == 'command']) != 1
+                or boots != {controller_boot_id} or plan.get('sessionId') != session_id
+                or plan.get('controllerUrl') != self.controller_url
+                or plan.get('camera', {}).get('deviceId') != self.device_id):
+            raise ValueError('failed_run_recovery_owned_source_required')
+        if self.journal is None:
+            self.journal = BoundedActionJournal(str(self.journal_path), 10000)
+        db = self.journal.connection
+        expected_plan = hashlib.sha256(json.dumps(plan, sort_keys=True).encode()).hexdigest()
+        row = db.execute('SELECT plan_hash,output_path,phase,result_json FROM supervised_blocks WHERE session_id=?',
+                         (session_id,)).fetchone()
+        if (row is None or row[:3] != (expected_plan, str(root), 'off_unverified') or row[3] is None
+                or _decode_json(row[3].encode()) != original or not self.journal.readiness()['ready']
+                or db.execute("SELECT session_id FROM supervised_blocks WHERE phase IN ('pending','off_unverified')").fetchall()
+                   != [(session_id,)]):
+            raise ValueError('failed_run_recovery_owned_block_required')
+        self.busy = True
+        port = None
+        try:
+            # 별도 폴더 생성 자체가 이 원본의 단 한 번 복구 시도를 소비한다.
+            store = ArtifactStore(root/'readonly-failed-run-recovery')
+            port = SequencePort(self.controller_url, self.token, controller_boot_id, store,
+                                clock=self.clock, compact_reads=True, timeout=2)
+            if _boot_identity(port._call('/actions')) != controller_boot_id:
+                raise ValueError('failed_run_recovery_boot_changed')
+            snapshot = port.preflight()
+            if not port.off_verified or port.may_have_run or port.writes_possible:
+                raise ValueError('failed_run_recovery_current_off_not_proven')
+            if _read(self.root, session_id+'/session.json') != raw:
+                raise ValueError('failed_run_recovery_source_changed')
+            store.write_json('proof.json', dict(sessionId=session_id, originalSessionSha256=source_sha256,
+                originalResultSha256=hashlib.sha256(row[3].encode()).hexdigest(), snapshot=snapshot,
+                currentOffVerified=True, noWrites=True, originalOutcomeChanged=False,
+                originalConfigurationRestoreConfirmed=False, datasetEligible=False, replayAllowed=False,
+                followupRequiresNewProspectiveChecks=True))
+            with db:
+                if (not self.journal.readiness()['ready'] or
+                    db.execute("SELECT session_id FROM supervised_blocks WHERE phase IN ('pending','off_unverified')").fetchall()
+                        != [(session_id,)]):
+                    raise ValueError('failed_run_recovery_owned_block_required')
+                changed = db.execute('UPDATE supervised_blocks SET phase=? WHERE session_id=? AND plan_hash=? '
+                    'AND output_path=? AND phase=? AND result_json=?',
+                    ('resolved_current_off_after_failed_run', session_id, expected_plan, str(root), 'off_unverified', row[3]))
+                if changed.rowcount != 1:
+                    raise ValueError('failed_run_recovery_owned_block_required')
+            return dict(sessionId=session_id, currentOffVerified=True, noWrites=True,
+                        originalOutcomeChanged=False, replayAllowed=False)
+        finally:
+            if port is not None:
+                port.token = ''
+            self.busy = False
+
     def recover_readonly(self):
         """Retire only this manager's never-started session using fresh GET proof.
 
