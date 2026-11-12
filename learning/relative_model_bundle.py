@@ -9,7 +9,7 @@ import re
 
 from learning.artifacts import _decode_json
 from learning.manual_collection_dataset import require
-from learning.relative_action_learning import SCHEMA, state_fields, command_key, validate_motion_scope
+from learning.relative_action_learning import SCHEMA, state_fields, command_key, validate_motion_scope, development_observation
 
 
 def sha256(raw):
@@ -29,7 +29,7 @@ def _unique_strings(value, reason):
             and len(value) == len(set(value)), reason)
 
 
-def validate_model(model):
+def validate_model(model, *, allow_development_observations=False):
     """Check the saved v1 contract; a hash is not an original-source audit."""
     require(isinstance(model, dict) and model.get('schemaVersion') == SCHEMA
             and model.get('controlEligible') is False and model.get('independentTest') is False
@@ -45,6 +45,14 @@ def validate_model(model):
             and isinstance(context['imageShape'], list) and len(context['imageShape']) == 2
             and all(type(v) is int and v > 0 for v in context['imageShape'])
             and context['stateFields'] == state_fields(context), 'complete_observation_context_required')
+    require(type(allow_development_observations) is bool, 'explicit_development_boolean_required')
+    if 'developmentObservationOnly' in model:
+        require(type(model['developmentObservationOnly']) is bool
+                and model['developmentObservationOnly'] == development_observation(context),
+                'development_model_marker_mismatch')
+    if development_observation(context):
+        require(allow_development_observations and model.get('developmentObservationOnly') is True,
+                'development_model_not_admitted')
     for field in ('trainingSessionIds', 'trainingCaptureGroups', 'trainingFrameIds'):
         _unique_strings(model.get(field), 'model_training_provenance_required')
     episodes = model.get('trainingEpisodes')
@@ -59,7 +67,8 @@ def validate_model(model):
     for entry in model['models']:
         require(isinstance(entry, dict), 'model_command_parameters_required')
         key = command_key(entry.get('command'))
-        validate_motion_scope(context, entry['command'])
+        validate_motion_scope(context, entry['command'],
+                              allow_development_observations=allow_development_observations)
         require(key not in keys, 'duplicate_model_command')
         keys.add(key)
         require(type(entry.get('count')) is int and entry['count'] >= 2,

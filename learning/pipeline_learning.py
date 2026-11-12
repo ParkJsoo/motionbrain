@@ -46,27 +46,27 @@ def _manifest(manifest):
                  and len(value) == len(set(value)), 'explicit_unique_split_groups_required')
         groups.append(set(value))
     _require(not groups[0].intersection(groups[1]), 'training_evaluation_group_overlap')
-    for flag in ('allowOodDiagnostics', 'allowRecoveredDevelopmentTraining'):
+    for flag in ('allowOodDiagnostics', 'allowRecoveredDevelopmentTraining', 'allowDevelopmentGripperTraining'):
         _require(type(manifest.get(flag, False)) is bool, 'split_flags_must_be_boolean')
     return groups
 
 
-def _identity(row):
+def _identity(row, allow_development):
     source = row.get('sourceHash')
     _require(isinstance(source, str) and re.fullmatch('[0-9a-f]{64}', source) is not None,
              'transition_source_hash_required')
-    relative.validate_rows([row])
+    relative.validate_rows([row], allow_development_observations=allow_development)
     _require(type(row.get('recoveryDevelopmentOnly', False)) is bool,
              'recovery_flag_must_be_boolean')
     return dict(source={source}, session={row['sessionId']}, episode={tuple(row['episode'])},
                 frame=set(row['frameIds']))
 
 
-def _check_split_overlap(rows, groups):
+def _check_split_overlap(rows, groups, allow_development):
     identities = [{name: set() for name in ('source', 'session', 'episode', 'frame')}
                   for _ in range(2)]
     for row in rows:
-        identity = _identity(row)
+        identity = _identity(row, allow_development)
         for index, group in enumerate(groups):
             if row['captureGroup'] in group:
                 for name, values in identity.items():
@@ -167,7 +167,7 @@ def _evaluate(model, rows, allow_ood):
                 independentGeneralizationProven=False)
 
 
-def _previous_models(values):
+def _previous_models(values, allow_development):
     if values is None:
         return []
     if isinstance(values, dict):
@@ -177,7 +177,7 @@ def _previous_models(values):
     for item in values:
         _require(isinstance(item, dict), 'previous_model_required')
         model = item.get('model', item)
-        model = validate_model(model)
+        model = validate_model(model, allow_development_observations=allow_development)
         if 'model' in item and 'modelSha256' in item:
             _require(digest(model) == item['modelSha256'], 'previous_model_canonical_hash_changed')
         result.append(model)
@@ -227,8 +227,9 @@ def run_learning(transitions, split_manifest, previous_models=None):
     """
     _require(isinstance(transitions, list), 'transitions_must_be_list')
     groups = _manifest(split_manifest)
-    _check_split_overlap(transitions, groups)
-    old_models = _previous_models(previous_models)
+    allow_development = split_manifest.get('allowDevelopmentGripperTraining', False)
+    _check_split_overlap(transitions, groups, allow_development)
+    old_models = _previous_models(previous_models, allow_development)
     partitions, excluded = defaultdict(lambda: dict(training=[], evaluation=[])), []
     for row in transitions:
         split = 'training' if row['captureGroup'] in groups[0] else 'evaluation' if row['captureGroup'] in groups[1] else None
@@ -251,9 +252,9 @@ def run_learning(transitions, split_manifest, previous_models=None):
         sample = (training or evaluation)[0]
         context, joint = sample['context'], sample['command']['joint']
         if training:
-            relative.validate_rows(training)
+            relative.validate_rows(training, allow_development_observations=allow_development)
         if evaluation:
-            relative.validate_rows(evaluation)
+            relative.validate_rows(evaluation, allow_development_observations=allow_development)
         counts = Counter(relative.command_key(r['command']) for r in training)
         observed_commands = set(counts) | {relative.command_key(r['command']) for r in evaluation}
         deficits = [dict(kind='command_training_support', command=dict(zip(
@@ -270,7 +271,8 @@ def run_learning(transitions, split_manifest, previous_models=None):
                 maximum=states.max(axis=0).tolist() if selected else None,
                 stateVariationRank=int(np.linalg.matrix_rank(states-states.mean(axis=0))) if selected else 0,
                 supportIsAccuracyOrGeneralizationProof=False))
-        model = validate_model(relative.fit(training)) if training else None
+        model = validate_model(relative.fit(training, allow_development_observations=allow_development),
+                               allow_development_observations=allow_development) if training else None
         if model is not None and not model['models']:
             model = None
         if not training:

@@ -142,18 +142,50 @@ ARM·모터 명령은 없다. 정적 설정 오류는 촬영 전에 거절한다
 관측 때 읽은 전체 프레임·metadata까지 대조하므로 같은 프레임 ID의 시각/영상
 변경으로 사후 프레임이 사전 입력이 되는 것을 거절한다.
 
-결과는 `development_only` 또는 `partial_development`로 저장하고 학습 전이는
+기본 결과는 `development_only` 또는 `partial_development`로 저장하고 학습 전이는
 생성하지 않는다. 새 상태 필드는 `objectVisibleMinusCornerMidXpx`,
 `objectVisibleMinusCornerMidYpx`, `visibleCornerHorizontalSpanPx`다.
-마지막 항목은 기존 `jawOpeningPx`의 유클리드 거리와 다르다. 이 개발 namespace는
-기존 `fit`·`predict`에서 명시적으로 차단해 실수로 서로 다른 의미를 섞지 않는다.
+마지막 항목은 기존 `jawOpeningPx`의 유클리드 거리와 다르다. 기본 `fit`과 실물용
+모델 로더는 이 개발 namespace를 거절한다.
 기존 수집기의 예정 명령·실제 출력 기록, 원본 종료와 중복 실행 차단은 유지한다.
+
+### 명시적 개발 학습 연결
+
+오프라인 연결 검증에는 관측 설정에 `learningUse: "development_replay"`를 추가한다.
+양쪽 영상의 물체와 두 끝점이 모두 관측되고 원본·시간·부팅 검사가 통과해야
+전이를 만든다. 입력 영상 요청부터 RUN 응답까지 5초를 넘으면 거절한다.
+잘림·가림·일부 좌표만 있는 결과는 학습 전이를 만들지 않는다.
+구도·자세 문맥 선언이 같다는 검사는 실제 자세의 동일성이나 충돌 여유를 증명하지 않는다.
+
+기존 실험 파이프라인의 `split`에도 다음 두 값을 명시해야 학습 자료로 사용한다.
+
+```json
+{
+  "trainGroups": ["development-train"],
+  "evaluationGroups": [],
+  "allowRecoveredDevelopmentTraining": true,
+  "allowDevelopmentGripperTraining": true
+}
+```
+
+자동 관측 전이는 `developmentObservationOnly=true`, `recoveryDevelopmentOnly=true`로
+표시된다. 학습기는 같은 예정 명령의 서로 다른 전이가 최소 2개 있어야 해당 명령의
+예측기를 만든다. 한 행은 학습 목록과 표본 부족량으로 남으며, 지원되는 예측기가
+없으면 `trainingPerformed=false`, 모델 없음으로 보고한다. 프레임·원본·실행·촬영 묶음의
+학습/평가 중복 검사는 유지한다. 자료가 충분하면 기존 영상 상태 모델·명령 평균·무변화
+기준선을 비교하고 모델 파일을 해시로 고정한다. 매 표본의 수동 좌표 입력은 필요하지 않다.
+
+이 경로의 모델과 평가는 **개발용 오프라인 재생**이다. 개발 모델에는
+`developmentObservationOnly=true`를 기록하며, 기본 `load_frozen_model`은 빈 모델까지
+거절한다. 평가 묶음이 있어도 촬영 시점이 모델 고정 이후였다는 증거를 새로 만들지 않는다.
+관측 정확도·실물 관측 적격·모델 선택 집기·들기 성능을 검증한 것으로 해석하지 않는다.
 
 ## 소프트웨어 검사
 
 ```sh
 python3 -m unittest discover -s tests -p 'test_development_gripper_observer.py'
 python3 -m unittest discover -s tests -p 'test_development_gripper_source.py'
+python3 -m unittest discover -s tests -p 'test_development_gripper_learning.py'
 ```
 
 합성 영상의 변화·중복 후보·가림·잘림·문맥과 해시 변경, 기준 영상이 없는

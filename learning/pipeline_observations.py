@@ -102,9 +102,12 @@ def observe_transition(source_root, audited_row, observer_spec, *, artifact_root
         spec = copy.deepcopy(observer_spec)
         if spec.get('kind') == 'development_gripper':
             from learning.development_gripper_source import load_observer, observe_saved_pair, scene_context
-            require(set(spec) == {'kind', 'context', 'captureGroup', 'gripperPairRoot',
-                                 'observerBindingPath', 'observerBindingSha256', 'cameraBootId'},
+            required = {'kind', 'context', 'captureGroup', 'gripperPairRoot',
+                        'observerBindingPath', 'observerBindingSha256', 'cameraBootId'}
+            require(set(spec) in (required, required | {'learningUse'}),
                     'development_pipeline_observer_fields')
+            require(spec.get('learningUse', 'none') in ('none', 'development_replay'),
+                    'explicit_development_learning_use_required')
             require(isinstance(spec['captureGroup'], str) and spec['captureGroup'],
                     'development_capture_group_required')
             observer = load_observer(assets, spec['observerBindingPath'], spec['observerBindingSha256'])
@@ -117,6 +120,41 @@ def observe_transition(source_root, audited_row, observer_spec, *, artifact_root
                           else 'partial_development', contractSha256=observer.binding,
                 perFrame=pair['perFrame'], developmentObservation=pair,
                 reason=pair['reason'], transition=None, trainingEligible=False)
+            if spec.get('learningUse') == 'development_replay' and pair['status'] == 'complete_development':
+                paired = bind_gripper_pair(row, assets/spec['gripperPairRoot'])
+                _times(paired)
+                dispatch = row['evidence']['dispatchHostBracket']
+                pre = paired['evidence']['gripperFrameEvidence']['before']
+                require(isinstance(dispatch, list) and len(dispatch) == 2
+                        and all(type(t) in (int, float) and math.isfinite(t) for t in dispatch)
+                        and pre['persistedAt'] <= dispatch[0] <= dispatch[1]
+                        and 0 <= dispatch[1]-pre['requestStartedAt'] <= 5.,
+                        'development_input_stale_at_dispatch')
+                # observe_saved_pair pins the four original files. Do not bind
+                # different bytes in this second provenance-only read.
+                require(all(hashlib.sha256(_read(assets/spec['gripperPairRoot'], name)).hexdigest() == sha
+                            for name, sha in pair['sourcePairHashes'].items()),
+                        'development_pair_bytes_changed')
+                for side, key in [('before', 'inputs'), ('after', 'targets')]:
+                    require(paired[key]['image'] == pair['perFrame'][side]['sourceFrame']
+                            and paired['evidence']['gripperFrameEvidence'][side] ==
+                            _decode_json(_read(assets/spec['gripperPairRoot'], f'esp32-{side}.json')),
+                            'development_pair_binding_changed')
+                transition = dict(sessionId=row['sessionId'], captureGroup=spec['captureGroup'],
+                    context=dict(spec['context'], cameraIdentity=paired['evidence']['cameraIdentity'],
+                                 imageShape=[paired['inputs']['image']['height'], paired['inputs']['image']['width']],
+                                 stateFields=pair['stateFields']),
+                    command=copy.deepcopy(pair['plannedCommand']),
+                    before=pair['perFrame']['before']['state'], after=pair['perFrame']['after']['state'],
+                    episode=[row['evidence']['controllerBootId'], row['evidence']['commandId']],
+                    frameIds=[paired[k]['image']['frameId'] for k in ('inputs', 'targets')],
+                    sourceHash=source_hash, sourceRoot=str(root),
+                    observationContractSha256=observer.binding,
+                    developmentObservationOnly=True, recoveryDevelopmentOnly=True)
+                validate_rows([transition], allow_development_observations=True)
+                result.update(status='eligible', transition=transition, trainingEligible=True,
+                    developmentObservationOnly=True,
+                    reason='explicit_development_replay_only_not_motion_admission')
             return result
         pair_root = spec.get('gripperPairRoot')
         if pair_root is not None:

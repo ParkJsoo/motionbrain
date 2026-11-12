@@ -36,8 +36,13 @@ def registered_landmarks(value):
     return isinstance(value, str) and value.startswith(tuple(REGISTERED_METHODS.values()))
 
 
-def validate_motion_scope(context, command):
-    require(not str(context.get('landmarks', '')).startswith('development-gripper-visible-v1:'),
+def development_observation(context):
+    return str(context.get('landmarks', '')).startswith('development-gripper-visible-v1:')
+
+
+def validate_motion_scope(context, command, *, allow_development_observations=False):
+    require(type(allow_development_observations) is bool, 'explicit_development_boolean_required')
+    require(not development_observation(context) or allow_development_observations,
             'development_observation_not_admitted')
     if str(context.get('landmarks', '')).startswith(REGISTERED_METHODS['registered_scene_rigid_points']):
         require(command.get('joint') == 'shoulder', 'rigid_observation_requires_M4_only')
@@ -121,7 +126,7 @@ def annotated_transition(row, annotation):
                 frameIds=[row['inputs']['image']['frameId'], row['targets']['image']['frameId']])
 
 
-def validate_rows(rows):
+def validate_rows(rows, *, allow_development_observations=False):
     require(isinstance(rows, list) and len(rows) > 0, 'transitions_required')
     ids, episodes, frames = set(), set(), set()
     context = rows[0]['context']
@@ -139,12 +144,17 @@ def validate_rows(rows):
         require(len(refs) == 2 and refs[0] != refs[1] and not frames.intersection(refs), 'reused_frame')
         ids.add(row['sessionId']); episodes.add(episode); frames.update(refs)
         vector(row['before']); vector(row['after']); command_key(row['command'])
-        validate_motion_scope(context, row['command'])
+        validate_motion_scope(context, row['command'],
+                              allow_development_observations=allow_development_observations)
+        if development_observation(context):
+            require(row.get('developmentObservationOnly') is True
+                    and row.get('recoveryDevelopmentOnly') is True,
+                    'development_transition_marker_required')
     return context
 
 
-def fit(rows):
-    context = validate_rows(rows)
+def fit(rows, *, allow_development_observations=False):
+    context = validate_rows(rows, allow_development_observations=allow_development_observations)
     models = []
     for key in sorted({command_key(r['command']) for r in rows}):
         selected = [r for r in rows if command_key(r['command']) == key]
@@ -159,7 +169,7 @@ def fit(rows):
         models.append(dict(command=selected[0]['command'], count=len(selected), mean=mean.tolist(),
                            scale=scale.tolist(), coefficient=coefficient.tolist(), deltaMean=intercept.tolist(),
                            minimum=x.min(axis=0).tolist(), maximum=x.max(axis=0).tolist()))
-    return dict(schemaVersion=SCHEMA, context=copy.deepcopy(context), models=copy.deepcopy(models),
+    result = dict(schemaVersion=SCHEMA, context=copy.deepcopy(context), models=copy.deepcopy(models),
                 trainingSessionIds=[r['sessionId'] for r in rows],
                 trainingCaptureGroups=sorted({r['captureGroup'] for r in rows}),
                 controlEligible=False, independentTest=False, alpha=1.,
@@ -171,13 +181,22 @@ def fit(rows):
                     if registered_landmarks(context['landmarks']) else
                     'analyst_2d_points_not_grasp_depth_contact_or_clearance'),
                 trainingEpisodes=[r['episode'] for r in rows], trainingFrameIds=[f for r in rows for f in r['frameIds']])
+    if development_observation(context):
+        result.update(developmentObservationOnly=True,
+            annotationSemantics='development_visible_color_center_and_distal_corner_span_not_depth_contact_or_accuracy')
+    return result
 
 
 def predict(model, state, command, context, *, baseline=False):
     require(model.get('schemaVersion') == SCHEMA and model.get('controlEligible') is False
             and model.get('alpha') == 1., 'offline_model_required')
     require(context == model['context'], 'observation_context_changed')
-    validate_motion_scope(context, command)
+    if 'developmentObservationOnly' in model:
+        require(type(model['developmentObservationOnly']) is bool
+                and model['developmentObservationOnly'] == development_observation(context),
+                'development_model_marker_mismatch')
+    validate_motion_scope(context, command,
+                          allow_development_observations=model.get('developmentObservationOnly') is True)
     key = command_key(command); x = vector(state)
     candidates = [m for m in model['models'] if command_key(m['command']) == key]
     require(len(candidates) == 1, 'command_without_two_training_transitions')
@@ -220,7 +239,7 @@ def evaluate(model, rows):
         return dict(listed=0, evaluated=0, rejected=[], predictions=[], metrics={},
                     status='unavailable', reason='no_separate_evaluation_transitions',
                     controlEligible=False, independentTest=False)
-    validate_rows(rows)
+    validate_rows(rows, allow_development_observations=model.get('developmentObservationOnly') is True)
     require(not set(model['trainingCaptureGroups']).intersection(r['captureGroup'] for r in rows),
             'training_evaluation_group_overlap')
     require(not set(model['trainingSessionIds']).intersection(r['sessionId'] for r in rows)
