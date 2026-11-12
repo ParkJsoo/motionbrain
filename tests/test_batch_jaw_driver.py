@@ -121,6 +121,16 @@ class JawDriverTests(unittest.TestCase):
             (manager.camera.root/'frame.lzfse').write_bytes(b'changed')
             with self.assertRaisesRegex(ValueError,'raw_hash'):d._guard(manager)
 
+    def test_final_guard_enforces_stricter_plan_freshness_after_before(self):
+        d=self.driver();manager,grip,meta,frame=self.raw_manager(d)
+        d.plan['maxObservationAgeSeconds']=.5
+        # The signed plan has already been verified; isolate the dispatch age gate.
+        with patch.object(d,'_verify'),patch.object(jaw,'read_frame',return_value=(grip,meta,'a'*32)):
+            self.clock.monotonic=lambda:10.4
+            d._before(manager,{},plan()['conditions'][0])
+            self.clock.monotonic=lambda:10.6
+            with self.assertRaisesRegex(ValueError,'dispatch_stale'):d._guard(manager)
+
     def test_reconcile_never_calls_execute_or_network(self):
         d=self.driver();d._classify=Mock(return_value=dict(execution='unknown'))
         path=d.root/'requests/one.json';path.parent.mkdir(parents=True)

@@ -602,6 +602,43 @@ class BatchRuntimeTests(unittest.TestCase):
         self.assertEqual(result['execution'],'not_dispatched')
         self.assertTrue(result['offVerified'])
 
+    def test_final_run_guard_preserves_fixed_audit_window_with_five_second_plan(self):
+        from learning.manual_collection import ManualCollection, RecordingPort
+        fixture=manual_fixture.ManualCollectionTests();fixture.setUp()
+        self.addCleanup(fixture.tearDown)
+        device,_,_=fixture.transport()
+        fixture.clock.time=lambda:fixture.clock.monotonic()
+        opener=fixture.manager.port_factory('http://127.0.0.1','private-token','discovering',None,
+            observer=lambda _:None,clock=fixture.clock).opener
+        class TestPort(RecordingPort):
+            def __init__(port,*args,**kwargs):
+                super().__init__(*args,**kwargs);port.opener=opener
+        class TestManager(ManualCollection):
+            def __init__(manager,*args,**kwargs):
+                kwargs['camera_factory']=manual_fixture.Camera
+                super().__init__(*args,**kwargs)
+        plan=copy.deepcopy(self.plan);plan['maxObservationAgeSeconds']=5
+        for age,expected_runs in ((3.2,0),(2.,1)):
+            with self.subTest(input_age=age):
+                runtime=BatchRuntime(plan,self.repository,self.private/('audit-window-'+str(age)),
+                                     self.credential,clock=fixture.clock)
+                self.addCleanup(runtime.close)
+                def before(manager,pair):
+                    # A bounded review can leave an accepted pinned image older
+                    # than the audit window while still younger than plan age 5.
+                    runtime.latest_before=dict(source=dict(frame=dict(sourceEarliest=fixture.clock.monotonic()-age)),
+                        observation=dict(status='accepted',nodeMatches=self.condition['fromNodes']))
+                prior_runs=sum(payload=={'action':'run'} for _,payload in device.requests)
+                with patch('learning.batch_runtime.ManualCollection',TestManager), \
+                     patch('learning.manual_collection.RecordingPort',TestPort), \
+                     patch.object(runtime,'_before',return_value=before):
+                    result=runtime.execute(self.condition,'audit-window-'+str(age).replace('.','-'),
+                        deadline_wall=fixture.clock.monotonic()+60)
+                self.assertEqual(sum(payload=={'action':'run'} for _,payload in device.requests)-prior_runs,
+                                 expected_runs)
+                self.assertEqual(result['execution'],'completed' if expected_runs else 'not_dispatched')
+                self.assertTrue(result['offVerified'])
+
     def test_native_pixels_pinned_transition_and_frozen_evaluation_roundtrip(self):
         import cv2
         from learning.batch_learning import fit

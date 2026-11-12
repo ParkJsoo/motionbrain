@@ -263,7 +263,7 @@ class JawDriver:
         grip,meta,_=read_frame(c['gripFolder'],'before',c['sessionId'])
         require(grip==c['grip'] and meta==c['meta'],'jaw_before_gripper_changed')
         now=self.clock.monotonic()
-        require(0<=now-c['frame']['sourceEarliest']<=3 and 0<=now-meta['requestStartedAt']<=10,'jaw_dispatch_stale')
+        require(0<=now-c['frame']['sourceEarliest']<=min(3,self.plan['maxObservationAgeSeconds']) and 0<=now-meta['requestStartedAt']<=10,'jaw_dispatch_stale')
 
     def _save(self,path,value):
         path.parent.mkdir(parents=True,exist_ok=True);raw=encoded(value)

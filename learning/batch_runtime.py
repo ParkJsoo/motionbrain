@@ -833,7 +833,10 @@ class BatchRuntime:
                     cached = runtime.latest_before
                     require(cached is not None, 'batch_current_observation_required')
                     at = cached['source']['frame']['sourceEarliest']
-                    require(0 <= runtime.clock.monotonic()-at <= runtime.plan['maxObservationAgeSeconds'], 'batch_dispatch_observation_stale')
+                    # The immutable input must still fit the auditor's fixed
+                    # three-second pre-command window after review/setup.
+                    require(0 <= runtime.clock.monotonic()-at <= min(runtime.plan['maxObservationAgeSeconds'], 3.),
+                            'batch_dispatch_observation_stale')
                     observed = cached['observation']
                     require(observed.get('status') == 'accepted' and
                             bool(set(observed.get('nodeMatches', [])) & set(condition['fromNodes'])), 'batch_dispatch_node_not_supported')
