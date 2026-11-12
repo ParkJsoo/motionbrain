@@ -215,9 +215,13 @@ def predict(model, state, command, context, *, baseline=False):
     return out.tolist()
 
 
-def select(model, state, target, commands, context):
+def select(model, state, target, commands, context, *, predictor='stateRidge', minimum_improvement_px=0.):
     """Compare learned next states with stop; unsupported actions remain visible."""
     x, goal = vector(state), vector(target)
+    require(predictor in ('stateRidge', 'commandMean'), 'unsupported_selection_predictor')
+    require(type(minimum_improvement_px) in (int, float)
+            and math.isfinite(minimum_improvement_px) and minimum_improvement_px >= 0,
+            'finite_nonnegative_improvement_margin_required')
     require(context == model['context'], 'observation_context_changed')
     require(isinstance(commands, list) and bool(commands), 'candidates_required')
     keys = [command_key(c) for c in commands]
@@ -226,14 +230,25 @@ def select(model, state, target, commands, context):
     rejected = []
     for command in commands:
         try:
-            prediction = predict(model, state, command, context)
+            prediction = predict(model, state, command, context, baseline=predictor == 'commandMean')
         except ValueError as exc:
             rejected.append(dict(command=copy.deepcopy(command), reason=str(exc)))
             continue
         ranked.append(dict(kind='action', command=copy.deepcopy(command), predictedState=prediction,
                            errorPx=float(np.linalg.norm(np.asarray(prediction)-goal))))
     ranked.sort(key=lambda r: r['errorPx'])
-    return dict(selected=copy.deepcopy(ranked[0]), candidates=ranked, rejected=rejected,
+    selected = ranked[0]
+    stop = next(r for r in ranked if r['kind'] == 'stop')
+    improvement = stop['errorPx']-selected['errorPx']
+    reason = 'minimum_predicted_error'
+    if selected['kind'] == 'action' and improvement <= minimum_improvement_px:
+        selected = stop
+        reason = 'predicted_improvement_below_margin'
+    elif selected['kind'] == 'stop':
+        reason = 'stop_has_minimum_predicted_error'
+    return dict(selected=copy.deepcopy(selected), candidates=ranked, rejected=rejected,
+                predictor=predictor, minimumImprovementPx=minimum_improvement_px,
+                bestPredictedImprovementPx=improvement, selectionReason=reason,
                 status='ranked' if len(ranked) > 1 else 'abstained',
                 controlEligible=False, counterfactualOutcomesObserved=False, graspVerified=False)
 

@@ -201,6 +201,37 @@ ARM·모터 명령은 없다. 정적 설정 오류는 촬영 전에 거절한다
 마감을 유지한다. 이전 원본의 정책·구현판을 소급 변경하지 않으며, 더 엄격한 제한을
 통과한 기존 정상 자료를 쓸 때도 구현판별 표본 수와 중단 이력을 보존한다.
 
+### 고정 모델의 후보 비교
+
+`relative_action_learning.select`의 `predictor`는 기본 `stateRidge` 또는
+`commandMean`을 받는다. 후자는 현재 영상 상태에 학습한 명령별 평균 변화를 더한다.
+두 방식 모두 같은 명령 지원·입력 상태 범위 검사를 거치며, 지원되지 않는 후보는
+거절 이유를 남긴다. 정지도 후보에 포함하고 동률이면 정지한다.
+`minimum_improvement_px=4`이면 정지보다 예측 오차가 **4px 초과** 줄어드는 경우에만
+움직임 후보를 선택한다. 이는 공학적으로 지정한 여유이며 관측 정확도나 신뢰구간이 아니다.
+원래 예측 오차 순위와 최종 선택을 별도 필드로 남기므로 여유 조건에 의해 정지를
+선택하면 `selected`가 `candidates[0]`과 다를 수 있다.
+
+기존 재생 CLI의 `mode="offline_candidate_queries"`는 학습·평가 원본을 받지 않고
+해시로 고정한 모델만 읽는다. `queries`에는 `state`, `target`, `commands`, 모델과
+동일한 `context`, `targetKind="synthetic_image_state"`를 넣는다. 선택적으로
+`predictor="commandMean"`, `minimumImprovementPx=4`를 지정한다.
+
+```sh
+python3 tools/replay_relative_actions.py \
+  --manifest .local/candidate-query/manifest.json \
+  --frozen-model .local/candidate-query/frozen-model.json \
+  --model-sha256 "${MODEL_SHA256}" \
+  --allow-development-model \
+  --output-dir .local/candidate-query/replay-01
+```
+
+개발 모델 허용은 이 질의 전용 모드에만 적용하며 기본 실물 모델 로더의 차단은
+유지한다. 도구는 모델을 다시 학습하지 않고, 질의 상태의 원본을 재감사하지도 않는다.
+다른 단계에서 감사한 상태를 입력해도 합성 목표를 실제 집기 목표로 바꾸지는 않는다.
+출력은 `evaluated=0`, `independentEvaluation=false`, `controlEligible=false`이며,
+선택하지 않은 행동의 실제 결과나 성공률을 관측했다는 뜻이 아니다.
+
 ## 소프트웨어 검사
 
 ```sh
