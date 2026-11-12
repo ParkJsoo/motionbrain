@@ -531,23 +531,34 @@ class SequencePort:
         self.off_verified = False
         # Every operation is bounded and attempted at most once. Even a lost
         # STOP response must not suppress the following physical-state reads.
-        for operation in (
-                lambda: self._call('/command', {'cmd': 'stop'}, emergency=emergency),
-                lambda: self._snapshot(emergency=emergency),
-                lambda: self._call('/sequence', {'action': 'clear'}, emergency=emergency)):
-            try:
-                operation()
-            except BaseException as exc:
-                errors.append(type(exc).__name__)
-        if restore_default:
-            try:
-                self._call('/motor', {'action': 'default', 'speed': 100}, emergency=emergency)
-            except BaseException as exc:
-                errors.append(type(exc).__name__)
         try:
-            self._queue(0, emergency=emergency)
+            self._call('/command', {'cmd': 'stop'}, emergency=emergency)
         except BaseException as exc:
             errors.append(type(exc).__name__)
+        original_timeout = self.timeout
+        try:
+            # STOP is already attempted at its original deadline. Subsequent
+            # state proof and non-motion cleanup get a separate bounded wait,
+            # without retrying a lost response or extending active monitoring.
+            self.timeout = 2.
+            for operation in (
+                    lambda: self._snapshot(emergency=emergency),
+                    lambda: self._call('/sequence', {'action': 'clear'}, emergency=emergency)):
+                try:
+                    operation()
+                except BaseException as exc:
+                    errors.append(type(exc).__name__)
+            if restore_default:
+                try:
+                    self._call('/motor', {'action': 'default', 'speed': 100}, emergency=emergency)
+                except BaseException as exc:
+                    errors.append(type(exc).__name__)
+            try:
+                self._queue(0, emergency=emergency)
+            except BaseException as exc:
+                errors.append(type(exc).__name__)
+        finally:
+            self.timeout = original_timeout
         return not errors and self.off_verified
 
     def finish(self):
