@@ -40,6 +40,27 @@ def reference(raw):
 
 
 class DevelopmentGripperTests(unittest.TestCase):
+    def test_explicit_goal_view_has_separate_color_window_and_keeps_clipping_gate(self):
+        im=image();im[165:206,150:175]=200
+        cv2.rectangle(im,(150,60),(174,95),(120,40,240),-1)
+        raw=encode(im);ref=reference(self.raw)
+        goal=DevelopmentGripperObserver(CONTEXT,[ref],goal_view=True)
+        self.assertNotEqual(goal.binding,self.observer.binding)
+        self.assertEqual(self.observe(im)['status'],'partial_development')
+        result=goal.observe(raw,'goal',CONTEXT,image_sha256=hashlib.sha256(raw).hexdigest())
+        self.assertEqual(result['status'],'complete_development')
+        self.assertFalse(result['controlEligible'])
+        im[60:96,150:175]=200;cv2.rectangle(im,(150,50),(174,85),(120,40,240),-1)
+        raw=encode(im)
+        self.assertEqual(goal.observe(raw,'clipped',CONTEXT,image_sha256=hashlib.sha256(raw).hexdigest())['status'],
+                         'partial_development')
+        bad=default_parameters();bad['colorRows']=[50,240]
+        with self.assertRaisesRegex(ValueError,'fixed_policy'):
+            DevelopmentGripperObserver(CONTEXT,[ref],parameters=bad)
+        bad['minimumNcc']=.89
+        with self.assertRaisesRegex(ValueError,'fixed_policy'):
+            DevelopmentGripperObserver(CONTEXT,[ref],parameters=bad,goal_view=True)
+
     def setUp(self):
         self.im = image()
         self.raw = encode(self.im)

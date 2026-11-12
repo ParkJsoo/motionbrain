@@ -24,6 +24,23 @@ def sha(raw):
 
 
 class DevelopmentSourceTests(unittest.TestCase):
+    def test_goal_binding_is_explicit_and_cannot_reuse_old_configuration_hash(self):
+        spec=copy.deepcopy(self.binding)
+        spec.update(schemaVersion='motionbrain.development_gripper_source_binding.v2',
+                    parameterPreset='near_goal_open_jaw')
+        def load(value):
+            raw=json.dumps(value).encode();(self.root/'goal-binding.json').write_bytes(raw)
+            return load_observer(self.root,'goal-binding.json',sha(raw))
+        with self.assertRaisesRegex(ValueError,'configuration_binding'):load(spec)
+        ref=dict(id='seed',imageBytes=self.body,imageSha256=sha(self.body),points=POINTS,rois=ROIS)
+        goal=DevelopmentGripperObserver(CONTEXT,[ref],goal_view=True)
+        spec['configurationSha256']=goal.binding
+        loaded=load(spec)
+        self.assertEqual(loaded.parameters['colorRows'],[50,240])
+        self.assertNotEqual(scene_context(loaded),self.scene)
+        spec['parameterPreset']='arbitrary'
+        with self.assertRaisesRegex(ValueError,'binding_fields'):load(spec)
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
         self.repo = Path(self.tmp.name); self.root = self.repo/'.local/source'; self.root.mkdir(parents=True)

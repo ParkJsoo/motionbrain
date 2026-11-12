@@ -52,13 +52,17 @@ def _roi(value, shape):
 
 
 class DevelopmentGripperObserver:
-    def __init__(self, context, references, *, parameters=None):
+    def __init__(self, context, references, *, parameters=None, goal_view=False):
         require(isinstance(context, dict) and set(context) == CONTEXT and
                 all(isinstance(v, str) and v for v in context.values()), 'development_context')
         self.context = copy.deepcopy(context)
-        self.parameters = copy.deepcopy(default_parameters() if parameters is None else parameters)
+        require(type(goal_view) is bool, 'development_goal_view_boolean')
+        expected = default_parameters()
+        if goal_view:
+            expected['colorRows'] = [50, 240]
+        self.parameters = copy.deepcopy(expected if parameters is None else parameters)
         # 다른 자세에 대한 자동 확장·임계값 완화를 금지한 명시적 개발 정책이다.
-        require(self.parameters == default_parameters(), 'development_fixed_policy_changed')
+        require(self.parameters == expected, 'development_fixed_policy_changed')
         require(isinstance(references, list) and 1 <= len(references) <= 8,
                 'development_references_required')
         self.references, self.templates = [], []

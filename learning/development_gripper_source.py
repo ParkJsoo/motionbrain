@@ -17,15 +17,20 @@ from learning.development_gripper_observer import (
 from learning.gripper_camera_dataset import bind_gripper_pair, read_frame
 
 BINDING_SCHEMA = 'motionbrain.development_gripper_source_binding.v1'
+GOAL_BINDING_SCHEMA = 'motionbrain.development_gripper_source_binding.v2'
 
 
 def load_observer(root, binding_path, binding_sha256):
     raw = _read(root, binding_path)
     require(sha(raw) == binding_sha256, 'development_observer_binding_hash')
     spec = _decode_json(raw)
-    require(isinstance(spec, dict) and set(spec) ==
-            {'schemaVersion', 'context', 'references', 'configurationSha256'} and
-            spec['schemaVersion'] == BINDING_SCHEMA, 'development_observer_binding_fields')
+    fields = {'schemaVersion', 'context', 'references', 'configurationSha256'}
+    goal_view = (isinstance(spec, dict) and spec.get('schemaVersion') == GOAL_BINDING_SCHEMA)
+    require(isinstance(spec, dict) and
+            ((not goal_view and set(spec) == fields and spec['schemaVersion'] == BINDING_SCHEMA)
+             or (goal_view and set(spec) == fields | {'parameterPreset'}
+                 and spec['parameterPreset'] == 'near_goal_open_jaw')),
+            'development_observer_binding_fields')
     require(isinstance(spec['references'], list) and 1 <= len(spec['references']) <= 8,
             'development_observer_reference_budget')
     references = []
@@ -36,7 +41,7 @@ def load_observer(root, binding_path, binding_sha256):
         require(sha(body) == reference['sha256'], 'development_source_reference_hash')
         references.append(dict(id=reference['id'], imageBytes=body, imageSha256=reference['sha256'],
                                points=reference['points'], rois=reference['rois']))
-    observer = DevelopmentGripperObserver(spec['context'], references)
+    observer = DevelopmentGripperObserver(spec['context'], references, goal_view=goal_view)
     require(observer.binding == spec['configurationSha256'], 'development_observer_configuration_binding')
     return observer
 
