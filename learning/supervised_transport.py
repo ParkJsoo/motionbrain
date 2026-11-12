@@ -26,12 +26,20 @@ JOINTS = {
 }
 
 WRIST_DEADLINE_POLICY = 'wrist-deadline-550-v1'
+ELBOW_DEADLINE_POLICY = 'elbow-deadline-350-v1'
 WRIST_READ_BUDGET_REVISION = 'shared-command-deadline-v2'
 
 
 def validate_monitor_policy(pulse, policy):
-    if policy is not None and (policy != WRIST_DEADLINE_POLICY
-            or pulse['joint'] != 'wrist' or pulse['durationMs'] != 550):
+    if policy is None:
+        return
+    wrist = (policy == WRIST_DEADLINE_POLICY and pulse['joint'] == 'wrist'
+             and pulse['durationMs'] == 550)
+    elbow = (policy == ELBOW_DEADLINE_POLICY and pulse['joint'] == 'elbow'
+             and pulse['direction'] in ('up', 'down')
+             and type(pulse['percent']) is int and pulse['percent'] == 60
+             and type(pulse['durationMs']) is int and pulse['durationMs'] == 350)
+    if not (wrist or elbow):
         raise ValueError('unsupported_monitor_timing_policy')
 
 

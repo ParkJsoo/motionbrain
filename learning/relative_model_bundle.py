@@ -40,8 +40,8 @@ def validate_model(model, *, allow_development_observations=False):
     require(isinstance(context, dict) and set(context) in (fields, fields | {'executionTimingPolicy'}),
         'complete_observation_context_required')
     if 'executionTimingPolicy' in context:
-        from learning.supervised_transport import WRIST_DEADLINE_POLICY
-        require(context['executionTimingPolicy'] == WRIST_DEADLINE_POLICY,
+        from learning.supervised_transport import WRIST_DEADLINE_POLICY, ELBOW_DEADLINE_POLICY
+        require(context['executionTimingPolicy'] in (WRIST_DEADLINE_POLICY, ELBOW_DEADLINE_POLICY),
                 'unsupported_monitor_timing_policy')
     require(all(isinstance(context[k], str) and context[k] for k in
                 ('physicalView', 'object', 'poseRegime', 'landmarks'))
