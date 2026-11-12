@@ -26,6 +26,7 @@ JOINTS = {
 }
 
 WRIST_DEADLINE_POLICY = 'wrist-deadline-550-v1'
+WRIST_READ_BUDGET_REVISION = 'shared-command-deadline-v2'
 
 
 def validate_monitor_policy(pulse, policy):
@@ -571,14 +572,16 @@ class SequencePort:
             if verified and remaining <= .2:
                 self.clock.sleep(min(.02, remaining))
                 continue
-            read_end = min(end, self.clock.monotonic()+.2)
+            # Reads share the command's absolute deadline. A separate short
+            # timeout can abort a healthy action even though STOP is not due.
+            read_end = end
             self._outputs(deadline=read_end, read_deadline=read_end)
             remaining = end-self.clock.monotonic()
             if remaining <= 0:
                 break
             if verified and remaining <= .2:
                 continue
-            read_end = min(end, self.clock.monotonic()+.2)
+            read_end = end
             status = self._status(request_timeout=read_end-self.clock.monotonic(),
                                   read_deadline=read_end)
             self._check_status(status, 'ARMED', self._active_pulse, None)
@@ -674,7 +677,8 @@ class SequencePort:
                     'outputTrace': trace, 'offVerified': True, 'motor': pulse['motor'],
                     'requestedPulse': pulse}
             if monitor_policy is not None:
-                receipt.update(monitorTimingPolicy=monitor_policy, monitorStatusVerified=True)
+                receipt.update(monitorTimingPolicy=monitor_policy, monitorStatusVerified=True,
+                               monitorReadBudgetRevision=WRIST_READ_BUDGET_REVISION)
             if stop_when is not None:
                 receipt.update(stoppedEarly=stopped_early,
                                stopReason='observed_return_goal' if stopped_early else 'requested_period_complete')

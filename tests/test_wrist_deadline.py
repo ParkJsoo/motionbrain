@@ -19,7 +19,7 @@ class WristDeadlineTests(unittest.TestCase):
         port, device, store = self.port(); original = device.open
         def slow(request, timeout):
             if device.running and request.data is None:
-                self.assertLessEqual(timeout, .2+1e-8)
+                self.assertLessEqual(timeout, port.last_dispatch_after+.55-device.clock.monotonic()+1e-8)
                 device.clock.sleep(.11)
             return original(request, timeout)
         device.open = slow
@@ -33,6 +33,20 @@ class WristDeadlineTests(unittest.TestCase):
                 self.assertLess(row['startedAt'], end)
         self.assertTrue(receipt['monitorStatusVerified'])
         self.assertTrue(receipt['offVerified'])
+
+    def test_read_over_point_two_seconds_can_finish_inside_shared_deadline(self):
+        port, device, store=self.port();original=device.open
+        def slow(request,timeout):
+            if device.running and request.data is None:
+                delay=.22 if '/action_outputs' in request.full_url else .08
+                if delay+.01>=timeout:raise TimeoutError('read would exceed command deadline')
+                device.clock.sleep(delay)
+            return original(request,timeout)
+        device.open=slow
+        result=port.execute(fixture.pulse(ms=550),lambda:None,monitor_policy=POLICY)
+        stop=next(r for n,r in store.rows.items() if n.endswith('-intent.json') and r['payload']=={'cmd':'stop'})
+        self.assertAlmostEqual(stop['startedAt'],result['dispatchAfter']+.55)
+        self.assertTrue(result['offVerified'])
 
     def test_persisted_read_intent_cannot_open_socket_after_deadline(self):
         port, device, store = self.port(); saved = store.write_json

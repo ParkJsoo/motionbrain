@@ -55,6 +55,8 @@ def _single_command(ev, session, plan):
     validate_execution(dict(receipt, pulse=pulse), pulse)
     policy = command.get('monitorTimingPolicy')
     _require(receipt.get('monitorTimingPolicy') == policy, 'monitor_timing_policy_mismatch')
+    _require(command.get('monitorReadBudgetRevision') == receipt.get('monitorReadBudgetRevision'),
+             'monitor_read_budget_revision_mismatch')
     if policy is not None:
         from learning.supervised_transport import validate_monitor_policy
         validate_monitor_policy(pulse, policy)

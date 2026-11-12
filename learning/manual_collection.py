@@ -17,7 +17,7 @@ from learning.action_journal import BoundedActionJournal
 from learning.action_recorder import ActionRecorder
 from learning.artifacts import ArtifactStore, _decode_json, _read
 from learning.supervised_collection import PROFILES, identifier
-from learning.supervised_transport import SequencePort, validate_target, validate_monitor_policy
+from learning.supervised_transport import SequencePort, validate_target, validate_monitor_policy, WRIST_READ_BUDGET_REVISION
 
 SCHEMA = 'motionbrain.manual_collection.v1'
 REPO = Path(__file__).resolve().parents[1]
@@ -260,6 +260,7 @@ class ManualCollection:
             intent = dict(kind='command', at=self.clock.monotonic(), commandId=cid, pulse=pulse)
             if monitor_policy is not None:
                 intent['monitorTimingPolicy'] = monitor_policy
+                intent['monitorReadBudgetRevision'] = WRIST_READ_BUDGET_REVISION
             if 'validationScopeSha256' in self.current:
                 scope_raw = _read(self.store.root, 'commissioning-validation-scope.json')
                 if hashlib.sha256(scope_raw).hexdigest() != self.current['validationScopeSha256']:
