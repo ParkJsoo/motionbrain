@@ -119,18 +119,63 @@ static NSDictionary *configurationRecord(AVCaptureSession *session,AVCaptureDevi
     return @{ @"sessionPreset":session.sessionPreset?:@"",@"outputVideoSettings":settingsRecord(output.videoSettings),@"activeFormat":active };
 }
 // Exclusive create; existing originals are never replaced. Include fsync and readback.
-static BOOL durable(NSString *path, NSData *data) {
+static BOOL durableTimed(NSString *path, NSData *data, NSDictionary **timing) {
     if (!data) return NO;
+    double start=timing?hostNow():0;
     int fd=open(path.fileSystemRepresentation,O_WRONLY|O_CREAT|O_EXCL,0600);
-    if(fd<0) return NO;
-    const uint8_t *p=data.bytes; size_t remaining=data.length; BOOL ok=YES;
-    while(remaining) { ssize_t n=write(fd,p,remaining); if(n<=0){ok=NO;break;} p+=n; remaining-=n; }
-    if(fsync(fd)!=0) ok=NO;
-    if(close(fd)!=0) ok=NO;
-    if(![[NSData dataWithContentsOfFile:path] isEqualToData:data]) ok=NO;
-    return ok;
+    int openError=fd<0?errno:0;
+    double opened=timing?hostNow():0;
+    if(fd<0){
+        if(timing)*timing=@{@"startedHostSeconds":@(start),@"endedHostSeconds":@(opened),
+            @"openMs":@((opened-start)*1000),@"openSucceeded":@NO,@"openErrno":@(openError)};
+        return NO;
+    }
+    // Large immutable files (normally frames) are streaming writes. Avoid dirty cache pressure;
+    // this hint never replaces fsync, full readback, or the 250ms total budget.
+    BOOL cacheAttempted=data.length>=1024*1024;
+    int cacheResult=cacheAttempted?fcntl(fd,F_NOCACHE,1):0;
+    int cacheError=cacheResult?errno:0;
+    double cacheConfigured=timing?hostNow():0;
+    if(cacheResult){
+        int closeResult=close(fd),closeError=closeResult?errno:0;
+        if(timing)*timing=@{@"startedHostSeconds":@(start),@"endedHostSeconds":@(hostNow()),
+            @"openMs":@((opened-start)*1000),@"openSucceeded":@YES,
+            @"cacheControlAttempted":@YES,@"cacheDisabled":@NO,@"cacheControlErrno":@(cacheError),
+            @"cacheControlMs":@((cacheConfigured-opened)*1000),
+            @"closeSucceeded":@(closeResult==0),@"closeErrno":@(closeError)};
+        return NO;
+    }
+    const uint8_t *p=data.bytes; size_t remaining=data.length; NSUInteger calls=0;int writeError=0;
+    while(remaining) { calls++;ssize_t n=write(fd,p,remaining); if(n<=0){writeError=n<0?errno:EIO;break;} p+=n; remaining-=n; }
+    double written=timing?hostNow():0;
+    int syncResult=fsync(fd),syncError=syncResult?errno:0;
+    double synced=timing?hostNow():0;
+    int closeResult=close(fd),closeError=closeResult?errno:0;
+    double closed=timing?hostNow():0;
+    BOOL verified=[[NSData dataWithContentsOfFile:path] isEqualToData:data];
+    if(timing){
+        double end=hostNow();
+        *timing=@{@"startedHostSeconds":@(start),@"endedHostSeconds":@(end),
+            @"openMs":@((opened-start)*1000),@"writeMs":@((written-cacheConfigured)*1000),
+            @"fsyncMs":@((synced-written)*1000),@"closeMs":@((closed-synced)*1000),
+            @"readbackMs":@((end-closed)*1000),@"totalMs":@((end-start)*1000),
+            @"cacheControlAttempted":@(cacheAttempted),@"cacheDisabled":@(cacheAttempted),
+            @"cacheControlErrno":@0,@"cacheControlMs":@((cacheConfigured-opened)*1000),
+            @"openSucceeded":@YES,@"writeSucceeded":@(remaining==0),@"writeErrno":@(writeError),
+            @"writeCalls":@(calls),@"bytesWritten":@(data.length-remaining),
+            @"fsyncSucceeded":@(syncResult==0),@"fsyncErrno":@(syncError),
+            @"closeSucceeded":@(closeResult==0),@"closeErrno":@(closeError),@"readbackVerified":@(verified)};
+    }
+    return remaining==0&&syncResult==0&&closeResult==0&&verified;
 }
+static BOOL durable(NSString *path, NSData *data) { return durableTimed(path,data,NULL); }
 static BOOL syncDirectory(NSString *dir) { int fd=open(dir.fileSystemRepresentation,O_RDONLY); if(fd<0)return NO; BOOL ok=fsync(fd)==0; close(fd);return ok; }
+// Pure failure boundary shared by the native camera and storage fault tests.
+static NSString *storageFailureReason(BOOL saved,double milliseconds) {
+    if(!saved)return @"storage_failed";
+    if(milliseconds>250)return @"storage_budget_exceeded";
+    return nil;
+}
 static void emit(id obj) { NSData *d=json(obj); if(d){fwrite(d.bytes,1,d.length,stdout);fputc('\n',stdout);fflush(stdout);} }
 // Optional, read-only diagnostics. Getter read times do not establish exposure-time state.
 static BOOL opticalDiagnosticsOption(int *argc,const char *argv[]) {
@@ -286,6 +331,7 @@ static NSDictionary *deviceInfo(AVCaptureDevice *d) {
         NSDictionary *storage=frameStorageRecord(raw,self.streamMode,index,&payload);
         if(!storage){[self stop:@"lossless_encoding_or_roundtrip_failed"];return;}
         if(self.streamMode && payload.length>self.byteLimit-self.savedBytes){[self stop:@"byte_budget_exhausted"];return;}
+        double encoded=hostNow();
         NSString *imageFile=storage[@"imageFile"],*imageHash=storage[@"imageSha256"];
         NSMutableDictionary *metadata=[@{@"instrumentationVersion":@1,@"sessionId":self.sessionId,
             @"actualConfiguration":actual,@"configurationSha256":configurationHash,
@@ -313,20 +359,31 @@ static NSDictionary *deviceInfo(AVCaptureDevice *d) {
             optical[@"imageFile"]=imageFile;optical[@"imageSha256"]=imageHash;
             opticalRaw=json(optical);
         }
-        BOOL saved=durable([self.directory stringByAppendingPathComponent:imageFile],payload) &&
-            durable([self.directory stringByAppendingPathComponent:metadataFile],meta) &&
-            (!self.opticalDiagnostics || (opticalRaw && durable([self.directory stringByAppendingPathComponent:opticalFile],opticalRaw))) &&
-            syncDirectory(self.directory);
+        double metadataPrepared=hostNow();
+        NSDictionary *imageTiming=nil,*metadataTiming=nil,*opticalTiming=nil;
+        BOOL saved=durableTimed([self.directory stringByAppendingPathComponent:imageFile],payload,&imageTiming) &&
+            durableTimed([self.directory stringByAppendingPathComponent:metadataFile],meta,&metadataTiming) &&
+            (!self.opticalDiagnostics || (opticalRaw && durableTimed([self.directory stringByAppendingPathComponent:opticalFile],opticalRaw,&opticalTiming)));
+        double filesComplete=hostNow();BOOL directoryAttempted=saved;
+        if(saved)saved=syncDirectory(self.directory);
         double complete=hostNow(),ms=(complete-storageStart)*1000;
+        NSMutableDictionary *storageTiming=[@{@"schemaVersion":@"motionbrain.frame_storage_timing.v1",
+            @"codecAndHashesMs":@((encoded-storageStart)*1000),
+            @"metadataPrepareMs":@((metadataPrepared-encoded)*1000),
+            @"directorySyncAttempted":@(directoryAttempted),@"budgetMs":@250} mutableCopy];
+        if(directoryAttempted)storageTiming[@"directorySyncMs"]=@((complete-filesComplete)*1000);
+        if(imageTiming)storageTiming[@"image"]=imageTiming;
+        if(metadataTiming)storageTiming[@"metadata"]=metadataTiming;
+        if(opticalTiming)storageTiming[@"optical"]=opticalTiming;
         NSMutableDictionary *receipt=[@{@"frameIndex":@(index),@"metadataFile":metadataFile,@"metadataSha256":digest(meta),
-            @"imageFile":imageFile,@"imageSha256":imageHash,@"persistenceMs":@(ms),@"storageCompleteHostSeconds":@(complete),@"durable":@(saved)} mutableCopy];
+            @"imageFile":imageFile,@"imageSha256":imageHash,@"persistenceMs":@(ms),@"storageCompleteHostSeconds":@(complete),@"durable":@(saved),@"storageTiming":storageTiming} mutableCopy];
         if(self.opticalDiagnostics){receipt[@"opticalDiagnosticsFile"]=opticalFile;
             receipt[@"opticalDiagnosticsSha256"]=opticalRaw?digest(opticalRaw):@"";}
         self.savedBytes+=payload.length;
         [self.receipts addObject:receipt]; emit(@{@"event":@"frame",@"receipt":receipt});
         self.lastPTS=pts;self.lastHostPTS=hostPTS;self.lastCallback=callback;
-        if(!saved)[self stop:@"storage_failed"];
-        else if(ms>250)[self stop:@"storage_budget_exceeded"];
+        NSString *storageFailure=storageFailureReason(saved,ms);
+        if(storageFailure)[self stop:storageFailure];
         else if(complete-self.measurementStart>self.measurementLimit)[self stop:self.streamMode?@"duration_complete":@"measurement_timeout"];
         else if(self.receipts.count==self.frameLimit)[self stop:self.streamMode?@"frame_budget_exhausted":@"sample_budget_complete"];
         // Captured after stdout serialization/flush and stop decisions. This is
