@@ -77,6 +77,17 @@ class FailedRunRecoveryTests(unittest.TestCase):
         self.db.commit()
         with self.assertRaises(ValueError): self.recover()
         self.assertEqual(self.ports, [])
+    def test_final_cleanup_failure_resolves_current_off_without_changing_result(self):
+        self.original['error']='output_off_unverified'
+        self.original['events'].append(dict(kind='result', receipt=dict(offVerified=True)))
+        self.raw=json.dumps(self.original).encode()
+        self.digest=hashlib.sha256(self.raw).hexdigest()
+        (self.session/'session.json').write_bytes(self.raw)
+        self.db.execute('UPDATE supervised_blocks SET result_json=?',(self.raw.decode(),))
+        self.db.commit()
+        self.assertTrue(self.recover()['currentOffVerified'])
+        self.assertEqual(self.db.execute('SELECT result_json FROM supervised_blocks').fetchone()[0],self.raw.decode())
+        self.assertEqual((self.session/'session.json').read_bytes(),self.raw)
     def test_other_pending_rejected(self):
         self.db.execute('INSERT INTO supervised_blocks VALUES (?,?,?,?,?)',('other','x','x','pending',None))
         self.db.commit()

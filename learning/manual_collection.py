@@ -185,7 +185,8 @@ class ManualCollection:
         boots = {e.get('response', {}).get('bootId') for e in events
                  if e.get('kind') == 'http' and e.get('path') == '/actions'}
         if (original.get('schemaVersion') != SCHEMA or original.get('sessionId') != session_id
-                or original.get('phase') != 'failed' or original.get('error') != 'command_failed_no_retry'
+                or original.get('phase') != 'failed'
+                or original.get('error') not in ('command_failed_no_retry', 'output_off_unverified')
                 or original.get('finalIdleOffVerified') is not False or len(runs) != 1
                 or len([e for e in events if e.get('kind') == 'command']) != 1
                 or boots != {controller_boot_id} or plan.get('sessionId') != session_id
