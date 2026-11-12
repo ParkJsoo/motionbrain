@@ -62,6 +62,16 @@ The evaluation batch had 18 attempts, 18 completions and 18 eligible records, wi
 
 [Full conditions, denominators and baselines (Korean)](docs/evidence/2026-11-04-m4-action-prediction.md) · [Training implementation](learning/manual_collection_learning.py) · [Relative-state observation and learning design (Korean)](docs/relative-action-selection.md)
 
+### Keeping acceptance criteria after switching to relative state
+
+Instead of whole-frame features, the gripper view supplies **object-center minus visible jaw-midpoint XY and visible jaw-tip separation**. Registered finite jobs connect collection, automatic observation, training, model freeze and new evaluation without per-sample manual coordinates. Human pose setup and collection-positioning actions remain separate from model selection; observation or communication failures stop the job. Unattended whole-arm operation remains unvalidated.
+
+For M3 up/down at 60% for 350ms, **18 records trained the model**. Of **12 new post-freeze evaluations**, **11 common supported records** had mean vector error **1.074px versus 1.341px for command mean**. Only two downward records met support, below the required four, so the evaluation did not pass. Conditional supplementation kept the model fixed: **15/16 completed**, with 14 common supported records yielding **1.190px versus 1.438px**. Completeness still failed. The supplement first established supported starting states, so its population differs from the original evaluation.
+
+Earlier 35%/650ms and 60%/450ms models yielded **1.375px versus 1.809px** on 11 common records and **2.266px versus 1.887px** on ten, respectively. Data and models remain separate by command condition. At the final state, predicted goal improvement stayed below the 4px minimum, selecting **STOP**. This experiment executed zero model-selected approach, close, grasp or lift actions; pixel prediction gains do not establish grasping success.
+
+[M3 conditions, frozen evaluations and failure denominators (Korean)](docs/evidence/2026-11-12-m3-goal-prediction.md) · [Development observation contract and usage (Korean)](docs/development-gripper-observer.md)
+
 ## 3. Validating the next action separately from prediction quality
 
 ### What a single goal approach connected

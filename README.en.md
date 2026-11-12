@@ -10,13 +10,13 @@ An ESP32-controlled five-axis DC arm connects an external camera, a gripper-moun
 
 *An overview of the architecture and data flow in the public source. It is not a physical photograph or a live integration screen.*
 
-Under registered conditions, the physical pipeline connects collection, observation and training to **new action evaluations after freezing the model**. **Continuous model-selected autonomous grasping and lifting remain incomplete.** A separate manual contact-and-rise experiment also failed to lift and retain the object.
+Under registered conditions, finite single-joint jobs connect **collection → automatic observation → training → model freeze → evaluation on new actions**. Per-sample manual coordinates are unnecessary, but observation rejection or communication failure stops the job. Unattended whole-arm operation remains unvalidated. **Continuous model-selected autonomous grasping and lifting remain incomplete.** A separate manual contact-and-rise experiment also failed to lift and retain the object.
 
 ## From collection to bounded execution
 
 | Stage | Implemented path | Decision criteria |
 | --- | --- | --- |
-| **1. Collect** | A local Mac UI runs a finite pulse on one of M1–M5, recording and replaying images, commands, actual outputs and sensors | Distinguish requests from actual execution; preserve failures, interruptions and unstarted actions |
+| **1. Collect** | A local Mac UI and finite-job runners collect one joint at a time from M1–M5, recording and replaying images, commands, actual outputs and sensors | Distinguish requests from actual execution; preserve failures, interruptions and unstarted actions |
 | **2. Train** | Audit raw hashes, observation windows and output history, then train change predictors on data separated by joint, pose and view | Separate completed storage from training eligibility; check training/evaluation overlap |
 | **3. Predict** | Predict each candidate's final state or change from pre-action images and planned commands | Compare with command-mean and no-change baselines; freeze the model before evaluating new data |
 | **4. Execute within limits** | Check supported inputs, observation quality and stop state before executing an eligible candidate and observing again | Do not automatically resend failed or uncertain actions; hold the next step |
@@ -43,9 +43,12 @@ These experiments use different joints, models and observation conditions. MAE (
 | **M2 model-selected goal approach** | One command reduced image-plane goal error from **5.479° to 0.967°** | Three of four attempts that started recording stopped before actuation. A single same-day, same-view result; repeated grasping remains unvalidated |
 | **M4 downward prediction** | Six conditions, **18 training** records and **18 new post-freeze evaluations**. Per-command mean MAE **0.367°**; image-plus-command ridge **0.605°** | Adding this visual representation did not improve prediction |
 | **M1 shaft-separation prediction** | On **one new close** with the latest frozen model: error **0.18px**, command mean **0.03px** | No improvement over the previous model established. Image-plane shaft separation, not physical fingertip, contact or grasp performance |
+| **M3 relative-state prediction near the goal** | **18 training** records; among **12 new post-freeze evaluations**, 11 common supported records had mean vector error **1.074px** for ridge and **1.341px** for command mean | Insufficient downward evaluations initially; conditional supplementation still completed only **15/16**, so no overall pass. Zero model-selected approach/grasp/lift actions in this experiment |
 | **Manual contact-and-rise experiment** | Closing and rising were observed, but the object stayed on the table: **no retained lift** | Separate from model-selection results. The final rise failed the observed-change criterion |
 
 [M2 goal approach (Korean)](docs/evidence/2026-10-31-first-model-goal-approach.md) · [M4 frozen evaluation (Korean)](docs/evidence/2026-11-04-m4-action-prediction.md) · [Lift models, observations and failures (Korean)](docs/m4-up-commissioning.md) · [M1 evaluation and physical contact experiment (Korean)](docs/evidence/2026-11-09-shaft-evaluation-and-contact-probe.md)
+
+[M3 automatic observation, frozen evaluation and incomplete denominators (Korean)](docs/evidence/2026-11-12-m3-goal-prediction.md)
 
 ## Physical system
 

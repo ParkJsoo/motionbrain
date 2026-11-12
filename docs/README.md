@@ -28,6 +28,8 @@
 | [현장 감독 수집](supervised-action-collection.md) | 기존 M2 정착 전후 17개 자료와 개발 평가 계약 |
 | [오프라인 행동 선택](offline-action-selection.md) | 저장 모델의 후보 순위·hold·abstain, 저장 상태 재생과 정책 평가 한계 |
 | [시각 행동 수집기](visual-action-collection.md) | 행동 ID·영상 구간·실패 기록·감사와 공개 단발 CLI의 계약. 별도 반복 실측 경로와 구분 |
+| [집게 자동 관측·개발 학습](development-gripper-observer.md) | fresh 원본 연결·명시적 개발 학습·고정 모델 질의와 기본 제어 사용 제한 |
+| [유한 작업의 자동 연결](batch-model-sequence.md) | 관절별 수집·관측·학습·고정 평가, 예산·실패 보존과 실행 경계 |
 | [기존 행동 데이터 계약](data-pipeline.md) | 구현된 M4·물체 박스 데이터 검증과 학습 CLI |
 | [연구 근거](research/visual-action-learning.md) | 관련 연구의 실험 조건·대안·적용 아이디어와 현재 장치의 차이 |
 
@@ -65,6 +67,7 @@
 | [2026-11-07 M1 구동 전 예측 확인](relative-action-selection.md#2026-11-07-자세를-분리한-학습과-구동-전-예측-확인) | 자세별 분리 학습, 고정 후 새 1건 비교와 무변화 기준·지원 범위의 한계 |
 | [2026-11-08 닫기→들기 연결의 관측·입력 범위](evidence/2026-11-08-close-lift-integration.md) | M1 수집 4·준비 3회와 새 계약 재감사·고정 모델, 평가·선택·연결 0회, 관측 모호함과 범위 거절 |
 | [2026-11-09 M1 턱축 평가와 수동 접촉 시험](evidence/2026-11-09-shaft-evaluation-and-contact-probe.md) | 모델 버전·기준선 비교, 수동 접촉·상승 시험의 분모와 실패·관측 한계 |
+| [2026-11-12 M3 목표 부근 예측](evidence/2026-11-12-m3-goal-prediction.md) | 자동 관측·조건별 모델·기준선, 고정 후 평가와 조건부 보완의 미완료 분모 |
 
 각 기록에는 조건·실패·분모·재현 한계를 남긴다. 비공개 원본 이미지·실행 응답은 이 공개 저장소에 포함하지 않는다.
 
