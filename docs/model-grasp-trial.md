@@ -85,6 +85,19 @@ M1의 `m1_shaft_ridge.v1`은 shaft 간격 1개만 예측하므로 3차원 모델
 짧은 CLOSE와 정지를 비교하며, 지원 밖 후보·동률·최소 개선 조건을 보존한다.
 shaft 목표는 접촉이나 파지 목표의 자동 판정이 아니다.
 
+`m1_shaft_learning.fit_after(rows)`는 같은 입력·원본 검증을 사용하면서
+명령별 **사후 shaft 간격 자체**를 표준화한 사전 간격으로 회귀하는 별도 API다.
+정규화 계수 `alpha=1`의 ridge이며 모델 schema는
+`motionbrain.m1_shaft_after_ridge.v1`, `regressionTarget=after`로 분리한다.
+기존 `fit(rows)`의 delta 회귀와 등록·모델 해시를 바꾸지 않는다. 새 모델에도
+명령별 평균 delta를 보존하여 입력 간격+평균 delta인 `commandMean` 기준선과
+비교하고, 무변화 기준선도 따로 평가한다. 개발 자료에서 사후값이 비슷해 보이는
+현상만으로 포화·상태 의존성이나 기준선 대비 우월성이 입증되지는 않는다.
+고정 후 새 관측에서 평가해야 하며 `independentTest=false`와
+`controlEligible=false`를 유지한다. 실물 연결은 명시적인
+`geometryPolicy=observed95-grasp650-v1`에서만 가능하고, 기존 다른 정책에
+자동 적용하지 않는다. 이 API는 실제 접촉·보유·들기 성공을 판정하지 않는다.
+
 현재 M1 실험에는 `M1ShaftSceneGuard`와 `M1ShaftSourceObserver`를 사용한다.
 원본 JPEG·메타데이터·부팅·shaft 등록을 재검사하고 외부 전완과 물체 경계를 각각
 3px, M4를 196.17±0.5° 안에 고정한다. 기본 계약의 CLOSE는 40%·200/350ms 또는 기존 M1 수집 상한 안의 60%·650ms, 수동 준비

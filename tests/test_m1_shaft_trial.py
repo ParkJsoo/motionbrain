@@ -483,6 +483,38 @@ class Grasp650TrialTests(unittest.TestCase):
         self.assertFalse(result['contactVerified']);self.assertFalse(result['graspVerified'])
         self.assertEqual(store.rows['trial-intent.json']['scope']['goalReferenceSha256'],'c'*64)
 
+    def test_separate_after_model_can_select_bounded_saturation_without_clamping_old_prediction(self):
+        rows=[]
+        for index,value in enumerate((80.,116.)):
+            row=scalar_sample(f'clamped-trial-{index}','clamped-trial-training',value)
+            row.update(command=dict(joint='gripper',direction='close',percent=60,durationMs=650),afterShaftPx=68.)
+            rows.append(row)
+        fixed=learning.fit_after(rows)
+        planned=self.planned(fixed,targetShaftPx=68.,startIntervalPx=[79.,90.])
+        trial,ports,_=self.trial([80.,68.],fixed=fixed,planned=planned)
+        result=trial.run()
+        self.assertEqual(result['status'],'observed_target_reached',result)
+        self.assertEqual(result['steps'][0]['predictedShaftSeparationPx'],68.)
+        self.assertEqual(result['steps'][0]['commandMeanPredictedShaftSeparationPx'],50.)
+        self.assertEqual(len(ports.sent),1);self.assertFalse(result['graspVerified'])
+        old=learning.fit(rows)
+        trial,ports,_=self.trial([80.],fixed=old,planned=planned)
+        self.assertEqual(trial.run()['status'],'abstained');self.assertEqual(ports.sent,[])
+
+    def test_after_schema_requires_explicit_grasp_geometry_without_automatic_live_admission(self):
+        rows=[]
+        for index,value in enumerate((80.,116.)):
+            row=scalar_sample(f'after-policy-{index}','after-policy-training',value)
+            row.update(command=dict(joint='gripper',direction='close',percent=60,durationMs=650),afterShaftPx=68.)
+            rows.append(row)
+        fixed=learning.fit_after(rows)
+        plans=[scope(),observed95_scope(fixed),
+            observed95_scope(fixed,geometryPolicy=OBSERVED95_LOWER_POLICY),
+            observed95_scope(fixed,geometryPolicy=OBSERVED95_REVIEWED_LOWER_POLICY,maxSeconds=120.)]
+        for planned in plans:
+            with self.subTest(planned=planned),self.assertRaisesRegex(ValueError,'requires_explicit_grasp650_policy'):
+                self.trial([100.],fixed=fixed,planned=planned)
+
     def test_contact_scope_requires_reference_single_budget_45_seconds_and_start_outside_goal(self):
         fixed=self.fixed();valid=self.planned(fixed)
         changes=[dict(goalReferenceSha256='bad'),dict(goalSemantics=OBSERVED95_GOAL),

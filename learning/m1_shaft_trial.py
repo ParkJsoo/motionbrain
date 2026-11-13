@@ -107,6 +107,9 @@ class M1ShaftTrial:
                 self.model['context']['landmarks'].startswith(learning.SHAFT_PREFIX),
                 'M1_native_scalar_model_required')
         self.scope = validate_scope(scope)
+        require(self.model['schemaVersion'] != learning.AFTER_SCHEMA or
+                self.scope.get('geometryPolicy') == OBSERVED95_GRASP650_POLICY,
+                'M1_after_model_requires_explicit_grasp650_policy')
         if self.observed95:
             require(self.model['context']['landmarks'] == learning.SHAFT_PREFIX+
                     self.scope['observationRegistrationSha256'], 'M1_scalar_trial_registration_changed')

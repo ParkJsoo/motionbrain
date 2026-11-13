@@ -215,4 +215,55 @@ class ShaftSelectionTests(unittest.TestCase):
         self.assertEqual(self.choose()['selected']['command'],self.close350)
 
 
+class AfterShaftModelTests(unittest.TestCase):
+    def rows(self,afters=(68.,68.)):
+        rows=[]
+        for index,(before,after) in enumerate(zip((80.,116.),afters)):
+            value=scalar_sample(f'after-{index}','after-training',before)
+            value.update(command=dict(joint='gripper',direction='close',percent=60,durationMs=650),
+                         afterShaftPx=after)
+            rows.append(value)
+        return rows
+
+    def test_clamped_after_expression_is_separate_from_delta_and_preserves_baseline(self):
+        rows=self.rows();original=copy.deepcopy(rows)
+        old=m.fit(rows);old_bytes=m.canonical_bytes(old);new=m.fit_after(rows);command=rows[0]['command']
+        self.assertEqual(new['schemaVersion'],m.AFTER_SCHEMA);self.assertEqual(new['regressionTarget'],'after')
+        self.assertLess(m.predict(old,80.,command,old['context']),66.)
+        for x in (80.,98.,116.):
+            self.assertEqual(m.predict(new,x,command,new['context']),68.)
+            self.assertEqual(m.predict(new,x,command,new['context'],baseline=True),
+                             m.predict(old,x,command,old['context'],baseline=True))
+        self.assertEqual(m.canonical_bytes(m.fit(rows)),old_bytes)
+        self.assertEqual(rows,original)
+        self.assertEqual(new['models'][0]['deltaMean'],old['models'][0]['deltaMean'])
+        self.assertEqual(new['trainingFrameIds'],old['trainingFrameIds'])
+        selected=m.select(new,80.,68.,[command],new['context'])
+        self.assertEqual(selected['selected']['kind'],'action');self.assertFalse(selected['graspVerified'])
+
+    def test_direct_after_ridge_formula_support_and_provenance_are_preserved(self):
+        rows=self.rows((68.,80.));fixed=m.fit_after(rows);command=rows[0]['command']
+        self.assertAlmostEqual(fixed['models'][0]['afterMean'],74.)
+        self.assertAlmostEqual(fixed['models'][0]['afterCoefficient'],4.)
+        self.assertAlmostEqual(m.predict(fixed,80.,command,fixed['context']),70.)
+        with self.assertRaisesRegex(ValueError,'outside_training_range'):
+            m.predict(fixed,79.99,command,fixed['context'])
+        duplicate=copy.deepcopy(rows);duplicate[1]['sourceHash']=duplicate[0]['sourceHash']
+        with self.assertRaisesRegex(ValueError,'duplicate_source_hash'):m.fit_after(duplicate)
+        self.assertEqual(m.fit_after(rows[:1])['models'],[])
+
+    def test_wrong_target_schema_and_nonfinite_after_parameters_reject(self):
+        fixed=m.fit_after(self.rows())
+        for mutation in ('missing_target','wrong_target','old_schema','missing_field','nan'):
+            value=copy.deepcopy(fixed)
+            if mutation=='missing_target':value.pop('regressionTarget')
+            elif mutation=='wrong_target':value['regressionTarget']='delta'
+            elif mutation=='old_schema':value['schemaVersion']=m.SCHEMA
+            elif mutation=='missing_field':value['models'][0].pop('afterMean')
+            else:value['models'][0]['afterCoefficient']=float('nan')
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):m.validate_model(value)
+        old=m.fit(self.rows());old['models'][0]['afterMean']=68.
+        with self.assertRaisesRegex(ValueError,'schema_mismatch'):m.validate_model(old)
+
+
 if __name__ == '__main__': unittest.main()

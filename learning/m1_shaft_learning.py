@@ -16,6 +16,7 @@ from learning.manual_collection_dataset import require
 from learning.pipeline_learning import canonical_bytes, digest
 
 SCHEMA = 'motionbrain.m1_shaft_ridge.v1'
+AFTER_SCHEMA = 'motionbrain.m1_shaft_after_ridge.v1'
 PREFIX = relative.REGISTERED_METHODS['registered_gripper_crosssection_points']
 SHAFT_PREFIX = 'registered-gripper-shaft-only-v1:'
 TRANSITION_SCHEMA = 'motionbrain.m1_shaft_transition.v1'
@@ -125,12 +126,34 @@ def fit(rows):
     return validate_model(model)
 
 
+def fit_after(rows):
+    """직접 사후 간격을 alpha=1 ridge로 학습한다. delta 모델과 별도 계약이다.
+
+    기존 delta 통계는 명령 평균 기준선으로 보존한다. 접촉·포화나 상태 효과를
+    검증한 모델이 아니며, 실제 접촉과 독립 제어 성능은 별도로 확인해야 한다.
+    """
+    model = fit(rows)
+    for entry in model['models']:
+        key = relative.command_key(entry['command'])
+        selected = [row for row in rows if relative.command_key(row['command']) == key]
+        x = np.asarray([_shaft(row,'before') for row in selected],dtype=float)
+        y = np.asarray([_shaft(row,'after') for row in selected],dtype=float)
+        z = (x-entry['mean'])/entry['scale']
+        mean = float(y.mean())
+        entry.update(afterMean=mean,afterCoefficient=float(z@(y-mean)/(z@z+1.)))
+    model.update(schemaVersion=AFTER_SCHEMA,regressionTarget='after')
+    return validate_model(model)
+
+
 def validate_model(model):
     """Validate an immutable artifact; no training or range expansion occurs."""
-    require(isinstance(model, dict) and model.get('schemaVersion') == SCHEMA
+    require(isinstance(model, dict) and model.get('schemaVersion') in (SCHEMA, AFTER_SCHEMA)
             and type(model.get('alpha')) in (int, float) and model['alpha'] == 1.
             and model.get('controlEligible') is False and model.get('independentTest') is False,
             'offline_m1_shaft_model_required')
+    after = model['schemaVersion'] == AFTER_SCHEMA
+    require(model.get('regressionTarget') == 'after' if after else 'regressionTarget' not in model,
+            'scalar_regression_target_schema_mismatch')
     _scope(model.get('context'))
     require(model.get('inputStateFields') == ['shaftSeparationPx']
             and model.get('predictedStateFields') == ['shaftSeparationPx']
@@ -156,6 +179,13 @@ def validate_model(model):
     keys, total = set(), 0
     for entry in model['models']:
         require(isinstance(entry, dict), 'model_command_parameters_required')
+        if after:
+            require(all(type(entry.get(k)) in (int,float) and math.isfinite(entry[k])
+                        for k in ('afterMean','afterCoefficient')) and entry['afterMean'] >= 0,
+                    'invalid_after_scalar_model_parameters')
+        else:
+            require(not {'afterMean','afterCoefficient'}.intersection(entry),
+                    'scalar_regression_target_schema_mismatch')
         key = relative.command_key(entry.get('command'))
         _command_scope(model['context'], entry['command'])
         require(key not in keys and type(entry.get('count')) is int and entry['count'] >= 2,
@@ -179,6 +209,8 @@ def predict(model, shaft_separation_px, command, context, *, baseline=False):
     require(len(selected) == 1, 'command_without_two_training_transitions')
     entry = selected[0]
     require(entry['minimum'] <= x <= entry['maximum'], 'shaft_outside_training_range')
+    if model['schemaVersion'] == AFTER_SCHEMA and not baseline:
+        return _scalar(entry['afterMean']+(x-entry['mean'])/entry['scale']*entry['afterCoefficient'])
     delta = entry['deltaMean']
     if not baseline:
         delta += (x-entry['mean'])/entry['scale']*entry['coefficient']
