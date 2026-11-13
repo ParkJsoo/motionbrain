@@ -15,6 +15,7 @@ LANDMARK_PREFIX = PREFIX
 SHAFT_PREFIX = 'registered-gripper-shaft-only-v1:'
 SHAFT_METHOD = 'registered_gripper_shaft_only_points'
 SHAFT_STATE = ['shaftSeparationPx']
+UNVERIFIED_OBJECT_SEED = 'unverified_seed_only_shaft_registration'
 STATE = ['objectMinusJawMidXpx', 'objectMinusJawMidYpx', 'shaftSeparationPx']
 SEMANTICS = 'object_top_center_and_independent_shaft_centerline_intersections_at_image_row55_not_tips_contact_or_physical_opening'
 OBSERVED95_SEMANTICS = ('object_top_center_and_independent_shaft_unique_direct_observed_image_row95_centers'
@@ -184,6 +185,19 @@ def _observed_row95(accepted, p, diagnostic):
 
 
 def register(reference_image, object_point, scene_context, parameters=None):
+    return _register(reference_image, object_point, scene_context, parameters, shaft_only=False)
+
+
+def register_shaft_only(reference_image, object_point, scene_context, parameters=None):
+    """물체 점은 미검증 시드로 보관하고 실제 양 shaft 관측만 등록한다.
+
+    기존 물체 ROI·텍스처·원본 해시·shaft 품질 검사는 유지한다. 물체 NCC
+    자기검사를 생략한 등록은 전체 물체 관측에 사용할 수 없다.
+    """
+    return _register(reference_image, object_point, scene_context, parameters, shaft_only=True)
+
+
+def _register(reference_image, object_point, scene_context, parameters, *, shaft_only):
     p = copy.deepcopy(default_parameters() if parameters is None else parameters)
     _parameters(p); _context(scene_context)
     image, pixel_sha = _image(reference_image, p['imageShape'])
@@ -200,8 +214,14 @@ def register(reference_image, object_point, scene_context, parameters=None):
         parameters=p, parametersSha256=_digest(p), referenceImageSha256=_sha(reference_image),
         referencePixelSha256=pixel_sha, sceneContext=copy.deepcopy(scene_context),
         seedSemantics=_seed_semantics(p), stateFields=STATE.copy(), trainingEligible=False, controlEligible=False)
+    if shaft_only:
+        registration['objectSeedStatus'] = UNVERIFIED_OBJECT_SEED
     registration['registrationSha256'] = _digest(registration)
-    RegisteredGripperCrosssection(registration, reference_image).observe(reference_image, 'registration-self-check')
+    tracker = RegisteredGripperCrosssection(registration, reference_image)
+    if shaft_only:
+        tracker.observe_shaft(reference_image, 'registration-shaft-only-self-check')
+    else:
+        tracker.observe(reference_image, 'registration-self-check')
     return registration
 
 
@@ -252,10 +272,13 @@ class RegisteredGripperCrosssection:
 
     def verify(self):
         r = self.registration
-        _require(isinstance(r, dict) and set(r) == {
-            'schemaVersion', 'imageShape', 'points', 'parameters', 'parametersSha256',
+        fields = {'schemaVersion', 'imageShape', 'points', 'parameters', 'parametersSha256',
             'referenceImageSha256', 'referencePixelSha256', 'sceneContext', 'seedSemantics',
             'stateFields', 'trainingEligible', 'controlEligible', 'registrationSha256'}
+        if isinstance(r, dict) and 'objectSeedStatus' in r:
+            fields.add('objectSeedStatus')
+            _require(r['objectSeedStatus'] == UNVERIFIED_OBJECT_SEED, 'crosssection_object_seed_status_invalid')
+        _require(isinstance(r, dict) and set(r) == fields
             and r['schemaVersion'] == SCHEMA and r['stateFields'] == STATE
             and r['seedSemantics'] == _seed_semantics(r['parameters']) and r['trainingEligible'] is False
             and r['controlEligible'] is False, 'crosssection_contract_fields')
@@ -280,6 +303,8 @@ class RegisteredGripperCrosssection:
         return True
 
     def observe(self, raw, frame_id):
+        _require('objectSeedStatus' not in self.registration,
+                 'crosssection_full_observation_requires_object_registration')
         _require(isinstance(frame_id, str) and 0 < len(frame_id) <= 160, 'scene_frame_id_required')
         self.verify()
         image, pixel_sha = _image(raw, self.registration['imageShape'])

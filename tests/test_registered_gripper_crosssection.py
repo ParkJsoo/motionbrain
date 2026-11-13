@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 
 from learning.registered_gripper_crosssection import (
-    METHOD, PREFIX, STATE, RegisteredGripperCrosssection, register, default_parameters)
+    METHOD, PREFIX, STATE, RegisteredGripperCrosssection, register, register_shaft_only, default_parameters)
 
 
 class CrosssectionTests(unittest.TestCase):
@@ -41,6 +41,58 @@ class CrosssectionTests(unittest.TestCase):
         self.assertEqual(result['annotation']['method'],'registered_gripper_shaft_only_points')
         self.assertNotEqual(result['annotation']['landmarkContract'],self.tracker.landmark_contract)
         self.assertEqual(result,self.tracker.observe_shaft(raw,'object-occluded'))
+
+    def ambiguous_object_image(self):
+        image=self.image.copy()
+        image[43:157,116:219]=220
+        yy,xx=np.indices((106,99))
+        image[47:153,120:219]=np.repeat((140+80*((xx//2+yy//2)%2))[:,:,None],3,axis=2)
+        return image
+
+    def test_shaft_only_registration_skips_only_ambiguous_object_NCC_selfcheck(self):
+        raw=self.encode(self.ambiguous_object_image())
+        with self.assertRaisesRegex(ValueError,'scene_match_ambiguous'):
+            register(raw,[166,95],self.context)
+        registration=register_shaft_only(raw,[166,95],self.context)
+        self.assertEqual(registration['objectSeedStatus'],'unverified_seed_only_shaft_registration')
+        self.assertEqual(registration['stateFields'],STATE)
+        tracker=RegisteredGripperCrosssection(registration,raw)
+        result=tracker.observe_shaft(raw,'ambiguous-object-shaft-only')
+        self.assertEqual(result['objectObservation']['status'],'not_required')
+        self.assertEqual(set(result['annotation']['points']),{'jawLeft','jawRight'})
+        self.assertFalse(result['contactVerified'])
+        with self.assertRaisesRegex(ValueError,'full_observation_requires_object_registration'):
+            tracker.observe(raw,'cannot_claim_object_tracking')
+
+    def test_shaft_only_registration_preserves_all_common_reference_quality_and_hash_gates(self):
+        registration=register_shaft_only(self.raw,[166,95],self.context)
+        self.assertNotEqual(registration['registrationSha256'],self.registration['registrationSha256'])
+        self.assertEqual(registration['parametersSha256'],self.registration['parametersSha256'])
+        for mutation in ('missing_shaft','no_texture','invalid_seed'):
+            image=self.image.copy();seed=[166,95]
+            if mutation=='missing_shaft':image[40:67,60:120]=220
+            if mutation=='no_texture':image[67:133,140:206]=220
+            if mutation=='invalid_seed':seed=[0,0]
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):
+                register_shaft_only(self.encode(image),seed,self.context)
+        for mutation in ('raw','hash','metadata','shaft'):
+            reg=copy.deepcopy(registration);raw=self.raw
+            if mutation=='raw':raw=self.encode(self.ambiguous_object_image())
+            if mutation=='hash':reg['referenceImageSha256']='0'*64
+            if mutation=='metadata':reg['objectSeedStatus']='object_tracking_verified'
+            if mutation=='shaft':reg['points']['jawLeft'][0]+=1
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):
+                RegisteredGripperCrosssection(reg,raw)
+
+    def test_full_registration_stays_unchanged_and_shaft_only_context_is_separate(self):
+        self.assertNotIn('objectSeedStatus',self.registration)
+        self.assertEqual(register(self.raw,[166,95],self.context),self.registration)
+        new=register_shaft_only(self.raw,[166,95],self.context)
+        self.assertEqual(RegisteredGripperCrosssection(new,self.raw).observe_shaft(self.raw,'shaft')['state'],
+                         self.tracker.observe_shaft(self.raw,'shaft')['state'])
+        self.assertNotEqual(RegisteredGripperCrosssection(new,self.raw).shaft_landmark_contract,
+                            self.tracker.shaft_landmark_contract)
+        self.assertEqual(self.tracker.observe(self.raw,'full')['stateFields'],STATE)
 
     def test_reprocessing_identical_source_is_deterministic(self):
         self.assertEqual(self.tracker.observe(self.raw,'same'),self.tracker.observe(self.raw,'same'))

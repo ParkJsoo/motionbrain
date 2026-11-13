@@ -9,7 +9,8 @@ import numpy as np
 from learning.artifacts import ArtifactStore
 from learning.grasp_observation import GripperObservationSource
 from learning.m1_shaft_scene import (M1ShaftSceneGuard,M1ShaftSourceObserver,SCHEMA,MONITOR_POLICY,
-    REFERENCE_MEANING,OBJECT_FRAGMENT_POLICY,OBSERVED95_LOCAL_COMMAND_POLICY,OBSERVED95_LOWER_COMMAND_POLICY)
+    REFERENCE_MEANING,OBJECT_FRAGMENT_POLICY,OBSERVED95_LOCAL_COMMAND_POLICY,OBSERVED95_LOWER_COMMAND_POLICY,
+    OBSERVED95_GRASP650_COMMAND_POLICY,CONTACT_FRAGMENT_POLICY)
 from learning.approach_external_guard import ApproachExternalGuard
 from learning.registered_gripper_crosssection import register, default_parameters
 from tests import test_approach_external_guard as external_tests
@@ -122,6 +123,39 @@ class M1ShaftSceneTests(unittest.TestCase):
             with self.subTest(command=command),self.assertRaisesRegex(ValueError,'bounded_command'):
                 self.guard.validate_command(command)
 
+    def test_grasp650_policy_only_admits_exact_close_and_existing_manual_OPEN(self):
+        self.install_observed95_policy(OBSERVED95_GRASP650_COMMAND_POLICY)
+        self.assertEqual(self.camera.calls,[]);self.assertEqual(self.calls,[])
+        record,result=self.capture();self.review(record,result)
+        original=self.port._check_status
+        for command in [self.command('close',650,60),self.command('open',250,40),
+                        self.command('open',350,40),self.command('open',450,60),
+                        self.command('open',550,60),self.command('open',650,60)]:
+            self.guard.validate_command(command);self.guard.disarm()
+            self.assertIs(self.port._check_status,original)
+        for command in [self.command('close',200,60),self.command('close',250,60),
+                        self.command('close',350,60),self.command('close',450,60),
+                        self.command('close',650,40),self.command('close',650,100),
+                        self.command('close',649,60),self.command('close',651,60),
+                        self.command('close',650,True),self.command('open',350,60)]:
+            with self.subTest(command=command),self.assertRaisesRegex(ValueError,'bounded_command'):
+                self.guard.validate_command(command)
+            self.assertIs(self.port._check_status,original)
+        self.assertFalse(result['contactVerified']);self.assertFalse(result['graspVerified'])
+
+    def test_grasp650_policy_keeps_active_M4_guard_and_disarm(self):
+        self.install_observed95_policy(OBSERVED95_GRASP650_COMMAND_POLICY)
+        record,result=self.capture();self.review(record,result)
+        original=self.port._check_status;before=self.calls.count('http')
+        command=self.command('close',650,60);self.guard.validate_command(command)
+        self.controller.angle=196.8
+        try:
+            with self.assertRaisesRegex(ValueError,'active_fixed_M4'):
+                self.port._check_status(self.controller.status(),'ARMED',command)
+        finally:self.guard.disarm()
+        self.assertIs(self.port._check_status,original)
+        self.assertEqual(self.calls.count('http'),before)
+
     def test_observed95_local450_policy_only_allows_exact_new_candidates(self):
         self.install_observed95_policy()
         self.assertEqual(self.camera.calls,[])
@@ -162,7 +196,7 @@ class M1ShaftSceneTests(unittest.TestCase):
         self.assertEqual(self.calls.count('http'),before)
 
     def test_new_policy_requires_exact_observed95_registration_and_known_literal(self):
-        for policy in [OBSERVED95_LOCAL_COMMAND_POLICY,'unknown',None]:
+        for policy in [OBSERVED95_LOCAL_COMMAND_POLICY,OBSERVED95_GRASP650_COMMAND_POLICY,'unknown',None]:
             config=copy.deepcopy(self.config);config['commandPolicy']=policy
             binding=self.write_json('M1-bad-policy-config.json',config)
             with self.subTest(policy=policy),self.assertRaisesRegex(ValueError,'command_policy'):
@@ -312,6 +346,122 @@ class M1FixedObjectFragmentTests(unittest.TestCase):
         binding=self.write_json('M1-no-reference-area-config.json',config)
         with self.assertRaisesRegex(ValueError,'reference_object_area'):
             M1ShaftSceneGuard(self.repo,binding,self.recorder,self.port,self.store,clock=self.clock)
+
+
+class M1ContactObjectFragmentTests(unittest.TestCase):
+    write=M1ShaftSceneTests.write
+    write_json=M1ShaftSceneTests.write_json
+    capture=M1ShaftSceneTests.capture
+    review=M1ShaftSceneTests.review
+    stats=staticmethod(M1FixedObjectFragmentTests.stats)
+
+    def setUp(self):
+        M1ShaftSceneTests.setUp(self)
+        M1ShaftSceneTests.install_observed95_policy(self,OBSERVED95_GRASP650_COMMAND_POLICY)
+        fixed=copy.deepcopy(self.guard.fixed_object);fixed['external']['objectArea']=5151
+        self.config.update(fixedObject=self.write_json('contact-fixed.json',fixed),
+                           objectObservationPolicy=CONTACT_FRAGMENT_POLICY)
+        self.binding=self.write_json('contact-config.json',self.config)
+        self.guard=M1ShaftSceneGuard(self.repo,self.binding,self.recorder,self.port,self.store,clock=self.clock)
+        self.observer=M1ShaftSourceObserver(self.source,self.guard,clock=self.clock)
+
+    def test_three_bounded_fragments_or_single_shift_with_area_are_only_hypotheses(self):
+        samples=[self.stats(([558,658,609,759],5151)),
+                 self.stats(([550,650,601,680],1500),([550,690,601,720],1500),([550,730,601,751],1000))]
+        for count,stats in zip((1,3),samples):
+            result=self.guard._measure_object(stats)
+            self.assertEqual(result['objectFragmentCount'],count)
+            self.assertTrue(result['boundedMotionContractApplied'])
+            self.assertEqual(result['objectObservationPolicy'],CONTACT_FRAGMENT_POLICY)
+            self.assertIn('안전 검증 아님',result['fragmentInterpretation'])
+        for ratio in (.40,1.05):
+            # 정수 연결영역 면적을 쓰므로 경계 안쪽 정수로 확인한다.
+            area=int(5151*ratio)+1 if ratio==.40 else int(5151*ratio)
+            self.guard._measure_object(self.stats(([542,642,609,759],area)))
+
+    def test_image_extraction_keeps_three_visible_components_and_original_union(self):
+        image=self.image.copy();image[680:690,550:601]=100;image[710:720,550:601]=100
+        result=self.guard._measure(image)
+        self.assertEqual(result['objectFragmentCount'],3)
+        self.assertEqual(result['objectBox'],[550,650,601,751])
+        self.assertAlmostEqual(result['visibleAreaRatio'],4131/5151)
+
+    def test_uncovering_reference_object_uses_projected_box_without_changing_visible_reference(self):
+        fixed=copy.deepcopy(self.guard.fixed_object);fixed['external']['objectArea']=3800
+        config=dict(self.config,fixedObject=self.write_json('occluded-contact-fixed.json',fixed))
+        binding=self.write_json('occluded-contact-config.json',config)
+        guard=M1ShaftSceneGuard(self.repo,binding,self.recorder,self.port,self.store,clock=self.clock)
+        result=guard._measure_object(self.stats(([550,650,601,751],5151)))
+        self.assertEqual(result['visibleAreaRatio'],1.)
+        self.assertEqual(result['visibleAreaBasis'],'reference_projected_box_area')
+        self.assertEqual(result['referenceProjectedBoxAreaPx'],5151)
+        self.assertEqual(result['referenceVisibleAreaPx'],3800)
+        self.assertEqual(guard.fixed_object['external']['objectArea'],3800)
+        # 기존 fixed 가림 정책은 여전히 reference의 실제 가시면적을 기준으로 쓴다.
+        old_config=dict(config,objectObservationPolicy=OBJECT_FRAGMENT_POLICY)
+        old_binding=self.write_json('occluded-old-fixed-config.json',old_config)
+        old=M1ShaftSceneGuard(self.repo,old_binding,self.recorder,self.port,self.store,clock=self.clock)
+        split=self.stats(([550,650,601,700],2500),([550,701,601,751],2550))
+        self.assertGreater(guard._measure_object(split)['visibleAreaRatio'],.9)
+        with self.assertRaisesRegex(ValueError,'fragment_area'):
+            old._measure_object(split)
+
+    def test_contact_reference_box_requires_positive_width_and_height(self):
+        fixed=copy.deepcopy(self.guard.fixed_object);fixed['external']['objectBox']=[550,650,550,751]
+        config=dict(self.config,fixedObject=self.write_json('zero-contact-box.json',fixed))
+        binding=self.write_json('zero-contact-box-config.json',config)
+        with self.assertRaisesRegex(ValueError,'contact_reference_box_area'):
+            M1ShaftSceneGuard(self.repo,binding,self.recorder,self.port,self.store,clock=self.clock)
+
+    def test_count_clip_component_union_extent_and_area_fail_closed(self):
+        samples=[('fragment_count',self.stats()),
+            ('fragment_count',self.stats(*[([550,650+i*24,601,670+i*24],600) for i in range(4)])),
+            ('fragment_clipped',self.stats(([450,650,501,751],4000))),
+            ('outside_reference',self.stats(([559,650,610,751],4000))),
+            ('extent_changed',self.stats(([550,650,601,742],4000))),
+            ('fragment_area',self.stats(([550,650,601,751],2000))),
+            ('fragment_area',self.stats(([542,642,609,759],6000)))]
+        for reason,stats in samples:
+            with self.subTest(reason=reason),self.assertRaisesRegex(ValueError,reason):
+                self.guard._measure_object(stats)
+
+    def test_contact_policy_requires_grasp650_and_pinned_reference_area(self):
+        for command_policy in (None,OBSERVED95_LOCAL_COMMAND_POLICY,OBSERVED95_LOWER_COMMAND_POLICY):
+            config=copy.deepcopy(self.config)
+            if command_policy is None:config.pop('commandPolicy')
+            else:config['commandPolicy']=command_policy
+            binding=self.write_json('bad-contact-config.json',config)
+            with self.subTest(policy=command_policy),self.assertRaisesRegex(ValueError,'explicit_fixed_object_occlusion_policy'):
+                M1ShaftSceneGuard(self.repo,binding,self.recorder,self.port,self.store,clock=self.clock)
+        fixed=copy.deepcopy(self.guard.fixed_object);fixed['external'].pop('objectArea')
+        config=dict(self.config,fixedObject=self.write_json('no-contact-area.json',fixed))
+        binding=self.write_json('no-contact-area-config.json',config)
+        with self.assertRaisesRegex(ValueError,'reference_object_area'):
+            M1ShaftSceneGuard(self.repo,binding,self.recorder,self.port,self.store,clock=self.clock)
+
+    def test_review_extent_uses_eight_but_forearm_and_M4_stay_fixed(self):
+        record,result=self.capture()
+        external=dict(forearmCenter=list(self.guard.goal['forearmCenter']),objectBox=[558,658,609,759])
+        with patch.object(self.guard,'_measure',return_value=external):
+            self.review(record,result)
+        self.assertFalse(result['contactVerified']);self.assertFalse(result['graspVerified'])
+        external['objectBox']=[559,650,610,751]
+        with patch.object(self.guard,'_measure',return_value=external),self.assertRaisesRegex(ValueError,'fixed_object_extent'):
+            self.review(record,result)
+        self.assertEqual(self.guard._forearm_limit(),3)
+
+    def test_contact_extent_permission_does_not_relax_actual_forearm_or_M4_checks(self):
+        record,result=self.capture()
+        external=dict(forearmCenter=[self.guard.goal['forearmCenter'][0]+3.01,
+                                     self.guard.goal['forearmCenter'][1]],objectBox=[558,658,609,759])
+        with patch.object(self.guard,'_measure',return_value=external),self.assertRaisesRegex(ValueError,'forearm_fixed_pose'):
+            self.review(record,result)
+        # 실패한 guard를 되살리지 않고 별도 fixture의 원본 검사로 M4 경계도 확인한다.
+
+    def test_contact_policy_keeps_M4_half_degree_limit(self):
+        record,result=self.capture();self.controller.angle=196.68
+        with self.assertRaisesRegex(ValueError,'M1_fixed_M4_changed'):
+            self.review(record,result)
 
 
 if __name__=='__main__':unittest.main()

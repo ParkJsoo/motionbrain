@@ -236,6 +236,43 @@ python3 tools/replay_relative_actions.py \
 출력은 `evaluated=0`, `independentEvaluation=false`, `controlEligible=false`이며,
 선택하지 않은 행동의 실제 결과나 성공률을 관측했다는 뜻이 아니다.
 
+## 단면 전용 등록과 접촉 단계 외부 관측
+
+M1의 별도 `learning/registered_gripper_crosssection.py`는 실제 보이는 턱축의
+단면 간격을 관측한다. 앞의 물체·양턱끝 개발 관측과 다른 계약이며, 가려진
+물체 좌표나 접촉 상태를 채워 넣지 않는다. `current_m1_observed_shaft95`
+등록에서는 행95의 유일한 어두운 턱축 구간 중심을 직접 측정하고 주변 직선부를
+품질 근거로 검사한다. 행55 외삽값과 혼합하지 않는다.
+
+`register_shaft_only(reference_image, object_point, scene_context, parameters=None)`는
+물체 NCC 자기검사를 통과한 전체 관측 등록과 구분한다. `object_point`는 지정
+ROI 안의 유한 좌표인 **미검증 시드 metadata**로 보관하고,
+`objectSeedStatus=unverified_seed_only_shaft_registration`를 등록 해시에 포함한다.
+원본·픽셀·파라미터 해시, 물체 ROI·텍스처, 두 턱축 품질 검사는 유지한다.
+등록 자기검사는 `observe_shaft()`로만 수행한다.
+
+이 등록에 `RegisteredGripperCrosssection.observe()`로 전체 물체·양턱 상태를
+요청하면 거절한다. 물체 자기검사를 생략한 시드를 검증된 물체 좌표로 사용하지
+못하게 하는 경계다. `observe_shaft()`의 반환 상태는 `shaftSeparationPx` 한 값이며
+물체는 `not_observed`다. 기존 `register()`의 전체 자기검사와 기존 등록 동작은
+유지한다. 같은 파라미터를 쓰더라도 새 metadata가 포함된 등록 SHA로 자료를
+분리해야 하며, 물체·접촉을 측정한 3차원 상태로 임의 변환하지 않는다.
+
+외부 영상의 접촉 폐합 가림 가설도 별도다. `M1ShaftSceneGuard`의 명시적
+`objectObservationPolicy=contact_closure_bounded_fragments_v1`는 정확한
+`commandPolicy=observed95-grasp650-v1`에서만 허용한다. 1~3개의 면적 500px 이상
+색 영역이 각각 참조 bbox의 ±8px 안에 있고 ROI에서 잘리지 않아야 한다.
+합친 경계도 ±8px, 합친 가시면적은 고정 참조 bbox 면적의 0.40~1.05다.
+가려진 참조의 실제 가시면적을 분모로 삼아 정상 OPEN의 가림 해제를 거절하지
+않도록, 원 가시면적을 보존하면서 `visibleAreaBasis`,
+`referenceProjectedBoxAreaPx`, `referenceVisibleAreaPx`로 기준을 명시한다.
+
+기존 물체 고정 3px·2영역 정책은 바꾸지 않고 전완 3px·M4 ±0.5°도 유지한다.
+이 허용 가설은 물체 동일성·양턱 접촉·힘·보유·기구 안전의 검증이 아니다.
+실제 접촉 근거와 관측 수치를 분리하고, 새 등록·기본 비활성 단일명령 모델
+재현의 목표 manifest 결합은 [실행 코어 계약](model-grasp-trial.md#별도-접촉-폐합-프로파일과-조건부-단일-재현-코어)을 따른다.
+새 계약의 실제 AI 파지·들기는 아직 검증하지 않았다.
+
 ## 소프트웨어 검사
 
 ```sh

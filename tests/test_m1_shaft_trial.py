@@ -4,7 +4,7 @@ import unittest
 
 from learning import m1_shaft_learning as learning
 from learning.m1_shaft_trial import (M1ShaftTrial, OBSERVED95_POLICY, OBSERVED95_LOWER_POLICY,
-    OBSERVED95_REVIEWED_LOWER_POLICY, OBSERVED95_GOAL)
+    OBSERVED95_REVIEWED_LOWER_POLICY, OBSERVED95_GRASP650_POLICY, OBSERVED95_GOAL, OBSERVED95_CONTACT_GOAL)
 from tests.test_m1_shaft_learning import scalar_sample
 from tests.test_supervised_transport import Clock, Store
 
@@ -460,6 +460,71 @@ class ReviewedLowerTrialTests(unittest.TestCase):
         result=trial.run()
         self.assertEqual(result['status'],'failed');self.assertEqual(ports.sent,[])
         self.assertEqual(result['errors'][0]['reason'],'M1_scalar_trial_dispatch_binding_changed')
+
+
+class Grasp650TrialTests(unittest.TestCase):
+    trial=M1ShaftTrialTests.trial
+
+    def fixed(self,duration=650):
+        return observed95_model(minimum=80.,maximum=100.,delta=10.,duration=duration)
+
+    def planned(self,fixed,**changes):
+        planned=observed95_scope(fixed,geometryPolicy=OBSERVED95_GRASP650_POLICY,
+            shaftMinimum=66.,targetShaftPx=75.3,startIntervalPx=[80.,90.],maxCommands=1,totalRemaining=1,
+            goalSemantics=OBSERVED95_CONTACT_GOAL,goalReferenceSha256='c'*64)
+        planned.update(changes);return planned
+
+    def test_explicit_single_650_reproduction_does_not_infer_contact_or_grasp(self):
+        fixed=self.fixed();trial,ports,store=self.trial([85.3,75.3],fixed=fixed,planned=self.planned(fixed))
+        result=trial.run()
+        self.assertEqual(result['status'],'observed_target_reached',result)
+        self.assertEqual([c['durationMs'] for c in ports.sent],[650])
+        self.assertEqual(result['confirmedCommands'],1);self.assertEqual(len(ports.records),2)
+        self.assertFalse(result['contactVerified']);self.assertFalse(result['graspVerified'])
+        self.assertEqual(store.rows['trial-intent.json']['scope']['goalReferenceSha256'],'c'*64)
+
+    def test_contact_scope_requires_reference_single_budget_45_seconds_and_start_outside_goal(self):
+        fixed=self.fixed();valid=self.planned(fixed)
+        changes=[dict(goalReferenceSha256='bad'),dict(goalSemantics=OBSERVED95_GOAL),
+            dict(maxCommands=2),dict(totalRemaining=2),dict(maxSeconds=46.),dict(shaftMinimum=65.),
+            dict(targetShaftPx=65.9),dict(targetShaftPx=139.6),dict(startIntervalPx=[76.8,90.]),
+            dict(startIntervalPx=[80.,138.]),dict(observationRegistrationSha256='f'*64)]
+        for change in changes:
+            with self.subTest(change=change),self.assertRaises(ValueError):
+                self.trial([85.3],fixed=fixed,planned=dict(valid,**change))
+        missing=dict(valid);missing.pop('goalReferenceSha256')
+        with self.assertRaisesRegex(ValueError,'scope_fields'):
+            self.trial([85.3],fixed=fixed,planned=missing)
+        for duration in (200,250,350,450):
+            fixed=self.fixed(duration)
+            with self.subTest(duration=duration),self.assertRaisesRegex(ValueError,'supported_close_candidates_required'):
+                self.trial([85.3],fixed=fixed,planned=self.planned(fixed))
+
+    def test_goal_reference_digest_is_frozen_and_external_confirmation_failure_blocks_all_commands(self):
+        fixed=self.fixed();trial,ports,_=self.trial([85.3],fixed=fixed,planned=self.planned(fixed))
+        trial.scope['goalReferenceSha256']='d'*64
+        result=trial.run();self.assertEqual(result['status'],'failed');self.assertEqual(ports.sent,[])
+        self.assertEqual(result['errors'][0]['reason'],'M1_scalar_trial_frozen_contract_changed')
+        trial,ports,_=self.trial([85.3],fixed=fixed,planned=self.planned(fixed))
+        def unconfirmed():raise ValueError('contact_reference_not_confirmed')
+        trial.verify_assets=unconfirmed
+        result=trial.run();self.assertEqual(result['status'],'failed')
+        self.assertEqual(ports.records,[]);self.assertEqual(ports.sent,[])
+        self.assertEqual(result['errors'][0]['reason'],'contact_reference_not_confirmed')
+
+    def test_initial_support_new_floor_and_dispatch_freshness_remain_checked(self):
+        fixed=self.fixed()
+        for states,planned,delay,reason in (
+            ([79.9],self.planned(fixed,startIntervalPx=[79.,90.]),.11,None),
+            ([85.3,65.9],self.planned(fixed),.11,'M1_scalar_trial_observed_shaft_outside_fence'),
+            ([85.3],self.planned(fixed),3.1,'M1_scalar_trial_stale_or_noncausal_source')):
+            trial,ports,_=self.trial(states,fixed=fixed,planned=planned);ports.preparation_delay=delay
+            result=trial.run()
+            if reason is None:
+                self.assertEqual(result['status'],'abstained');self.assertEqual(ports.sent,[])
+            else:
+                self.assertEqual(result['status'],'failed',result)
+                self.assertEqual(result['errors'][0]['reason'],reason)
 
 
 if __name__=='__main__':unittest.main()

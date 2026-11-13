@@ -19,7 +19,9 @@ from learning.supervised_collection import plan_digest
 OBSERVED95_POLICY = 'observed95-local450-v1'
 OBSERVED95_LOWER_POLICY = 'observed95-lower-close-v1'
 OBSERVED95_REVIEWED_LOWER_POLICY = 'observed95-reviewed-lower-close-v1'
+OBSERVED95_GRASP650_POLICY = 'observed95-grasp650-v1'
 OBSERVED95_GOAL = 'manual_visible_jaw_configuration_reference_not_contact_or_grasp'
+OBSERVED95_CONTACT_GOAL = 'onsite_bilateral_contact_reference_not_retained_grasp'
 
 def _finite(value):
     return type(value) in (int, float) and math.isfinite(value)
@@ -35,7 +37,10 @@ def validate_scope(scope):
         'minimumImprovementPx', 'maximumPredictionResidualPx', 'minimumObservedProgressPx',
         'shaftMinimum', 'shaftMaximum', 'maxObservationAgeSeconds', 'maxDecisionAgeSeconds'}
     observed95 = isinstance(scope, dict) and 'geometryPolicy' in scope
+    grasp650 = isinstance(scope, dict) and scope.get('geometryPolicy') == OBSERVED95_GRASP650_POLICY
     extra = {'geometryPolicy', 'startIntervalPx', 'observationRegistrationSha256', 'goalSemantics'} if observed95 else set()
+    if grasp650:
+        extra.add('goalReferenceSha256')
     require(isinstance(scope, dict) and set(scope) == fields | extra,
         'M1_scalar_trial_scope_fields')
     require(all(_finite(scope[key]) for key in fields), 'M1_scalar_trial_finite_scope_required')
@@ -43,21 +48,29 @@ def validate_scope(scope):
     require(type(scope['maxCommands']) is int and 1 <= scope['maxCommands'] <= 4 and
             type(scope['totalRemaining']) is int and 0 <= scope['totalRemaining'] <= 4 and
             0 < scope['maxSeconds'] <= (120 if reviewed else 45), 'M1_scalar_trial_finite_budget_required')
+    if grasp650:
+        require(scope['maxCommands'] == 1 and scope['totalRemaining'] <= 1 and
+                _hash(scope['goalReferenceSha256']), 'M1_scalar_trial_contact_reference_or_single_budget_required')
     fixed = dict(tolerancePx=1.5, minimumImprovementPx=.25, maximumPredictionResidualPx=3.,
         minimumObservedProgressPx=.2, shaftMinimum=118., shaftMaximum=155.5,
         maxObservationAgeSeconds=3., maxDecisionAgeSeconds=.25)
     if observed95:
         # 새 직접 row95 실험 계약이다. 구 row55 기구 한계의 변환이나 보장이 아니다.
         fixed.update(shaftMinimum=84., shaftMaximum=139.5, targetShaftPx=85.3)
+        if grasp650:
+            fixed.update(shaftMinimum=66.)
+            fixed.pop('targetShaftPx')
         interval = scope['startIntervalPx']
         lower = scope['geometryPolicy'] in (OBSERVED95_LOWER_POLICY, OBSERVED95_REVIEWED_LOWER_POLICY)
-        require(scope['geometryPolicy'] in (OBSERVED95_POLICY, OBSERVED95_LOWER_POLICY, OBSERVED95_REVIEWED_LOWER_POLICY) and
-                scope['goalSemantics'] == OBSERVED95_GOAL and
+        require(scope['geometryPolicy'] in (OBSERVED95_POLICY, OBSERVED95_LOWER_POLICY,
+                                           OBSERVED95_REVIEWED_LOWER_POLICY, OBSERVED95_GRASP650_POLICY) and
+                scope['goalSemantics'] == (OBSERVED95_CONTACT_GOAL if grasp650 else OBSERVED95_GOAL) and
                 _hash(scope['observationRegistrationSha256']) and
                 isinstance(interval, list) and len(interval) == 2 and
                 all(_finite(value) for value in interval) and
                 interval[0] < interval[1] <= 137. and
-                (interval[0] > 86.8 if lower else interval[0] >= 100.),
+                (interval[0] > scope['targetShaftPx']+scope['tolerancePx'] if grasp650 else
+                 interval[0] > 86.8 if lower else interval[0] >= 100.),
                 'M1_scalar_trial_observed95_contract_required')
     require(all(scope[key] == value for key, value in fixed.items()) and
             scope['shaftMinimum'] <= scope['targetShaftPx'] <= scope['shaftMaximum'],
@@ -83,6 +96,9 @@ class M1ShaftTrial:
     출력과 OFF가 검증된 SequencePort receipt를 반환해야 한다. 실패하면 자동으로
     다시 부르지 않는다. verify_assets는 고정 원본·외부 실행 예산을 검사하며 RUN
     callback 안에서도 호출하므로 카메라·HTTP 요청이나 대기를 포함하면 안 된다.
+    grasp650 정책의 verify_assets는 별도 접촉 참조 manifest SHA, 실제 수동 after
+    값·OFF·동일 관측 계약·현장 양턱 접촉 근거를 target에 정확히 결합해야 한다.
+    이 코어는 manifest를 발행하거나 접촉·보유를 판독하지 않는다.
     포트·카메라·터널 정리는 execute 소유자의 finally에서 수행한다.
     """
     def __init__(self, model, scope, *, observe, execute, tick, verify_assets, store, clock=time):
@@ -98,7 +114,8 @@ class M1ShaftTrial:
             if entry['command']['direction']=='close' and entry['command']['percent']<=60
             and entry['command']['durationMs']<=650]
         if self.observed95:
-            durations = (450,) if self.scope['geometryPolicy'] == OBSERVED95_POLICY else (200,250,350,450)
+            durations = ((650,) if self.scope['geometryPolicy'] == OBSERVED95_GRASP650_POLICY else
+                         (450,) if self.scope['geometryPolicy'] == OBSERVED95_POLICY else (200,250,350,450))
             self.commands = [command for command in self.commands
                              if command['percent']==60 and command['durationMs'] in durations]
         require(bool(self.commands), 'M1_scalar_trial_supported_close_candidates_required')
@@ -115,7 +132,8 @@ class M1ShaftTrial:
 
     @property
     def observed95(self):
-        return self.scope.get('geometryPolicy') in (OBSERVED95_POLICY, OBSERVED95_LOWER_POLICY, OBSERVED95_REVIEWED_LOWER_POLICY)
+        return self.scope.get('geometryPolicy') in (OBSERVED95_POLICY, OBSERVED95_LOWER_POLICY,
+                                                   OBSERVED95_REVIEWED_LOWER_POLICY, OBSERVED95_GRASP650_POLICY)
 
     def _check(self):
         self.verify_assets()

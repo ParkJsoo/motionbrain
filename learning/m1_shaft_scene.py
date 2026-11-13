@@ -27,7 +27,9 @@ MONITOR_POLICY = 'm1-default-sequence-monitor-v1'
 REFERENCE_MEANING = 'onsite_current_M1_fixed_pose_reference_not_contact_or_grasp_success'
 OBSERVED95_LOCAL_COMMAND_POLICY = 'observed95-local450-v1'
 OBSERVED95_LOWER_COMMAND_POLICY = 'observed95-lower-close-v1'
+OBSERVED95_GRASP650_COMMAND_POLICY = 'observed95-grasp650-v1'
 OBJECT_FRAGMENT_POLICY = 'fixed_reference_two_fragment_occlusion_v1'
+CONTACT_FRAGMENT_POLICY = 'contact_closure_bounded_fragments_v1'
 
 
 def _number(value):
@@ -107,10 +109,13 @@ class M1ShaftSceneGuard(CurrentSceneExternalGuard):
                 all(isinstance(v, str) and bool(v) for v in config['actualScene'].values()),
                 'M1_actual_reference_declaration_required')
         if 'commandPolicy' in config:
-            require(config['commandPolicy'] in (OBSERVED95_LOCAL_COMMAND_POLICY, OBSERVED95_LOWER_COMMAND_POLICY),
+            require(config['commandPolicy'] in (OBSERVED95_LOCAL_COMMAND_POLICY, OBSERVED95_LOWER_COMMAND_POLICY,
+                                               OBSERVED95_GRASP650_COMMAND_POLICY),
                     'M1_explicit_command_policy_required')
         if 'objectObservationPolicy' in config:
-            require(config['objectObservationPolicy'] == OBJECT_FRAGMENT_POLICY,
+            require(config['objectObservationPolicy'] == OBJECT_FRAGMENT_POLICY or
+                    (config['objectObservationPolicy'] == CONTACT_FRAGMENT_POLICY and
+                     config.get('commandPolicy') == OBSERVED95_GRASP650_COMMAND_POLICY),
                     'M1_explicit_fixed_object_occlusion_policy_required')
 
     def _validate_loaded_reference(self):
@@ -126,6 +131,10 @@ class M1ShaftSceneGuard(CurrentSceneExternalGuard):
         if 'objectObservationPolicy' in self.config:
             area = self.fixed_object['external'].get('objectArea')
             require(_number(area) and area > 0, 'M1_reference_object_area_required')
+            if self.config['objectObservationPolicy'] == CONTACT_FRAGMENT_POLICY:
+                x0,y0,x1,y1 = self.fixed_object['external']['objectBox']
+                require(x1 > x0 and y1 > y0 and _number((x1-x0)*(y1-y0)) and (x1-x0)*(y1-y0) > 0,
+                        'M1_contact_reference_box_area_required')
 
     @property
     def scene_context(self):
@@ -134,7 +143,12 @@ class M1ShaftSceneGuard(CurrentSceneExternalGuard):
     def _forearm_limit(self):
         return 3
 
+    def _object_box_limit(self):
+        return 8 if self.config.get('objectObservationPolicy') == CONTACT_FRAGMENT_POLICY else 3
+
     def _measure_object(self, stats):
+        if self.config.get('objectObservationPolicy') == CONTACT_FRAGMENT_POLICY:
+            return self._measure_contact_object(stats)
         if self.config.get('objectObservationPolicy') != OBJECT_FRAGMENT_POLICY:
             return super()._measure_object(stats)
         objects = [s for s in stats[1:] if s[4] >= 500]
@@ -167,6 +181,37 @@ class M1ShaftSceneGuard(CurrentSceneExternalGuard):
             objectArea=area, objectFragmentCount=2, objectFragments=fragments, visibleAreaRatio=ratio,
             objectObservationPolicy=OBJECT_FRAGMENT_POLICY, occlusionContractApplied=True,
             fragmentInterpretation='고정 물체의 가림 가설; 물체 동일성·깊이·접촉·파지 검증 아님')
+
+    def _measure_contact_object(self, stats):
+        """사전 선언한 접촉 단계의 작은 재배치·가림 가설. 힘·파지 안전 판정이 아니다."""
+        objects = [component for component in stats[1:] if component[4] >= 500]
+        require(1 <= len(objects) <= 3, 'M1_contact_object_fragment_count_rejected')
+        reference = self.fixed_object['external']
+        rx0, ry0, rx1, ry1 = reference['objectBox']
+        fragments = []
+        for component in objects:
+            x, y, width, height, area = map(int, component)
+            x += 450; y += 550
+            require(x > 450 and y > 550 and x+width < 850 and y+height < 950,
+                    'M1_contact_object_fragment_clipped')
+            require(x >= rx0-8 and y >= ry0-8 and x+width <= rx1+8 and y+height <= ry1+8,
+                    'M1_contact_object_fragment_outside_reference')
+            fragments.append(dict(box=[x,y,x+width,y+height],areaPx=area))
+        union = [min(f['box'][0] for f in fragments),min(f['box'][1] for f in fragments),
+                 max(f['box'][2] for f in fragments),max(f['box'][3] for f in fragments)]
+        area = sum(f['areaPx'] for f in fragments)
+        projected_area = (rx1-rx0)*(ry1-ry0)
+        ratio = area/projected_area
+        require(max(abs(a-b) for a,b in zip(union,reference['objectBox'])) <= 8,
+                'M1_contact_object_fragment_extent_changed')
+        require(.40 <= ratio <= 1.05, 'M1_contact_object_fragment_area_rejected')
+        return dict(objectBox=union,objectCenter=[(union[0]+union[2])/2,(union[1]+union[3])/2],
+            objectArea=area,objectFragmentCount=len(fragments),objectFragments=fragments,
+            visibleAreaRatio=ratio,visibleAreaBasis='reference_projected_box_area',
+            referenceProjectedBoxAreaPx=projected_area,referenceVisibleAreaPx=reference['objectArea'],
+            objectObservationPolicy=CONTACT_FRAGMENT_POLICY,
+            occlusionContractApplied=len(fragments)>1,boundedMotionContractApplied=True,
+            fragmentInterpretation='접촉 단계의 작은 재배치·가림 허용 가설; 접촉·보유·힘·기구 안전 검증 아님')
 
     def _verify_assets(self):
         super()._verify_assets()
@@ -205,7 +250,7 @@ class M1ShaftSceneGuard(CurrentSceneExternalGuard):
         status = self.port.check_idle(); angle = SequencePort._shoulder_angle(status)
         require(status['shoulderAngle'].get('active') is False and
                 abs(angle-self.tracking['expectedM4']) <= self.tracking['maximumM4Difference'], 'M1_fixed_M4_changed')
-        require(max(abs(a-b) for a,b in zip(external['objectBox'], self.fixed_object['external']['objectBox'])) <= 3,
+        require(max(abs(a-b) for a,b in zip(external['objectBox'], self.fixed_object['external']['objectBox'])) <= self._object_box_limit(),
                 'M1_fixed_object_extent_changed')
         require(np.linalg.norm(np.asarray(external['forearmCenter'])-self.goal['forearmCenter']) <= 3,
                 'M1_forearm_fixed_pose_changed')
@@ -231,9 +276,14 @@ class M1ShaftSceneGuard(CurrentSceneExternalGuard):
             set(command) == {'joint','direction','percent','durationMs'} and
             command['joint'] == 'gripper' and type(command['percent']) is int and
             type(command['durationMs']) is int)
-        if self.config.get('commandPolicy') in (OBSERVED95_LOCAL_COMMAND_POLICY, OBSERVED95_LOWER_COMMAND_POLICY):
+        if self.config.get('commandPolicy') in (OBSERVED95_LOCAL_COMMAND_POLICY, OBSERVED95_LOWER_COMMAND_POLICY,
+                                               OBSERVED95_GRASP650_COMMAND_POLICY):
             # 새 관측 전용 후보. 기존 넓은 후보를 묵시적으로 합치지 않는다.
-            close_durations = (200,250,350,450) if self.config['commandPolicy'] == OBSERVED95_LOWER_COMMAND_POLICY else (450,)
+            close_durations = {
+                OBSERVED95_LOCAL_COMMAND_POLICY: (450,),
+                OBSERVED95_LOWER_COMMAND_POLICY: (200,250,350,450),
+                OBSERVED95_GRASP650_COMMAND_POLICY: (650,),
+            }[self.config['commandPolicy']]
             permitted = (valid_shape and
                 ((command['direction'] == 'close' and command['percent'] == 60 and command['durationMs'] in close_durations) or
                  (command['direction'] == 'open' and
