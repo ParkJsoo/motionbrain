@@ -642,6 +642,33 @@ class CommissioningTests(unittest.TestCase):
         self.assertEqual(sum(v=={'action':'run'} for _,v in self.posts()),1)
         self.assertFalse(any(self.device.speeds.values()))
 
+    def contact_manual650_trial(self):
+        self.scope.update(schemaVersion=m.CONTACT_MANUAL650_SCHEMA,pulse=copy.deepcopy(m.LEARNING_PULSE),
+                          expectedStartAngleDeg=196.17,maxObservedDeltaDeg=3.)
+        self.device.angle=196.17
+        self.trial=m.M4UpCommissioning(self.scope,self.observer,'private-token',self.store,evidence_root=self.evidence,clock=self.clock)
+        self.trial.port.opener=self.device
+
+    def test_known_contact650_manual_exact_one_run_without_learning_or_model(self):
+        self.contact_manual650_trial();self.device.after_run=lambda d:setattr(d,'angle',197.5)
+        r=self.run_trial();self.assertEqual(r['status'],'completed',r)
+        self.assertEqual(r['selectionKind'],'manual_contact_response650_fixed_profile')
+        self.assertEqual(r['receipt']['requestedPulse'],m.LEARNING_PULSE)
+        self.assertTrue(r['finalIdleOffVerified']);self.assertFalse(r['trainingEligible']);self.assertFalse(r['modelSelected'])
+        self.assertFalse(r['liftVerified']);self.assertFalse(r['graspVerified'])
+        self.assertEqual(sum(v=={'action':'run'} for _,v in self.posts()),1)
+
+    def test_known_contact650_requires_contact_and_has_three_degree_stop_no_retry(self):
+        self.contact_manual650_trial();self.observer.on_before=self.unconfirmed_contact
+        r=self.run_trial();self.assertEqual(r['status'],'failed')
+        self.assertFalse(any(v=={'action':'run'} for _,v in self.posts()))
+
+    def test_known_contact650_excursion_off_without_second_run(self):
+        self.contact_manual650_trial();self.device.after_run=lambda d:setattr(d,'angle',199.3)
+        r=self.run_trial();self.assertEqual(r['status'],'failed');self.assertTrue(r['finalIdleOffVerified'])
+        self.assertEqual(sum(v=={'action':'run'} for _,v in self.posts()),1)
+        self.assertFalse(any(self.device.speeds.values()))
+
     def lift_trial(self):
         self.scope.update(schemaVersion=m.LIFT_SCHEMA,pulse=copy.deepcopy(m.LIFT_PULSE))
         self.trial=m.M4UpCommissioning(self.scope,self.observer,'private-token',self.store,evidence_root=self.evidence,clock=self.clock)
@@ -680,10 +707,30 @@ class ContactShortScopeTests(unittest.TestCase):
             if schema==m.CONTACT_PROBE_SCHEMA:s['contactState']='unknown'
             with self.subTest(schema=schema),self.assertRaises(ValueError):m.validate_scope(s)
     def test_new_schema_never_existed_in_any_recorded_implementation(self):
-        for digest in m.RECORDED_IMPLEMENTATION_DIGESTS:
+        for digest in m.RECORDED_IMPLEMENTATION_DIGESTS-{m.KNOWN_CONTACT500_RECORDED_DIGEST}:
             s=self.planned();s['implementationSha256']=digest
             with self.subTest(digest=digest),self.assertRaisesRegex(ValueError,'recorded_implementation'):m.validate_recorded_scope(s)
         s=scope();s['implementationSha256']='0774c7e4a2914f9e7c58236c9953d913f5aa2974b2e195b3574740d9cbb6238c'
+        self.assertEqual(m.validate_recorded_scope(s),s)
+        with self.assertRaisesRegex(ValueError,'implementation_changed'):m.validate_scope(s)
+
+class Contact650ScopeTests(unittest.TestCase):
+    def planned(self):
+        s=scope();s.update(schemaVersion=m.CONTACT_MANUAL650_SCHEMA,pulse=copy.deepcopy(m.LEARNING_PULSE),
+                          expectedStartAngleDeg=196.17,maxObservedDeltaDeg=3.)
+        return s
+    def test_exact650_profile_and_existing_band_limits(self):
+        s=self.planned();self.assertEqual(m.validate_scope(s),s)
+        for key,value in [('pulse',m.SHORT_PULSE),('pulse',m.LIFT_PULSE),('pulse',dict(m.LEARNING_PULSE,percent=70)),
+                          ('maxObservedDeltaDeg',1.),('maxCommands',2),('expectedStartAngleDeg',198.)]:
+            with self.subTest(key=key,value=value),self.assertRaises(ValueError):m.validate_scope(dict(s,**{key:value}))
+        with self.assertRaises(ValueError):m.validate_scope(dict(s,contactState='unknown'))
+    def test_650_never_existed_but_prior_500_remains_readonly_auditable(self):
+        for digest in m.RECORDED_IMPLEMENTATION_DIGESTS:
+            s=self.planned();s['implementationSha256']=digest
+            with self.subTest(digest=digest),self.assertRaisesRegex(ValueError,'recorded_implementation'):m.validate_recorded_scope(s)
+        s=self.planned();s.update(schemaVersion=m.CONTACT_SHORT_SCHEMA,pulse=copy.deepcopy(m.SHORT_PULSE),
+                                  implementationSha256=m.KNOWN_CONTACT500_RECORDED_DIGEST)
         self.assertEqual(m.validate_recorded_scope(s),s)
         with self.assertRaisesRegex(ValueError,'implementation_changed'):m.validate_scope(s)
 
