@@ -350,6 +350,21 @@ class ManualCollectionTests(unittest.TestCase):
         self.assertFalse((root/'readonly-failed-start-recovery/proof.json').exists())
         self.assertTrue(all(method=='GET' for method,_,_ in requests))
 
+    def test_recording_tick_uses_shared_quiet_idle_policy_at_half_second_pace(self):
+        self.start()
+        polls=[]
+        self.manager.port.check_idle=lambda **kwargs:polls.append((self.clock.monotonic(),kwargs))
+        self.clock.sleep(.25);self.manager.tick()
+        self.assertEqual(polls,[])
+        self.clock.sleep(.25);self.manager.tick()
+        self.clock.sleep(.25);self.manager.tick()
+        self.clock.sleep(.25);self.manager.tick()
+        self.assertEqual(len(polls),2)
+        flags=dict(allow_quiet_disconnect_retry=True,allow_quiet_monitor_timeout=True,
+                   allow_quiet_read_recovery=True)
+        self.assertTrue(all(kwargs==flags for _,kwargs in polls))
+        self.assertGreaterEqual(polls[1][0]-polls[0][0],.5)
+
     def test_all_joints_record_and_replay_optional_sensor(self):
         for joint, profile in PROFILES.items():
             with self.subTest(joint=joint):

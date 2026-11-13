@@ -17,7 +17,8 @@ from learning.action_journal import BoundedActionJournal
 from learning.action_recorder import ActionRecorder
 from learning.artifacts import ArtifactStore, _decode_json, _read
 from learning.supervised_collection import PROFILES, identifier
-from learning.supervised_transport import SequencePort, validate_target, validate_monitor_policy, WRIST_READ_BUDGET_REVISION
+from learning.supervised_transport import (SequencePort, validate_target, validate_monitor_policy,
+    WRIST_READ_BUDGET_REVISION, QUIET_IDLE_POLL_SECONDS, check_quiet_idle)
 
 SCHEMA = 'motionbrain.manual_collection.v1'
 REPO = Path(__file__).resolve().parents[1]
@@ -459,15 +460,14 @@ class ManualCollection:
     def tick(self):
         if self.busy or not self.current or self.current['phase'] != 'recording':
             return
-        if self.clock.monotonic()-self.last_poll < .5:
+        if self.clock.monotonic()-self.last_poll < QUIET_IDLE_POLL_SECONDS:
             return
         try:
             if self.clock.monotonic()-self.started >= 55:
                 self.finish()
                 return
             self.camera.check()
-            self.port.check_idle(allow_quiet_disconnect_retry=True, allow_quiet_monitor_timeout=True,
-                                 allow_quiet_read_recovery=True)
+            check_quiet_idle(self.port)
             self.last_poll = self.clock.monotonic()
         except Exception:
             self.current['error'] = 'recording_or_controller_monitor_failed'

@@ -30,6 +30,13 @@ ELBOW_DEADLINE_POLICY = 'elbow-deadline-350-v1'
 ELBOW_PLATEAU_POLICY = 'elbow-plateau-650-v1'
 ELBOW_FINE_POLICY = 'elbow-fine-450-v1'
 WRIST_READ_BUDGET_REVISION = 'shared-command-deadline-v2'
+QUIET_IDLE_POLL_SECONDS = .5
+
+
+def check_quiet_idle(port):
+    """비구동 대기에서만 기존 OFF 근거·공유 기한을 사용하는 제한된 GET 확인."""
+    return port.check_idle(allow_quiet_disconnect_retry=True, allow_quiet_monitor_timeout=True,
+                           allow_quiet_read_recovery=True)
 
 
 def validate_monitor_policy(pulse, policy):
