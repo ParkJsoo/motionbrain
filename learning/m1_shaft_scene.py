@@ -16,7 +16,7 @@ from learning.approach_external_guard import CurrentSceneExternalGuard, _same_ch
 from learning.artifacts import _decode_json, _read
 from learning.gripper_camera_dataset import POLICY, read_frame
 from learning.manual_collection_dataset import require
-from learning.registered_gripper_crosssection import RegisteredGripperCrosssection, SHAFT_STATE
+from learning.registered_gripper_crosssection import RegisteredGripperCrosssection, SHAFT_STATE, default_parameters
 from learning.relative_model_bundle import sha256
 from learning.supervised_collection import plan_digest
 from learning.supervised_transport import SequencePort
@@ -25,6 +25,7 @@ SCHEMA = 'motionbrain.m1_shaft_scene_guard.v1'
 OBSERVATION_SCHEMA = 'motionbrain.bound_M1_shaft_observation.v1'
 MONITOR_POLICY = 'm1-default-sequence-monitor-v1'
 REFERENCE_MEANING = 'onsite_current_M1_fixed_pose_reference_not_contact_or_grasp_success'
+OBSERVED95_LOCAL_COMMAND_POLICY = 'observed95-local450-v1'
 OBJECT_FRAGMENT_POLICY = 'fixed_reference_two_fragment_occlusion_v1'
 
 
@@ -94,6 +95,8 @@ class M1ShaftSceneGuard(CurrentSceneExternalGuard):
         fields = super()._configuration_fields() | {'actualScene', 'shaftRegistration', 'shaftReference'}
         if isinstance(self.config, dict) and 'objectObservationPolicy' in self.config:
             fields.add('objectObservationPolicy')
+        if isinstance(self.config, dict) and 'commandPolicy' in self.config:
+            fields.add('commandPolicy')
         return fields
 
     def _validate_reference(self, config):
@@ -102,6 +105,9 @@ class M1ShaftSceneGuard(CurrentSceneExternalGuard):
                 {'physicalView', 'object', 'poseRegime'} and
                 all(isinstance(v, str) and bool(v) for v in config['actualScene'].values()),
                 'M1_actual_reference_declaration_required')
+        if 'commandPolicy' in config:
+            require(config['commandPolicy'] == OBSERVED95_LOCAL_COMMAND_POLICY,
+                    'M1_explicit_command_policy_required')
         if 'objectObservationPolicy' in config:
             require(config['objectObservationPolicy'] == OBJECT_FRAGMENT_POLICY,
                     'M1_explicit_fixed_object_occlusion_policy_required')
@@ -112,6 +118,10 @@ class M1ShaftSceneGuard(CurrentSceneExternalGuard):
                                                      self._raw(self.config['shaftReference']))
         require(self.tracker.registration['sceneContext'] == self.config['actualScene'],
                 'M1_registration_actual_scene_changed')
+        if 'commandPolicy' in self.config:
+            require(self.tracker.registration['parameters'] ==
+                    default_parameters(preset='current_m1_observed_shaft95'),
+                    'M1_command_policy_observed95_registration_required')
         if 'objectObservationPolicy' in self.config:
             area = self.fixed_object['external'].get('objectArea')
             require(_number(area) and area > 0, 'M1_reference_object_area_required')
@@ -216,16 +226,26 @@ class M1ShaftSceneGuard(CurrentSceneExternalGuard):
     def validate_command(self, command):
         require(not self.active and self._status_wrapper is None, 'M1_command_already_active')
         self.check(); self._check_review_age()
-        require(isinstance(command, dict) and set(command) == {'joint','direction','percent','durationMs'} and
-                command['joint'] == 'gripper' and type(command['percent']) is int and
-                type(command['durationMs']) is int and
+        valid_shape = (isinstance(command, dict) and
+            set(command) == {'joint','direction','percent','durationMs'} and
+            command['joint'] == 'gripper' and type(command['percent']) is int and
+            type(command['durationMs']) is int)
+        if self.config.get('commandPolicy') == OBSERVED95_LOCAL_COMMAND_POLICY:
+            # 새 관측 전용 후보. 기존 넓은 후보를 묵시적으로 합치지 않는다.
+            permitted = (valid_shape and
+                ((command['direction'] == 'close' and command['percent'] == 60 and command['durationMs'] == 450) or
+                 (command['direction'] == 'open' and
+                  ((command['percent'] == 60 and command['durationMs'] in (450,550,650)) or
+                   (command['percent'] == 40 and command['durationMs'] in (250,350))))))
+        else:
+            permitted = (valid_shape and
                 ((command['direction'] == 'close' and
                   ((command['percent'] == 40 and command['durationMs'] in (200,350)) or
                    (command['percent'] == 60 and command['durationMs'] == 650))) or
                  (command['direction'] == 'open' and
                   ((command['percent'] == 40 and command['durationMs'] == 350) or
-                   (command['percent'] == 60 and command['durationMs'] == 650)))),
-                'M1_bounded_command_required')
+                   (command['percent'] == 60 and command['durationMs'] == 650)))))
+        require(permitted, 'M1_bounded_command_required')
         original = getattr(self.port,'_check_status',None)
         require(callable(original), 'M1_status_monitor_required')
         try:

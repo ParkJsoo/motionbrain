@@ -3,6 +3,8 @@
 고정 shaft 모델·현재 원본·후보 결과를 재관측하며 최대 네 번 비교한다.
 shaft 목표 도달은 접촉·힘·실제 턱끝·파지·들기 판정이 아니다. 실패 후 재시도,
 OPEN 대체, 재학습, 장치 발견이나 포트 종료 기능은 포함하지 않는다.
+observed95-local450-v1은 새 직접 관측 좌표의 별도 실험 범위다. 기존 row55
+수치 한계의 변환이나 기계 안전 한계의 증명이 아니다.
 """
 from __future__ import annotations
 
@@ -14,6 +16,9 @@ from learning import m1_shaft_learning as learning
 from learning.manual_collection_dataset import require
 from learning.supervised_collection import plan_digest
 
+OBSERVED95_POLICY = 'observed95-local450-v1'
+OBSERVED95_GOAL = 'manual_visible_jaw_configuration_reference_not_contact_or_grasp'
+
 def _finite(value):
     return type(value) in (int, float) and math.isfinite(value)
 
@@ -23,18 +28,32 @@ def _hash(value):
 
 
 def validate_scope(scope):
-    require(isinstance(scope, dict) and set(scope) == {
+    fields = {
         'targetShaftPx', 'tolerancePx', 'maxCommands', 'totalRemaining', 'maxSeconds',
         'minimumImprovementPx', 'maximumPredictionResidualPx', 'minimumObservedProgressPx',
-        'shaftMinimum', 'shaftMaximum', 'maxObservationAgeSeconds', 'maxDecisionAgeSeconds'},
+        'shaftMinimum', 'shaftMaximum', 'maxObservationAgeSeconds', 'maxDecisionAgeSeconds'}
+    observed95 = isinstance(scope, dict) and 'geometryPolicy' in scope
+    extra = {'geometryPolicy', 'startIntervalPx', 'observationRegistrationSha256', 'goalSemantics'} if observed95 else set()
+    require(isinstance(scope, dict) and set(scope) == fields | extra,
         'M1_scalar_trial_scope_fields')
-    require(all(_finite(value) for value in scope.values()), 'M1_scalar_trial_finite_scope_required')
+    require(all(_finite(scope[key]) for key in fields), 'M1_scalar_trial_finite_scope_required')
     require(type(scope['maxCommands']) is int and 1 <= scope['maxCommands'] <= 4 and
             type(scope['totalRemaining']) is int and 0 <= scope['totalRemaining'] <= 4 and
             0 < scope['maxSeconds'] <= 45, 'M1_scalar_trial_finite_budget_required')
     fixed = dict(tolerancePx=1.5, minimumImprovementPx=.25, maximumPredictionResidualPx=3.,
         minimumObservedProgressPx=.2, shaftMinimum=118., shaftMaximum=155.5,
         maxObservationAgeSeconds=3., maxDecisionAgeSeconds=.25)
+    if observed95:
+        # 새 직접 row95 실험 계약이다. 구 row55 기구 한계의 변환이나 보장이 아니다.
+        fixed.update(shaftMinimum=84., shaftMaximum=139.5, targetShaftPx=85.3)
+        interval = scope['startIntervalPx']
+        require(scope['geometryPolicy'] == OBSERVED95_POLICY and
+                scope['goalSemantics'] == OBSERVED95_GOAL and
+                _hash(scope['observationRegistrationSha256']) and
+                isinstance(interval, list) and len(interval) == 2 and
+                all(_finite(value) for value in interval) and
+                100. <= interval[0] < interval[1] <= 137.,
+                'M1_scalar_trial_observed95_contract_required')
     require(all(scope[key] == value for key, value in fixed.items()) and
             scope['shaftMinimum'] <= scope['targetShaftPx'] <= scope['shaftMaximum'],
             'M1_scalar_trial_fixed_policy_changed')
@@ -67,9 +86,15 @@ class M1ShaftTrial:
                 self.model['context']['landmarks'].startswith(learning.SHAFT_PREFIX),
                 'M1_native_scalar_model_required')
         self.scope = validate_scope(scope)
+        if self.observed95:
+            require(self.model['context']['landmarks'] == learning.SHAFT_PREFIX+
+                    self.scope['observationRegistrationSha256'], 'M1_scalar_trial_registration_changed')
         self.commands = [copy.deepcopy(entry['command']) for entry in self.model['models']
             if entry['command']['direction']=='close' and entry['command']['percent']<=60
             and entry['command']['durationMs']<=650]
+        if self.observed95:
+            self.commands = [command for command in self.commands
+                             if command['percent']==60 and command['durationMs']==450]
         require(bool(self.commands), 'M1_scalar_trial_supported_close_candidates_required')
         require(all(callable(value) for value in (observe, execute, tick, verify_assets)) and
                 callable(getattr(store, 'write_json', None)), 'M1_scalar_trial_injected_ports_required')
@@ -81,6 +106,10 @@ class M1ShaftTrial:
         self.used = False
         self._frames = set()
         self._host_clock = None
+
+    @property
+    def observed95(self):
+        return self.scope.get('geometryPolicy') == OBSERVED95_POLICY
 
     def _check(self):
         self.verify_assets()
@@ -120,6 +149,8 @@ class M1ShaftTrial:
         return float(value)
 
     def _choose(self, value):
+        # 명시적인 단일명령 시험은 사후 관측을 다음 명령 입력으로 사용하지 않는다.
+        # 최초 입력 지원·예측 범위·사후 잔차와 실제 범위 검사는 그대로 적용한다.
         decision = learning.select(self.model, value, self.scope['targetShaftPx'], self.commands,
             self.model['context'], minimum_improvement_px=self.scope['minimumImprovementPx'])
         safe = []
@@ -128,6 +159,11 @@ class M1ShaftTrial:
             if item['kind'] == 'action' and not self.scope['shaftMinimum'] <= predicted <= self.scope['shaftMaximum']:
                 decision['rejected'].append(dict(command=copy.deepcopy(item['command']),
                                                 reason='M1_predicted_shaft_outside_fence'))
+            elif self.observed95 and self.scope['maxCommands'] > 1 and item['kind'] == 'action' and abs(predicted-self.scope['targetShaftPx']) > self.scope['tolerancePx'] and not any(
+                    entry['command'] == item['command'] and entry['minimum'] <= predicted <= entry['maximum']
+                    for entry in self.model['models']):
+                decision['rejected'].append(dict(command=copy.deepcopy(item['command']),
+                                                reason='M1_predicted_nonterminal_shaft_outside_support'))
             else:
                 safe.append(item)
         stop = next(item for item in safe if item['kind'] == 'stop')
@@ -166,6 +202,10 @@ class M1ShaftTrial:
                 report['observations'].append(copy.deepcopy(record))
                 value = self._bound(record, after_off=off_at, fresh=True)
                 error = abs(value-self.scope['targetShaftPx'])
+                if self.observed95 and len(report['observations']) == 1:
+                    low, high = self.scope['startIntervalPx']
+                    require(low <= value <= high and error > self.scope['tolerancePx'],
+                            'M1_scalar_trial_independent_start_required')
                 reached = error <= self.scope['tolerancePx']
                 report['shaftGoalReachedOnly'] = reached
                 report['goalBoundaryReached'] = reached and math.isclose(error,self.scope['tolerancePx'],rel_tol=0.,abs_tol=1e-9)

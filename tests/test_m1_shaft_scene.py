@@ -9,9 +9,9 @@ import numpy as np
 from learning.artifacts import ArtifactStore
 from learning.grasp_observation import GripperObservationSource
 from learning.m1_shaft_scene import (M1ShaftSceneGuard,M1ShaftSourceObserver,SCHEMA,MONITOR_POLICY,
-    REFERENCE_MEANING,OBJECT_FRAGMENT_POLICY)
+    REFERENCE_MEANING,OBJECT_FRAGMENT_POLICY,OBSERVED95_LOCAL_COMMAND_POLICY)
 from learning.approach_external_guard import ApproachExternalGuard
-from learning.registered_gripper_crosssection import register
+from learning.registered_gripper_crosssection import register, default_parameters
 from tests import test_approach_external_guard as external_tests
 from tests.test_grasp_observation import Camera
 
@@ -84,6 +84,84 @@ class M1ShaftSceneTests(unittest.TestCase):
                         self.command('open',350,60),self.command('open',650,70),self.command('open',651,60),
                         self.command(duration=200,percent=60),
                         dict(joint='elbow',direction='up',percent=60,durationMs=350)]:
+            with self.subTest(command=command),self.assertRaisesRegex(ValueError,'bounded_command'):
+                self.guard.validate_command(command)
+
+    def install_observed95_policy(self):
+        image = self.shaft_image.copy()
+        image[70:116,80:107] = 20
+        image[70:116,220:247] = 20
+        raw = cv2.imencode('.jpg',image)[1].tobytes()
+        reg = register(raw,[166,95],self.config['actualScene'],
+                       default_parameters(preset='current_m1_observed_shaft95'))
+        self.config.update(commandPolicy=OBSERVED95_LOCAL_COMMAND_POLICY,
+            shaftRegistration=self.write_json('M1-observed95-registration.json',reg),
+            shaftReference=self.write('M1-observed95-reference.jpg',raw))
+        self.binding=self.write_json('M1-observed95-config.json',self.config)
+        self.guard=M1ShaftSceneGuard(self.repo,self.binding,self.recorder,self.port,self.store,clock=self.clock)
+        self.camera.body=raw
+        self.source=GripperObservationSource('http://camera.invalid','trial','b'*32,self.guard.scene_context,
+            ArtifactStore(self.repo/'.local/M1-observed95-gripper'),clock=self.clock,opener=self.camera)
+        self.observer=M1ShaftSourceObserver(self.source,self.guard,clock=self.clock)
+        return reg
+
+    def test_observed95_local450_policy_only_allows_exact_new_candidates(self):
+        self.install_observed95_policy()
+        self.assertEqual(self.camera.calls,[])
+        self.assertEqual(self.calls,[])
+        record,result=self.capture();self.review(record,result)
+        original=self.port._check_status
+        for command in [self.command('close',450,60),self.command('open',450,60),self.command('open',550,60),
+                        self.command('open',650,60),self.command('open',350,40),self.command('open',250,40)]:
+            self.guard.validate_command(command);self.guard.disarm()
+            self.assertIs(self.port._check_status,original)
+        for command in [self.command(),self.command(duration=200),self.command('close',650,60),
+                        self.command('open',350,60),self.command('open',450,40),
+                        self.command('open',550,40),self.command('open',650,40),
+                        self.command('open',450,70),self.command('open',450,100),
+                        self.command('open',449,60),self.command('open',451,60),
+                        self.command('open',349,40),self.command('open',351,40),
+                        self.command('open',249,40),self.command('open',251,40),self.command('open',250,60),
+                        self.command('close',449,60),self.command('close',451,60),
+                        self.command('open',549,60),self.command('open',551,60),self.command('open',651,60),
+                        self.command('close',450,70),self.command('close',450,100),
+                        self.command('close',450,True),dict(joint='elbow',direction='up',percent=60,durationMs=450)]:
+            with self.subTest(command=command),self.assertRaisesRegex(ValueError,'bounded_command'):
+                self.guard.validate_command(command)
+            self.assertIs(self.port._check_status,original)
+
+    def test_observed95_local_policy_keeps_active_fixed_M4_monitor_without_HTTP(self):
+        self.install_observed95_policy()
+        record,result=self.capture();self.review(record,result)
+        original=self.port._check_status;before=self.calls.count('http')
+        command=self.command('open',550,60)
+        self.guard.validate_command(command);self.controller.angle=196.8
+        try:
+            with self.assertRaisesRegex(ValueError,'active_fixed_M4'):
+                self.port._check_status(self.controller.status(),'ARMED',command)
+        finally:self.guard.disarm()
+        self.assertIs(self.port._check_status,original)
+        self.assertEqual(self.calls.count('http'),before)
+
+    def test_new_policy_requires_exact_observed95_registration_and_known_literal(self):
+        for policy in [OBSERVED95_LOCAL_COMMAND_POLICY,'unknown',None]:
+            config=copy.deepcopy(self.config);config['commandPolicy']=policy
+            binding=self.write_json('M1-bad-policy-config.json',config)
+            with self.subTest(policy=policy),self.assertRaisesRegex(ValueError,'command_policy'):
+                M1ShaftSceneGuard(self.repo,binding,self.recorder,self.port,self.store,clock=self.clock)
+        reg=self.install_observed95_policy()
+        parameters=default_parameters(preset='current_m1_observed_shaft95');parameters['minimumNcc']=.9
+        reg=register(self.camera.body,[166,95],self.config['actualScene'],parameters)
+        self.config['shaftRegistration']=self.write_json('M1-stricter-registration.json',reg)
+        binding=self.write_json('M1-stricter-policy-config.json',self.config)
+        with self.assertRaisesRegex(ValueError,'observed95_registration_required'):
+            M1ShaftSceneGuard(self.repo,binding,self.recorder,self.port,self.store,clock=self.clock)
+        self.assertEqual(self.calls,[])
+        self.assertEqual(self.camera.calls,[])
+
+    def test_legacy_policy_does_not_admit_new_close450_or_open550(self):
+        record,result=self.capture();self.review(record,result)
+        for command in [self.command('close',450,60),self.command('open',550,60),self.command('open',250,40)]:
             with self.subTest(command=command),self.assertRaisesRegex(ValueError,'bounded_command'):
                 self.guard.validate_command(command)
 

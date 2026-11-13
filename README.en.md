@@ -42,18 +42,21 @@ These experiments use different joints, models and observation conditions. MAE (
 | --- | --- | --- |
 | **M2 model-selected goal approach** | One command reduced image-plane goal error from **5.479° to 0.967°** | Three of four attempts that started recording stopped before actuation. A single same-day, same-view result; repeated grasping remains unvalidated |
 | **M4 downward prediction** | Six conditions, **18 training** records and **18 new post-freeze evaluations**. Per-command mean MAE **0.367°**; image-plus-command ridge **0.605°** | Adding this visual representation did not improve prediction |
-| **M1 shaft-separation prediction** | On **one new close** with the latest frozen model: error **0.18px**, command mean **0.03px** | No improvement over the previous model established. Image-plane shaft separation, not physical fingertip, contact or grasp performance |
+| **Earlier M1 shaft prediction (Nov 9)** | On **one new close** with the model frozen then: error **0.18px**, command mean **0.03px** | No improvement over the previous model established. Image-plane shaft separation, not physical fingertip, contact or grasp performance |
 | **M3 relative-state prediction near the goal** | **18 training** records; among **12 new post-freeze evaluations**, 11 common supported records had mean vector error **1.074px** for ridge and **1.341px** for command mean | Insufficient downward evaluations initially; conditional supplementation still completed only **15/16**, so no overall pass. Zero model-selected approach/grasp/lift actions in that prediction-evaluation cohort |
 | **Physical approach with a new M3 development model** | Frozen V2 selected **one UP command**; a fresh image reached the coordinate-wise goal tolerances | One manual return was separate. A single result on the tolerance boundary; repeated correction, repeatability, grasping and lifting remain unvalidated |
+| **New model-selected M1 close** | A frozen model compared CLOSE with stop and selected **one physical command**: shaft separation **126.677 → 113.767px**, output OFF verified | Nine manual preparation/collection commands were separate. The 85.3px goal was not reached. Ridge error **1.265px**, command mean **0.989px**: the mean was more accurate. Repeated correction, grasping and lifting remain unvalidated |
 | **Manual contact-and-rise experiment** | Closing and rising were observed, but the object stayed on the table: **no retained lift** | Separate from model-selection results. The final rise failed the observed-change criterion |
 
 [M2 goal approach (Korean)](docs/evidence/2026-10-31-first-model-goal-approach.md) · [M4 frozen evaluation (Korean)](docs/evidence/2026-11-04-m4-action-prediction.md) · [Lift models, observations and failures (Korean)](docs/m4-up-commissioning.md) · [M1 evaluation and physical contact experiment (Korean)](docs/evidence/2026-11-09-shaft-evaluation-and-contact-probe.md)
+
+[New M1 model-selected close: conditions, baselines and 13 manual/one model command denominators (Korean)](docs/evidence/2026-11-13-model-selected-m1-close.md)
 
 [New M3 physical approach: conditions, manual preparation and failure denominators (Korean)](docs/evidence/2026-11-13-bounded-m3-approach.md)
 
 [M3 automatic observation, frozen evaluation and incomplete denominators (Korean)](docs/evidence/2026-11-12-m3-goal-prediction.md)
 
-[M2/M3 W&B prediction evaluation report (Korean; no login required)](https://forge.coreweave.com/wandb/henrypark-personal-project/motionbrain-fixed-evaluation/reports/-M2-M3---VmlldzoxODI5OTAzOQ?accessToken=5oatt93qha9x95onnncj8tbsdgk6362irr67javlo0nymassqaaal1mj8rjcl1sz) records model/baseline comparisons, failures and evaluation denominators. This experiment executed zero model-selected grasp/lift actions; prediction evaluation remains separate from physical grasp/lift success.
+[M2/M3 W&B prediction evaluation report (Korean; no login required)](https://forge.coreweave.com/wandb/henrypark-personal-project/motionbrain-fixed-evaluation/reports/-M2-M3---VmlldzoxODI5OTAzOQ?accessToken=5oatt93qha9x95onnncj8tbsdgk6362irr67javlo0nymassqaaal1mj8rjcl1sz) records model/baseline comparisons, failures and evaluation denominators. That prediction-evaluation cohort executed zero model-selected grasp/lift actions; prediction evaluation remains separate from physical grasp/lift success.
 
 ## Physical system
 

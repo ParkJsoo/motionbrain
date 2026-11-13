@@ -42,18 +42,21 @@ ESP32 기반 5축 DC 로봇팔에 외부 카메라·집게 위 카메라와 센�
 | --- | --- | --- |
 | **M2 모델 선택 목표 접근** | 명령 1회 후 영상상 목표 오차 **5.479° → 0.967°** | 촬영 시작 4시도 중 3건은 구동 전 중단. 같은 날·같은 구도의 단발 결과이며 반복 집기 성능은 미검증 |
 | **M4 하향 예측** | 6조건·학습 **18건**·고정 후 새 평가 **18건**. 명령별 평균 MAE **0.367°**, 영상·명령 ridge **0.605°** | 이 영상 표현을 추가한 예측 개선은 확인하지 못함 |
-| **M1 턱축 간격 예측** | 최신 고정 모델의 새 닫기 **1건**에서 오차 **0.18px**, 명령 평균 **0.03px** | 이전 모델 대비 개선 미입증. 턱축의 영상 간격이며 실제 턱끝·접촉·파지 성능이 아님 |
+| **이전 M1 턱축 간격 예측(11/9)** | 당시 고정 모델의 새 닫기 **1건**에서 오차 **0.18px**, 명령 평균 **0.03px** | 이전 모델 대비 개선 미입증. 턱축의 영상 간격이며 실제 턱끝·접촉·파지 성능이 아님 |
 | **M3 목표 부근 상대 상태 예측** | 학습 **18건**, 고정 후 새 평가 **12건** 중 공통 지원 11건의 평균 벡터 오차: ridge **1.074px**, 명령 평균 **1.341px** | 내리기 평가 부족으로 미통과. 동일 모델의 조건부 보완 후에도 **15/16건** 완료라 전체 통과 아님. 해당 예측 평가 묶음의 모델 선택 접근·집기·들기 0회 |
 | **새 M3 개발 모델의 실물 접근** | 고정 V2가 선택한 UP **1회** 후 영상상 목표의 좌표별 허용범위 도달 | 수동 복귀 1회 별도. 허용오차 경계의 단발 결과이며 다회 보정·반복성·집기·들기는 미검증 |
+| **새 M1 모델 선택 닫기** | 고정 모델이 CLOSE와 정지를 비교해 선택한 **1명령** 후 턱축 간격 **126.677 → 113.767px**, OFF 확인 | 수동 준비·수집 9명령 별도. 목표 85.3px 미도달. 예측 오차 ridge **1.265px**, 명령 평균 **0.989px**로 평균이 더 정확했으며 다회 보정·집기·들기 미검증 |
 | **수동 접촉·상승 시험** | 닫기와 상승을 관측했지만 물체는 탁자에 남아 **들어 유지하지 못함** | 모델 선택 실적과 분리. 마지막 상승은 관측 변화 기준 초과로 실패 기록 |
 
 [M2 목표 접근](docs/evidence/2026-10-31-first-model-goal-approach.md) · [M4 고정 평가](docs/evidence/2026-11-04-m4-action-prediction.md) · [들기 모델·관측·실패 구분](docs/m4-up-commissioning.md) · [M1 평가와 실제 접촉 시험](docs/evidence/2026-11-09-shaft-evaluation-and-contact-probe.md)
+
+[새 M1 모델 선택 닫기의 조건·기준선·수동 13/모델 1명령 분모](docs/evidence/2026-11-13-model-selected-m1-close.md)
 
 [새 M3 실물 접근 1회의 조건·수동 준비·실패 분모](docs/evidence/2026-11-13-bounded-m3-approach.md)
 
 [M3 자동 관측·고정 평가의 조건과 미완료 분모](docs/evidence/2026-11-12-m3-goal-prediction.md)
 
-[M2·M3 W&B 예측 평가 보고서(비로그인 열람)](https://forge.coreweave.com/wandb/henrypark-personal-project/motionbrain-fixed-evaluation/reports/-M2-M3---VmlldzoxODI5OTAzOQ?accessToken=5oatt93qha9x95onnncj8tbsdgk6362irr67javlo0nymassqaaal1mj8rjcl1sz)는 모델·기준선 비교와 실패·평가 분모를 정리한 자료다. 이번 실험의 모델 선택 집기·들기는 0회이며, 예측 평가와 실제 집기·들기 성공은 구분한다.
+[M2·M3 W&B 예측 평가 보고서(비로그인 열람)](https://forge.coreweave.com/wandb/henrypark-personal-project/motionbrain-fixed-evaluation/reports/-M2-M3---VmlldzoxODI5OTAzOQ?accessToken=5oatt93qha9x95onnncj8tbsdgk6362irr67javlo0nymassqaaal1mj8rjcl1sz)는 모델·기준선 비교와 실패·평가 분모를 정리한 자료다. 해당 예측 평가 묶음의 모델 선택 집기·들기는 0회이며, 예측 평가와 실제 집기·들기 성공은 구분한다.
 
 ## 실물 시스템
 

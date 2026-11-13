@@ -3,7 +3,7 @@ import copy
 import unittest
 
 from learning import m1_shaft_learning as learning
-from learning.m1_shaft_trial import M1ShaftTrial
+from learning.m1_shaft_trial import M1ShaftTrial, OBSERVED95_POLICY, OBSERVED95_GOAL
 from tests.test_m1_shaft_learning import scalar_sample
 from tests.test_supervised_transport import Clock, Store
 
@@ -219,6 +219,116 @@ class M1ShaftTrialTests(unittest.TestCase):
         trial,ports,_=self.trial([150.]);trial.model['models'][0]['coefficient']+=1.
         result=trial.run();self.assertEqual(result['status'],'failed');self.assertEqual(ports.sent,[])
         self.assertEqual(result['errors'][0]['reason'],'M1_scalar_trial_frozen_contract_changed')
+
+
+def observed95_model(*, minimum=92., maximum=130., delta=8., duration=450):
+    rows=[]
+    for value in (minimum,maximum):
+        row=scalar_sample(f'observed95-{value}','observed95-train',value)
+        row.update(command=dict(joint='gripper',direction='close',percent=60,durationMs=duration),
+                   afterShaftPx=value-delta)
+        rows.append(row)
+    return learning.fit(rows)
+
+
+def observed95_scope(fixed, **updates):
+    result=scope(targetShaftPx=85.3,shaftMinimum=84.,shaftMaximum=139.5,
+        geometryPolicy=OBSERVED95_POLICY,startIntervalPx=[100.,105.],
+        observationRegistrationSha256=fixed['context']['landmarks'][len(learning.SHAFT_PREFIX):],
+        goalSemantics=OBSERVED95_GOAL)
+    result.update(updates);return result
+
+
+class Observed95TrialTests(unittest.TestCase):
+    trial=M1ShaftTrialTests.trial
+
+    def test_supported_nonterminal_correction_and_terminal_endpoint_outside_training_support(self):
+        fixed=observed95_model();planned=observed95_scope(fixed)
+        trial,ports,store=self.trial([101.,93.,85.3],fixed=fixed,planned=planned)
+        result=trial.run()
+        self.assertEqual(result['status'],'observed_target_reached',result)
+        self.assertEqual(result['confirmedCommands'],2)
+        self.assertEqual([c['durationMs'] for c in ports.sent],[450,450])
+        self.assertFalse(result['initialGoalAlreadySatisfied'])
+        self.assertFalse(result['graspVerified']);self.assertIn('result.json',store.rows)
+
+    def test_nonterminal_prediction_outside_next_support_abstains_without_command(self):
+        fixed=observed95_model(minimum=100.,maximum=130.,delta=10.)
+        trial,ports,_=self.trial([101.],fixed=fixed,planned=observed95_scope(fixed))
+        result=trial.run()
+        self.assertEqual(result['status'],'abstained',result);self.assertEqual(ports.sent,[])
+        decision=trial._choose(101.)
+        self.assertEqual(decision['rejected'][0]['reason'],'M1_predicted_nonterminal_shaft_outside_support')
+
+    def test_explicit_one_command_trial_observes_unsupported_after_without_reusing_as_input(self):
+        fixed=observed95_model(minimum=100.,maximum=130.,delta=10.)
+        planned=observed95_scope(fixed,maxCommands=1)
+        trial,ports,_=self.trial([101.,91.],fixed=fixed,planned=planned)
+        result=trial.run()
+        self.assertEqual(result['status'],'budget_reached',result)
+        self.assertEqual(result['commandAttempts'],1);self.assertEqual(result['confirmedCommands'],1)
+        self.assertEqual(len(ports.records),2);self.assertEqual(len(ports.sent),1)
+        self.assertFalse(result['shaftGoalReachedOnly'])
+        self.assertEqual(result['steps'][0]['actualShaftSeparationPx'],91.)
+        # 잔여예산만 1인 다회 정책은 명시적인 단일명령 실험으로 바뀌지 않는다.
+        trial,ports,_=self.trial([101.],fixed=fixed,planned=observed95_scope(fixed,totalRemaining=1))
+        self.assertEqual(trial.run()['status'],'abstained');self.assertEqual(ports.sent,[])
+
+    def test_one_command_policy_keeps_initial_support_fence_and_residual_checks(self):
+        fixed=observed95_model(minimum=100.,maximum=130.,delta=10.)
+        trial,ports,_=self.trial([99.9],fixed=fixed,planned=observed95_scope(fixed,maxCommands=1))
+        self.assertEqual(trial.run()['status'],'failed');self.assertEqual(ports.sent,[])
+        trial,ports,_=self.trial([101.,87.],fixed=fixed,planned=observed95_scope(fixed,maxCommands=1))
+        result=trial.run()
+        self.assertEqual(result['status'],'prediction_residual_exceeded');self.assertEqual(len(ports.sent),1)
+        fixed=observed95_model(minimum=102.,maximum=130.,delta=10.)
+        trial,ports,_=self.trial([101.],fixed=fixed,planned=observed95_scope(fixed,maxCommands=1))
+        self.assertEqual(trial.run()['status'],'abstained');self.assertEqual(ports.sent,[])
+        fixed=observed95_model(delta=20.)
+        trial,ports,_=self.trial([101.],fixed=fixed,planned=observed95_scope(fixed,maxCommands=1))
+        result=trial.run();self.assertEqual(result['status'],'abstained');self.assertEqual(ports.sent,[])
+        self.assertEqual(trial._choose(101.)['rejected'][0]['reason'],'M1_predicted_shaft_outside_fence')
+
+    def test_initial_goal_or_start_outside_declared_interval_never_counts_as_success(self):
+        fixed=observed95_model()
+        for value in (85.3,99.9,105.1):
+            trial,ports,_=self.trial([value],fixed=fixed,planned=observed95_scope(fixed))
+            result=trial.run()
+            with self.subTest(value=value):
+                self.assertEqual(result['status'],'failed');self.assertEqual(ports.sent,[])
+                self.assertFalse(result['shaftGoalReachedOnly'])
+                self.assertEqual(result['errors'][0]['reason'],'M1_scalar_trial_independent_start_required')
+
+    def test_actual_next_state_outside_support_stops_without_automatic_replacement(self):
+        fixed=observed95_model(minimum=93.,delta=8.)
+        trial,ports,_=self.trial([101.,92.9],fixed=fixed,planned=observed95_scope(fixed))
+        result=trial.run()
+        self.assertEqual(result['status'],'abstained',result);self.assertEqual(len(ports.sent),1)
+        self.assertEqual(result['confirmedCommands'],1)
+
+    def test_new_scope_is_exact_and_registration_bound_without_legacy_relaxation(self):
+        fixed=observed95_model();valid=observed95_scope(fixed)
+        changes=[dict(geometryPolicy='unknown'),dict(goalSemantics='grasp'),
+            dict(observationRegistrationSha256='f'*64),dict(startIntervalPx=[99.,105.]),
+            dict(startIntervalPx=[105.,105.]),dict(startIntervalPx=[100.,138.]),
+            dict(startIntervalPx=[True,105.]),dict(shaftMinimum=83.),dict(targetShaftPx=85.4),
+            dict(maximumPredictionResidualPx=4.),dict(extra=True)]
+        for change in changes:
+            with self.subTest(change=change),self.assertRaises(ValueError):
+                self.trial([101.],fixed=fixed,planned=dict(valid,**change))
+        with self.assertRaises(ValueError):
+            self.trial([101.],fixed=fixed,planned=scope(shaftMinimum=84.,shaftMaximum=139.5,targetShaftPx=85.3))
+        self.assertEqual(valid,observed95_scope(fixed))
+
+    def test_only_real_model_60_450_is_admitted_and_new_fence_still_stops(self):
+        fixed=observed95_model(duration=650)
+        with self.assertRaisesRegex(ValueError,'supported_close_candidates_required'):
+            self.trial([101.],fixed=fixed,planned=observed95_scope(fixed))
+        fixed=observed95_model()
+        trial,ports,_=self.trial([101.,83.9],fixed=fixed,planned=observed95_scope(fixed))
+        result=trial.run()
+        self.assertEqual(result['status'],'failed');self.assertEqual(len(ports.sent),1)
+        self.assertEqual(result['errors'][0]['reason'],'M1_scalar_trial_observed_shaft_outside_fence')
 
 
 if __name__=='__main__':unittest.main()
