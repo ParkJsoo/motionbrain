@@ -20,6 +20,7 @@ from learning.manual_collection_dataset import Evidence, audit_camera, audit_htt
 from learning.supervised_collection import validate_plan, plan_digest
 from learning.supervised_measurement import validate_execution
 from learning.supervised_transport import SequencePort, response_json
+from learning.http_phase_trace import http_inventory_matches
 
 TEMPLATE_SCHEMA = 'motionbrain.arm_reference_template.v1'
 REGISTRATION_SCHEMA = 'motionbrain.arm_session_reference.v1'
@@ -81,7 +82,9 @@ def audit_trial_http(ev, report, plan):
           and trial.get('quietVerifiedUntil') == trial['postEnd']
           and trial['postEnd'] >= trial['offAt'] + plan['postSeconds'], 'post_window_not_verified')
     intents = sorted(ev.root.glob('http-*-intent.json'))
-    check(bool(intents) and len(list(ev.root.glob('http-*'))) == 2 * len(intents),
+    expected = {f'http-{i:06d}-{suffix}.json' for i in range(1, len(intents)+1)
+                for suffix in ('intent', 'response')}
+    check(bool(intents) and http_inventory_matches(ev, expected),
           'http_count_error_or_retry')
     events = []
     baseline = None

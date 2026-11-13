@@ -14,6 +14,7 @@ from learning.artifacts import ArtifactStore, StorageError, _decode_json, _read,
 from learning.supervised_measurement import clock_evidence, finite, validate_execution
 from learning.supervised_transport import SequencePort, response_json, validate_pulse
 from learning.supervised_collection import PROFILES
+from learning.http_phase_trace import http_inventory_matches
 
 INDEX = 'motionbrain.manual_dataset_index.v1'
 SCHEMA = 'motionbrain.manual_video_command_dataset.v1'
@@ -135,7 +136,7 @@ def _http_records(ev, session):
     expected = {f'http-{i:06d}-{suffix}.json' for i in serials for suffix in ('intent','response')}
     if recovery:
         expected.update(f"http-{recovery['failedRequestSerial']:06d}-{suffix}.json" for suffix in ('intent','error'))
-    require({p.name for p in ev.root.glob('http-*')} == expected, 'http_evidence_count_or_retry')
+    require(http_inventory_matches(ev, expected), 'http_evidence_count_or_retry')
     return list(zip(serials, events)), recovery
 
 

@@ -12,7 +12,7 @@ import urllib.error
 
 from learning.controller_latency import deadline
 from learning.device_adapter import _NoRedirect
-from learning.http_phase_trace import HttpPhaseTrace
+from learning.http_phase_trace import HttpPhaseTrace, validate_initial_phase_report
 from learning.supervised_transport import SequencePort
 from tests.test_supervised_transport import Store
 
@@ -178,6 +178,8 @@ class HttpPhaseTraceTests(unittest.TestCase):
         self.assertEqual(server.requests,1)
         proof=store.rows['http-000001-phase.json']
         self.assertEqual(set(proof),{'phase','events','elapsedSeconds'})
+        validate_initial_phase_report(proof,store.rows['http-000001-intent.json'],
+                                      store.rows['http-000001-response.json'])
         self.assertEqual(proof['phase'],'body')
         self.assertGreaterEqual(proof['elapsedSeconds'],0.)
         self.assertTrue(any(e['phase']=='connect' and e['event']=='end' for e in proof['events']))

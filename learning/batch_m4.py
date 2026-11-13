@@ -23,6 +23,7 @@ from learning.batch_observation import observe_frame, validate_spec, digest as o
 from learning.batch_learning import prospective_evidence, evaluate, validate_model, model_sha256
 from learning.supervised_collection import plan_digest
 from learning.experiment_pipeline import encoded, atomic
+from learning.http_phase_trace import http_inventory_matches
 
 
 def require(ok, reason):
@@ -177,7 +178,11 @@ def audit_source(root, expected_result_sha, expected_scope_sha=None):
 def _audit_no_run(ev,scope,*,allow_guarded_run=False):
     """미시작 주장도 HTTP 원본·영출력·빈 큐로 검증한다. RUN 의도 하나도 허용하지 않는다."""
     intents=sorted(ev.root.glob('http-*-intent.json'))
-    require(bool(intents) and len(list(ev.root.glob('http-*')))==len(intents)*2,'m4_no_run_http_incomplete')
+    expected={f'http-{i:06d}-intent.json' for i in range(1,len(intents)+1)}
+    for i in range(1,len(intents)+1):
+        prefix=f'http-{i:06d}'
+        expected.add(prefix+('-response.json' if (ev.root/(prefix+'-response.json')).is_file() else '-error.json'))
+    require(bool(intents) and http_inventory_matches(ev,expected),'m4_no_run_http_incomplete')
     entries={};statuses=[];queue=None;last_at=None;guarded_run=0
     allowed=[('/motor',{'action':'default','speed':255}),
              ('/motor',{'action':'default','speed':100}),('/command',{'cmd':'arm'}),

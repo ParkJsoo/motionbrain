@@ -9,10 +9,79 @@ from __future__ import annotations
 import copy
 import ctypes
 import http.client
+import math
 import socket
 import sys
 import time
 import urllib.request
+
+
+def validate_initial_phase_report(report, intent, response):
+    """첫 /actions GET의 정상 완료에 붙은 진단만 검증한다. 재시도 증거가 아니다.
+
+    원래 HTTP 응답·동작 감사는 호출자가 그대로 수행한다. 이 보조 기록은
+    명령 성공·출력·제어 적격을 입증하지 않으며 실패한 요청을 성공으로 바꾸지 않는다.
+    """
+    def finite(value):
+        return type(value) in (int, float) and math.isfinite(value)
+
+    def require(value, reason):
+        if not value:
+            raise ValueError(reason)
+
+    require(isinstance(report, dict) and set(report) == {'phase', 'events', 'elapsedSeconds'}
+            and report['phase'] == 'body' and finite(report['elapsedSeconds'])
+            and report['elapsedSeconds'] >= 0, 'initial_http_phase_schema')
+    require(isinstance(intent, dict) and intent.get('method') == 'GET'
+            and intent.get('path') == '/actions' and intent.get('payload') is None
+            and finite(intent.get('startedAt')) and finite(intent.get('timeoutSeconds'))
+            and 0 < intent['timeoutSeconds'] <= 2
+            and isinstance(response, dict) and response.get('httpStatus') == 200
+            and finite(response.get('receivedAt')) and intent['startedAt'] <= response['receivedAt'],
+            'initial_http_phase_request_binding')
+    events = report['events']
+    expected = [('send', 'begin'), ('connect', 'begin'), ('connect', 'end'), ('send', 'end'),
+                ('headers', 'begin'), ('headers', 'end'), ('body', 'begin'), ('body', 'end')]
+    require(isinstance(events, list) and len(events) == len(expected), 'initial_http_phase_event_sequence')
+    previous = intent['startedAt']
+    tcp_fields = {'state', 'rto', 'rtt', 'srtt', 'rttvar', 'sendBuffered', 'txpackets', 'txbytes',
+                  'txRetransmitBytes', 'rxpackets', 'rxbytes', 'rxOutOfOrderBytes', 'txRetransmitPackets'}
+    for event, pair in zip(events, expected):
+        require(isinstance(event, dict) and set(event) in (
+                {'phase', 'event', 'at'}, {'phase', 'event', 'at', 'socket'})
+                and (event['phase'], event['event']) == pair, 'initial_http_phase_event_sequence')
+        require(finite(event['at']) and previous <= event['at'] <= response['receivedAt'],
+                'initial_http_phase_timing')
+        previous = event['at']
+        if 'socket' in event:
+            metadata = event['socket']
+            require(isinstance(metadata, dict) and set(metadata) in (
+                    {'family', 'type', 'timeoutSeconds'}, {'family', 'type', 'timeoutSeconds', 'tcp'})
+                    and type(metadata['family']) is int and metadata['family'] in (2, 10, 30)
+                    and type(metadata['type']) is int and metadata['type'] == 1
+                    and finite(metadata['timeoutSeconds']) and
+                    0 < metadata['timeoutSeconds'] <= intent['timeoutSeconds'],
+                    'initial_http_phase_socket_metadata')
+            if 'tcp' in metadata:
+                require(isinstance(metadata['tcp'], dict) and set(metadata['tcp']) == tcp_fields
+                        and all(type(v) is int and v >= 0 for v in metadata['tcp'].values()),
+                        'initial_http_phase_socket_metadata')
+    require(report['elapsedSeconds'] + 1e-9 >= response['receivedAt'] - events[0]['at'],
+            'initial_http_phase_timing')
+
+
+def http_inventory_matches(evidence, expected_names):
+    """정확한 기존 HTTP 목록에 검증된 최초 진단 파일 하나만 추가 허용한다."""
+    expected = set(expected_names)
+    actual = {path.name for path in evidence.root.glob('http-*')}
+    auxiliary = 'http-000001-phase.json'
+    if auxiliary in actual:
+        intent, response = 'http-000001-intent.json', 'http-000001-response.json'
+        if not {intent, response}.issubset(expected):
+            raise ValueError('initial_http_phase_success_pair_required')
+        validate_initial_phase_report(evidence.json(auxiliary), evidence.json(intent), evidence.json(response))
+        expected.add(auxiliary)
+    return actual == expected
 
 
 class _DarwinTCPInfo(ctypes.Structure):

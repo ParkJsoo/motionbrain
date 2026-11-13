@@ -31,7 +31,7 @@ def _reason(exc):
 def _processor():
     names = ('pipeline_evidence.py', 'manual_collection_dataset.py', 'action_recorder.py',
              'supervised_measurement.py', 'supervised_transport.py', 'supervised_collection.py',
-             'mac_clock_bridge.py', 'lossless_frame.py', 'artifacts.py')
+             'mac_clock_bridge.py', 'lossless_frame.py', 'artifacts.py', 'http_phase_trace.py')
     hashes = {name: data.digest(Path(__file__).with_name(name).read_bytes()) for name in names}
     encoded = json.dumps(dict(schema=SCHEMA, policy=data.POLICY, sources=hashes), sort_keys=True).encode()
     return data.digest(encoded)
@@ -74,7 +74,10 @@ def _no_run(ev, session):
     events = [e for e in session['events'] if e.get('kind') == 'http']
     _require(events and not any(e.get('kind') in ('http_error', 'http_retry') for e in session['events']),
              'http_failure_or_retry')
-    _require(len(list(ev.root.glob('http-*'))) == len(events) * 2, 'http_evidence_count_or_retry')
+    from learning.http_phase_trace import http_inventory_matches
+    expected = {f'http-{i:06d}-{suffix}.json' for i in range(1, len(events)+1)
+                for suffix in ('intent', 'response')}
+    _require(http_inventory_matches(ev, expected), 'http_evidence_count_or_retry')
     output = {}; boot = None; previous = None; statuses = []; queue = None; initial_latest = None
     for i, event in enumerate(events, 1):
         prefix = f'http-{i:06d}'
