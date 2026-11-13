@@ -43,10 +43,13 @@ These experiments use different joints, models and observation conditions. MAE (
 | **M2 model-selected goal approach** | One command reduced image-plane goal error from **5.479° to 0.967°** | Three of four attempts that started recording stopped before actuation. A single same-day, same-view result; repeated grasping remains unvalidated |
 | **M4 downward prediction** | Six conditions, **18 training** records and **18 new post-freeze evaluations**. Per-command mean MAE **0.367°**; image-plus-command ridge **0.605°** | Adding this visual representation did not improve prediction |
 | **M1 shaft-separation prediction** | On **one new close** with the latest frozen model: error **0.18px**, command mean **0.03px** | No improvement over the previous model established. Image-plane shaft separation, not physical fingertip, contact or grasp performance |
-| **M3 relative-state prediction near the goal** | **18 training** records; among **12 new post-freeze evaluations**, 11 common supported records had mean vector error **1.074px** for ridge and **1.341px** for command mean | Insufficient downward evaluations initially; conditional supplementation still completed only **15/16**, so no overall pass. Zero model-selected approach/grasp/lift actions in this experiment |
+| **M3 relative-state prediction near the goal** | **18 training** records; among **12 new post-freeze evaluations**, 11 common supported records had mean vector error **1.074px** for ridge and **1.341px** for command mean | Insufficient downward evaluations initially; conditional supplementation still completed only **15/16**, so no overall pass. Zero model-selected approach/grasp/lift actions in that prediction-evaluation cohort |
+| **Physical approach with a new M3 development model** | Frozen V2 selected **one UP command**; a fresh image reached the coordinate-wise goal tolerances | One manual return was separate. A single result on the tolerance boundary; repeated correction, repeatability, grasping and lifting remain unvalidated |
 | **Manual contact-and-rise experiment** | Closing and rising were observed, but the object stayed on the table: **no retained lift** | Separate from model-selection results. The final rise failed the observed-change criterion |
 
 [M2 goal approach (Korean)](docs/evidence/2026-10-31-first-model-goal-approach.md) · [M4 frozen evaluation (Korean)](docs/evidence/2026-11-04-m4-action-prediction.md) · [Lift models, observations and failures (Korean)](docs/m4-up-commissioning.md) · [M1 evaluation and physical contact experiment (Korean)](docs/evidence/2026-11-09-shaft-evaluation-and-contact-probe.md)
+
+[New M3 physical approach: conditions, manual preparation and failure denominators (Korean)](docs/evidence/2026-11-13-bounded-m3-approach.md)
 
 [M3 automatic observation, frozen evaluation and incomplete denominators (Korean)](docs/evidence/2026-11-12-m3-goal-prediction.md)
 
