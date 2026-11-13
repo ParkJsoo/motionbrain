@@ -50,6 +50,31 @@ SHORT_CANDIDATES = [PULSE, SHORT_PULSE]
 LEARNING_SCHEMAS = (LEARNING_SCHEMA, MODEL_SCHEMA, LEARNING_SHORT_SCHEMA, MODEL_SHORT_SCHEMA)
 MODEL_SCHEMAS = (MODEL_SCHEMA, MODEL_SHORT_SCHEMA)
 MAX_CONTROLLER_PROOF_AGE_SECONDS = .25
+PREPARED_CONTROLLER_PROOF_AGE_SECONDS = .20
+
+
+def prepare_controller_proof(port, *, clock, guard, save, expected_state='ARMED'):
+    """성공한 오래된 GET 근거만 최대 네 번 갱신해 최종 검사 여유를 둔다.
+
+    실패한 GET은 전파한다. 50ms 여유는 최종 250ms 검사를 대체하거나 모든
+    파일 저장·검증 시간이 들어맞는다고 보장하지 않는다. IDLE은 무출력 진단용이다.
+    """
+    require(expected_state in ('ARMED','IDLE'),'m4_proof_expected_state')
+    for cycle in range(4):
+        guard()
+        port._refresh_run_proof(require_ready=False,expected_state=expected_state)
+        guard();now=clock.monotonic()
+        if set(port.proof_started)=={'status','outputs'} and all(
+                0 <= now-at <= PREPARED_CONTROLLER_PROOF_AGE_SECONDS for at in port.proof_started.values()):
+            save('controller-pre-dispatch-admission.json',dict(preparedAt=now,preparationCycles=cycle+1,
+                expectedState=expected_state,controllerProofStarted=copy.deepcopy(port.proof_started),
+                preparedMaximumAgeSeconds=PREPARED_CONTROLLER_PROOF_AGE_SECONDS,
+                finalMaximumAgeSeconds=MAX_CONTROLLER_PROOF_AGE_SECONDS))
+            now=clock.monotonic()
+            require(all(0 <= now-at <= PREPARED_CONTROLLER_PROOF_AGE_SECONDS for at in port.proof_started.values()),
+                    'm4_controller_proof_stale')
+            return
+    raise ValueError('m4_controller_proof_stale')
 PUBLIC_FAILURE_CODES = frozenset({
     'm4_native_pre_dispatch_unavailable', 'm4_controller_proof_stale',
     'm4_pre_run_guard_stale', 'm4_pinned_before_outside_dispatch_window',
@@ -128,10 +153,11 @@ def validate_scope(scope):
     return copy.deepcopy(scope)
 
 
-# 비접촉 scope 추가 직전 구현. 완료 원본의 오프라인 재감사 전용이며
+# 이전 scope·proof 준비 구현의 원본 재감사 전용이다.
 # 실행 승인·현재 구현 검사를 대체하지 않는다.
 RECORDED_IMPLEMENTATION_DIGESTS = frozenset({
     'ed3333408c4662d442c7bd61bec579c1da16dd8e9eae79448f261f57d9b249ba',
+    '4848a96eb9411bf486fa3bc662fafa3687e723910a59e1d6032a25e7c131f179',
 })
 
 
@@ -140,8 +166,10 @@ def validate_recorded_scope(scope):
     require(isinstance(scope, dict), 'm4_scope_fields')
     if scope.get('implementationSha256') == implementation_digest():
         return validate_scope(scope)
-    require(scope.get('implementationSha256') in RECORDED_IMPLEMENTATION_DIGESTS and
-            scope.get('schemaVersion') != NONCONTACT_SCHEMA, 'm4_recorded_implementation_unknown')
+    require(scope.get('implementationSha256') in RECORDED_IMPLEMENTATION_DIGESTS and not
+            (scope.get('schemaVersion') == NONCONTACT_SCHEMA and scope.get('implementationSha256') ==
+             'ed3333408c4662d442c7bd61bec579c1da16dd8e9eae79448f261f57d9b249ba'),
+            'm4_recorded_implementation_unknown')
     candidate = copy.deepcopy(scope)
     candidate['implementationSha256'] = implementation_digest()
     validate_scope(candidate)
@@ -261,10 +289,13 @@ class _CommissioningPort(transport.SequencePort):
             kwargs['request_timeout'] = min(kwargs.get('request_timeout', remaining), remaining)
         return super()._call(path, payload, **kwargs)
 
-    def _refresh_run_proof(self, *, require_ready=True):
+    def _refresh_run_proof(self, *, require_ready=True, expected_state='ARMED'):
         # Successful reads can age during another HTTP round trip. Refresh only
-        # the older successful proof, once, before the durable RUN intent and
-        # final nonblocking guard. A failed read is never retried here.
+        # one older successful proof per bounded preparation cycle, before the
+        # durable RUN intent and final guard. Failed reads are never retried.
+        require(expected_state=='ARMED' or
+                (expected_state=='IDLE' and getattr(self,'read_only_proof',False) is True),
+                'm4_proof_expected_state')
         require(set(self.proof_started) == {'status', 'outputs'}, 'm4_controller_proof_stale')
         now = self.clock.monotonic()
         if all(0 <= now-at <= .15 for at in self.proof_started.values()):
@@ -274,7 +305,7 @@ class _CommissioningPort(transport.SequencePort):
         require(self.proof_refresh_count <= 4, 'm4_proof_refresh_budget')
         oldest = min(before, key=before.get)
         if oldest == 'status':
-            self._check_status(self._status(), 'ARMED')
+            self._check_status(self._status(), expected_state)
         else:
             self._outputs(quiet=True)
             require(self.last_outputs == {i: 0 for i in range(1, 6)}, 'driver_off_not_proven')
@@ -475,7 +506,7 @@ class M4UpCommissioning:
 
     def _prepare_dispatch_inputs(self):
         if not self.learning:
-            self.port._refresh_run_proof()
+            prepare_controller_proof(self.port,clock=self.clock,guard=self._guard,save=self.store.write_json)
             return
         for cycle in range(4):
             self._require_pinned_native_window(self.before_frames['external'], self.clock.monotonic())

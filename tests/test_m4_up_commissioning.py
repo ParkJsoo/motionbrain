@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 import urllib.parse
+from types import SimpleNamespace
 
 import cv2
 import numpy as np
@@ -272,17 +273,18 @@ class CommissioningTests(unittest.TestCase):
         self.assertEqual(proof['after']['outputs'],proof['before']['outputs'])
         guard=json.loads((self.store.root/'pre-run-guard.json').read_text())
         self.assertTrue(all(0<=guard['validatedAt']-t<=.25 for t in guard['controllerProofStarted'].values()))
-    def test_still_stale_after_one_refresh_never_sends_run(self):
+    def test_still_stale_after_bounded_successful_refreshes_never_sends_run(self):
         reads=self.delayed_arm_proof(refresh_delay=.30);result=self.run_trial()
-        self.assertEqual(result['status'],'failed');self.assertEqual(len(reads),2)
+        self.assertEqual(result['status'],'failed');self.assertEqual(len(reads),3)
+        self.assertEqual(self.trial.port.proof_refresh_count,4)
         self.assertFalse(any(p=={'action':'run'} for _,p in self.posts()))
         self.assertFalse(result['mayHaveRun']);self.assertTrue(result['finalIdleOffVerified'])
     def test_old_output_proof_refresh_rejects_even_matching_nonzero_history(self):
         original=self.trial.port._refresh_run_proof
-        def refresh():
+        def refresh(**kwargs):
             self.trial.port.proof_started={'status':self.clock.now-.01,'outputs':self.clock.now-.20}
             self.device.append(4,10);self.device.append(4,0)
-            return original()
+            return original(**kwargs)
         with patch.object(self.trial.port,'_refresh_run_proof',side_effect=refresh):result=self.run_trial()
         self.assertEqual(result['status'],'failed');self.assertFalse(result['mayHaveRun'])
         self.assertFalse(any(p=={'action':'run'} for _,p in self.posts()));self.assertTrue(result['finalIdleOffVerified'])
@@ -290,7 +292,7 @@ class CommissioningTests(unittest.TestCase):
         self.delayed_arm_proof();original=self.store.write_json
         def slow(name,value):
             original(name,value)
-            if name=='controller-proof-refresh.json':self.clock.sleep(.30)
+            if name.startswith('controller-proof-refresh'):self.clock.sleep(.30)
         with patch.object(self.store,'write_json',side_effect=slow):result=self.run_trial()
         self.assertEqual(result['status'],'failed');self.assertFalse(result['mayHaveRun'])
         self.assertFalse(any(p=={'action':'run'} for _,p in self.posts()));self.assertTrue(result['finalIdleOffVerified'])
@@ -300,6 +302,82 @@ class CommissioningTests(unittest.TestCase):
         self.assertEqual(result['status'],'failed');self.assertEqual(len(reads),2)
         self.assertFalse(any(p=={'action':'run'} for _,p in self.posts()))
         self.assertFalse(result['mayHaveRun']);self.assertTrue(result['finalIdleOffVerified'])
+
+    def test_successful_169ms_outputs_and_63ms_status_reserve_dispatch_headroom(self):
+        original_open=self.device.open;counts={'status':0,'outputs':0}
+        def delayed(request,timeout):
+            path=urllib.parse.urlsplit(request.full_url).path
+            if request.data is None and self.device.state=='ARMED' and not self.device.running:
+                if path=='/collection_status':
+                    counts['status']+=1
+                    if counts['status']==2:self.clock.sleep(.053)
+                elif path=='/action_outputs':
+                    counts['outputs']+=1
+                    if counts['outputs']==1:self.clock.sleep(.159)
+            return original_open(request,timeout)
+        self.device.open=delayed;original_write=self.store.write_json
+        def write(name,value):
+            original_write(name,value)
+            if name=='controller-proof-refresh.json':self.clock.sleep(.012)
+            if name.endswith('-intent.json') and value.get('payload')=={'action':'run'}:self.clock.sleep(.005)
+            if name=='pre-run-guard.json':self.clock.sleep(.025)
+        with patch.object(self.store,'write_json',side_effect=write):result=self.run_trial()
+        self.assertEqual(result['status'],'completed',result)
+        self.assertEqual(self.trial.port.proof_refresh_count,2)
+        prepared=json.loads((self.store.root/'controller-pre-dispatch-admission.json').read_text())
+        self.assertEqual(prepared['preparationCycles'],2)
+        self.assertTrue(all(prepared['preparedAt']-at<=.20 for at in prepared['controllerProofStarted'].values()))
+        self.assertEqual(sum(p=={'action':'run'} for _,p in self.posts()),1)
+
+    def test_slow_admission_publication_cannot_consume_prepared_headroom(self):
+        original=self.trial.port._refresh_run_proof
+        def refresh(**kwargs):
+            original(**kwargs)
+            self.trial.port.proof_started={'status':self.clock.now-.19,'outputs':self.clock.now-.19}
+        original_write=self.store.write_json
+        def write(name,value):
+            original_write(name,value)
+            if name=='controller-pre-dispatch-admission.json':self.clock.sleep(.045)
+        with patch.object(self.trial.port,'_refresh_run_proof',side_effect=refresh),patch.object(self.store,'write_json',side_effect=write):
+            result=self.run_trial()
+        self.assertEqual(result['status'],'failed');self.assertFalse(result['mayHaveRun'])
+        self.assertFalse(any(p=={'action':'run'} for _,p in self.posts()))
+        intents=[json.loads(path.read_text()) for path in self.store.root.glob('http-*-intent.json')]
+        self.assertFalse(any(value.get('payload')=={'action':'run'} for value in intents))
+
+    def test_previous_implementation_is_readonly_auditable_but_not_executable(self):
+        recorded=copy.deepcopy(self.scope)
+        recorded['implementationSha256']='4848a96eb9411bf486fa3bc662fafa3687e723910a59e1d6032a25e7c131f179'
+        self.assertEqual(m.validate_recorded_scope(recorded),recorded)
+        with self.assertRaisesRegex(ValueError,'implementation_changed'):m.validate_scope(recorded)
+        noncontact=copy.deepcopy(recorded)
+        noncontact.update(schemaVersion=m.NONCONTACT_SCHEMA,load='empty')
+        noncontact['context'].update(supportMode='empty_no_object',object='none')
+        self.assertEqual(m.validate_recorded_scope(noncontact),noncontact)
+        with self.assertRaisesRegex(ValueError,'implementation_changed'):m.validate_scope(noncontact)
+        noncontact['implementationSha256']='ed3333408c4662d442c7bd61bec579c1da16dd8e9eae79448f261f57d9b249ba'
+        with self.assertRaisesRegex(ValueError,'recorded_implementation_unknown'):m.validate_recorded_scope(noncontact)
+
+    def test_shared_preparation_can_be_checked_in_explicit_IDLE_readonly_port(self):
+        class ReadOnly(m._CommissioningPort):
+            read_only_proof=True
+            def _call(self,path,payload=None,**kwargs):
+                m.require(payload is None and not kwargs.get('run'),'readonly_write_forbidden')
+                return super()._call(path,payload,**kwargs)
+        owner=SimpleNamespace(scope=self.scope,deadline=self.clock.now+60.,angles=[],baseline_angle=220.,_guard=lambda:None)
+        port=ReadOnly(self.scope,'test-token',self.store,owner,clock=self.clock);port.opener=self.device
+        port.check_idle()
+        m.prepare_controller_proof(port,clock=self.clock,guard=owner._guard,save=self.store.write_json,expected_state='IDLE')
+        self.clock.sleep(.025)
+        self.assertTrue(all(0<=self.clock.now-at<=.25 for at in port.proof_started.values()))
+        self.assertFalse(any(payload is not None for _,payload in self.device.requests))
+        for path,payload in (('/command',{'cmd':'arm'}),('/sequence',{'action':'run'}),('/command',{'cmd':'stop'})):
+            with self.assertRaisesRegex(ValueError,'readonly_write_forbidden'):port._call(path,payload)
+        self.assertFalse(any(payload is not None for _,payload in self.device.requests))
+
+    def test_live_commissioning_port_cannot_replace_ARMED_proof_with_IDLE(self):
+        with self.assertRaisesRegex(ValueError,'proof_expected_state'):
+            self.trial.port._refresh_run_proof(require_ready=False,expected_state='IDLE')
 
     def test_slow_run_intent_cannot_reuse_old_angle_or_boot_proof(self):
         original=self.store.write_json
