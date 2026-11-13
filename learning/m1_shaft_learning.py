@@ -189,7 +189,7 @@ def select(model, shaft_separation_px, target_shaft_px, commands, context, *,
            predictor='shaftRidge', minimum_improvement_px=0.):
     """고정 scalar 예측으로 CLOSE와 정지를 비교한다. 접촉·파지를 추론하지 않는다.
 
-    출력 후보는 기존 실험 한도인 40% 이하·350ms 이하 CLOSE에 한정한다.
+    출력 후보는 전역 M1 상한인 60% 이하·650ms 이하 CLOSE에 한정한다.
     지원 범위 밖 명령은 대체하지 않고 거절 목록에 보존한다. 오차 동률이거나
     예상 개선이 margin 이하이면 정지를 택한다. 반환값은 실행 권한이 아니다.
     """
@@ -203,7 +203,7 @@ def select(model, shaft_separation_px, target_shaft_px, commands, context, *,
     keys = []
     for command in commands:
         _command_scope(context, command)
-        require(command['direction'] == 'close' and command['percent'] <= 40 and command['durationMs'] <= 350,
+        require(command['direction'] == 'close' and command['percent'] <= 60 and command['durationMs'] <= 650,
                 'shaft_selection_bounded_close_only')
         keys.append(relative.command_key(command))
     require(len(keys) == len(set(keys)), 'shaft_selection_duplicate_candidate')

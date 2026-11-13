@@ -25,6 +25,7 @@ SCHEMA = 'motionbrain.m1_shaft_scene_guard.v1'
 OBSERVATION_SCHEMA = 'motionbrain.bound_M1_shaft_observation.v1'
 MONITOR_POLICY = 'm1-default-sequence-monitor-v1'
 REFERENCE_MEANING = 'onsite_current_M1_fixed_pose_reference_not_contact_or_grasp_success'
+OBJECT_FRAGMENT_POLICY = 'fixed_reference_two_fragment_occlusion_v1'
 
 
 def _number(value):
@@ -90,7 +91,10 @@ class M1ShaftSceneGuard(CurrentSceneExternalGuard):
         self._tracker_snapshot = plan_digest(self.tracker.registration), sha256(self.tracker.reference_image)
 
     def _configuration_fields(self):
-        return super()._configuration_fields() | {'actualScene', 'shaftRegistration', 'shaftReference'}
+        fields = super()._configuration_fields() | {'actualScene', 'shaftRegistration', 'shaftReference'}
+        if isinstance(self.config, dict) and 'objectObservationPolicy' in self.config:
+            fields.add('objectObservationPolicy')
+        return fields
 
     def _validate_reference(self, config):
         require(config['referenceMeaning'] == REFERENCE_MEANING and
@@ -98,6 +102,9 @@ class M1ShaftSceneGuard(CurrentSceneExternalGuard):
                 {'physicalView', 'object', 'poseRegime'} and
                 all(isinstance(v, str) and bool(v) for v in config['actualScene'].values()),
                 'M1_actual_reference_declaration_required')
+        if 'objectObservationPolicy' in config:
+            require(config['objectObservationPolicy'] == OBJECT_FRAGMENT_POLICY,
+                    'M1_explicit_fixed_object_occlusion_policy_required')
 
     def _validate_loaded_reference(self):
         super()._validate_loaded_reference()
@@ -105,6 +112,9 @@ class M1ShaftSceneGuard(CurrentSceneExternalGuard):
                                                      self._raw(self.config['shaftReference']))
         require(self.tracker.registration['sceneContext'] == self.config['actualScene'],
                 'M1_registration_actual_scene_changed')
+        if 'objectObservationPolicy' in self.config:
+            area = self.fixed_object['external'].get('objectArea')
+            require(_number(area) and area > 0, 'M1_reference_object_area_required')
 
     @property
     def scene_context(self):
@@ -112,6 +122,40 @@ class M1ShaftSceneGuard(CurrentSceneExternalGuard):
 
     def _forearm_limit(self):
         return 3
+
+    def _measure_object(self, stats):
+        if self.config.get('objectObservationPolicy') != OBJECT_FRAGMENT_POLICY:
+            return super()._measure_object(stats)
+        objects = [s for s in stats[1:] if s[4] >= 500]
+        require(len(objects) in (1, 2), 'M1_fixed_object_fragment_count_rejected')
+        reference = self.fixed_object['external']
+        if len(objects) == 1:
+            result = super()._measure_object(stats)
+            result.update(objectFragmentCount=1, visibleAreaRatio=result['objectArea']/reference['objectArea'],
+                          objectObservationPolicy=OBJECT_FRAGMENT_POLICY, occlusionContractApplied=False)
+            return result
+        fragments = []
+        rx0, ry0, rx1, ry1 = reference['objectBox']
+        for component in objects:
+            x, y, width, height, area = map(int, component)
+            x += 450; y += 550
+            require(x > 450 and y > 550 and x+width < 850 and y+height < 950,
+                    'M1_fixed_object_fragment_clipped')
+            box = [x, y, x+width, y+height]
+            require(x >= rx0-3 and y >= ry0-3 and x+width <= rx1+3 and y+height <= ry1+3,
+                    'M1_fixed_object_fragment_outside_reference')
+            fragments.append(dict(box=box, areaPx=area))
+        union = [min(f['box'][0] for f in fragments), min(f['box'][1] for f in fragments),
+                 max(f['box'][2] for f in fragments), max(f['box'][3] for f in fragments)]
+        area = sum(f['areaPx'] for f in fragments)
+        ratio = area/reference['objectArea']
+        require(max(abs(a-b) for a,b in zip(union,reference['objectBox'])) <= 3,
+                'M1_fixed_object_fragment_extent_changed')
+        require(.7 <= ratio <= 1.05, 'M1_fixed_object_fragment_area_rejected')
+        return dict(objectBox=union, objectCenter=[(union[0]+union[2])/2,(union[1]+union[3])/2],
+            objectArea=area, objectFragmentCount=2, objectFragments=fragments, visibleAreaRatio=ratio,
+            objectObservationPolicy=OBJECT_FRAGMENT_POLICY, occlusionContractApplied=True,
+            fragmentInterpretation='고정 물체의 가림 가설; 물체 동일성·깊이·접촉·파지 검증 아님')
 
     def _verify_assets(self):
         super()._verify_assets()
@@ -173,10 +217,15 @@ class M1ShaftSceneGuard(CurrentSceneExternalGuard):
         require(not self.active and self._status_wrapper is None, 'M1_command_already_active')
         self.check(); self._check_review_age()
         require(isinstance(command, dict) and set(command) == {'joint','direction','percent','durationMs'} and
-                command['joint'] == 'gripper' and type(command['percent']) is int and command['percent'] == 40 and
+                command['joint'] == 'gripper' and type(command['percent']) is int and
                 type(command['durationMs']) is int and
-                ((command['direction'] == 'close' and command['durationMs'] in (200,350)) or
-                 (command['direction'] == 'open' and command['durationMs'] == 350)), 'M1_bounded_command_required')
+                ((command['direction'] == 'close' and
+                  ((command['percent'] == 40 and command['durationMs'] in (200,350)) or
+                   (command['percent'] == 60 and command['durationMs'] == 650))) or
+                 (command['direction'] == 'open' and
+                  ((command['percent'] == 40 and command['durationMs'] == 350) or
+                   (command['percent'] == 60 and command['durationMs'] == 650)))),
+                'M1_bounded_command_required')
         original = getattr(self.port,'_check_status',None)
         require(callable(original), 'M1_status_monitor_required')
         try:

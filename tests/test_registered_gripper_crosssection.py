@@ -89,6 +89,64 @@ class CrosssectionTests(unittest.TestCase):
             with self.subTest(mutation=mutation),self.assertRaisesRegex(ValueError,'fixed_configuration_changed'):
                 register(self.raw,[166,95],self.context,changed_parameters)
 
+    def distal_image(self):
+        image=self.image.copy()
+        image[35:67,60:120]=220;image[35:67,190:260]=220
+        image[70:91,80:107]=20;image[70:91,220:247]=20
+        return image
+
+    def test_distal_preset_is_explicit_extrapolation_to55_with_new_semantics(self):
+        raw=self.encode(self.distal_image())
+        parameters=default_parameters(preset='current_m1_distal_shaft')
+        self.assertEqual(parameters['shaft']['rows'],[70,90])
+        self.assertEqual(parameters['shaft']['referenceRow'],55)
+        reg=register(raw,[166,95],self.context,parameters)
+        self.assertIn('rows70_90_extrapolated_to_image_row55',reg['seedSemantics'])
+        self.assertIn('not_direct_row55_pixels',reg['seedSemantics'])
+        tracker=RegisteredGripperCrosssection(reg,raw)
+        result=tracker.observe_shaft(raw,'distal-fit')
+        for name in ('jawLeft','jawRight'):
+            self.assertEqual(result['annotation']['points'][name][1],55)
+            q=result['quality'][name]
+            self.assertEqual(q['acceptedRows'],21)
+            self.assertEqual(q['extrapolationBeyondNearestObservedRowPx'],15)
+            self.assertEqual(q['distanceFromWindowCenterPx'],25)
+            self.assertFalse(q['projectionUncertaintyCalibrated'])
+            self.assertFalse(q['measurementAccuracyVerified'])
+        self.assertFalse(result['measurementAccuracyVerified'])
+        self.assertNotEqual(reg['parametersSha256'],self.registration['parametersSha256'])
+        with self.assertRaisesRegex(ValueError,'crosssection_rows_insufficient'):
+            self.tracker.observe_shaft(raw,'no-row55-shaft')
+
+    def test_distal_preset_preserves_quality_gates_and_rejects_unregistered_row80(self):
+        image=self.distal_image();raw=self.encode(image)
+        parameters=default_parameters(preset='current_m1_distal_shaft')
+        reg=register(raw,[166,95],self.context,parameters);tracker=RegisteredGripperCrosssection(reg,raw)
+        changed=image.copy();changed[70:91,190:260]=220
+        changed[70:91,193:213]=20;changed[70:91,233:253]=20
+        with self.assertRaisesRegex(ValueError,'crosssection_ambiguous_run'):
+            tracker.observe_shaft(self.encode(changed),'ambiguous-distal')
+        changed=image.copy();changed[70:76,190:260]=220
+        with self.assertRaisesRegex(ValueError,'crosssection_rows_insufficient'):
+            tracker.observe_shaft(self.encode(changed),'missing-distal')
+        for key,value in [('minimumRows',15),('minimumRowSpan',15),('maximumCenterLineResidualPx',2.),
+                          ('maximumWidthRangePx',9),('referenceRow',80),('rows',[69,90])]:
+            changed_parameters=copy.deepcopy(parameters);changed_parameters['shaft'][key]=value
+            with self.subTest(key=key),self.assertRaisesRegex(ValueError,'fixed_configuration_changed'):
+                register(raw,[166,95],self.context,changed_parameters)
+
+    def test_distal_projection_reports_distance_from_actual_accepted_rows(self):
+        image=self.distal_image();raw=self.encode(image)
+        reg=register(raw,[166,95],self.context,default_parameters(preset='current_m1_distal_shaft'))
+        tracker=RegisteredGripperCrosssection(reg,raw)
+        changed=image.copy();changed[70:74,190:260]=220
+        observed=tracker.observe_shaft(self.encode(changed),'partial-distal-window')
+        quality=observed['quality']['jawRight']
+        self.assertEqual(quality['acceptedRows'],17)
+        self.assertEqual(quality['acceptedRowRange'],[74,90])
+        self.assertEqual(quality['extrapolationBeyondNearestObservedRowPx'],19)
+        self.assertFalse(quality['projectionUncertaintyCalibrated'])
+
     def test_independent_shaft_movement_and_explicit_semantics(self):
         before = self.tracker.observe(self.raw,'before')
         changed = self.image.copy()

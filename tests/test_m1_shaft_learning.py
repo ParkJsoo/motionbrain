@@ -180,8 +180,8 @@ class ShaftSelectionTests(unittest.TestCase):
             m.select(self.model,50.,40.,self.commands,dict(self.context,poseRegime='another'))
         for value in ([0.,0.,40.],float('nan'),float('inf'),-1.,True):
             with self.subTest(value=value),self.assertRaises(ValueError):self.choose(target=value)
-        for command in (dict(self.close200,direction='open'),dict(self.close200,percent=41),
-                        dict(self.close200,durationMs=351),dict(self.close200,extra='unknown'),
+        for command in (dict(self.close200,direction='open'),dict(self.close200,percent=61),
+                        dict(self.close200,durationMs=651),dict(self.close200,extra='unknown'),
                         dict(self.close200,percent=True),dict(self.close200,joint='wrist',direction='up')):
             with self.subTest(command=command),self.assertRaises(ValueError):
                 m.select(self.model,50.,40.,[command],self.context)
@@ -190,6 +190,22 @@ class ShaftSelectionTests(unittest.TestCase):
         with self.assertRaises(ValueError):self.choose(predictor='unknown')
         for margin in (True,-1.,float('nan')):
             with self.subTest(margin=margin),self.assertRaises(ValueError):self.choose(minimum_improvement_px=margin)
+    def test_global_M1_60_percent_650ms_candidate_requires_its_own_fixed_evidence(self):
+        command=dict(self.close200,percent=60,durationMs=650)
+        missing=m.select(self.model,50.,35.,[command],self.context)
+        self.assertEqual(missing['status'],'abstained')
+        self.assertEqual(missing['rejected'][0]['reason'],'command_without_two_training_transitions')
+        rows=[]
+        for value in (40.,60.):
+            row=scalar_sample(f'strong-{value}','strong-train',value)
+            row.update(command=copy.deepcopy(command),afterShaftPx=value-15.)
+            rows.append(row)
+        fixed=m.fit(rows)
+        result=m.select(fixed,50.,35.,[command],fixed['context'])
+        self.assertEqual(result['selected']['command'],command)
+        self.assertEqual(result['selected']['predictedShaftSeparationPx'],35.)
+        self.assertFalse(result['executionAuthorized']);self.assertFalse(result['graspVerified'])
+
     def test_model_commands_context_and_output_selection_are_independent_copies(self):
         before=copy.deepcopy((self.model,self.commands,self.context))
         result=self.choose()

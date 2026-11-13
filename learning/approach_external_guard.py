@@ -246,13 +246,18 @@ class ApproachExternalGuard:
         hsv = cv2.cvtColor(image[550:950, 450:850], cv2.COLOR_BGR2HSV)
         mask = cv2.inRange(hsv, np.array([145, 90, 100]), np.array([179, 255, 255]))
         _, _, stats, _ = cv2.connectedComponentsWithStats(mask)
+        object_measurement = self._measure_object(stats)
+        return dict(forearmCenter=[x0+x+28.5, y0+y+32], ncc=float(peak), peakGap=gap,
+                    **object_measurement)
+
+    def _measure_object(self, stats):
+        """기본 계약은 원래대로 큰 색 영역 한 개만 허용한다."""
         objects = [s for s in stats[1:] if s[4] >= 500]
         require(len(objects) == 1, 'approach_external_object_ambiguous')
         ox, oy, w, h, area = map(int, objects[0]); ox += 450; oy += 550
         require(ox > 450 and oy > 550 and ox+w < 850 and oy+h < 950,
                 'approach_external_object_clipped')
-        return dict(forearmCenter=[x0+x+28.5, y0+y+32], ncc=float(peak), peakGap=gap,
-                    objectBox=[ox, oy, ox+w, oy+h], objectCenter=[ox+w/2, oy+h/2], objectArea=area)
+        return dict(objectBox=[ox, oy, ox+w, oy+h], objectCenter=[ox+w/2, oy+h/2], objectArea=area)
 
     def review(self, record, result, *, deadline, tick):
         require(not self.active, 'approach_external_review_during_output')

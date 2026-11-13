@@ -17,11 +17,13 @@ SHAFT_METHOD = 'registered_gripper_shaft_only_points'
 SHAFT_STATE = ['shaftSeparationPx']
 STATE = ['objectMinusJawMidXpx', 'objectMinusJawMidYpx', 'shaftSeparationPx']
 SEMANTICS = 'object_top_center_and_independent_shaft_centerline_intersections_at_image_row55_not_tips_contact_or_physical_opening'
+DISTAL_SEMANTICS = ('object_top_center_and_independent_distal_shaft_line_fit_rows70_90_extrapolated_to_image_row55'
+                    '_not_direct_row55_pixels_not_tips_contact_or_physical_opening')
 
 
 def default_parameters(*, preset=None):
-    """기본 계약은 보존하고 현재 M1 닫기용 별도 등록에서만 오른쪽 ROI를 넓힌다."""
-    _require(preset in (None, 'current_m1_close'), 'crosssection_unknown_parameter_preset')
+    """기본 계약을 보존하고 현재 M1 닫기·직선부 관측을 별도 preset으로 등록한다."""
+    _require(preset in (None, 'current_m1_close', 'current_m1_distal_shaft'), 'crosssection_unknown_parameter_preset')
     parameters = dict(imageShape=[240, 320], objectPatchRoi=[140, 67, 206, 133],
                 objectSearchRoi=[116, 43, 230, 157], minimumNcc=.85,
                 minimumPeakGap=.04, peakExclusionRadius=3, minimumTemplateStd=1.5,
@@ -30,17 +32,21 @@ def default_parameters(*, preset=None):
                     darkThreshold=100, runWidthPx=[18, 36], edgeProbePx=2,
                     minimumEdgeContrast=30., minimumRows=16, minimumRowSpan=16,
                     maximumCenterLineResidualPx=1.5, maximumWidthRangePx=8))
-    if preset == 'current_m1_close':
+    if preset in ('current_m1_close', 'current_m1_distal_shaft'):
         parameters['shaft']['rois']['jawRight'] = [190, 260]
+    if preset == 'current_m1_distal_shaft':
+        parameters['shaft']['rows'] = [70, 90]
+        parameters['shaft']['referenceRow'] = 55
     return parameters
 
 
 def _parameters(p):
     expected = default_parameters()
     current_close = default_parameters(preset='current_m1_close')
+    current_distal = default_parameters(preset='current_m1_distal_shaft')
     _require(isinstance(p, dict) and set(p) == set(expected), 'crosssection_parameter_fields')
     _require(p['imageShape'] == expected['imageShape'] and
-             p['shaft'] in (expected['shaft'], current_close['shaft']),
+             p['shaft'] in (expected['shaft'], current_close['shaft'], current_distal['shaft']),
              'crosssection_fixed_configuration_changed')
     _require(p['objectPatchRoi'] == expected['objectPatchRoi']
              and p['objectSearchRoi'] == expected['objectSearchRoi'], 'crosssection_object_roi_changed')
@@ -65,10 +71,23 @@ def _fail(condition, reason, diagnostic):
         raise error
 
 
+def _seed_semantics(parameters):
+    shaft = parameters.get('shaft') if isinstance(parameters, dict) else None
+    if isinstance(shaft, dict) and shaft.get('rows') == [70, 90] and shaft.get('referenceRow') == 55:
+        return DISTAL_SEMANTICS
+    return SEMANTICS
+
+
 def _shaft(gray, name, p):
     a, b = p['rois'][name]; start, end = p['rows']; probe = p['edgeProbePx']
     diagnostic = dict(method='independent_dark_shaft_crosssection_v1', rows=[],
                       fixedSpanAssumption=False, symmetryAssumption=False)
+    if p['rows'] == [70, 90] and p['referenceRow'] == 55:
+        diagnostic.update(method='independent_distal_shaft_line_extrapolation_v1',
+            coordinateMeaning='rows70_90_line_fit_extrapolated_to_unobserved_row55',
+            observedRowRange=[70, 90], reportedReferenceRow=55,
+            extrapolationBeyondNearestObservedRowPx=15, distanceFromWindowCenterPx=25,
+            projectionUncertaintyCalibrated=False, measurementAccuracyVerified=False)
     accepted = []
     for y in range(start, end+1):
         row = gray[y].astype(float); dark = row[a:b] < p['darkThreshold']
@@ -106,6 +125,9 @@ def _shaft(gray, name, p):
     diagnostic.update(acceptedRows=len(accepted), slope=float(slope),
         maximumResidualPx=residual, widthRangePx=[min(widths), max(widths)],
         point=[float(intercept), p['referenceRow']])
+    if p['rows'] == [70, 90] and p['referenceRow'] == 55:
+        diagnostic.update(acceptedRowRange=[int(ys.min()), int(ys.max())],
+            extrapolationBeyondNearestObservedRowPx=float(np.min(np.abs(ys-p['referenceRow']))))
     _fail(residual <= p['maximumCenterLineResidualPx']
           and max(widths)-min(widths) <= p['maximumWidthRangePx'],
           'crosssection_rows_inconsistent', diagnostic)
@@ -128,7 +150,7 @@ def register(reference_image, object_point, scene_context, parameters=None):
     registration = dict(schemaVersion=SCHEMA, imageShape=p['imageShape'], points=points,
         parameters=p, parametersSha256=_digest(p), referenceImageSha256=_sha(reference_image),
         referencePixelSha256=pixel_sha, sceneContext=copy.deepcopy(scene_context),
-        seedSemantics=SEMANTICS, stateFields=STATE.copy(), trainingEligible=False, controlEligible=False)
+        seedSemantics=_seed_semantics(p), stateFields=STATE.copy(), trainingEligible=False, controlEligible=False)
     registration['registrationSha256'] = _digest(registration)
     RegisteredGripperCrosssection(registration, reference_image).observe(reference_image, 'registration-self-check')
     return registration
@@ -186,7 +208,7 @@ class RegisteredGripperCrosssection:
             'referenceImageSha256', 'referencePixelSha256', 'sceneContext', 'seedSemantics',
             'stateFields', 'trainingEligible', 'controlEligible', 'registrationSha256'}
             and r['schemaVersion'] == SCHEMA and r['stateFields'] == STATE
-            and r['seedSemantics'] == SEMANTICS and r['trainingEligible'] is False
+            and r['seedSemantics'] == _seed_semantics(r['parameters']) and r['trainingEligible'] is False
             and r['controlEligible'] is False, 'crosssection_contract_fields')
         _require(_digest({k:v for k,v in r.items() if k != 'registrationSha256'}) == r['registrationSha256']
              and _digest(r['parameters']) == r['parametersSha256']
