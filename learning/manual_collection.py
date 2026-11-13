@@ -9,6 +9,7 @@ import copy
 import hashlib
 import json
 from pathlib import Path
+import re
 import shutil
 import time
 import uuid
@@ -242,45 +243,71 @@ class ManualCollection:
             self.busy = False
 
     def recover_failed_start_readonly(self, session_id, source_sha256):
-        """재시작 후에도 GET만 시도한 시작 실패를 현재 OFF 근거로 종결한다.
+        """재시작 후 GET만 수행한 시작 실패를 원본 변경 없이 현재 OFF 근거로 종결한다."""
+        return self._recover_no_motion_readonly(session_id, source_sha256)
 
-        유실된 포트의 기본값으로 실행 이력을 추정하지 않는다. 디스크의 원본·
-        모든 요청 의도와 공유 원장을 확인하며, 실패 기록이나 재실행 금지는 보존한다.
+    def recover_observed_no_run_readonly(self, session_id, source_sha256, controller_boot_id):
+        """촬영은 했지만 동작 요청이 없던 종료 실패를 동일 부팅의 GET 근거로 종결한다.
+
+        원본 실패·관측·재실행 금지는 보존한다. 과거 요청은 GET 또는 정지/큐 비우기/
+        기본 출력 100 복원만 허용하며, 새로 보내는 요청은 현재 OFF/빈 큐 확인 GET뿐이다.
+        이 결과는 촬영 성공·원설정 복원·모델 성과를 뜻하지 않는다.
         """
+        boot = _boot_identity({'bootId': controller_boot_id})
+        return self._recover_no_motion_readonly(session_id, source_sha256, observed_boot=boot)
+
+    def _recover_no_motion_readonly(self, session_id, source_sha256, *, observed_boot=None):
+        observed = observed_boot is not None
+        prefix = 'observed_no_run_recovery' if observed else 'failed_start_recovery'
         if (self.busy or self.current is not None or self.port is not None or self.camera is not None
                 or self.store is not None or not identifier(session_id)):
-            raise ValueError('failed_start_recovery_idle_owner_required')
+            raise ValueError(prefix+'_idle_owner_required')
         root = self.root/session_id
         raw = _read(self.root, session_id+'/session.json')
         plan_raw = _read(self.root, session_id+'/plan.json')
         if hashlib.sha256(raw).hexdigest() != source_sha256:
-            raise ValueError('failed_start_recovery_source_changed')
+            raise ValueError(prefix+'_source_changed')
         original, plan = _decode_json(raw), _decode_json(plan_raw)
         events = original.get('events')
         allowed = {'/actions', '/status', '/collection_status', '/sequence',
                    '/action_outputs', '/collection_outputs'}
+
+        def permitted(path, payload, method):
+            if not isinstance(path, str):
+                return False
+            if payload is None and method == 'GET':
+                return path in allowed or observed and re.fullmatch(
+                    r'/action_outputs\?after=[0-9]+(?:&limit=[1-9][0-9]*)?', path) is not None
+            return observed and method == 'POST' and (path, payload) in (
+                ('/command', {'cmd': 'stop'}), ('/sequence', {'action': 'clear'}),
+                ('/motor', {'action': 'default', 'speed': 100}))
         if (original.get('schemaVersion') != SCHEMA or original.get('sessionId') != session_id
-                or original.get('phase') != 'failed' or original.get('error') != 'session_start_failed'
-                or original.get('finalIdleOffVerified') is not False or original.get('frames') != []
-                or original.get('recording') is not None or not isinstance(events, list) or not events
-                or any(e.get('kind') not in ('http', 'http_error') or e.get('path') not in allowed
-                       or e.get('payload') is not None for e in events)
+                or original.get('phase') != 'failed' or original.get('error') != ('output_off_unverified' if observed else 'session_start_failed')
+                or original.get('finalIdleOffVerified') is not False
+                or (not isinstance(original.get('frames'), list) or not isinstance(original.get('recording'), dict)
+                    if observed else original.get('frames') != [] or original.get('recording') is not None)
+                or not isinstance(events, list) or not events
+                or any(not isinstance(e, dict) or e.get('kind') not in ('http', 'http_error')
+                       or not permitted(e.get('path'), e.get('payload'),
+                           'GET' if e.get('payload') is None else 'POST') for e in events)
+                or (observed and {e.get('response', {}).get('bootId') for e in events
+                    if e.get('kind') == 'http' and e.get('path') == '/actions'} != {observed_boot})
                 or plan.get('sessionId') != session_id or plan.get('controllerUrl') != self.controller_url
                 or plan.get('camera', {}).get('deviceId') != self.device_id
                 or plan.get('camera', {}).get('viewId') != self.view_id
-                or (root/'native-camera').exists() or any(root.glob('command-*.json'))
-                or (root/'readonly-recovery').exists() or (root/'readonly-failed-run-recovery').exists()):
-            raise ValueError('failed_start_recovery_owned_source_required')
+                or (not observed and (root/'native-camera').exists()) or any(root.glob('command-*'))
+                or (root/'readonly-recovery').exists() or (root/'readonly-failed-run-recovery').exists()
+                or (observed and (root/'readonly-failed-start-recovery').exists())):
+            raise ValueError(prefix+'_owned_source_required')
         intents = {}
         for path in root.glob('http-*-intent.json'):
             body = _read(root, path.name)
             intent = _decode_json(body)
-            if (intent.get('method') != 'GET' or intent.get('payload') is not None
-                    or intent.get('path') not in allowed):
-                raise ValueError('failed_start_recovery_get_only_required')
+            if not isinstance(intent, dict) or not permitted(intent.get('path'), intent.get('payload'), intent.get('method')):
+                raise ValueError(prefix+'_get_only_required')
             intents[path.name] = body
         if not intents:
-            raise ValueError('failed_start_recovery_get_only_required')
+            raise ValueError(prefix+'_get_only_required')
         if self.journal is None:
             self.journal = BoundedActionJournal(str(self.journal_path), 10000)
         db = self.journal.connection
@@ -292,8 +319,8 @@ class ManualCollection:
             if (_read(self.root, session_id+'/session.json') != raw
                     or _read(self.root, session_id+'/plan.json') != plan_raw
                     or {p.name: _read(root, p.name) for p in root.glob('http-*-intent.json')} != intents
-                    or (root/'native-camera').exists() or any(root.glob('command-*.json'))):
-                raise ValueError('failed_start_recovery_source_changed')
+                    or (not observed and (root/'native-camera').exists()) or any(root.glob('command-*'))):
+                raise ValueError(prefix+'_source_changed')
 
         def verify_row():
             current = db.execute('SELECT plan_hash,output_path,phase,result_json FROM supervised_blocks WHERE session_id=?',
@@ -303,31 +330,36 @@ class ManualCollection:
                     or not self.journal.readiness()['ready']
                     or db.execute("SELECT session_id FROM supervised_blocks WHERE phase IN ('pending','off_unverified')").fetchall()
                        != [(session_id,)]):
-                raise ValueError('failed_start_recovery_owned_block_required')
+                raise ValueError(prefix+'_owned_block_required')
 
         verify_row()
         self.busy = True
         port = None
         try:
-            store = ArtifactStore(root/'readonly-failed-start-recovery')
+            store = ArtifactStore(root/('readonly-observed-no-run-recovery' if observed else 'readonly-failed-start-recovery'))
             port = SequencePort(self.controller_url, self.token, 'discovering', store,
                                 clock=self.clock, compact_reads=True, timeout=2)
-            port.boot_id = _boot_identity(port._call('/actions'))
+            discovered_boot = _boot_identity(port._call('/actions'))
+            if observed and discovered_boot != observed_boot:
+                raise ValueError(prefix+'_boot_changed')
+            port.boot_id = discovered_boot
             snapshot = port.preflight()
             if not port.off_verified or port.may_have_run or port.writes_possible:
-                raise ValueError('failed_start_recovery_current_off_not_proven')
+                raise ValueError(prefix+'_current_off_not_proven')
             verify_source()
             store.write_json('proof.json', dict(sessionId=session_id, originalSessionSha256=source_sha256,
                 originalResultSha256=hashlib.sha256(row[3].encode()).hexdigest(), snapshot=snapshot,
                 currentOffVerified=True, noWrites=True, originalOutcomeChanged=False,
-                datasetEligible=False, replayAllowed=False))
+                datasetEligible=False, replayAllowed=False,
+                originalConfigurationRestoreConfirmed=False, originalNoMotionRequestVerified=observed))
             with db:
                 verify_source(); verify_row()
                 changed = db.execute('UPDATE supervised_blocks SET phase=? WHERE session_id=? AND plan_hash=? '
                     'AND output_path=? AND phase=? AND result_json=?',
-                    ('resolved_no_run_after_stop', session_id, expected_plan, str(root), 'off_unverified', row[3]))
+                    ('resolved_current_off_no_run_observed' if observed else 'resolved_no_run_after_stop',
+                     session_id, expected_plan, str(root), 'off_unverified', row[3]))
                 if changed.rowcount != 1:
-                    raise ValueError('failed_start_recovery_owned_block_required')
+                    raise ValueError(prefix+'_owned_block_required')
             return dict(sessionId=session_id, currentOffVerified=True, noWrites=True,
                         originalOutcomeChanged=False, replayAllowed=False)
         finally:
