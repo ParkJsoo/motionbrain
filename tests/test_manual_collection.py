@@ -1,4 +1,5 @@
 import copy
+import hashlib
 import json
 from pathlib import Path
 import tempfile
@@ -235,6 +236,119 @@ class ManualCollectionTests(unittest.TestCase):
         self.assertEqual(self.manager.journal.connection.execute('SELECT phase FROM supervised_blocks').fetchone()[0], 'off_unverified')
         self.assertFalse((self.manager.store.root/'readonly-recovery'/'proof.json').exists())
         with self.assertRaisesRegex(ValueError, 'interrupted_collection'): self.start()
+
+    def reload_failed_start(self):
+        from learning.action_journal import BoundedActionJournal
+        device,requests,factory=self.failed_readonly_start()
+        root=self.manager.store.root
+        raw=(root/'session.json').read_bytes()
+        sid=self.manager.current['sessionId']
+        self.manager.close()
+        self.manager=self.make()
+        self.manager.journal=BoundedActionJournal(str(self.manager.journal_path),10000)
+        requests.clear()
+        return device,requests,factory,root,raw,sid,hashlib.sha256(raw).hexdigest()
+
+    def test_reloaded_failed_start_get_recovery_preserves_original_result(self):
+        device,requests,factory,root,raw,sid,digest=self.reload_failed_start()
+        db=self.manager.journal.connection
+        original_row=db.execute('SELECT result_json FROM supervised_blocks WHERE session_id=?',(sid,)).fetchone()[0]
+        original_files={p.name:p.read_bytes() for p in root.iterdir() if p.is_file()}
+        with patch('learning.manual_collection.SequencePort',side_effect=factory):
+            result=self.manager.recover_failed_start_readonly(sid,digest)
+        self.assertTrue(result['noWrites'])
+        self.assertTrue(result.get('offVerified',result.get('currentOffVerified')))
+        self.assertEqual((root/'session.json').read_bytes(),raw)
+        self.assertTrue(all((root/name).read_bytes()==body for name,body in original_files.items()))
+        self.assertEqual(db.execute('SELECT phase,result_json FROM supervised_blocks WHERE session_id=?',(sid,)).fetchone(),
+                         ('resolved_no_run_after_stop',original_row))
+        self.assertTrue(requests)
+        self.assertTrue(all(method=='GET' for method,_,_ in requests))
+        self.assertTrue(all(payload is None for _,payload in device.requests))
+        proof=json.loads((root/'readonly-failed-start-recovery/proof.json').read_text())
+        self.assertEqual(proof['originalSessionSha256'],digest)
+        self.assertTrue(proof['noWrites'])
+        self.assertIsNone(self.manager.current)
+        count=len(requests)
+        with self.assertRaises(Exception):self.manager.recover_failed_start_readonly(sid,digest)
+        self.assertEqual(len(requests),count)
+
+    def test_reloaded_failed_start_recovery_rejects_owner_source_and_original_POST(self):
+        _,requests,factory,root,raw,sid,digest=self.reload_failed_start()
+        with patch('learning.manual_collection.SequencePort',side_effect=factory) as transport:
+            for name,value in [('busy',True),('current',{}),('port',object()),('store',object()),('camera',object())]:
+                with self.subTest(owner=name),patch.object(self.manager,name,value):
+                    with self.assertRaises(ValueError):self.manager.recover_failed_start_readonly(sid,digest)
+            with self.assertRaises(ValueError):self.manager.recover_failed_start_readonly(sid,'0'*64)
+            (root/'session.json').write_bytes(raw+b' ')
+            with self.assertRaises(ValueError):self.manager.recover_failed_start_readonly(sid,digest)
+            (root/'session.json').write_bytes(raw)
+            (root/'http-999999-intent.json').write_text(json.dumps(dict(method='POST',payload=dict(action='run'))))
+            with self.assertRaises(ValueError):self.manager.recover_failed_start_readonly(sid,digest)
+            transport.assert_not_called()
+        self.assertEqual(requests,[])
+        self.assertFalse((root/'readonly-failed-start-recovery').exists())
+        self.assertEqual(self.manager.journal.connection.execute('SELECT phase FROM supervised_blocks').fetchone()[0],
+                         'off_unverified')
+
+    def test_reloaded_failed_start_recovery_requires_empty_get_only_original(self):
+        _,requests,factory,root,raw,sid,digest=self.reload_failed_start()
+        db=self.manager.journal.connection
+        original=json.loads(raw)
+        changes=[lambda d:d.update(phase='recording'),lambda d:d.update(error='command_failed_no_retry'),
+            lambda d:d.update(frames=[dict(frameIndex=0)]),
+            lambda d:d['events'].append(dict(kind='command')),
+            lambda d:d['events'].append(dict(kind='http',path='/sequence',payload=dict(action='run')))]
+        with patch('learning.manual_collection.SequencePort',side_effect=factory) as transport:
+            for change in changes:
+                value=copy.deepcopy(original);change(value);changed=json.dumps(value).encode()
+                (root/'session.json').write_bytes(changed)
+                db.execute('UPDATE supervised_blocks SET result_json=? WHERE session_id=?',(changed.decode(),sid));db.commit()
+                with self.subTest(change=change),self.assertRaises(ValueError):
+                    self.manager.recover_failed_start_readonly(sid,hashlib.sha256(changed).hexdigest())
+            (root/'session.json').write_bytes(raw)
+            db.execute('UPDATE supervised_blocks SET result_json=? WHERE session_id=?',(json.dumps(original),sid));db.commit()
+            (root/'native-camera').mkdir()
+            with self.assertRaises(ValueError):self.manager.recover_failed_start_readonly(sid,digest)
+            transport.assert_not_called()
+        self.assertEqual(requests,[])
+        self.assertFalse((root/'readonly-failed-start-recovery').exists())
+
+    def test_reloaded_failed_start_recovery_requires_exact_DB_and_unique_legacy_ready(self):
+        _,requests,factory,root,raw,sid,digest=self.reload_failed_start()
+        db=self.manager.journal.connection
+        row=db.execute('SELECT * FROM supervised_blocks WHERE session_id=?',(sid,)).fetchone()
+        with patch('learning.manual_collection.SequencePort',side_effect=factory) as transport:
+            for field,value in [('plan_hash','wrong'),('output_path',str(root/'foreign')),('result_json','{}')]:
+                with self.subTest(field=field):
+                    db.execute('UPDATE supervised_blocks SET '+field+'=? WHERE session_id=?',(value,sid));db.commit()
+                    with self.assertRaises(ValueError):self.manager.recover_failed_start_readonly(sid,digest)
+                    db.execute('DELETE FROM supervised_blocks WHERE session_id=?',(sid,))
+                    db.execute('INSERT INTO supervised_blocks VALUES (?,?,?,?,?)',row);db.commit()
+            db.execute('INSERT INTO supervised_blocks VALUES (?,?,?,?,?)',('other','x','x','pending',None));db.commit()
+            with self.assertRaises(ValueError):self.manager.recover_failed_start_readonly(sid,digest)
+            db.execute('DELETE FROM supervised_blocks WHERE session_id=?',('other',));db.commit()
+            with patch.object(self.manager.journal,'readiness',return_value={'ready':False}):
+                with self.assertRaises(ValueError):self.manager.recover_failed_start_readonly(sid,digest)
+            transport.assert_not_called()
+        self.assertEqual(requests,[])
+        self.assertFalse((root/'readonly-failed-start-recovery').exists())
+
+    def test_reloaded_failed_start_GET_timeout_consumes_attempt_without_resolving(self):
+        _,requests,factory,root,raw,sid,digest=self.reload_failed_start()
+        self.transport_failed=True
+        db=self.manager.journal.connection
+        original_row=db.execute('SELECT phase,result_json FROM supervised_blocks WHERE session_id=?',(sid,)).fetchone()
+        with patch('learning.manual_collection.SequencePort',side_effect=factory):
+            with self.assertRaises(TimeoutError):self.manager.recover_failed_start_readonly(sid,digest)
+            count=len(requests)
+            with self.assertRaises(Exception):self.manager.recover_failed_start_readonly(sid,digest)
+            self.assertEqual(len(requests),count)
+        self.assertEqual((root/'session.json').read_bytes(),raw)
+        self.assertEqual(db.execute('SELECT phase,result_json FROM supervised_blocks WHERE session_id=?',(sid,)).fetchone(),
+                         original_row)
+        self.assertFalse((root/'readonly-failed-start-recovery/proof.json').exists())
+        self.assertTrue(all(method=='GET' for method,_,_ in requests))
 
     def test_all_joints_record_and_replay_optional_sensor(self):
         for joint, profile in PROFILES.items():

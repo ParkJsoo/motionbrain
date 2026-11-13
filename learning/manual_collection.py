@@ -240,6 +240,100 @@ class ManualCollection:
                 port.token = ''
             self.busy = False
 
+    def recover_failed_start_readonly(self, session_id, source_sha256):
+        """재시작 후에도 GET만 시도한 시작 실패를 현재 OFF 근거로 종결한다.
+
+        유실된 포트의 기본값으로 실행 이력을 추정하지 않는다. 디스크의 원본·
+        모든 요청 의도와 공유 원장을 확인하며, 실패 기록이나 재실행 금지는 보존한다.
+        """
+        if (self.busy or self.current is not None or self.port is not None or self.camera is not None
+                or self.store is not None or not identifier(session_id)):
+            raise ValueError('failed_start_recovery_idle_owner_required')
+        root = self.root/session_id
+        raw = _read(self.root, session_id+'/session.json')
+        plan_raw = _read(self.root, session_id+'/plan.json')
+        if hashlib.sha256(raw).hexdigest() != source_sha256:
+            raise ValueError('failed_start_recovery_source_changed')
+        original, plan = _decode_json(raw), _decode_json(plan_raw)
+        events = original.get('events')
+        allowed = {'/actions', '/status', '/collection_status', '/sequence',
+                   '/action_outputs', '/collection_outputs'}
+        if (original.get('schemaVersion') != SCHEMA or original.get('sessionId') != session_id
+                or original.get('phase') != 'failed' or original.get('error') != 'session_start_failed'
+                or original.get('finalIdleOffVerified') is not False or original.get('frames') != []
+                or original.get('recording') is not None or not isinstance(events, list) or not events
+                or any(e.get('kind') not in ('http', 'http_error') or e.get('path') not in allowed
+                       or e.get('payload') is not None for e in events)
+                or plan.get('sessionId') != session_id or plan.get('controllerUrl') != self.controller_url
+                or plan.get('camera', {}).get('deviceId') != self.device_id
+                or plan.get('camera', {}).get('viewId') != self.view_id
+                or (root/'native-camera').exists() or any(root.glob('command-*.json'))
+                or (root/'readonly-recovery').exists() or (root/'readonly-failed-run-recovery').exists()):
+            raise ValueError('failed_start_recovery_owned_source_required')
+        intents = {}
+        for path in root.glob('http-*-intent.json'):
+            body = _read(root, path.name)
+            intent = _decode_json(body)
+            if (intent.get('method') != 'GET' or intent.get('payload') is not None
+                    or intent.get('path') not in allowed):
+                raise ValueError('failed_start_recovery_get_only_required')
+            intents[path.name] = body
+        if not intents:
+            raise ValueError('failed_start_recovery_get_only_required')
+        if self.journal is None:
+            self.journal = BoundedActionJournal(str(self.journal_path), 10000)
+        db = self.journal.connection
+        expected_plan = hashlib.sha256(json.dumps(plan, sort_keys=True).encode()).hexdigest()
+        row = db.execute('SELECT plan_hash,output_path,phase,result_json FROM supervised_blocks WHERE session_id=?',
+                         (session_id,)).fetchone()
+
+        def verify_source():
+            if (_read(self.root, session_id+'/session.json') != raw
+                    or _read(self.root, session_id+'/plan.json') != plan_raw
+                    or {p.name: _read(root, p.name) for p in root.glob('http-*-intent.json')} != intents
+                    or (root/'native-camera').exists() or any(root.glob('command-*.json'))):
+                raise ValueError('failed_start_recovery_source_changed')
+
+        def verify_row():
+            current = db.execute('SELECT plan_hash,output_path,phase,result_json FROM supervised_blocks WHERE session_id=?',
+                                 (session_id,)).fetchone()
+            if (row is None or current != row or row[:3] != (expected_plan, str(root), 'off_unverified')
+                    or row[3] is None or _decode_json(row[3].encode()) != original
+                    or not self.journal.readiness()['ready']
+                    or db.execute("SELECT session_id FROM supervised_blocks WHERE phase IN ('pending','off_unverified')").fetchall()
+                       != [(session_id,)]):
+                raise ValueError('failed_start_recovery_owned_block_required')
+
+        verify_row()
+        self.busy = True
+        port = None
+        try:
+            store = ArtifactStore(root/'readonly-failed-start-recovery')
+            port = SequencePort(self.controller_url, self.token, 'discovering', store,
+                                clock=self.clock, compact_reads=True, timeout=2)
+            port.boot_id = _boot_identity(port._call('/actions'))
+            snapshot = port.preflight()
+            if not port.off_verified or port.may_have_run or port.writes_possible:
+                raise ValueError('failed_start_recovery_current_off_not_proven')
+            verify_source()
+            store.write_json('proof.json', dict(sessionId=session_id, originalSessionSha256=source_sha256,
+                originalResultSha256=hashlib.sha256(row[3].encode()).hexdigest(), snapshot=snapshot,
+                currentOffVerified=True, noWrites=True, originalOutcomeChanged=False,
+                datasetEligible=False, replayAllowed=False))
+            with db:
+                verify_source(); verify_row()
+                changed = db.execute('UPDATE supervised_blocks SET phase=? WHERE session_id=? AND plan_hash=? '
+                    'AND output_path=? AND phase=? AND result_json=?',
+                    ('resolved_no_run_after_stop', session_id, expected_plan, str(root), 'off_unverified', row[3]))
+                if changed.rowcount != 1:
+                    raise ValueError('failed_start_recovery_owned_block_required')
+            return dict(sessionId=session_id, currentOffVerified=True, noWrites=True,
+                        originalOutcomeChanged=False, replayAllowed=False)
+        finally:
+            if port is not None:
+                port.token = ''
+            self.busy = False
+
     def recover_readonly(self):
         """Retire only this manager's never-started session using fresh GET proof.
 
