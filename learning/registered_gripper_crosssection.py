@@ -19,8 +19,10 @@ STATE = ['objectMinusJawMidXpx', 'objectMinusJawMidYpx', 'shaftSeparationPx']
 SEMANTICS = 'object_top_center_and_independent_shaft_centerline_intersections_at_image_row55_not_tips_contact_or_physical_opening'
 
 
-def default_parameters():
-    return dict(imageShape=[240, 320], objectPatchRoi=[140, 67, 206, 133],
+def default_parameters(*, preset=None):
+    """기본 계약은 보존하고 현재 M1 닫기용 별도 등록에서만 오른쪽 ROI를 넓힌다."""
+    _require(preset in (None, 'current_m1_close'), 'crosssection_unknown_parameter_preset')
+    parameters = dict(imageShape=[240, 320], objectPatchRoi=[140, 67, 206, 133],
                 objectSearchRoi=[116, 43, 230, 157], minimumNcc=.85,
                 minimumPeakGap=.04, peakExclusionRadius=3, minimumTemplateStd=1.5,
                 shaft=dict(rows=[45, 65], referenceRow=55,
@@ -28,12 +30,17 @@ def default_parameters():
                     darkThreshold=100, runWidthPx=[18, 36], edgeProbePx=2,
                     minimumEdgeContrast=30., minimumRows=16, minimumRowSpan=16,
                     maximumCenterLineResidualPx=1.5, maximumWidthRangePx=8))
+    if preset == 'current_m1_close':
+        parameters['shaft']['rois']['jawRight'] = [190, 260]
+    return parameters
 
 
 def _parameters(p):
     expected = default_parameters()
+    current_close = default_parameters(preset='current_m1_close')
     _require(isinstance(p, dict) and set(p) == set(expected), 'crosssection_parameter_fields')
-    _require(p['imageShape'] == expected['imageShape'] and p['shaft'] == expected['shaft'],
+    _require(p['imageShape'] == expected['imageShape'] and
+             p['shaft'] in (expected['shaft'], current_close['shaft']),
              'crosssection_fixed_configuration_changed')
     _require(p['objectPatchRoi'] == expected['objectPatchRoi']
              and p['objectSearchRoi'] == expected['objectSearchRoi'], 'crosssection_object_roi_changed')

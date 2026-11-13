@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 
 from learning.registered_gripper_crosssection import (
-    METHOD, PREFIX, STATE, RegisteredGripperCrosssection, register)
+    METHOD, PREFIX, STATE, RegisteredGripperCrosssection, register, default_parameters)
 
 
 class CrosssectionTests(unittest.TestCase):
@@ -44,6 +44,50 @@ class CrosssectionTests(unittest.TestCase):
 
     def test_reprocessing_identical_source_is_deterministic(self):
         self.assertEqual(self.tracker.observe(self.raw,'same'),self.tracker.observe(self.raw,'same'))
+
+    def test_current_M1_close_preset_is_separate_and_only_changes_right_ROI(self):
+        old=default_parameters();current=default_parameters(preset='current_m1_close')
+        expected=copy.deepcopy(old);expected['shaft']['rois']['jawRight']=[190,260]
+        self.assertEqual(current,expected)
+        self.assertEqual(old['shaft']['rois']['jawRight'],[205,260])
+        reg=register(self.raw,[166,95],self.context,current)
+        self.assertNotEqual(reg['parametersSha256'],self.registration['parametersSha256'])
+        self.assertNotEqual(reg['registrationSha256'],self.registration['registrationSha256'])
+        with self.assertRaisesRegex(ValueError,'unknown_parameter_preset'):default_parameters(preset='auto_expand')
+
+    def test_closed_right_shaft_clipped_in_old_ROI_is_valid_only_under_new_registration(self):
+        parameters=default_parameters(preset='current_m1_close')
+        reg=register(self.raw,[166,95],self.context,parameters)
+        current=RegisteredGripperCrosssection(reg,self.raw)
+        for center in (208,213,218):
+            changed=self.image.copy();changed[40:67,190:260]=220
+            changed[40:67,center-13:center+14]=20
+            raw=self.encode(changed)
+            with self.subTest(center=center),self.assertRaisesRegex(ValueError,'crosssection_rows_insufficient'):
+                self.tracker.observe_shaft(raw,f'old-closed-{center}')
+            result=current.observe_shaft(raw,f'new-closed-{center}')
+            self.assertAlmostEqual(result['annotation']['points']['jawRight'][0],center)
+            self.assertEqual(result['quality']['jawRight']['acceptedRows'],21)
+
+    def test_new_ROI_still_rejects_two_runs_missing_rows_and_weaker_quality(self):
+        parameters=default_parameters(preset='current_m1_close')
+        reg=register(self.raw,[166,95],self.context,parameters)
+        current=RegisteredGripperCrosssection(reg,self.raw)
+        changed=self.image.copy();changed[40:67,190:260]=220
+        changed[40:67,193:213]=20;changed[40:67,233:253]=20
+        with self.assertRaisesRegex(ValueError,'crosssection_ambiguous_run'):
+            current.observe_shaft(self.encode(changed),'two-current-runs')
+        changed=self.image.copy();changed[45:51,190:260]=220
+        with self.assertRaisesRegex(ValueError,'crosssection_rows_insufficient'):
+            current.observe_shaft(self.encode(changed),'current-missing-rows')
+        for mutation in ('contrast','minimumRows','leftROI','rightROI'):
+            changed_parameters=copy.deepcopy(parameters)
+            if mutation=='contrast':changed_parameters['shaft']['minimumEdgeContrast']=29.
+            if mutation=='minimumRows':changed_parameters['shaft']['minimumRows']=15
+            if mutation=='leftROI':changed_parameters['shaft']['rois']['jawLeft']=[59,120]
+            if mutation=='rightROI':changed_parameters['shaft']['rois']['jawRight']=[189,260]
+            with self.subTest(mutation=mutation),self.assertRaisesRegex(ValueError,'fixed_configuration_changed'):
+                register(self.raw,[166,95],self.context,changed_parameters)
 
     def test_independent_shaft_movement_and_explicit_semantics(self):
         before = self.tracker.observe(self.raw,'before')

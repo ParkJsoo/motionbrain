@@ -185,6 +185,55 @@ def predict(model, shaft_separation_px, command, context, *, baseline=False):
     return _scalar(x+delta)
 
 
+def select(model, shaft_separation_px, target_shaft_px, commands, context, *,
+           predictor='shaftRidge', minimum_improvement_px=0.):
+    """고정 scalar 예측으로 CLOSE와 정지를 비교한다. 접촉·파지를 추론하지 않는다.
+
+    출력 후보는 기존 실험 한도인 40% 이하·350ms 이하 CLOSE에 한정한다.
+    지원 범위 밖 명령은 대체하지 않고 거절 목록에 보존한다. 오차 동률이거나
+    예상 개선이 margin 이하이면 정지를 택한다. 반환값은 실행 권한이 아니다.
+    """
+    validate_model(model)
+    require(context == model['context'], 'observation_context_changed')
+    x, target = _scalar(shaft_separation_px), _scalar(target_shaft_px)
+    require(predictor in ('shaftRidge', 'commandMean'), 'unsupported_shaft_selection_predictor')
+    require(type(minimum_improvement_px) in (int, float) and math.isfinite(minimum_improvement_px)
+            and minimum_improvement_px >= 0, 'finite_nonnegative_improvement_margin_required')
+    require(isinstance(commands, list) and bool(commands), 'shaft_selection_candidates_required')
+    keys = []
+    for command in commands:
+        _command_scope(context, command)
+        require(command['direction'] == 'close' and command['percent'] <= 40 and command['durationMs'] <= 350,
+                'shaft_selection_bounded_close_only')
+        keys.append(relative.command_key(command))
+    require(len(keys) == len(set(keys)), 'shaft_selection_duplicate_candidate')
+    stop = dict(kind='stop', command=None, predictedShaftSeparationPx=x, errorPx=abs(x-target))
+    ranked, rejected = [stop], []
+    for command in commands:
+        try:
+            prediction = predict(model, x, command, context, baseline=predictor == 'commandMean')
+        except ValueError as exc:
+            rejected.append(dict(command=copy.deepcopy(command), reason=str(exc)))
+            continue
+        ranked.append(dict(kind='action', command=copy.deepcopy(command),
+                           predictedShaftSeparationPx=prediction, errorPx=abs(prediction-target)))
+    ranked.sort(key=lambda item: item['errorPx'])  # 안정 정렬이므로 동률이면 처음 넣은 정지가 우선한다.
+    selected = ranked[0]
+    improvement = stop['errorPx']-selected['errorPx']
+    reason = 'minimum_predicted_shaft_error'
+    if selected['kind'] == 'action' and improvement <= minimum_improvement_px:
+        selected, reason = stop, 'predicted_improvement_below_margin'
+    elif selected['kind'] == 'stop':
+        reason = 'stop_has_minimum_predicted_shaft_error'
+    return dict(status='ranked' if len(ranked) > 1 else 'abstained',
+        selected=copy.deepcopy(selected), candidates=ranked, rejected=rejected,
+        shaftSeparationPx=x, targetShaftSeparationPx=target, predictor=predictor,
+        minimumImprovementPx=minimum_improvement_px, bestPredictedImprovementPx=improvement,
+        selectionReason=reason, modelSha256=digest(model), predictedStateFields=['shaftSeparationPx'],
+        controlEligible=False, executionAuthorized=False, contactVerified=False, graspVerified=False,
+        counterfactualOutcomesObserved=False)
+
+
 def evaluate(model, rows):
     """Same held-out cases for ridge and both baselines; rejected cases retained."""
     validate_model(model)

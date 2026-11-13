@@ -119,4 +119,84 @@ class ShaftTests(unittest.TestCase):
             with self.assertRaises(ValueError): m.validate_model(bad)
 
 
+class ShaftSelectionTests(unittest.TestCase):
+    def setUp(self):
+        self.close200=dict(joint='gripper',direction='close',percent=40,durationMs=200)
+        self.close350=dict(self.close200,durationMs=350)
+        self.rows=[]
+        for command,delta in ((self.close200,-5.),(self.close350,-10.)):
+            for state in (40.,60.):
+                row=scalar_sample(f"close{command['durationMs']}-{int(state)}",'train',state)
+                row.update(command=copy.deepcopy(command),afterShaftPx=state+delta)
+                self.rows.append(row)
+        self.model=m.fit(self.rows);self.context=copy.deepcopy(self.model['context'])
+        self.commands=[self.close200,self.close350]
+    def choose(self,current=50.,target=40.,**kwargs):
+        return m.select(self.model,current,target,self.commands,self.context,**kwargs)
+    def test_scalar_candidates_choose_350_200_or_stop_without_contact_claim(self):
+        for target,duration in ((40.,350),(45.,200),(50.,None)):
+            result=self.choose(target=target)
+            selected=result['selected']
+            self.assertEqual(selected['kind'],'stop' if duration is None else 'action')
+            self.assertEqual(None if selected['command'] is None else selected['command']['durationMs'],duration)
+            self.assertIsInstance(selected['predictedShaftSeparationPx'],float)
+            self.assertEqual(result['predictedStateFields'],['shaftSeparationPx'])
+            self.assertFalse(result['controlEligible']);self.assertFalse(result['executionAuthorized'])
+            self.assertFalse(result['graspVerified']);self.assertFalse(result['contactVerified'])
+    def test_equal_error_prefers_stop_and_margin_requires_strict_improvement(self):
+        self.assertEqual(self.choose(target=47.5)['selected']['kind'],'stop')
+        result=self.choose(target=47.4,minimum_improvement_px=.25)
+        self.assertEqual(result['selected']['kind'],'stop')
+        self.assertEqual(result['selectionReason'],'predicted_improvement_below_margin')
+        self.assertEqual(self.choose(target=47.4,minimum_improvement_px=.1)['selected']['command'],self.close200)
+        self.assertEqual(self.choose(target=40.,minimum_improvement_px=10.)['selected']['kind'],'stop')
+    def test_OOD_and_missing_command_never_fall_back_to_a_different_pulse(self):
+        result=self.choose(current=60.01)
+        self.assertEqual(result['status'],'abstained');self.assertEqual(result['selected']['kind'],'stop')
+        self.assertEqual(len(result['rejected']),2)
+        self.assertTrue(all(r['reason']=='shaft_outside_training_range' for r in result['rejected']))
+        missing=dict(self.close200,durationMs=300)
+        result=m.select(self.model,50.,40.,[missing],self.context)
+        self.assertEqual(result['selected']['kind'],'stop')
+        self.assertEqual(result['rejected'],[dict(command=missing,reason='command_without_two_training_transitions')])
+    def test_support_is_checked_per_candidate_and_rejections_remain_visible(self):
+        for row in self.rows[:2]:
+            row['beforeShaftPx']+=5.;row['afterShaftPx']+=5.
+        model=m.fit(self.rows)
+        result=m.select(model,42.,32.,self.commands,self.context)
+        self.assertEqual(result['selected']['command'],self.close350)
+        self.assertEqual(result['rejected'],[dict(command=self.close200,reason='shaft_outside_training_range')])
+    def test_command_mean_uses_same_fixed_scalar_support_and_baseline_predictor(self):
+        self.rows[0]['afterShaftPx']=39.;self.rows[1]['afterShaftPx']=51.
+        model=m.fit(self.rows)
+        ridge=m.select(model,55.,48.,[self.close200],self.context)
+        baseline=m.select(model,55.,48.,[self.close200],self.context,predictor='commandMean')
+        self.assertEqual(baseline['selected']['predictedShaftSeparationPx'],
+                         m.predict(model,55.,self.close200,self.context,baseline=True))
+        self.assertNotEqual(ridge['selected']['predictedShaftSeparationPx'],
+                            baseline['selected']['predictedShaftSeparationPx'])
+    def test_invalid_context_scalar_goal_and_command_format_are_rejected(self):
+        with self.assertRaisesRegex(ValueError,'context_changed'):
+            m.select(self.model,50.,40.,self.commands,dict(self.context,poseRegime='another'))
+        for value in ([0.,0.,40.],float('nan'),float('inf'),-1.,True):
+            with self.subTest(value=value),self.assertRaises(ValueError):self.choose(target=value)
+        for command in (dict(self.close200,direction='open'),dict(self.close200,percent=41),
+                        dict(self.close200,durationMs=351),dict(self.close200,extra='unknown'),
+                        dict(self.close200,percent=True),dict(self.close200,joint='wrist',direction='up')):
+            with self.subTest(command=command),self.assertRaises(ValueError):
+                m.select(self.model,50.,40.,[command],self.context)
+        with self.assertRaisesRegex(ValueError,'duplicate_candidate'):
+            m.select(self.model,50.,40.,[self.close200,self.close200],self.context)
+        with self.assertRaises(ValueError):self.choose(predictor='unknown')
+        for margin in (True,-1.,float('nan')):
+            with self.subTest(margin=margin),self.assertRaises(ValueError):self.choose(minimum_improvement_px=margin)
+    def test_model_commands_context_and_output_selection_are_independent_copies(self):
+        before=copy.deepcopy((self.model,self.commands,self.context))
+        result=self.choose()
+        result['selected']['command']['durationMs']=100
+        result['candidates'][0]['command']['percent']=1
+        self.assertEqual((self.model,self.commands,self.context),before)
+        self.assertEqual(self.choose()['selected']['command'],self.close350)
+
+
 if __name__ == '__main__': unittest.main()
