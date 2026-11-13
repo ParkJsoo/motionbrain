@@ -69,9 +69,13 @@ class RecordingPort(SequencePort):
 class ManualCollection:
     def __init__(self, root, helper, controller_url, token, device_id, view_id='manual', *,
                  journal_path=None, clock=time, camera_factory=ActionRecorder,
-                 port_factory=RecordingPort, sample_fps=8):
+                 port_factory=RecordingPort, sample_fps=8, recording_seconds=60):
         if type(sample_fps) is not int or sample_fps not in (4, 8):
             raise ValueError('collection_sample_fps')
+        if type(recording_seconds) is not int or recording_seconds not in (60, 120):
+            raise ValueError('collection_recording_seconds')
+        # 촬영·판독 대기 예산만 선택하며 모터 출력·명령 횟수·재송은 늘리지 않는다.
+        self.recording_seconds = recording_seconds
         self.sample_fps = sample_fps
         self.root = Path(root).resolve()
         self.helper = Path(helper)
@@ -116,7 +120,7 @@ class ManualCollection:
             raise ValueError('camera_identity_required')
         helper_hash = hashlib.sha256(self.helper.read_bytes()).hexdigest()
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
-        maximum_frames = self.sample_fps*60+20
+        maximum_frames = self.sample_fps*self.recording_seconds+20
         budget = maximum_frames * (1920*1080*4+65536)
         if shutil.disk_usage(self.root).free < budget + 2*1024**3:
             raise ValueError('storage_reserve_required')
@@ -133,7 +137,7 @@ class ManualCollection:
         self.started = self.clock.monotonic()
         plan = dict(**payload, sessionId=sid, helperSha256=helper_hash, controllerUrl=self.controller_url,
                     camera=dict(deviceId=self.device_id, sessionId=sid, viewId=self.view_id,
-                                width=1920, height=1080, maxFrames=maximum_frames, seconds=60, sampleFps=self.sample_fps, maxBytes=budget))
+                                width=1920, height=1080, maxFrames=maximum_frames, seconds=self.recording_seconds, sampleFps=self.sample_fps, maxBytes=budget))
         try:
             self.store.write_json('plan.json', plan)
             with db:
@@ -453,7 +457,7 @@ class ManualCollection:
         self.busy = True
         try:
             self.camera.check()
-            if self.clock.monotonic()-self.started > 50:
+            if self.clock.monotonic()-self.started > self.recording_seconds-10:
                 raise ValueError('recording_near_budget_end')
             self.command_count += 1
             cid = f"{self.current['sessionId']}-{self.command_count:03d}"
@@ -495,7 +499,7 @@ class ManualCollection:
         if self.clock.monotonic()-self.last_poll < QUIET_IDLE_POLL_SECONDS:
             return
         try:
-            if self.clock.monotonic()-self.started >= 55:
+            if self.clock.monotonic()-self.started >= self.recording_seconds-5:
                 self.finish()
                 return
             self.camera.check()

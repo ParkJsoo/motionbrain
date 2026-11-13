@@ -9,7 +9,7 @@ import numpy as np
 from learning.artifacts import ArtifactStore
 from learning.grasp_observation import GripperObservationSource
 from learning.m1_shaft_scene import (M1ShaftSceneGuard,M1ShaftSourceObserver,SCHEMA,MONITOR_POLICY,
-    REFERENCE_MEANING,OBJECT_FRAGMENT_POLICY,OBSERVED95_LOCAL_COMMAND_POLICY)
+    REFERENCE_MEANING,OBJECT_FRAGMENT_POLICY,OBSERVED95_LOCAL_COMMAND_POLICY,OBSERVED95_LOWER_COMMAND_POLICY)
 from learning.approach_external_guard import ApproachExternalGuard
 from learning.registered_gripper_crosssection import register, default_parameters
 from tests import test_approach_external_guard as external_tests
@@ -87,14 +87,14 @@ class M1ShaftSceneTests(unittest.TestCase):
             with self.subTest(command=command),self.assertRaisesRegex(ValueError,'bounded_command'):
                 self.guard.validate_command(command)
 
-    def install_observed95_policy(self):
+    def install_observed95_policy(self,policy=OBSERVED95_LOCAL_COMMAND_POLICY):
         image = self.shaft_image.copy()
         image[70:116,80:107] = 20
         image[70:116,220:247] = 20
         raw = cv2.imencode('.jpg',image)[1].tobytes()
         reg = register(raw,[166,95],self.config['actualScene'],
                        default_parameters(preset='current_m1_observed_shaft95'))
-        self.config.update(commandPolicy=OBSERVED95_LOCAL_COMMAND_POLICY,
+        self.config.update(commandPolicy=policy,
             shaftRegistration=self.write_json('M1-observed95-registration.json',reg),
             shaftReference=self.write('M1-observed95-reference.jpg',raw))
         self.binding=self.write_json('M1-observed95-config.json',self.config)
@@ -104,6 +104,23 @@ class M1ShaftSceneTests(unittest.TestCase):
             ArtifactStore(self.repo/'.local/M1-observed95-gripper'),clock=self.clock,opener=self.camera)
         self.observer=M1ShaftSourceObserver(self.source,self.guard,clock=self.clock)
         return reg
+
+    def test_lower_policy_adds_only_exact_60_200_250_350_CLOSE_and_keeps_OPEN(self):
+        self.install_observed95_policy(OBSERVED95_LOWER_COMMAND_POLICY)
+        record,result=self.capture();self.review(record,result)
+        original=self.port._check_status
+        for command in [self.command('close',200,60),self.command('close',250,60),self.command('close',350,60),self.command('close',450,60),
+                        self.command('open',250,40),self.command('open',350,40),self.command('open',450,60),
+                        self.command('open',550,60),self.command('open',650,60)]:
+            self.guard.validate_command(command);self.guard.disarm()
+            self.assertIs(self.port._check_status,original)
+        for command in [self.command('close',650,60),self.command('close',200,40),
+                        self.command('close',250,40),self.command('close',249,60),
+                        self.command('close',251,60),self.command('close',300,60),self.command('close',100,60),
+                        self.command('close',349,60),self.command('close',351,60),
+                        self.command('open',200,60),self.command('open',350,60)]:
+            with self.subTest(command=command),self.assertRaisesRegex(ValueError,'bounded_command'):
+                self.guard.validate_command(command)
 
     def test_observed95_local450_policy_only_allows_exact_new_candidates(self):
         self.install_observed95_policy()
@@ -115,7 +132,8 @@ class M1ShaftSceneTests(unittest.TestCase):
                         self.command('open',650,60),self.command('open',350,40),self.command('open',250,40)]:
             self.guard.validate_command(command);self.guard.disarm()
             self.assertIs(self.port._check_status,original)
-        for command in [self.command(),self.command(duration=200),self.command('close',650,60),
+        for command in [self.command(),self.command(duration=200),self.command('close',200,60),self.command('close',250,60),
+                        self.command('close',350,60),self.command('close',650,60),
                         self.command('open',350,60),self.command('open',450,40),
                         self.command('open',550,40),self.command('open',650,40),
                         self.command('open',450,70),self.command('open',450,100),

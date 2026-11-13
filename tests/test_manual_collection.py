@@ -549,6 +549,104 @@ class ManualCollectionTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'sample_fps'):
                 ManualCollection(self.root, self.helper, 'http://127.0.0.1', 'secret', 'camera', sample_fps=value)
 
+    def extended_manager(self, sample_fps=8):
+        return ManualCollection(self.root/'extended', self.helper, 'http://127.0.0.1', 'secret', 'camera',
+            clock=self.clock, camera_factory=Camera, port_factory=Port, sample_fps=sample_fps,
+            recording_seconds=120, journal_path=self.root/'extended-journal.sqlite')
+
+    def test_recording_seconds_default_and_explicit120_have_consistent_camera_budgets(self):
+        self.start()
+        default=self.manager.camera.plan
+        self.assertEqual(default['seconds'],60)
+        self.assertEqual(default['maxFrames'],500)
+        self.assertEqual(default['maxBytes'],500*(1920*1080*4+65536))
+        self.manager.finish()
+        for fps in (4,8):
+            manager=self.extended_manager(fps)
+            try:
+                manager.start(dict(joint='gripper',poseContext='fixed',onsiteConfirmed=True))
+                camera=manager.camera.plan
+                self.assertEqual(camera['seconds'],120)
+                self.assertEqual(camera['maxFrames'],fps*120+20)
+                self.assertEqual(camera['maxBytes'],camera['maxFrames']*(1920*1080*4+65536))
+                from learning.action_recorder import ActionRecorder
+                # 실제 촬영 없이 기존 recorder 생성자의 예산 허용 계약도 검사한다.
+                ActionRecorder(self.root/'not-started',self.helper,camera)
+            finally:manager.close()
+
+    def test_recording_seconds_invalid_values_reject_before_any_io(self):
+        for value in (True,False,None,60.,120.,59,61,119,121,180,'120'):
+            with self.subTest(value=value),self.assertRaisesRegex(ValueError,'recording_seconds'):
+                ManualCollection(self.root/'must-not-exist',self.root/'missing-helper',
+                    'http://127.0.0.1','secret','camera',recording_seconds=value)
+        self.assertFalse((self.root/'must-not-exist').exists())
+
+    def test_extended_recording_reserves_full_disk_budget_before_camera_or_port(self):
+        manager=self.extended_manager()
+        try:
+            needed=980*(1920*1080*4+65536)+2*1024**3
+            prior_ports=len(Port.instances)
+            with patch('learning.manual_collection.shutil.disk_usage',return_value=type('Disk',(),{'free':needed-1})()):
+                with self.assertRaisesRegex(ValueError,'storage_reserve_required'):
+                    manager.start(dict(joint='gripper',poseContext='fixed',onsiteConfirmed=True))
+            self.assertIsNone(manager.camera)
+            self.assertEqual(len(Port.instances),prior_ports)
+        finally:manager.close()
+
+    def test_extended_recording_tick_and_pulse_admission_keep_ten_and_five_second_reserves(self):
+        manager=self.extended_manager()
+        try:
+            manager.start(dict(joint='gripper',poseContext='fixed',onsiteConfirmed=True))
+            self.clock.now=manager.started+56
+            manager.tick()
+            self.assertEqual(manager.current['phase'],'recording')
+            self.clock.now=manager.started+110
+            manager.pulse(dict(joint='gripper',direction='close',percent=60,durationMs=200))
+            self.assertEqual(len(manager.port.executions),1)
+            self.clock.now=manager.started+115
+            manager.tick()
+            self.assertEqual(manager.current['phase'],'completed')
+            self.assertEqual(len(manager.port.executions),1)
+        finally:manager.close()
+
+    def test_extended_recording_does_not_expand_motor_caps_or_retry_failed_commands(self):
+        manager=self.extended_manager()
+        try:
+            manager.start(dict(joint='gripper',poseContext='fixed',onsiteConfirmed=True))
+            for percent,duration in ((61,200),(60,651)):
+                with self.subTest(percent=percent,duration=duration),self.assertRaisesRegex(ValueError,'joint_output_limit'):
+                    manager.pulse(dict(joint='gripper',direction='close',percent=percent,durationMs=duration))
+            self.assertEqual(manager.command_count,0)
+            manager.port.fail_execute=True
+            with self.assertRaisesRegex(ValueError,'unknown'):
+                manager.pulse(dict(joint='gripper',direction='close',percent=60,durationMs=200))
+            with self.assertRaisesRegex(ValueError,'recording_required'):
+                manager.pulse(dict(joint='gripper',direction='close',percent=60,durationMs=200))
+            self.assertEqual(len(manager.port.executions),1)
+        finally:manager.close()
+
+    def test_extended_recording_keeps_twenty_command_session_cap(self):
+        manager=self.extended_manager()
+        try:
+            manager.start(dict(joint='gripper',poseContext='fixed',onsiteConfirmed=True))
+            command=dict(joint='gripper',direction='close',percent=60,durationMs=200)
+            for _ in range(20):manager.pulse(command)
+            with self.assertRaisesRegex(ValueError,'session_command_budget_reached'):
+                manager.pulse(command)
+            self.assertEqual(manager.command_count,20)
+            self.assertEqual(len(manager.port.executions),20)
+        finally:manager.close()
+
+    def test_extended_recording_rejects_new_pulse_after110_seconds_without_dispatch(self):
+        manager=self.extended_manager()
+        try:
+            manager.start(dict(joint='gripper',poseContext='fixed',onsiteConfirmed=True))
+            self.clock.now=manager.started+110.001
+            with self.assertRaisesRegex(ValueError,'recording_near_budget_end'):
+                manager.pulse(dict(joint='gripper',direction='close',percent=60,durationMs=200))
+            self.assertEqual(manager.port.executions,[])
+        finally:manager.close()
+
     def test_path_traversal_rejected(self):
         with self.assertRaises(ValueError): self.manager.session('../outside')
 

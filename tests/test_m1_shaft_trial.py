@@ -3,7 +3,8 @@ import copy
 import unittest
 
 from learning import m1_shaft_learning as learning
-from learning.m1_shaft_trial import M1ShaftTrial, OBSERVED95_POLICY, OBSERVED95_GOAL
+from learning.m1_shaft_trial import (M1ShaftTrial, OBSERVED95_POLICY, OBSERVED95_LOWER_POLICY,
+    OBSERVED95_REVIEWED_LOWER_POLICY, OBSERVED95_GOAL)
 from tests.test_m1_shaft_learning import scalar_sample
 from tests.test_supervised_transport import Clock, Store
 
@@ -329,6 +330,136 @@ class Observed95TrialTests(unittest.TestCase):
         result=trial.run()
         self.assertEqual(result['status'],'failed');self.assertEqual(len(ports.sent),1)
         self.assertEqual(result['errors'][0]['reason'],'M1_scalar_trial_observed_shaft_outside_fence')
+
+
+def lower_model(*, short_delta=5., short_minimum=89., short_maximum=97., short_duration=200):
+    rows=[]
+    for duration,minimum,maximum,delta in ((350,100.,113.,10.),
+                                          (short_duration,short_minimum,short_maximum,short_delta)):
+        for value in (minimum,maximum):
+            row=scalar_sample(f'lower-{duration}-{value}','lower-training',value)
+            row.update(command=dict(joint='gripper',direction='close',percent=60,durationMs=duration),
+                       afterShaftPx=value-delta)
+            rows.append(row)
+    return learning.fit(rows)
+
+
+class LowerObserved95TrialTests(unittest.TestCase):
+    trial=M1ShaftTrialTests.trial
+
+    def planned(self,fixed,**changes):
+        return observed95_scope(fixed,geometryPolicy=OBSERVED95_LOWER_POLICY,**changes)
+
+    def test_250_bridge_requires_actual_training_and_300_remains_unsupported(self):
+        fixed=observed95_model(minimum=100.,maximum=113.,delta=15.,duration=250)
+        trial,ports,_=self.trial([101.,86.],fixed=fixed,planned=self.planned(fixed))
+        result=trial.run()
+        self.assertEqual(result['status'],'observed_target_reached',result)
+        self.assertEqual([c['durationMs'] for c in ports.sent],[250])
+        # 후보 기간을 추가해도 학습되지 않은 250 명령을 만들어내지 않는다.
+        fixed=lower_model()
+        trial,_,_=self.trial([105.],fixed=fixed,planned=self.planned(fixed))
+        self.assertNotIn(250,[c['durationMs'] for c in trial.commands])
+        for duration in (100,249,251,300):
+            fixed=observed95_model(duration=duration)
+            with self.subTest(duration=duration),self.assertRaisesRegex(ValueError,'supported_close_candidates_required'):
+                self.trial([101.],fixed=fixed,planned=self.planned(fixed))
+
+    def test_350_can_bridge_to_supported_250_after_fresh_observation(self):
+        fixed=lower_model(short_duration=250)
+        trial,ports,_=self.trial([105.,95.,90.,85.],fixed=fixed,planned=self.planned(fixed))
+        result=trial.run()
+        self.assertEqual(result['status'],'observed_target_reached',result)
+        self.assertEqual([c['durationMs'] for c in ports.sent],[350,250,250])
+        self.assertEqual(len(ports.records),4)
+
+    def test_three_commands_bridge_from_350_to_supported_200_and_reobserve(self):
+        fixed=lower_model();trial,ports,_=self.trial([105.,95.,90.,85.],fixed=fixed,planned=self.planned(fixed))
+        result=trial.run()
+        self.assertEqual(result['status'],'observed_target_reached',result)
+        self.assertEqual([c['durationMs'] for c in ports.sent],[350,200,200])
+        self.assertEqual(result['confirmedCommands'],3);self.assertEqual(len(ports.records),4)
+        self.assertFalse(result['graspVerified'])
+
+    def test_next_command_requires_own_support_safe_prediction_and_minimum_gain(self):
+        for options in (dict(short_minimum=96.,short_maximum=99.),
+                        dict(short_delta=20.),dict(short_delta=.25),dict(short_delta=0.)):
+            fixed=lower_model(**options)
+            trial,ports,_=self.trial([105.],fixed=fixed,planned=self.planned(fixed))
+            result=trial.run()
+            with self.subTest(options=options):
+                self.assertEqual(result['status'],'abstained',result);self.assertEqual(ports.sent,[])
+                self.assertIn('M1_predicted_nonterminal_shaft_outside_support',
+                              [item['reason'] for item in trial._choose(105.)['rejected']])
+
+    def test_actual_bridge_state_outside_next_support_stops_without_substitution(self):
+        fixed=lower_model(short_minimum=95.,short_maximum=97.)
+        trial,ports,_=self.trial([105.,94.9],fixed=fixed,planned=self.planned(fixed))
+        result=trial.run()
+        self.assertEqual(result['status'],'abstained',result);self.assertEqual(len(ports.sent),1)
+
+    def test_lower_start_interval_remains_strictly_outside_goal_and_registration_bound(self):
+        fixed=lower_model()
+        trial,_,_=self.trial([90.],fixed=fixed,planned=self.planned(fixed,startIntervalPx=[86.8001,99.]))
+        self.assertEqual(trial.scope['startIntervalPx'],[86.8001,99.])
+        for change in (dict(startIntervalPx=[86.8,99.]),dict(startIntervalPx=[85.3,99.]),
+                       dict(startIntervalPx=[99.,138.]),dict(observationRegistrationSha256='f'*64)):
+            with self.subTest(change=change),self.assertRaises(ValueError):
+                self.trial([90.],fixed=fixed,planned=self.planned(fixed,**change))
+        with self.assertRaisesRegex(ValueError,'supported_close_candidates_required'):
+            self.trial([105.],fixed=fixed,planned=observed95_scope(fixed))
+        # 기존 450 후보는 새 정책에서도 실제 학습된 경우에만 사용할 수 있다.
+        fixed=observed95_model()
+        trial,_,_=self.trial([101.],fixed=fixed,planned=self.planned(fixed,maxCommands=1))
+        self.assertEqual([c['durationMs'] for c in trial.commands],[450])
+
+
+class ReviewedLowerTrialTests(unittest.TestCase):
+    trial=M1ShaftTrialTests.trial
+
+    def planned(self,fixed,**changes):
+        planned=observed95_scope(fixed,geometryPolicy=OBSERVED95_REVIEWED_LOWER_POLICY,maxSeconds=120.)
+        planned.update(changes);return planned
+
+    def test_only_explicit_reviewed_policy_gets_120_second_budget(self):
+        fixed=lower_model()
+        trial,_,_=self.trial([105.],fixed=fixed,planned=self.planned(fixed))
+        self.assertEqual(trial.scope['maxSeconds'],120.)
+        for changed in (self.planned(fixed,maxSeconds=121.),
+                        observed95_scope(fixed,geometryPolicy=OBSERVED95_LOWER_POLICY,maxSeconds=120.),
+                        observed95_scope(fixed,maxSeconds=46.),scope(maxSeconds=46.),
+                        self.planned(fixed,maxCommands=5),self.planned(fixed,totalRemaining=5)):
+            with self.subTest(changed=changed),self.assertRaises(ValueError):
+                self.trial([105.],fixed=fixed,planned=changed)
+
+    def test_long_review_workflow_uses_new_fresh_frames_without_extending_original_deadline(self):
+        fixed=lower_model()
+        for reviewed in (False,True):
+            planned=self.planned(fixed) if reviewed else observed95_scope(fixed,geometryPolicy=OBSERVED95_LOWER_POLICY)
+            trial,ports,_=self.trial([105.,95.,90.,85.],fixed=fixed,planned=planned)
+            ports.observation_delay=16.
+            result=trial.run()
+            with self.subTest(reviewed=reviewed):
+                self.assertEqual(result['status'],'observed_target_reached' if reviewed else 'failed',result)
+                self.assertEqual(trial.deadline-trial.started,120. if reviewed else 45.)
+                if reviewed:
+                    self.assertEqual([c['durationMs'] for c in ports.sent],[350,200,200])
+                    self.assertGreater(ports.clock.now-trial.started,45.)
+                else:self.assertIn('M1_scalar_trial_deadline',[e['reason'] for e in result['errors']])
+
+    def test_long_total_budget_does_not_relax_dispatch_source_freshness_or_binding(self):
+        fixed=lower_model()
+        trial,ports,_=self.trial([105.],fixed=fixed,planned=self.planned(fixed))
+        ports.preparation_delay=3.1
+        result=trial.run()
+        self.assertEqual(result['status'],'failed');self.assertEqual(ports.sent,[])
+        self.assertEqual(result['errors'][0]['reason'],'M1_scalar_trial_stale_or_noncausal_source')
+        trial,ports,_=self.trial([105.],fixed=fixed,planned=self.planned(fixed))
+        def mutate(command,decision):decision['selected']['command']['durationMs']=450
+        ports.mutate=mutate
+        result=trial.run()
+        self.assertEqual(result['status'],'failed');self.assertEqual(ports.sent,[])
+        self.assertEqual(result['errors'][0]['reason'],'M1_scalar_trial_dispatch_binding_changed')
 
 
 if __name__=='__main__':unittest.main()

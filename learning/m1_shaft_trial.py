@@ -17,6 +17,8 @@ from learning.manual_collection_dataset import require
 from learning.supervised_collection import plan_digest
 
 OBSERVED95_POLICY = 'observed95-local450-v1'
+OBSERVED95_LOWER_POLICY = 'observed95-lower-close-v1'
+OBSERVED95_REVIEWED_LOWER_POLICY = 'observed95-reviewed-lower-close-v1'
 OBSERVED95_GOAL = 'manual_visible_jaw_configuration_reference_not_contact_or_grasp'
 
 def _finite(value):
@@ -37,9 +39,10 @@ def validate_scope(scope):
     require(isinstance(scope, dict) and set(scope) == fields | extra,
         'M1_scalar_trial_scope_fields')
     require(all(_finite(scope[key]) for key in fields), 'M1_scalar_trial_finite_scope_required')
+    reviewed = scope.get('geometryPolicy') == OBSERVED95_REVIEWED_LOWER_POLICY
     require(type(scope['maxCommands']) is int and 1 <= scope['maxCommands'] <= 4 and
             type(scope['totalRemaining']) is int and 0 <= scope['totalRemaining'] <= 4 and
-            0 < scope['maxSeconds'] <= 45, 'M1_scalar_trial_finite_budget_required')
+            0 < scope['maxSeconds'] <= (120 if reviewed else 45), 'M1_scalar_trial_finite_budget_required')
     fixed = dict(tolerancePx=1.5, minimumImprovementPx=.25, maximumPredictionResidualPx=3.,
         minimumObservedProgressPx=.2, shaftMinimum=118., shaftMaximum=155.5,
         maxObservationAgeSeconds=3., maxDecisionAgeSeconds=.25)
@@ -47,12 +50,14 @@ def validate_scope(scope):
         # 새 직접 row95 실험 계약이다. 구 row55 기구 한계의 변환이나 보장이 아니다.
         fixed.update(shaftMinimum=84., shaftMaximum=139.5, targetShaftPx=85.3)
         interval = scope['startIntervalPx']
-        require(scope['geometryPolicy'] == OBSERVED95_POLICY and
+        lower = scope['geometryPolicy'] in (OBSERVED95_LOWER_POLICY, OBSERVED95_REVIEWED_LOWER_POLICY)
+        require(scope['geometryPolicy'] in (OBSERVED95_POLICY, OBSERVED95_LOWER_POLICY, OBSERVED95_REVIEWED_LOWER_POLICY) and
                 scope['goalSemantics'] == OBSERVED95_GOAL and
                 _hash(scope['observationRegistrationSha256']) and
                 isinstance(interval, list) and len(interval) == 2 and
                 all(_finite(value) for value in interval) and
-                100. <= interval[0] < interval[1] <= 137.,
+                interval[0] < interval[1] <= 137. and
+                (interval[0] > 86.8 if lower else interval[0] >= 100.),
                 'M1_scalar_trial_observed95_contract_required')
     require(all(scope[key] == value for key, value in fixed.items()) and
             scope['shaftMinimum'] <= scope['targetShaftPx'] <= scope['shaftMaximum'],
@@ -93,8 +98,9 @@ class M1ShaftTrial:
             if entry['command']['direction']=='close' and entry['command']['percent']<=60
             and entry['command']['durationMs']<=650]
         if self.observed95:
+            durations = (450,) if self.scope['geometryPolicy'] == OBSERVED95_POLICY else (200,250,350,450)
             self.commands = [command for command in self.commands
-                             if command['percent']==60 and command['durationMs']==450]
+                             if command['percent']==60 and command['durationMs'] in durations]
         require(bool(self.commands), 'M1_scalar_trial_supported_close_candidates_required')
         require(all(callable(value) for value in (observe, execute, tick, verify_assets)) and
                 callable(getattr(store, 'write_json', None)), 'M1_scalar_trial_injected_ports_required')
@@ -109,7 +115,7 @@ class M1ShaftTrial:
 
     @property
     def observed95(self):
-        return self.scope.get('geometryPolicy') == OBSERVED95_POLICY
+        return self.scope.get('geometryPolicy') in (OBSERVED95_POLICY, OBSERVED95_LOWER_POLICY, OBSERVED95_REVIEWED_LOWER_POLICY)
 
     def _check(self):
         self.verify_assets()
@@ -148,6 +154,18 @@ class M1ShaftTrial:
                 'M1_scalar_trial_observed_shaft_outside_fence')
         return float(value)
 
+    def _next_supported(self, predicted, command):
+        if self.scope['geometryPolicy'] == OBSERVED95_POLICY:
+            return any(entry['command'] == command and entry['minimum'] <= predicted <= entry['maximum']
+                       for entry in self.model['models'])
+        # 한 단계 연결만 검사한다. 다음 후보도 자기 입력 지원 안에서 예측해야 한다.
+        future = learning.select(self.model, predicted, self.scope['targetShaftPx'], self.commands,
+            self.model['context'], minimum_improvement_px=self.scope['minimumImprovementPx'])
+        return any(item['kind']=='action' and
+                   self.scope['shaftMinimum'] <= item['predictedShaftSeparationPx'] <= self.scope['shaftMaximum'] and
+                   abs(predicted-self.scope['targetShaftPx'])-item['errorPx'] > self.scope['minimumImprovementPx']
+                   for item in future['candidates'])
+
     def _choose(self, value):
         # 명시적인 단일명령 시험은 사후 관측을 다음 명령 입력으로 사용하지 않는다.
         # 최초 입력 지원·예측 범위·사후 잔차와 실제 범위 검사는 그대로 적용한다.
@@ -159,9 +177,7 @@ class M1ShaftTrial:
             if item['kind'] == 'action' and not self.scope['shaftMinimum'] <= predicted <= self.scope['shaftMaximum']:
                 decision['rejected'].append(dict(command=copy.deepcopy(item['command']),
                                                 reason='M1_predicted_shaft_outside_fence'))
-            elif self.observed95 and self.scope['maxCommands'] > 1 and item['kind'] == 'action' and abs(predicted-self.scope['targetShaftPx']) > self.scope['tolerancePx'] and not any(
-                    entry['command'] == item['command'] and entry['minimum'] <= predicted <= entry['maximum']
-                    for entry in self.model['models']):
+            elif self.observed95 and self.scope['maxCommands'] > 1 and item['kind'] == 'action' and abs(predicted-self.scope['targetShaftPx']) > self.scope['tolerancePx'] and not self._next_supported(predicted,item['command']):
                 decision['rejected'].append(dict(command=copy.deepcopy(item['command']),
                                                 reason='M1_predicted_nonterminal_shaft_outside_support'))
             else:

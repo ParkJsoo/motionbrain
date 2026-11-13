@@ -26,6 +26,7 @@ OBSERVATION_SCHEMA = 'motionbrain.bound_M1_shaft_observation.v1'
 MONITOR_POLICY = 'm1-default-sequence-monitor-v1'
 REFERENCE_MEANING = 'onsite_current_M1_fixed_pose_reference_not_contact_or_grasp_success'
 OBSERVED95_LOCAL_COMMAND_POLICY = 'observed95-local450-v1'
+OBSERVED95_LOWER_COMMAND_POLICY = 'observed95-lower-close-v1'
 OBJECT_FRAGMENT_POLICY = 'fixed_reference_two_fragment_occlusion_v1'
 
 
@@ -106,7 +107,7 @@ class M1ShaftSceneGuard(CurrentSceneExternalGuard):
                 all(isinstance(v, str) and bool(v) for v in config['actualScene'].values()),
                 'M1_actual_reference_declaration_required')
         if 'commandPolicy' in config:
-            require(config['commandPolicy'] == OBSERVED95_LOCAL_COMMAND_POLICY,
+            require(config['commandPolicy'] in (OBSERVED95_LOCAL_COMMAND_POLICY, OBSERVED95_LOWER_COMMAND_POLICY),
                     'M1_explicit_command_policy_required')
         if 'objectObservationPolicy' in config:
             require(config['objectObservationPolicy'] == OBJECT_FRAGMENT_POLICY,
@@ -230,10 +231,11 @@ class M1ShaftSceneGuard(CurrentSceneExternalGuard):
             set(command) == {'joint','direction','percent','durationMs'} and
             command['joint'] == 'gripper' and type(command['percent']) is int and
             type(command['durationMs']) is int)
-        if self.config.get('commandPolicy') == OBSERVED95_LOCAL_COMMAND_POLICY:
+        if self.config.get('commandPolicy') in (OBSERVED95_LOCAL_COMMAND_POLICY, OBSERVED95_LOWER_COMMAND_POLICY):
             # 새 관측 전용 후보. 기존 넓은 후보를 묵시적으로 합치지 않는다.
+            close_durations = (200,250,350,450) if self.config['commandPolicy'] == OBSERVED95_LOWER_COMMAND_POLICY else (450,)
             permitted = (valid_shape and
-                ((command['direction'] == 'close' and command['percent'] == 60 and command['durationMs'] == 450) or
+                ((command['direction'] == 'close' and command['percent'] == 60 and command['durationMs'] in close_durations) or
                  (command['direction'] == 'open' and
                   ((command['percent'] == 60 and command['durationMs'] in (450,550,650)) or
                    (command['percent'] == 40 and command['durationMs'] in (250,350))))))
