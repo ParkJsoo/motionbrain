@@ -40,6 +40,14 @@ class RecordingPort(SequencePort):
         self._observed_path = None
         self._observed_payload = None
 
+    def _check_snapshot_status(self, status, *, emergency=False):
+        if not emergency:
+            return super()._check_snapshot_status(status, emergency=False)
+        # 실행 자세·외부 관측 실패는 STOP 뒤 전축 OFF 입증과 분리한다.
+        # 부팅·기본 안전 상태·전축0·드라이버 이력 검증은 그대로 유지한다.
+        SequencePort._check_status(self, status, 'IDLE')
+        return dict(mode='emergency_output_OFF_only', executionScopeValidated=False)
+
     def _save(self, path, value, emergency=False):
         super()._save(path, value, emergency)
         # Only successfully persisted retry evidence enters the viewer. These
@@ -534,6 +542,9 @@ class ManualCollection:
                 self.port.check_idle()
                 off = self.port.finish() is True
         except BaseException as exc:
+            # 현재 출력 OFF 입증에 성공하더라도 원 종료 검사의 실패는 남긴다.
+            failed = True
+            self.current['error'] = self.current['error'] or 'final_controller_check_failed'
             if not isinstance(exc, Exception):
                 interrupted = exc
             if self.port is not None:
@@ -554,6 +565,11 @@ class ManualCollection:
         evidence_failed = self.port is not None and getattr(self.port, 'evidence_failed', False)
         if evidence_failed:
             self.current['error'] = 'evidence_persistence_failed'
+        snapshot = getattr(self.port, 'last_snapshot', None)
+        if off and isinstance(snapshot, dict) and snapshot.get('statusValidation') == dict(
+                mode='emergency_output_OFF_only', executionScopeValidated=False):
+            self.current['finalOutputOffProof'] = dict(observedAt=self.port.last_off_at,
+                snapshot=copy.deepcopy(snapshot))
         self.current.update(finalIdleOffVerified=off, recording=recording,
                             phase='failed' if failed or evidence_failed or interrupted is not None or not off or not recording or recording.get('status') == 'failed' else 'completed',
                             endedAt=self.clock.monotonic())

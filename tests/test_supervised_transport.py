@@ -109,6 +109,15 @@ class TransportTests(unittest.TestCase):
         port.opener = device
         return port, device, store
 
+    def test_default_emergency_snapshot_preserves_custom_status_checker(self):
+        port,_,_=self.setup_port()
+        def rejected(status,expected,pulse=None,baseline_angle=None):
+            raise ValueError('custom_scope_still_checked')
+        port._check_status=rejected
+        with self.assertRaisesRegex(ValueError,'custom_scope_still_checked'):
+            port._snapshot(emergency=True)
+        self.assertFalse(port.off_verified)
+
     def test_private_return_goal_stops_once_after_safety_and_preserves_off(self):
         port,device,store=self.setup_port()
         device.after_run=lambda d:setattr(d,'angle',219.8)

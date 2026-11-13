@@ -477,16 +477,21 @@ class SequencePort:
                 return {**payload, 'entries': [e for page in pages for e in page['entries']]}, new
         raise ValueError('output_page_budget_exceeded')
 
+    def _check_snapshot_status(self, status, *, emergency=False):
+        self._check_status(status, 'IDLE')
+
     def _snapshot(self, *, emergency=False):
         actions = self._call('/actions', emergency=emergency)
         if actions.get('bootId') != self.boot_id or actions.get('active') is not False:
             raise ValueError('controller_boot_or_action_changed')
         status = self._status(emergency=emergency)
-        self._check_status(status, 'IDLE')
+        status_validation = self._check_snapshot_status(status, emergency=emergency)
         output, _ = self._outputs(emergency=emergency, quiet=not emergency and self._active_pulse is None)
         if self.last_outputs != {i: 0 for i in range(1, 6)}:
             raise ValueError('driver_off_not_proven')
         snapshot = {'actions': actions, 'status': status, 'outputs': output}
+        if status_validation is not None:
+            snapshot['statusValidation'] = status_validation
         self.last_snapshot = snapshot
         self.off_verified = True
         self.last_off_at = self.clock.monotonic()

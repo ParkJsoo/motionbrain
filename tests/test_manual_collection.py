@@ -112,6 +112,73 @@ class ManualCollectionTests(unittest.TestCase):
                     self.assertEqual(port.executions,[])
                 finally:manager.close()
 
+    def fixed_pose_port(self,angle=195.55):
+        from tests.test_supervised_transport import Clock,Controller,Store
+        clock=Clock();device=Controller(clock);device.angle=angle;events=[]
+        class FixedPosePort(RecordingPort):
+            def _check_status(self,status,expected,pulse=None,baseline_angle=None):
+                super()._check_status(status,expected,pulse,baseline_angle)
+                if abs(self._shoulder_angle(status)-195.55)>.25:
+                    raise ValueError('fixed_pose_changed')
+        port=FixedPosePort('http://127.0.0.1','secret','boot',Store(),observer=events.append,clock=clock)
+        port.opener=device
+        return port,device
+
+    def test_emergency_OFF_snapshot_separates_pose_failure_without_relaxing_idle(self):
+        port,device=self.fixed_pose_port(195.29)
+        with self.assertRaisesRegex(ValueError,'fixed_pose_changed'):port.preflight()
+        with self.assertRaisesRegex(ValueError,'fixed_pose_changed'):port.check_idle()
+        proof=port._snapshot(emergency=True)
+        self.assertTrue(port.off_verified)
+        self.assertEqual(proof['statusValidation'],dict(mode='emergency_output_OFF_only',executionScopeValidated=False))
+        self.assertEqual(device.requests.count(('/sequence',{'action':'run'})),0)
+
+    def test_active_pose_failure_still_raises_but_emergency_cleanup_proves_OFF(self):
+        from tests.test_supervised_transport import pulse
+        port,device=self.fixed_pose_port()
+        device.after_run=lambda d:setattr(d,'angle',195.29)
+        with self.assertRaisesRegex(ValueError,'fixed_pose_changed'):
+            port.execute(pulse('gripper','open',60,650),lambda:None)
+        self.assertTrue(port.off_verified);self.assertFalse(any(device.speeds.values()))
+        self.assertEqual(sum(payload=={'action':'run'} for _,payload in device.requests),1)
+        self.assertEqual(sum(payload=={'cmd':'stop'} for _,payload in device.requests),1)
+
+    def test_emergency_OFF_still_rejects_status_output_boot_and_raw_driver_output(self):
+        for mode in ('status','boot','driver'):
+            with self.subTest(mode=mode):
+                port,device=self.fixed_pose_port(195.29)
+                if mode=='boot':device.boot='changed'
+                else:
+                    zero_status=device.status();device.append(1,30)
+                    if mode=='driver':device.status=lambda:zero_status
+                with self.assertRaises(ValueError):port._snapshot(emergency=True)
+                self.assertFalse(port.off_verified)
+
+    def test_finish_preserves_final_scope_failure_even_when_emergency_OFF_succeeds(self):
+        self.start()
+        def failed():raise ValueError('fixed_pose_changed')
+        self.manager.port.check_idle=failed
+        self.manager.port.finish=lambda:True
+        snapshot=dict(statusValidation=dict(mode='emergency_output_OFF_only',executionScopeValidated=False),
+                      actions=dict(bootId='a'*32,active=False),outputs=dict(latestSequence=17))
+        self.manager.port.last_snapshot=snapshot;self.manager.port.last_off_at=self.clock.monotonic()
+        session=self.manager.finish()
+        self.assertEqual(session['phase'],'failed')
+        self.assertEqual(session['error'],'final_controller_check_failed')
+        self.assertTrue(session['finalIdleOffVerified'])
+        raw=json.loads((self.manager.store.root/'session.json').read_bytes())
+        self.assertEqual(raw['finalOutputOffProof'],dict(observedAt=self.clock.monotonic(),snapshot=snapshot))
+
+    def test_finish_keeps_original_command_error_when_current_OFF_can_be_proven(self):
+        self.start();self.manager.current['error']='command_failed_no_retry'
+        def failed():raise ValueError('fixed_pose_changed')
+        self.manager.port.check_idle=failed
+        self.manager.port.finish=lambda:True
+        session=self.manager.finish()
+        self.assertEqual(session['phase'],'failed')
+        self.assertEqual(session['error'],'command_failed_no_retry')
+        self.assertTrue(session['finalIdleOffVerified'])
+
     def transport(self, fail_start=False):
         from tests.test_supervised_transport import CompactTransportTests
         template, device, _ = CompactTransportTests().setup_port()
