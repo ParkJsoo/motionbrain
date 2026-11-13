@@ -22,10 +22,19 @@ from learning.supervised_transport import (SequencePort, validate_monitor_policy
     ELBOW_DEADLINE_POLICY, ELBOW_FINE_POLICY, ELBOW_PLATEAU_POLICY)
 
 SCHEMA = 'motionbrain.approach_external_guard.v1'
+CURRENT_SCENE_SCHEMA = 'motionbrain.current_scene_external_guard.v1'
+CURRENT_REFERENCE_MEANING = 'onsite_manual_close_ready_stationary_reference_not_model_success'
 
 
 def _number(value):
     return type(value) in (int, float) and math.isfinite(value)
+
+
+def _same_checker(left, right):
+    # 클래스의 bound method는 getattr할 때마다 새 객체가 되므로 함수·소유자를 비교한다.
+    return (left is right or getattr(left, '__func__', None) is not None and
+            getattr(left, '__func__', None) is getattr(right, '__func__', None) and
+            getattr(left, '__self__', None) is getattr(right, '__self__', None))
 
 
 class ApproachExternalGuard:
@@ -35,21 +44,47 @@ class ApproachExternalGuard:
     이미 검토한 원본과 수집기의 현재 신선도를 검사한다. 실행기는 RUN 직전
     validate_command(), OFF/실패 후 finally에서 disarm()을 호출해야 한다.
     """
+    configuration_schema = SCHEMA
+    allowed_policies = (ELBOW_DEADLINE_POLICY, ELBOW_FINE_POLICY, ELBOW_PLATEAU_POLICY)
+
+    def _configuration_fields(self):
+        return {'schemaVersion', 'tracking', 'goal', 'fixedObject', 'fixedObjectSourceRoot',
+                'maxAgeSeconds', 'controllerBootId', 'hostClockId', 'gripperCameraBootId',
+                'externalViewId', 'externalDeviceId', 'executionTimingPolicy'}
+
+    def _validate_reference(self, config):
+        pass
+
+    def _validate_loaded_reference(self):
+        pass
+
+    def _object_box_limit(self):
+        return 5
+
+    def _forearm_limit(self):
+        return 60
+
+    def _direction_limits(self):
+        return {ELBOW_DEADLINE_POLICY: (20, 12), ELBOW_FINE_POLICY: (20, 17),
+                ELBOW_PLATEAU_POLICY: (28, 26)}[self.config['executionTimingPolicy']]
+
+    def _reference_evidence(self):
+        return {}
+
     def __init__(self, repository, config_binding, recorder, port, store, *, clock=time):
         self.repository = Path(repository).resolve(strict=True)
         self.recorder, self.port, self.store, self.clock = recorder, port, store, clock
         self.config_binding = copy.deepcopy(config_binding)
         self.config = self._json(config_binding)
         c = self.config
-        require(isinstance(c, dict) and set(c) == {
-            'schemaVersion', 'tracking', 'goal', 'fixedObject', 'fixedObjectSourceRoot',
-            'maxAgeSeconds', 'controllerBootId', 'hostClockId', 'gripperCameraBootId',
-            'externalViewId', 'externalDeviceId', 'executionTimingPolicy'} and c['schemaVersion'] == SCHEMA,
+        require(isinstance(c, dict) and set(c) == self._configuration_fields()
+                and c['schemaVersion'] == self.configuration_schema,
             'approach_external_configuration')
         require(_number(c['maxAgeSeconds']) and 0 < c['maxAgeSeconds'] <= 3,
                 'approach_external_age_limit')
-        require(c['executionTimingPolicy'] in (ELBOW_DEADLINE_POLICY, ELBOW_FINE_POLICY, ELBOW_PLATEAU_POLICY),
+        require(c['executionTimingPolicy'] in self.allowed_policies,
                 'approach_external_M3_policy_required')
+        self._validate_reference(c)
         self._check_identity()
         tracking = self._json(c['tracking'])
         require(isinstance(tracking, dict) and
@@ -81,6 +116,7 @@ class ApproachExternalGuard:
                 isinstance(self.fixed_object.get('source'), dict) and
                 set(self.fixed_object['source']) == {'image', 'metadata', 'clock', 'admission'},
                 'approach_external_fixed_object_fields')
+        self._validate_loaded_reference()
         source_root = self._private(c['fixedObjectSourceRoot'])
         self._sources = []
         for binding in self.fixed_object['source'].values():
@@ -233,24 +269,26 @@ class ApproachExternalGuard:
         require(status['shoulderAngle'].get('active') is False and
                 abs(angle-self.tracking['expectedM4']) <= self.tracking['maximumM4Difference'],
                 'approach_external_fixed_M4_changed')
-        require(max(abs(a-b) for a, b in zip(external['objectBox'], self.fixed_object['external']['objectBox'])) <= 5,
+        require(max(abs(a-b) for a, b in zip(external['objectBox'], self.fixed_object['external']['objectBox']))
+                <= self._object_box_limit(),
                 'approach_external_fixed_object_extent_changed')
         require(len(result['state']) == 3 and abs(result['state'][2]-123) <= 3,
                 'approach_external_jaw_span_changed')
         box = result['object']['box']
         require(isinstance(box, list) and len(box) == 4 and 30 <= box[2]-box[0] <= 52,
                 'approach_external_object_scale_changed')
-        require(np.linalg.norm(np.array(external['forearmCenter'])-self.goal['forearmCenter']) <= 60,
+        require(np.linalg.norm(np.array(external['forearmCenter'])-self.goal['forearmCenter']) <= self._forearm_limit(),
                 'approach_external_retreat_scope_exceeded')
         self._verify_assets(); self.check()
         now = self.clock.monotonic()
         require(now < deadline and 0 <= now-frame['sourceEarliest'] <= self.config['maxAgeSeconds'],
                 'approach_external_review_expired')
         snapshot = plan_digest([record, result])
-        evidence = dict(schemaVersion=SCHEMA, accepted=True, observationSha256=snapshot,
+        evidence = dict(schemaVersion=self.configuration_schema, accepted=True, observationSha256=snapshot,
             configSha256=self.config_binding['sha256'], externalSource=dict(root=str(self.recorder.root), frame=frame),
             external=external, shoulderAngleDeg=angle, reviewedAt=now,
-            interpretation='현장범위 보호 검사; 독립 추적정확도·접촉·집기 검증 아님')
+            interpretation='현장범위 보호 검사; 독립 추적정확도·접촉·집기 검증 아님',
+            **self._reference_evidence())
         self._count += 1
         name = f'approach-external-review-{self._count:04d}.json'
         descriptor = self.store.write_json(name, evidence)
@@ -267,8 +305,7 @@ class ApproachExternalGuard:
         external = self._measurement
         delta = ((external['objectCenter'][1]-external['forearmCenter'][1])-
                  (self.goal['objectCenter'][1]-self.goal['forearmCenter'][1]))
-        up_limit, down_limit = {ELBOW_DEADLINE_POLICY: (20, 12), ELBOW_FINE_POLICY: (20, 17),
-                                ELBOW_PLATEAU_POLICY: (28, 26)}[self.config['executionTimingPolicy']]
+        up_limit, down_limit = self._direction_limits()
         require((command['direction'] == 'up' and delta <= up_limit) or
                 (command['direction'] == 'down' and delta >= down_limit),
                 'approach_external_direction_clearance_rejected')
@@ -276,3 +313,89 @@ class ApproachExternalGuard:
 
     def disarm(self):
         self.active = False
+
+
+class CurrentSceneExternalGuard(ApproachExternalGuard):
+    """사용자가 수동 배치한 현재 정지 자세를 기준으로 한 별도 실험 경계.
+
+    과거 목표의 좌표·방향 한도를 전이한 계약이 아니다. 새 원본과 같은 영상
+    좌표계에서 물체 경계 3px·전완 거리 10px·방향별 delta를 제한한다.
+    전완 거리·물체 경계는 사후 관측에도 적용한다. UP의 delta<=6과 DOWN의
+    delta>=0은 명령 전 방향 조건이며, 사후 delta를 [0,6]으로 강제하지 않는다.
+    실행 중 경계 통과를 막는 연속 충돌 검사도 아니다.
+    명령 허용 후에는 기존 포트 monitor 응답에도 M4 고정 검사를 적용한다.
+    새 HTTP 조회는 만들지 않으며 disarm에서 자기 검사기만 복원한다.
+    이 경계는 충돌·접촉·추적 정확도 보증이나 모델 접근 성공 판정이 아니다.
+    """
+    configuration_schema = CURRENT_SCENE_SCHEMA
+    allowed_policies = (ELBOW_DEADLINE_POLICY,)
+
+    def __init__(self, *args, **kwargs):
+        self._status_original = self._status_wrapper = None
+        super().__init__(*args, **kwargs)
+
+    def check(self):
+        super().check()
+        if self.active:
+            require(self._status_wrapper is not None and
+                    getattr(self.port, '_check_status', None) is self._status_wrapper,
+                    'current_scene_status_guard_replaced')
+
+    def validate_command(self, command):
+        require(not self.active and self._status_wrapper is None,
+                'current_scene_command_already_active')
+        original = getattr(self.port, '_check_status', None)
+        require(callable(original), 'current_scene_status_monitor_required')
+        super().validate_command(command)
+        try:
+            require(_same_checker(getattr(self.port, '_check_status', None), original),
+                    'current_scene_status_guard_changed_before_install')
+
+            def checked(status, expected, pulse=None, baseline_angle=None):
+                result = original(status, expected, pulse, baseline_angle)
+                if self.active:
+                    angle = SequencePort._shoulder_angle(status)
+                    require(status['shoulderAngle'].get('active') is False and
+                            abs(angle-self.tracking['expectedM4']) <= self.tracking['maximumM4Difference'],
+                            'current_scene_active_fixed_M4_changed')
+                return result
+
+            self._status_original, self._status_wrapper = original, checked
+            self.port._check_status = checked
+        except BaseException:
+            self.disarm()
+            raise
+
+    def disarm(self):
+        super().disarm()
+        if self._status_wrapper is not None and getattr(self.port, '_check_status', None) is self._status_wrapper:
+            self.port._check_status = self._status_original
+        self._status_original = self._status_wrapper = None
+
+    def _configuration_fields(self):
+        return super()._configuration_fields() | {'referenceMeaning'}
+
+    def _validate_reference(self, config):
+        require(config['referenceMeaning'] == CURRENT_REFERENCE_MEANING,
+                'current_scene_manual_reference_meaning_required')
+
+    def _validate_loaded_reference(self):
+        reference = self.fixed_object['external']
+        require(self.tracking['goalTemplateCenter'] == self.goal['forearmCenter'] == reference.get('forearmCenter')
+                and self.goal['objectCenter'] == reference.get('objectCenter'),
+                'current_scene_same_stationary_reference_required')
+
+    def _object_box_limit(self):
+        return 3
+
+    def _forearm_limit(self):
+        return 10
+
+    def _direction_limits(self):
+        # 같은 새 기준에서 측정한 (물체Y-전완Y) 변화다. 과거 12/20px가 아니다.
+        return 6, 0
+
+    def _reference_evidence(self):
+        return dict(referenceMeaning=CURRENT_REFERENCE_MEANING,
+                    experimentalFence=dict(objectBoxMaximumChangePx=3,
+                        forearmMaximumDistancePx=10, upMaximumDeltaPx=6, downMinimumDeltaPx=0))

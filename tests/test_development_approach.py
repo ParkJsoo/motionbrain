@@ -272,6 +272,20 @@ class ApproachTests(unittest.TestCase):
         self.assertEqual([policy for _,policy in port.calls],[ELBOW_PLATEAU_POLICY]*3)
         self.assertTrue(all(pulse['percent']==35 and pulse['durationMs']==650 for pulse,_ in port.calls))
 
+    def test_current_scene_reference_is_explicit_and_350_only(self):
+        from learning.approach_external_guard import CURRENT_REFERENCE_MEANING
+        self.external_guard_config.update(schemaVersion='motionbrain.current_scene_external_guard.v1',
+                                          referenceMeaning=CURRENT_REFERENCE_MEANING)
+        self.admission['externalGuard']=self.save('external-guard.json',self.external_guard_config)
+        self.resave();self.bank()
+        self.external_guard_config['referenceMeaning']='automatic_goal_transfer'
+        self.admission['externalGuard']=self.save('external-guard.json',self.external_guard_config)
+        self.resave()
+        with self.assertRaisesRegex(ValueError,'current_scene_guard_contract_changed'):self.bank()
+        self.external_guard_config['referenceMeaning']=CURRENT_REFERENCE_MEANING
+        self.set_profile(ELBOW_PLATEAU_POLICY,35,650)
+        with self.assertRaisesRegex(ValueError,'current_scene_guard_contract_changed'):self.bank()
+
     def test_known_timing_policy_cannot_be_paired_with_different_output_profile(self):
         self.set_profile(ELBOW_PLATEAU_POLICY,60,650)
         with self.assertRaisesRegex(ValueError,'unsupported_monitor_timing_policy'):self.bank()

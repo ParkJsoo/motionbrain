@@ -67,12 +67,18 @@ class ApproachModelBank:
         self.actual_context['cameraIdentity']['cameraBootId'] = boot
         guard_config = _bound_json(self.root, a['externalGuard'])
         require(isinstance(guard_config, dict) and
-                guard_config.get('schemaVersion') == 'motionbrain.approach_external_guard.v1' and
+                guard_config.get('schemaVersion') in ('motionbrain.approach_external_guard.v1',
+                                                      'motionbrain.current_scene_external_guard.v1') and
                 guard_config.get('controllerBootId') == scope['controllerBootId'] and
                 guard_config.get('hostClockId') == scope['hostClockId'] and
                 guard_config.get('gripperCameraBootId') == boot and
                 guard_config.get('executionTimingPolicy') == model['context']['executionTimingPolicy'],
                 'approach_external_guard_contract_changed')
+        if guard_config['schemaVersion'] == 'motionbrain.current_scene_external_guard.v1':
+            from learning.approach_external_guard import CURRENT_REFERENCE_MEANING
+            require(guard_config.get('referenceMeaning') == CURRENT_REFERENCE_MEANING and
+                    guard_config['executionTimingPolicy'] == ELBOW_DEADLINE_POLICY,
+                    'approach_current_scene_guard_contract_changed')
         self.external_guard_config = guard_config
         review = _bound_json(self.root, a['sceneReview'])
         require(isinstance(review, dict) and set(review) == {
