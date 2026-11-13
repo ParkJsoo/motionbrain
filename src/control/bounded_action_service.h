@@ -23,6 +23,7 @@ bool enabled();
 bool active();
 void cancel(bounded::Reason reason);
 const bounded::Executor* executor();
+const char* outputBootId();
 bounded::SubmitResult submit(const bounded::Request& request);
 void appendStatusJson(String& json);
 void appendRecordJson(String& json, const bounded::Record& record);

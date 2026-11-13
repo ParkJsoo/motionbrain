@@ -19,4 +19,16 @@ int main() {
   page=collection_http::outputPage(log,138,8); assert(page.end-page.begin==2 && !page.hasMore && !page.gap);
   page=collection_http::outputPage(log,140,8); assert(page.end==page.begin && !page.hasMore && !page.gap);
   assert(collection_http::outputPage(log,141,8).gap);
+  const char* boot="0123456789abcdef0123456789abcdef";
+  assert(collection_http::latestOutputSequence(log)==140);
+  assert(collection_http::stableOutputCursor(140,140,boot,boot));
+  assert(!collection_http::stableOutputCursor(140,141,boot,boot));
+  assert(!collection_http::stableOutputCursor(140,140,boot,"ffffffffffffffffffffffffffffffff"));
+  assert(!collection_http::stableOutputCursor(0,0,boot,boot));
+  assert(!collection_http::stableOutputCursor(140,140,"",boot));
+  // OFF→nonzero→OFF cannot retain the old cursor, even if final PWM is zero.
+  log.append(141,0,1,20,bounded::OutputReason::DriverWrite);
+  log.append(142,0,1,0,bounded::OutputReason::DriverWrite);
+  assert(collection_http::latestOutputSequence(log)==142);
+  assert(!collection_http::stableOutputCursor(140,142,boot,boot));
 }

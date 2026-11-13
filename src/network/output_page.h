@@ -1,5 +1,6 @@
 #pragma once
 #include <stdint.h>
+#include <string.h>
 #include "motor/applied_output_log.h"
 
 namespace collection_http {
@@ -31,5 +32,12 @@ inline OutputPage outputPage(const bounded::AppliedOutputLog& log, uint32_t afte
   while (page.end<log.count() && page.end-page.begin<limit) ++page.end;
   page.hasMore=page.end<log.count();
   return page;
+}
+inline uint32_t latestOutputSequence(const bounded::AppliedOutputLog& log) {
+  return log.count() ? log.at(log.count()-1)->sequence : 0;
+}
+inline bool stableOutputCursor(uint32_t before, uint32_t after, const char* bootBefore, const char* bootAfter) {
+  return before > 0 && before == after && bootBefore && bootAfter &&
+    strlen(bootBefore) == 32 && strcmp(bootBefore, bootAfter) == 0;
 }
 }

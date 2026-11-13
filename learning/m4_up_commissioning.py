@@ -64,7 +64,7 @@ def prepare_controller_proof(port, *, clock, guard, save, expected_state='ARMED'
         guard()
         port._refresh_run_proof(require_ready=False,expected_state=expected_state)
         guard();now=clock.monotonic()
-        if set(port.proof_started)=={'status','outputs'} and all(
+        if not getattr(port,'_cursor_requires_output_read',False) and set(port.proof_started)=={'status','outputs'} and all(
                 0 <= now-at <= PREPARED_CONTROLLER_PROOF_AGE_SECONDS for at in port.proof_started.values()):
             save('controller-pre-dispatch-admission.json',dict(preparedAt=now,preparationCycles=cycle+1,
                 expectedState=expected_state,controllerProofStarted=copy.deepcopy(port.proof_started),
@@ -78,7 +78,8 @@ def prepare_controller_proof(port, *, clock, guard, save, expected_state='ARMED'
 PUBLIC_FAILURE_CODES = frozenset({
     'm4_native_pre_dispatch_unavailable', 'm4_controller_proof_stale',
     'm4_pre_run_guard_stale', 'm4_pinned_before_outside_dispatch_window',
-    'm4_start_context_changed', 'm4_observed_excursion', 'm4_camera_wait_expired'})
+    'm4_start_context_changed', 'm4_observed_excursion', 'm4_camera_wait_expired',
+    'm4_output_cursor_invalid','m4_output_cursor_regressed','m4_output_cursor_baseline_changed'})
 
 
 def sha(raw):
@@ -158,6 +159,7 @@ def validate_scope(scope):
 RECORDED_IMPLEMENTATION_DIGESTS = frozenset({
     'ed3333408c4662d442c7bd61bec579c1da16dd8e9eae79448f261f57d9b249ba',
     '4848a96eb9411bf486fa3bc662fafa3687e723910a59e1d6032a25e7c131f179',
+    '4c4b01c097b5f34b2db7cfdcac147462f398698b0827b09c07996b7f3127f942',
 })
 
 
@@ -267,6 +269,9 @@ class _CommissioningPort(transport.SequencePort):
         self.proving_off = False
         self.proof_started = {}
         self.proof_refresh_count = 0
+        self._driver_cursor_baseline = None
+        self._cursor_requires_output_read = False
+        self._cursor_baseline_count = self._cursor_evidence_count = 0
 
     def execute(self, *args, **kwargs):
         raise ValueError('m4_use_scoped_commissioning_only')
@@ -298,12 +303,12 @@ class _CommissioningPort(transport.SequencePort):
                 'm4_proof_expected_state')
         require(set(self.proof_started) == {'status', 'outputs'}, 'm4_controller_proof_stale')
         now = self.clock.monotonic()
-        if all(0 <= now-at <= .15 for at in self.proof_started.values()):
+        if not self._cursor_requires_output_read and all(0 <= now-at <= .15 for at in self.proof_started.values()):
             return
         before = copy.deepcopy(self.proof_started)
         self.proof_refresh_count += 1
         require(self.proof_refresh_count <= 4, 'm4_proof_refresh_budget')
-        oldest = min(before, key=before.get)
+        oldest = 'outputs' if self._cursor_requires_output_read else min(before, key=before.get)
         if oldest == 'status':
             self._check_status(self._status(), expected_state)
         else:
@@ -326,12 +331,58 @@ class _CommissioningPort(transport.SequencePort):
         started = self.clock.monotonic()
         result = super()._status(**kwargs)
         self.proof_started['status'] = started
+        if 'outputProof' in result:
+            cursor=result['outputProof']
+            require(isinstance(cursor,dict) and set(cursor)=={'schemaVersion','bootId','sequenceBefore','sequenceAfter','stable'}
+                    and cursor.get('schemaVersion')=='driver_cursor.v1' and cursor.get('bootId')==self.boot_id
+                    and cursor.get('stable') is True
+                    and all(type(cursor.get(key)) is int and 0 < cursor[key] <= 4294967295
+                            for key in ('sequenceBefore','sequenceAfter'))
+                    and cursor['sequenceBefore']==cursor['sequenceAfter'],'m4_output_cursor_invalid')
+            baseline=self._driver_cursor_baseline
+            if baseline is not None and not self.may_have_run and not kwargs.get('emergency'):
+                sequence=cursor['sequenceAfter']
+                require(sequence>=baseline['latestSequence'],'m4_output_cursor_regressed')
+                if sequence==baseline['latestSequence']:
+                    require(baseline['bootId']==self.boot_id and baseline['complete'] is True and
+                            self.last_sequence==sequence and self.last_outputs==baseline['lastOutputs']=={i:0 for i in range(1,6)},
+                            'm4_output_cursor_baseline_changed')
+                    baseline_raw=_read(self.store.root,baseline['evidenceFile'])
+                    require(sha(baseline_raw)==baseline['evidenceSha256'] and
+                            plan_digest(_decode_json(baseline_raw))==plan_digest({k:v for k,v in baseline.items()
+                                if k not in ('evidenceFile','evidenceSha256')}),
+                            'm4_output_cursor_baseline_changed')
+                    self._cursor_evidence_count+=1
+                    self._save(f'controller-output-cursor-{self._cursor_evidence_count:03d}.json',dict(
+                        evidence='same_boot_complete_driver_history_cursor',statusHttpSerial=self.serial,
+                        statusRequestStartedAt=started,outputProof=copy.deepcopy(cursor),
+                        historyEvidenceFile=baseline['evidenceFile'],historyEvidenceSha256=baseline['evidenceSha256']))
+                    self.proof_started['outputs']=started
+                    self._cursor_requires_output_read=False
+                else:
+                    # A newer cursor can contain 0→nonzero→0. Never forget it
+                    # just because current status says every motor is OFF.
+                    self._cursor_requires_output_read=True
         return result
 
     def _outputs(self, **kwargs):
         started = self.clock.monotonic()
+        first_serial=self.serial+1
+        bootstrap=self.last_sequence is None
         result = super()._outputs(**kwargs)
         self.proof_started['outputs'] = started
+        payload,new=result
+        if (not self.may_have_run and not kwargs.get('emergency') and self.compact_reads
+                and payload.get('hasMore') is False and payload.get('gap') is False
+                and self.last_outputs=={i:0 for i in range(1,6)}
+                and (bootstrap or not any(entry['pwm']!=0 for entry in new))):
+            self._cursor_baseline_count+=1
+            name=f'controller-output-history-baseline-{self._cursor_baseline_count:03d}.json'
+            value=dict(bootId=self.boot_id,latestSequence=self.last_sequence,lastOutputs=copy.deepcopy(self.last_outputs),
+                firstHttpSerial=first_serial,lastHttpSerial=self.serial,complete=True,requestStartedAt=started)
+            self._save(name,value)
+            self._driver_cursor_baseline=dict(value,evidenceFile=name,evidenceSha256=sha(_read(self.store.root,name)))
+            self._cursor_requires_output_read=False
         return result
 
     def _check_status(self, status, expected, pulse=None, baseline_angle=None):
@@ -519,7 +570,7 @@ class M4UpCommissioning:
             self.port._refresh_run_proof(require_ready=False)
             self._guard()
             now = self.clock.monotonic()
-            proof_ready = all(0 <= now-at <= .20 for at in self.port.proof_started.values())
+            proof_ready = not self.port._cursor_requires_output_read and all(0 <= now-at <= .20 for at in self.port.proof_started.values())
             if proof_ready and self.observer.native_pre_window_ready(horizon_seconds=.06):
                 self.store.write_json('native-pre-dispatch-admission.json', dict(
                     preparedAt=self.clock.monotonic(), preparationCycles=cycle+1,
@@ -550,7 +601,7 @@ class M4UpCommissioning:
         return source,features
 
     def _require_fresh_controller_proof(self, now):
-        require(set(self.port.proof_started) == {'status','outputs'}
+        require(not self.port._cursor_requires_output_read and set(self.port.proof_started) == {'status','outputs'}
                 and all(0 <= now-at <= MAX_CONTROLLER_PROOF_AGE_SECONDS
                         for at in self.port.proof_started.values()), 'm4_controller_proof_stale')
 

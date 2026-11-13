@@ -200,4 +200,5 @@ void appendOutputJson(String& json, bool paged, uint32_t after, size_t limit) {
   }
   json += "]}";
 }
+const char* outputBootId() { return core ? core->bootId() : ""; }
 }

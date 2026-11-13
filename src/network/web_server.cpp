@@ -905,6 +905,8 @@ void MotionBrainWebServer::handleRoot() {
 void MotionBrainWebServer::handleCollectionStatus() {
   if (!systemState_ || !motorControl_) { sendErrorJson(503, "collection_status_unavailable"); return; }
   sendNoStoreHeaders(server_);
+  const String outputBootBefore = BoundedActions::outputBootId();
+  const uint32_t outputSequenceBefore = collection_http::latestOutputSequence(motorControl_->outputLog());
   String json; json.reserve(1200);
   json = "{\"schemaVersion\":\"collection.v1\",\"uptimeMs\":";
   json += millis();
@@ -947,6 +949,19 @@ void MotionBrainWebServer::handleCollectionStatus() {
   json += "},\"baseAngle\":{\"active\":"; json += angleController.isActive() ? "true" : "false";
   json += "},";
   shoulderAngleController.appendCollectionStatusJson(json);
+  const uint32_t outputSequenceAfter = collection_http::latestOutputSequence(motorControl_->outputLog());
+  const String outputBootAfter = BoundedActions::outputBootId();
+  String outputProof = ",\"outputProof\":{\"schemaVersion\":\"driver_cursor.v1\",\"bootId\":\"";
+  outputProof += outputBootBefore;
+  outputProof += "\",\"sequenceBefore\":"; outputProof += outputSequenceBefore;
+  outputProof += ",\"sequenceAfter\":"; outputProof += outputSequenceAfter;
+  outputProof += ",\"stable\":";
+  outputProof += collection_http::stableOutputCursor(outputSequenceBefore, outputSequenceAfter,
+    outputBootBefore.c_str(), outputBootAfter.c_str()) ? "true" : "false";
+  outputProof += '}';
+  // Optional evidence must not enlarge the existing collection.v1 body limit.
+  // Absence retains the old independently-read output-history contract.
+  if (json.length()+outputProof.length()+1 <= 1200) json += outputProof;
   json += '}';
   if (json.length() > 1200) { sendErrorJson(503, "collection_status_too_large"); return; }
   server_.send(200, "application/json", json);

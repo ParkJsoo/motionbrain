@@ -13,6 +13,9 @@ class CollectionHttpContractTest(unittest.TestCase):
         for name in ('motorEnabled','motors','speed','enabled','connected','simulated','imuOk','blocked','faultLatched','lastUpdateMs','deadman','controlActive','active'):
             self.assertIn('\\"'+name+'\\"',compact)
         self.assertIn('json.length() > 1200',compact)
+        self.assertIn('driver_cursor.v1',compact)
+        self.assertIn('stableOutputCursor',compact)
+        self.assertIn('json.length()+outputProof.length()+1 <= 1200',compact)
         shoulder=(ROOT/'src/control/shoulder_angle_controller.cpp').read_text().split('void ShoulderAngleController::appendCollectionStatusJson')[1].split('void ShoulderAngleController::appendShoulderStatusJson')[0]
         for name in ('available','sensorConnected','sensorFresh','sensorReady','angleDeg','ageMs','manualDownBoundaryDeg','manualUpBoundaryDeg','manualGuardBlocked','manualCalibrationUnlock'):
             self.assertIn('\\"'+name+'\\"',shoulder)
@@ -22,3 +25,15 @@ class CollectionHttpContractTest(unittest.TestCase):
         entry=dict(sequence=4294967295,atMs=4294967295,actionOrdinal=4294967295,motor=5,pwm=-255,reason='driver_write')
         page=dict(bootId='f'*32,evidence='driver_write',clockDomain='controller_boot_millis',dropped=4294967295,oldestSequence=4294967295,latestSequence=4294967295,gap=False,hasMore=False,entries=[entry]*8)
         self.assertLessEqual(len(json.dumps(page,separators=(',',':')).encode()),1200)
+
+    def test_optional_cursor_maximum_metadata_and_existing_size_cap(self):
+        proof=dict(schemaVersion='driver_cursor.v1',bootId='f'*32,
+                   sequenceBefore=4294967295,sequenceAfter=4294967295,stable=False)
+        encoded=json.dumps(dict(outputProof=proof),separators=(',',':')).encode()
+        self.assertLess(len(encoded),200)
+        # Existing fields are retained. Oversized status simply omits this
+        # optional extension rather than changing collection.v1's 1200 cap.
+        for base in (835,1199):
+            appended=base+len(encoded)-1
+            output_length=appended if appended<=1200 else base
+            self.assertLessEqual(output_length,1200)

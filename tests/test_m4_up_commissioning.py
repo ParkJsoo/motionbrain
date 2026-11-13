@@ -138,6 +138,18 @@ class CommissioningTests(unittest.TestCase):
         self.decode_patch=patch.object(m,'decode',side_effect=self.observer.decode);self.decode_patch.start();self.addCleanup(self.decode_patch.stop)
     def run_trial(self):return self.trial.run(confirmed_scope_sha256=plan_digest(self.scope))
     def posts(self):return [(p,v) for p,v in self.device.requests if v is not None]
+    def install_cursor(self,hook=None):
+        original=self.device.open
+        def opened(request,timeout):
+            response=original(request,timeout)
+            if request.data is None and urllib.parse.urlsplit(request.full_url).path=='/collection_status':
+                if hook:hook()
+                payload=json.loads(response.raw);sequence=self.device.entries[-1]['sequence']
+                payload['outputProof']=dict(schemaVersion='driver_cursor.v1',bootId=self.device.boot,
+                    sequenceBefore=sequence,sequenceAfter=sequence,stable=True)
+                return Response(payload)
+            return response
+        self.device.open=opened
     def row(self):
         import sqlite3
         with sqlite3.connect(self.repo/'.local/visual-actions/controller-commands.sqlite') as db:
@@ -149,6 +161,103 @@ class CommissioningTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'scoped_commissioning'):self.trial.port.execute(m.PULSE,lambda:None)
         self.assertFalse(self.device.requests)
         self.assertFalse((self.repo/'.local/visual-actions').exists())
+
+    def test_same_cursor_reattests_full_zero_history_at_status_request_start(self):
+        self.install_cursor();self.delayed_arm_proof()
+        result=self.run_trial();self.assertEqual(result['status'],'completed',result)
+        evidence=[json.loads(p.read_text()) for p in self.store.root.glob('controller-output-cursor-*.json')]
+        self.assertTrue(evidence)
+        for value in evidence:
+            baseline=json.loads((self.store.root/value['historyEvidenceFile']).read_text())
+            self.assertTrue(baseline['complete']);self.assertEqual(baseline['lastOutputs'],{str(i):0 for i in range(1,6)})
+            intent=json.loads((self.store.root/f"http-{value['statusHttpSerial']:06d}-intent.json").read_text())
+            response=json.loads((self.store.root/f"http-{value['statusHttpSerial']:06d}-response.json").read_text())
+            self.assertLessEqual(value['statusRequestStartedAt'],intent['startedAt'])
+            self.assertLess(value['statusRequestStartedAt'],response['receivedAt'])
+            self.assertEqual(value['outputProof']['sequenceAfter'],baseline['latestSequence'])
+        guard=json.loads((self.store.root/'pre-run-guard.json').read_text())
+        self.assertEqual(guard['controllerProofStarted']['status'],guard['controllerProofStarted']['outputs'])
+        self.assertEqual(sum(payload=={'action':'run'} for _,payload in self.posts()),1)
+        # The original post-RUN output trace is still audited, including nonzero PWM.
+        self.assertTrue(any(entry['pwm']!=0 for entry in result['receipt']['outputTrace']))
+
+    def test_cursor_cannot_create_initial_baseline_from_status_or_motor_cache(self):
+        port=self.trial.port;port.last_sequence=5;port.last_outputs={i:0 for i in range(1,6)}
+        port.proof_started={'outputs':self.clock.now-1.}
+        status=dict(schemaVersion='collection.v1',outputProof=dict(schemaVersion='driver_cursor.v1',
+            bootId=self.device.boot,sequenceBefore=5,sequenceAfter=5,stable=True))
+        with patch.object(port,'_call',return_value=status):port._status()
+        self.assertEqual(port.proof_started['outputs'],self.clock.now-1.)
+        self.assertIsNone(port._driver_cursor_baseline)
+
+    def test_malformed_present_cursor_never_falls_back_to_legacy(self):
+        valid=dict(schemaVersion='driver_cursor.v1',bootId=self.device.boot,sequenceBefore=5,sequenceAfter=5,stable=True)
+        malformed=[None,{},dict(valid,schemaVersion='unknown'),dict(valid,bootId='c'*32),
+            dict(valid,stable=False),dict(valid,sequenceBefore=True),dict(valid,sequenceAfter=6),
+            dict(valid,sequenceBefore=0,sequenceAfter=0),dict(valid,extra=True)]
+        for cursor in malformed:
+            with self.subTest(cursor=cursor),patch.object(self.trial.port,'_call',return_value=dict(schemaVersion='collection.v1',outputProof=cursor)):
+                with self.assertRaisesRegex(ValueError,'output_cursor_invalid'):self.trial.port._status()
+        self.assertFalse(self.device.requests)
+
+    def test_advanced_cursor_does_not_forget_nonzero_then_zero_history(self):
+        reads=[]
+        def hook():
+            if self.device.state=='ARMED' and not self.device.running:
+                reads.append(self.clock.now)
+                if len(reads)==2:self.device.append(4,20);self.device.append(4,0)
+        self.install_cursor(hook);self.delayed_arm_proof()
+        pending=[];original=self.trial.port._outputs
+        def outputs(**kwargs):
+            pending.append(self.trial.port._cursor_requires_output_read)
+            return original(**kwargs)
+        with patch.object(self.trial.port,'_outputs',side_effect=outputs):result=self.run_trial()
+        self.assertEqual(result['status'],'failed',result);self.assertFalse(result['mayHaveRun'])
+        self.assertFalse(any(payload=={'action':'run'} for _,payload in self.posts()))
+        self.assertIn(True,pending)
+
+    def test_advanced_zero_cursor_is_consumed_by_full_history_before_dispatch(self):
+        reads=[]
+        def hook():
+            if self.device.state=='ARMED' and not self.device.running:
+                reads.append(self.clock.now)
+                if len(reads)==2:self.device.append(4,0)
+        self.install_cursor(hook);self.delayed_arm_proof()
+        result=self.run_trial();self.assertEqual(result['status'],'completed',result)
+        baselines=[json.loads(p.read_text()) for p in self.store.root.glob('controller-output-history-baseline-*.json')]
+        self.assertGreater(len({v['latestSequence'] for v in baselines}),1)
+
+    def test_changed_baseline_evidence_is_rejected_even_with_matching_cursor(self):
+        changed=[]
+        def hook():
+            if self.device.state=='ARMED' and not changed:
+                baseline=self.trial.port._driver_cursor_baseline
+                (self.store.root/baseline['evidenceFile']).write_text('{}');changed.append(True)
+        self.install_cursor(hook)
+        result=self.run_trial();self.assertEqual(result['status'],'failed',result)
+        self.assertFalse(result['mayHaveRun']);self.assertFalse(any(payload=={'action':'run'} for _,payload in self.posts()))
+
+    def test_regressed_cursor_is_rejected_against_complete_baseline(self):
+        self.install_cursor();original=self.device.open
+        def regressed(request,timeout):
+            response=original(request,timeout)
+            if request.data is None and self.device.state=='ARMED' and urllib.parse.urlsplit(request.full_url).path=='/collection_status':
+                payload=json.loads(response.raw);sequence=self.trial.port._driver_cursor_baseline['latestSequence']-1
+                payload['outputProof'].update(sequenceBefore=sequence,sequenceAfter=sequence)
+                return Response(payload)
+            return response
+        self.device.open=regressed
+        result=self.run_trial();self.assertEqual(result['status'],'failed',result)
+        self.assertIn('m4_output_cursor_regressed',[e.get('code') for e in result['errors']])
+        self.assertFalse(any(payload=={'action':'run'} for _,payload in self.posts()))
+
+    def test_cursor_cannot_fill_unknown_motor_in_cached_five_OFF_baseline(self):
+        def hook():
+            if self.device.state=='ARMED':self.trial.port.last_outputs.pop(5,None)
+        self.install_cursor(hook)
+        result=self.run_trial();self.assertEqual(result['status'],'failed',result)
+        self.assertIn('m4_output_cursor_baseline_changed',[e.get('code') for e in result['errors']])
+        self.assertFalse(any(payload=={'action':'run'} for _,payload in self.posts()))
     def test_exact_scope_hash_required_before_journal_or_controller(self):
         with self.assertRaisesRegex(ValueError,'exact_unconsumed'):self.trial.run(confirmed_scope_sha256='0'*64)
         self.assertFalse((self.repo/'.local/visual-actions').exists());self.assertFalse(self.device.requests)
@@ -357,6 +466,11 @@ class CommissioningTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'implementation_changed'):m.validate_scope(noncontact)
         noncontact['implementationSha256']='ed3333408c4662d442c7bd61bec579c1da16dd8e9eae79448f261f57d9b249ba'
         with self.assertRaisesRegex(ValueError,'recorded_implementation_unknown'):m.validate_recorded_scope(noncontact)
+        for old in (recorded,noncontact):
+            previous=copy.deepcopy(old)
+            previous['implementationSha256']='4c4b01c097b5f34b2db7cfdcac147462f398698b0827b09c07996b7f3127f942'
+            self.assertEqual(m.validate_recorded_scope(previous),previous)
+            with self.assertRaisesRegex(ValueError,'implementation_changed'):m.validate_scope(previous)
 
     def test_shared_preparation_can_be_checked_in_explicit_IDLE_readonly_port(self):
         class ReadOnly(m._CommissioningPort):
