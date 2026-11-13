@@ -669,6 +669,59 @@ class CommissioningTests(unittest.TestCase):
         self.assertEqual(sum(v=={'action':'run'} for _,v in self.posts()),1)
         self.assertFalse(any(self.device.speeds.values()))
 
+    def return_trial(self):
+        self.scope.update(schemaVersion=m.RETURN_SCHEMA,pulse=copy.deepcopy(m.RETURN_PULSE),
+                          expectedStartAngleDeg=198.45,maxObservedDeltaDeg=3.,goalAngleDeg=196.17)
+        self.scope['context']['supportMode']='gripper_supported';self.device.angle=198.45
+        def review(record):
+            record['onsite']['tableSupportVerified']=record['gripper']['label']=='after'
+            record['evidenceSha256']=self.observer.save(record['evidenceFile'],
+                {k:v for k,v in record.items() if k not in ('evidenceFile','evidenceSha256')})
+            self.observer.latest_record=copy.deepcopy(record)
+        self.observer.on_before=review;self.observer.on_after=review
+        self.trial=m.M4UpCommissioning(self.scope,self.observer,'private-token',self.store,evidence_root=self.evidence,clock=self.clock)
+        self.trial.port.opener=self.device
+
+    def test_return_exact_down_one_command_with_angle_stop_and_table_review(self):
+        self.return_trial();self.device.after_run=lambda d:setattr(d,'angle',196.25)
+        r=self.run_trial();self.assertEqual(r['status'],'completed',r)
+        self.assertEqual(r['selectionKind'],'manual_table_return_angle_stop')
+        self.assertTrue(r['tableSupportVerified']);self.assertEqual(r['returnOutcome'],'table_supported')
+        self.assertEqual(r['receipt']['requestedPulse'],m.RETURN_PULSE)
+        self.assertTrue(r['receipt']['stoppedEarly']);self.assertTrue(r['finalIdleOffVerified'])
+        self.assertFalse(r['modelSelected']);self.assertFalse(r['trainingEligible'])
+        self.assertEqual(sum(v=={'action':'run'} for _,v in self.posts()),1)
+    def test_return_already_floor_rejected_before_run(self):
+        self.return_trial();self.device.angle=196.2
+        r=self.run_trial();self.assertEqual(r['status'],'failed');self.assertFalse(self.posts())
+    def test_return_requires_airborne_before_without_table_support_fiction(self):
+        self.return_trial();self.observer.on_before=None
+        r=self.run_trial();self.assertEqual(r['status'],'failed')
+        self.assertFalse(any(v=={'action':'run'} for _,v in self.posts()))
+    def test_return_goal_angle_cannot_replace_after_table_review(self):
+        self.return_trial();self.device.after_run=lambda d:setattr(d,'angle',196.25)
+        self.observer.on_after=None
+        r=self.run_trial();self.assertEqual(r['status'],'completed');self.assertTrue(r['finalIdleOffVerified'])
+        self.assertFalse(r['tableSupportVerified']);self.assertEqual(r['returnOutcome'],'not_yet_table_supported')
+        self.assertEqual(sum(v=={'action':'run'} for _,v in self.posts()),1)
+    def test_return_normal_shortfall_is_not_a_command_failure_or_automatic_retry(self):
+        self.return_trial();self.device.after_run=lambda d:setattr(d,'angle',198.2)
+        self.observer.on_after=None
+        r=self.run_trial();self.assertEqual(r['status'],'completed',r)
+        self.assertEqual(r['returnOutcome'],'not_yet_table_supported');self.assertFalse(r['tableSupportVerified'])
+        self.assertFalse(r['receipt']['stoppedEarly']);self.assertTrue(r['finalIdleOffVerified'])
+        self.assertEqual(sum(v=={'action':'run'} for _,v in self.posts()),1)
+
+    def test_return_excursion_stops_off_without_retry(self):
+        self.return_trial();self.device.after_run=lambda d:setattr(d,'angle',195.3)
+        r=self.run_trial();self.assertEqual(r['status'],'failed');self.assertTrue(r['finalIdleOffVerified'])
+        self.assertEqual(sum(v=={'action':'run'} for _,v in self.posts()),1)
+
+    def test_return_opposite_motion_stops_off_without_retry(self):
+        self.return_trial();self.device.after_run=lambda d:setattr(d,'angle',198.8)
+        r=self.run_trial();self.assertEqual(r['status'],'failed');self.assertTrue(r['finalIdleOffVerified'])
+        self.assertEqual(sum(v=={'action':'run'} for _,v in self.posts()),1)
+
     def lift_trial(self):
         self.scope.update(schemaVersion=m.LIFT_SCHEMA,pulse=copy.deepcopy(m.LIFT_PULSE))
         self.trial=m.M4UpCommissioning(self.scope,self.observer,'private-token',self.store,evidence_root=self.evidence,clock=self.clock)
@@ -707,7 +760,7 @@ class ContactShortScopeTests(unittest.TestCase):
             if schema==m.CONTACT_PROBE_SCHEMA:s['contactState']='unknown'
             with self.subTest(schema=schema),self.assertRaises(ValueError):m.validate_scope(s)
     def test_new_schema_never_existed_in_any_recorded_implementation(self):
-        for digest in m.RECORDED_IMPLEMENTATION_DIGESTS-{m.KNOWN_CONTACT500_RECORDED_DIGEST}:
+        for digest in m.RECORDED_IMPLEMENTATION_DIGESTS-{m.KNOWN_CONTACT500_RECORDED_DIGEST,m.KNOWN_CONTACT650_RECORDED_DIGEST}:
             s=self.planned();s['implementationSha256']=digest
             with self.subTest(digest=digest),self.assertRaisesRegex(ValueError,'recorded_implementation'):m.validate_recorded_scope(s)
         s=scope();s['implementationSha256']='0774c7e4a2914f9e7c58236c9953d913f5aa2974b2e195b3574740d9cbb6238c'
@@ -726,11 +779,30 @@ class Contact650ScopeTests(unittest.TestCase):
             with self.subTest(key=key,value=value),self.assertRaises(ValueError):m.validate_scope(dict(s,**{key:value}))
         with self.assertRaises(ValueError):m.validate_scope(dict(s,contactState='unknown'))
     def test_650_never_existed_but_prior_500_remains_readonly_auditable(self):
-        for digest in m.RECORDED_IMPLEMENTATION_DIGESTS:
+        for digest in m.RECORDED_IMPLEMENTATION_DIGESTS-{m.KNOWN_CONTACT650_RECORDED_DIGEST}:
             s=self.planned();s['implementationSha256']=digest
             with self.subTest(digest=digest),self.assertRaisesRegex(ValueError,'recorded_implementation'):m.validate_recorded_scope(s)
         s=self.planned();s.update(schemaVersion=m.CONTACT_SHORT_SCHEMA,pulse=copy.deepcopy(m.SHORT_PULSE),
                                   implementationSha256=m.KNOWN_CONTACT500_RECORDED_DIGEST)
+        self.assertEqual(m.validate_recorded_scope(s),s)
+        with self.assertRaisesRegex(ValueError,'implementation_changed'):m.validate_scope(s)
+
+class ReturnScopeTests(unittest.TestCase):
+    def planned(self):
+        s=scope();s.update(schemaVersion=m.RETURN_SCHEMA,pulse=copy.deepcopy(m.RETURN_PULSE),
+                          expectedStartAngleDeg=198.45,maxObservedDeltaDeg=3.,goalAngleDeg=196.17)
+        s['context']['supportMode']='gripper_supported';return s
+    def test_exact_return_contract_and_previous_implementation_rejection(self):
+        s=self.planned();self.assertEqual(m.validate_scope(s),s)
+        for key,value in [('pulse',dict(m.RETURN_PULSE,durationMs=650)),('pulse',m.LEARNING_PULSE),
+                          ('goalAngleDeg',199.),('expectedStartAngleDeg',196.2),('maxCommands',2),('maxObservedDeltaDeg',4.)]:
+            with self.subTest(key=key,value=value),self.assertRaises(ValueError):m.validate_scope(dict(s,**{key:value}))
+        for digest in m.RECORDED_IMPLEMENTATION_DIGESTS:
+            with self.subTest(digest=digest),self.assertRaisesRegex(ValueError,'recorded_implementation'):
+                m.validate_recorded_scope(dict(s,implementationSha256=digest))
+    def test_actual650_digest_audits_its_old_schemas_but_is_not_live(self):
+        s=scope();s.update(schemaVersion=m.CONTACT_MANUAL650_SCHEMA,pulse=copy.deepcopy(m.LEARNING_PULSE),
+                          expectedStartAngleDeg=196.17,maxObservedDeltaDeg=3.,implementationSha256=m.KNOWN_CONTACT650_RECORDED_DIGEST)
         self.assertEqual(m.validate_recorded_scope(s),s)
         with self.assertRaisesRegex(ValueError,'implementation_changed'):m.validate_scope(s)
 

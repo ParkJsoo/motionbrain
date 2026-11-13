@@ -15,7 +15,7 @@ import warnings
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 from learning.artifacts import ArtifactStore, _decode_json, _read
-from learning.m4_up_commissioning import M4UpCommissioning, CONTACT_PROBE_SCHEMA, _external_frame, _gripper_frame, validate_scope
+from learning.m4_up_commissioning import M4UpCommissioning, CONTACT_PROBE_SCHEMA, RETURN_SCHEMA, _external_frame, _gripper_frame, validate_scope
 from learning.m4_up_observer import M4DualCameraObserver, sha
 from learning.manual_collection_dataset import require
 from learning.supervised_collection import plan_digest
@@ -74,7 +74,7 @@ class AttestedBeforeReviewer:
         require(attestation['scopeSha256']==plan_digest(scope) and attestation['trialId']==scope['trialId']
                 and attestation['context']==scope['context'] and attestation['stable'] is True,
                 'operator_attestation_scope_changed')
-        expected_onsite=dict(operatorPresent=True,clearanceVerified=True,tableSupportVerified=True,
+        expected_onsite=dict(operatorPresent=True,clearanceVerified=True,tableSupportVerified=scope['schemaVersion']!=RETURN_SCHEMA,
                             jawContactVerified=scope['schemaVersion']!=CONTACT_PROBE_SCHEMA)
         require(set(attestation['onsite'])=={'operatorPresent','clearanceVerified','jawContactVerified','tableSupportVerified'}
                 and all(attestation['onsite'][key] is value for key,value in expected_onsite.items())

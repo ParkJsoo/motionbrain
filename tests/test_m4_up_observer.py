@@ -271,6 +271,20 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(sum(v=={'action':'run'} for _,v in self.device.requests),1)
         with self.assertRaisesRegex(ValueError,'consumed'):reviewer({'label':'before'},deadline=60,tick=lambda:None)
 
+    def test_return_attestation_requires_airborne_table_false_only_for_return_scope(self):
+        self.scope.update(schemaVersion=core.RETURN_SCHEMA,pulse=copy.deepcopy(core.RETURN_PULSE),
+                          expectedStartAngleDeg=198.45,maxObservedDeltaDeg=3.,goalAngleDeg=196.17)
+        self.scope['context']['supportMode']='gripper_supported'
+        att=self.attestation();att['onsite']['tableSupportVerified']=False
+        with patch.object(cli,'ROOT',self.repo):
+            cli.AttestedBeforeReviewer(self.scope,att,'hash',self.store,lambda:5,self.review)
+            bad=copy.deepcopy(att);bad['onsite']['tableSupportVerified']=True
+            with self.assertRaisesRegex(ValueError,'operator_attestation_required'):
+                cli.AttestedBeforeReviewer(self.scope,bad,'hash',self.store,lambda:5,self.review)
+        legacy=scope();att.update(scopeSha256=plan_digest(legacy),trialId=legacy['trialId'],context=legacy['context'])
+        with patch.object(cli,'ROOT',self.repo),self.assertRaisesRegex(ValueError,'operator_attestation_required'):
+            cli.AttestedBeforeReviewer(legacy,att,'hash',self.store,lambda:5,self.review)
+
     def test_unknown_contact_attestation_accepts_only_false_contact_and_preserves_raw_path(self):
         old_scope=copy.deepcopy(self.scope)
         self.scope.update(schemaVersion=core.CONTACT_PROBE_SCHEMA,contactState='unknown')
