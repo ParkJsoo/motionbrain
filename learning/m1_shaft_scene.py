@@ -88,6 +88,7 @@ class M1ShaftSceneGuard(CurrentSceneExternalGuard):
     """M1에서 고정해야 하는 전완·물체·M4만 검사한다. 집게 폭은 고정하지 않는다."""
     configuration_schema = SCHEMA
     allowed_policies = (MONITOR_POLICY,)
+    reference_meaning = REFERENCE_MEANING
 
     def __init__(self, *args, **kwargs):
         self._failed = False
@@ -103,7 +104,7 @@ class M1ShaftSceneGuard(CurrentSceneExternalGuard):
         return fields
 
     def _validate_reference(self, config):
-        require(config['referenceMeaning'] == REFERENCE_MEANING and
+        require(config['referenceMeaning'] == self.reference_meaning and
                 isinstance(config['actualScene'], dict) and set(config['actualScene']) ==
                 {'physicalView', 'object', 'poseRegime'} and
                 all(isinstance(v, str) and bool(v) for v in config['actualScene'].values()),
@@ -259,10 +260,10 @@ class M1ShaftSceneGuard(CurrentSceneExternalGuard):
                 0 <= now-record['sourceEarliest'] <= self.config['maxAgeSeconds'], 'M1_review_expired')
         snapshot = plan_digest([record, result]); self._count += 1
         name = f'M1-external-review-{self._count:04d}.json'
-        proof = dict(schemaVersion=SCHEMA, accepted=True, observationSha256=snapshot,
+        proof = dict(schemaVersion=self.configuration_schema, accepted=True, observationSha256=snapshot,
             configSha256=self.config_binding['sha256'], externalSource=dict(root=str(self.recorder.root),frame=frame),
             external=external, shaftSeparationPx=checked['shaftSeparationPx'], shoulderAngleDeg=angle,
-            reviewedAt=now, referenceMeaning=REFERENCE_MEANING,
+            reviewedAt=now, referenceMeaning=self.reference_meaning,
             interpretation='고정 자세 보호·shaft 영상 관측. 접촉·힘·파지 성공 판정 아님')
         stored = self.store.write_json(name, proof)
         self._measurement = copy.deepcopy(external)

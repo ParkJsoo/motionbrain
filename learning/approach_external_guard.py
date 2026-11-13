@@ -71,6 +71,9 @@ class ApproachExternalGuard:
     def _reference_evidence(self):
         return {}
 
+    def _expected_m4(self):
+        return 196.17
+
     def __init__(self, repository, config_binding, recorder, port, store, *, clock=time):
         self.repository = Path(repository).resolve(strict=True)
         self.recorder, self.port, self.store, self.clock = recorder, port, store, clock
@@ -94,7 +97,7 @@ class ApproachExternalGuard:
                     'additionalTemplateSha256'}, 'approach_external_tracking_fields')
         require(_number(tracking['minimumNcc']) and .9 <= tracking['minimumNcc'] <= 1 and
                 _number(tracking['minimumPeakGap']) and .04 <= tracking['minimumPeakGap'] <= 2 and
-                tracking['expectedM4'] == 196.17 and
+                tracking['expectedM4'] == self._expected_m4() and
                 _number(tracking['maximumM4Difference']) and 0 < tracking['maximumM4Difference'] <= .5,
                 'approach_external_policy_relaxation')
         rotations = tracking['templateRotationsDeg']
