@@ -28,6 +28,8 @@ REPO = Path(__file__).resolve().parents[1]
 SCHEMA = 'motionbrain.m4_up_commissioning.v1'
 NONCONTACT_SCHEMA = 'motionbrain.m4_up_noncontact.v1'
 CONTACT_PROBE_SCHEMA = 'motionbrain.m4_up_contact_uncertain_probe.v1'
+# 별도 공학 중단 범위이며 기구 안전·보유를 보증하지 않는 수동 시험이다.
+CONTACT_SHORT_SCHEMA = 'motionbrain.m4_up_known_contact_manual_short500.v1'
 PULSE = dict(joint='shoulder', motor=4, direction='up', percent=16,
              durationMs=200, expectedPwm=40)
 CONTACT_RESPONSE_PULSE = dict(joint='shoulder', motor=4, direction='up', percent=50,
@@ -109,7 +111,7 @@ def validate_scope(scope):
         'implementationSha256', 'context', 'pulse', 'defaultSpeed', 'maxCommands',
         'expectedStartAngleDeg', 'startAngleToleranceDeg', 'maxObservedDeltaDeg',
         'maxSeconds', 'maxObservationAgeSeconds', 'postOffSeconds'}, 'm4_scope_fields')
-    require(scope['schemaVersion'] in (SCHEMA,LIFT_SCHEMA,CONTACT_PROBE_SCHEMA,NONCONTACT_SCHEMA)+LEARNING_SCHEMAS and identifier(scope['trialId'])
+    require(scope['schemaVersion'] in (SCHEMA,LIFT_SCHEMA,CONTACT_PROBE_SCHEMA,NONCONTACT_SCHEMA,CONTACT_SHORT_SCHEMA)+LEARNING_SCHEMAS and identifier(scope['trialId'])
             and identifier(scope['hostClockId']) and isinstance(scope['controllerBootId'], str)
             and re.fullmatch('[0-9a-f]{32}', scope['controllerBootId']) is not None,
             'm4_scope_identity')
@@ -117,6 +119,7 @@ def validate_scope(scope):
     require(scope['implementationSha256'] == implementation_digest(), 'm4_implementation_changed')
     profile = (next((p for p in candidates if p==scope['pulse']),{}) if is_learning
                else next((p for p in CONTACT_PROBE_PULSES if p==scope['pulse']),{}) if is_probe
+               else SHORT_PULSE if scope['schemaVersion']==CONTACT_SHORT_SCHEMA
                else PULSE if scope['schemaVersion'] in (SCHEMA, NONCONTACT_SCHEMA) else LIFT_PULSE)
     if is_probe:
         require(scope['contactState'] == 'unknown', 'm4_probe_unknown_contact_required')
@@ -134,12 +137,12 @@ def validate_scope(scope):
             and type(scope['defaultSpeed']) is int and scope['defaultSpeed'] == 255
             and type(scope['maxCommands']) is int and scope['maxCommands'] == 1,
             'm4_exact_single_pulse_required')
-    for k, value in [('startAngleToleranceDeg', .5), ('maxObservedDeltaDeg', 3. if is_learning else 1.),
+    for k, value in [('startAngleToleranceDeg', .5), ('maxObservedDeltaDeg', 3. if is_learning or scope['schemaVersion']==CONTACT_SHORT_SCHEMA else 1.),
                      ('maxSeconds', 60.), ('maxObservationAgeSeconds', 10.), ('postOffSeconds', 3.)]:
         require(transport.finite_number(scope[k]) and scope[k] == value, 'm4_fixed_limits_required')
     require(transport.finite_number(scope['expectedStartAngleDeg'])
             and 127.58 < scope['expectedStartAngleDeg'] < 296.12, 'm4_start_angle_invalid')
-    if scope['schemaVersion'] in (LEARNING_SHORT_SCHEMA, MODEL_SHORT_SCHEMA):
+    if scope['schemaVersion'] in (LEARNING_SHORT_SCHEMA, MODEL_SHORT_SCHEMA, CONTACT_SHORT_SCHEMA):
         require(192.61 <= scope['expectedStartAngleDeg'] <= 197.61, 'm4_short_reference_band')
     ctx = scope['context']
     require(isinstance(ctx, dict) and set(ctx) == {
@@ -157,6 +160,7 @@ def validate_scope(scope):
 # 이전 scope·proof 준비 구현의 원본 재감사 전용이다.
 # 실행 승인·현재 구현 검사를 대체하지 않는다.
 RECORDED_IMPLEMENTATION_DIGESTS = frozenset({
+    '0774c7e4a2914f9e7c58236c9953d913f5aa2974b2e195b3574740d9cbb6238c',
     'ed3333408c4662d442c7bd61bec579c1da16dd8e9eae79448f261f57d9b249ba',
     '4848a96eb9411bf486fa3bc662fafa3687e723910a59e1d6032a25e7c131f179',
     '4c4b01c097b5f34b2db7cfdcac147462f398698b0827b09c07996b7f3127f942',
@@ -168,7 +172,8 @@ def validate_recorded_scope(scope):
     require(isinstance(scope, dict), 'm4_scope_fields')
     if scope.get('implementationSha256') == implementation_digest():
         return validate_scope(scope)
-    require(scope.get('implementationSha256') in RECORDED_IMPLEMENTATION_DIGESTS and not
+    require(scope.get('schemaVersion') != CONTACT_SHORT_SCHEMA and
+            scope.get('implementationSha256') in RECORDED_IMPLEMENTATION_DIGESTS and not
             (scope.get('schemaVersion') == NONCONTACT_SCHEMA and scope.get('implementationSha256') ==
              'ed3333408c4662d442c7bd61bec579c1da16dd8e9eae79448f261f57d9b249ba'),
             'm4_recorded_implementation_unknown')
@@ -410,6 +415,8 @@ class M4UpCommissioning:
         self.scope = validate_scope(scope); self.digest = plan_digest(self.scope)
         self.selection_kind = ('manual_lift_fixed_profile' if self.scope['schemaVersion']==LIFT_SCHEMA
                                else 'manual_commissioning_fixed_profile')
+        if self.scope['schemaVersion'] == CONTACT_SHORT_SCHEMA:
+            self.selection_kind = 'manual_contact_short500_fixed_profile'
         if self.scope['schemaVersion'] == CONTACT_PROBE_SCHEMA:
             self.selection_kind = 'manual_contact_uncertain_probe_fixed_profile'
         if self.scope.get('schemaVersion') == NONCONTACT_SCHEMA:

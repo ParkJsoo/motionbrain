@@ -603,6 +603,45 @@ class CommissioningTests(unittest.TestCase):
         self.assertEqual(sum(v=={'action':'run'} for _,v in self.posts()),1)
         self.assertIn(('/command',{'cmd':'stop'}),self.posts())
 
+    def contact_short_trial(self):
+        self.scope.update(schemaVersion=m.CONTACT_SHORT_SCHEMA,pulse=copy.deepcopy(m.SHORT_PULSE),
+                          expectedStartAngleDeg=195.99,maxObservedDeltaDeg=3.)
+        self.device.angle=195.99
+        self.trial=m.M4UpCommissioning(self.scope,self.observer,'private-token',self.store,evidence_root=self.evidence,clock=self.clock)
+        self.trial.port.opener=self.device
+
+    def test_known_contact_short500_manual_only_exact_one_run(self):
+        self.contact_short_trial();self.device.after_run=lambda d:setattr(d,'angle',197.5)
+        r=self.run_trial();self.assertEqual(r['status'],'completed',r)
+        self.assertEqual(r['selectionKind'],'manual_contact_short500_fixed_profile')
+        self.assertEqual(r['receipt']['requestedPulse'],m.SHORT_PULSE)
+        self.assertFalse(r['trainingEligible']);self.assertFalse(r['modelSelected'])
+        self.assertFalse(r['graspVerified']);self.assertFalse(r['liftVerified'])
+        self.assertTrue(r['finalIdleOffVerified'])
+        self.assertEqual(sum(v=={'action':'run'} for _,v in self.posts()),1)
+
+    def test_known_contact_short500_requires_actual_before_contact_and_support(self):
+        self.contact_short_trial();self.observer.on_before=self.unconfirmed_contact
+        r=self.run_trial();self.assertEqual(r['status'],'failed')
+        self.assertFalse(any(v=={'action':'run'} for _,v in self.posts()))
+
+    def test_known_contact_short500_requires_before_table_support(self):
+        self.contact_short_trial()
+        def unsupported(record):
+            record['onsite']['tableSupportVerified']=False
+            record['evidenceSha256']=self.observer.save(record['evidenceFile'],
+                {k:v for k,v in record.items() if k not in ('evidenceFile','evidenceSha256')})
+            self.observer.latest_record=copy.deepcopy(record)
+        self.observer.on_before=unsupported
+        r=self.run_trial();self.assertEqual(r['status'],'failed')
+        self.assertFalse(any(v=={'action':'run'} for _,v in self.posts()))
+
+    def test_known_contact_short500_excursion_stops_off_without_retry(self):
+        self.contact_short_trial();self.device.after_run=lambda d:setattr(d,'angle',199.1)
+        r=self.run_trial();self.assertEqual(r['status'],'failed');self.assertTrue(r['finalIdleOffVerified'])
+        self.assertEqual(sum(v=={'action':'run'} for _,v in self.posts()),1)
+        self.assertFalse(any(self.device.speeds.values()))
+
     def lift_trial(self):
         self.scope.update(schemaVersion=m.LIFT_SCHEMA,pulse=copy.deepcopy(m.LIFT_PULSE))
         self.trial=m.M4UpCommissioning(self.scope,self.observer,'private-token',self.store,evidence_root=self.evidence,clock=self.clock)
@@ -622,6 +661,31 @@ class CommissioningTests(unittest.TestCase):
         r=self.run_trial();self.assertEqual(r['status'],'failed');self.assertTrue(r['finalIdleOffVerified'])
         self.assertEqual(sum(v=={'action':'run'} for _,v in self.posts()),1);self.assertEqual(self.row(),'pending')
 
+
+class ContactShortScopeTests(unittest.TestCase):
+    def planned(self):
+        s=scope();s.update(schemaVersion=m.CONTACT_SHORT_SCHEMA,pulse=copy.deepcopy(m.SHORT_PULSE),
+                          expectedStartAngleDeg=195.99,maxObservedDeltaDeg=3.)
+        return s
+    def test_new_exact_profile_limits_and_start_band(self):
+        s=self.planned();self.assertEqual(m.validate_scope(s),s)
+        for key,value in [('pulse',m.PULSE),('pulse',m.LIFT_PULSE),('pulse',dict(m.SHORT_PULSE,percent=70)),
+                          ('maxObservedDeltaDeg',1.),('maxCommands',2),('expectedStartAngleDeg',198.)]:
+            with self.subTest(key=key,value=value),self.assertRaises(ValueError):m.validate_scope(dict(s,**{key:value}))
+        with self.assertRaises(ValueError):m.validate_scope(dict(s,contactState='unknown'))
+    def test_old_profiles_keep_one_degree_and_unknown_contract(self):
+        for schema in (m.SCHEMA,m.LIFT_SCHEMA,m.CONTACT_PROBE_SCHEMA):
+            s=scope();s.update(schemaVersion=schema,maxObservedDeltaDeg=3.)
+            if schema==m.LIFT_SCHEMA:s['pulse']=copy.deepcopy(m.LIFT_PULSE)
+            if schema==m.CONTACT_PROBE_SCHEMA:s['contactState']='unknown'
+            with self.subTest(schema=schema),self.assertRaises(ValueError):m.validate_scope(s)
+    def test_new_schema_never_existed_in_any_recorded_implementation(self):
+        for digest in m.RECORDED_IMPLEMENTATION_DIGESTS:
+            s=self.planned();s['implementationSha256']=digest
+            with self.subTest(digest=digest),self.assertRaisesRegex(ValueError,'recorded_implementation'):m.validate_recorded_scope(s)
+        s=scope();s['implementationSha256']='0774c7e4a2914f9e7c58236c9953d913f5aa2974b2e195b3574740d9cbb6238c'
+        self.assertEqual(m.validate_recorded_scope(s),s)
+        with self.assertRaisesRegex(ValueError,'implementation_changed'):m.validate_scope(s)
 
 class ScopeTests(unittest.TestCase):
     def test_contact_probe_450_preset_is_explicit_and_legacy_stays_restricted(self):
