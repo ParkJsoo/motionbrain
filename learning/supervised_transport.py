@@ -15,6 +15,7 @@ import urllib.request
 
 from learning.controller_latency import deadline
 from learning.device_adapter import _NoRedirect
+from learning.http_phase_trace import HttpPhaseTrace
 
 
 JOINTS = {
@@ -149,6 +150,7 @@ class SequencePort:
         self.compact_reads = compact_reads
         self._last_output_time = None
         self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
+        self._default_opener = self.opener
         self.serial = 0
         self.last_sequence = None
         self.last_outputs = {}
@@ -224,6 +226,18 @@ class SequencePort:
                             'Content-Type': 'application/x-www-form-urlencoded'})
         request = urllib.request.Request(self.url + path, data=body, headers=headers,
                                          method=event['method'])
+        # 최초 비구동 부팅 조회에만 적용한다. 주입한 fake/custom opener와 이후
+        # 일반 조회·구동·quiet GET 재연결의 동작은 그대로 둔다.
+        phase_trace = None
+        request_opener = self.opener
+        if (self.serial == 1 and path == '/actions' and payload is None and not run
+                and not emergency and self._active_pulse is None and not self.may_have_run
+                and not self.writes_possible and self.opener is self._default_opener):
+            phase_trace = HttpPhaseTrace(clock=self.clock)
+            request_opener = urllib.request.build_opener(
+                urllib.request.ProxyHandler({}), _NoRedirect(), phase_trace.handler())
+        phase_started = self.clock.monotonic() if phase_trace is not None else None
+        call_failed = False
         try:
             # Durable intent writes consume the same absolute read budget.
             # Never open a new socket after the monitor's stop deadline.
@@ -253,7 +267,7 @@ class SequencePort:
                                 raise TimeoutError('request_deadline')
                             self.last_dispatch_before = self.clock.monotonic()
                             self.may_have_run = True
-                        with self.opener.open(request, timeout=remaining) as response:
+                        with request_opener.open(request, timeout=remaining) as response:
                             raw = response.read(65537)
                             code = response.status
                         break
@@ -292,11 +306,25 @@ class SequencePort:
                 raise ValueError('command_rejected')
             return parsed
         except BaseException as exc:
+            call_failed = True
             # Error text may originate outside this module; retain type only.
             self._save(name + '-error.json', {'error': type(exc).__name__,
                        'endedAt': self.clock.monotonic()}, True)
             self._last_http_failure_serial = self.serial
             raise
+        finally:
+            if phase_trace is not None:
+                try:
+                    self._save(name + '-phase.json', {
+                        'phase': phase_trace.phase, 'events': phase_trace.events,
+                        'elapsedSeconds': self.clock.monotonic()-phase_started})
+                except BaseException:
+                    self.evidence_failed = True
+                    self._last_http_failure_serial = self.serial
+                    # 이미 발생한 기한 초과·중단·전송 실패를 저장 오류로 덮지 않는다.
+                    # 성공한 조회의 계측 저장 실패는 호출 실패로 전파해 ARM을 막는다.
+                    if not call_failed:
+                        raise
 
     def _check_status(self, status, expected, pulse=None, baseline_angle=None):
         if status.get('state') != expected:
