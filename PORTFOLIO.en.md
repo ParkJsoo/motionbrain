@@ -72,6 +72,8 @@ Earlier 35%/650ms and 60%/450ms models yielded **1.375px versus 1.809px** on 11 
 
 [M3 conditions, frozen evaluations and failure denominators (Korean)](docs/evidence/2026-11-12-m3-goal-prediction.md) · [Development observation contract and usage (Korean)](docs/development-gripper-observer.md)
 
+[M2/M3 W&B evaluation report (Korean; no login required)](https://forge.coreweave.com/wandb/henrypark-personal-project/motionbrain-fixed-evaluation/reports/-M2-M3---VmlldzoxODI5OTAzOQ?accessToken=5oatt93qha9x95onnncj8tbsdgk6362irr67javlo0nymassqaaal1mj8rjcl1sz) presents baseline comparisons, failures and evaluation denominators for four models, separating the original 350ms evaluation from its conditional supplement. These are prediction evaluations; this experiment executed zero model-selected grasp/lift actions.
+
 ## 3. Validating the next action separately from prediction quality
 
 ### What a single goal approach connected
@@ -120,7 +122,7 @@ Manual measurements, assembly drawings and photographs informed the geometry, wh
 | Are joint frames and geometry consistent? | Virtual joints and the shared URDF in RViz | Slider poses are not the physical arm's measured current state |
 | Does the same geometry display in different engines? | Derived Gazebo/MuJoCo models | Mass, inertia and actuators are uncalibrated placeholders; no arm-link collision, jaw-contact or grasp model |
 | What was predicted, and what was observed? | Saved dual-camera images, prospective predictions and measurements in Rerun | Replay order is not a synchronized real-time camera/controller clock |
-| Does the model improve on baselines? | Offline W&B metrics and selective publication of allowed metrics | Comparison uses two actual frozen evaluations; raw images and device information are excluded from publication |
+| Does the model improve on baselines? | Offline W&B metrics and selective publication of allowed metrics | Published frozen-model/baseline comparisons include failures and evaluation denominators, separate from physical grasp/lift success; raw images and device information are excluded |
 
 MuJoCo, Gazebo and RViz statically reflect the last measured M4 pose while distinguishing assumptions about other joints. Rerun distinguishes saved replay from following collected files; file following makes no additional camera requests and does not imply real-time joint tracking.
 

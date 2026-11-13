@@ -50,6 +50,8 @@ These experiments use different joints, models and observation conditions. MAE (
 
 [M3 automatic observation, frozen evaluation and incomplete denominators (Korean)](docs/evidence/2026-11-12-m3-goal-prediction.md)
 
+[M2/M3 W&B prediction evaluation report (Korean; no login required)](https://forge.coreweave.com/wandb/henrypark-personal-project/motionbrain-fixed-evaluation/reports/-M2-M3---VmlldzoxODI5OTAzOQ?accessToken=5oatt93qha9x95onnncj8tbsdgk6362irr67javlo0nymassqaaal1mj8rjcl1sz) records model/baseline comparisons, failures and evaluation denominators. This experiment executed zero model-selected grasp/lift actions; prediction evaluation remains separate from physical grasp/lift success.
+
 ## Physical system
 
 ESP32 manages commands, outputs and stop state for five DC axes; the host handles collection, validation, training and evaluation. The system also connects STM32 sensing/teleoperation and Raspberry Pi perception, dashboard and ROS2 paths.

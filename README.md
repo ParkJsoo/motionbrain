@@ -50,6 +50,8 @@ ESP32 기반 5축 DC 로봇팔에 외부 카메라·집게 위 카메라와 센�
 
 [M3 자동 관측·고정 평가의 조건과 미완료 분모](docs/evidence/2026-11-12-m3-goal-prediction.md)
 
+[M2·M3 W&B 예측 평가 보고서(비로그인 열람)](https://forge.coreweave.com/wandb/henrypark-personal-project/motionbrain-fixed-evaluation/reports/-M2-M3---VmlldzoxODI5OTAzOQ?accessToken=5oatt93qha9x95onnncj8tbsdgk6362irr67javlo0nymassqaaal1mj8rjcl1sz)는 모델·기준선 비교와 실패·평가 분모를 정리한 자료다. 이번 실험의 모델 선택 집기·들기는 0회이며, 예측 평가와 실제 집기·들기 성공은 구분한다.
+
 ## 실물 시스템
 
 ESP32는 5축 DC 모터의 명령·출력·정지 상태를 관리하고, 호스트는 수집·검증·학습·평가를 담당한다. STM32 센서·원격조작과 Raspberry Pi 인식·대시보드·ROS2 경로도 연결한다.
