@@ -22,6 +22,7 @@ from learning.supervised_collection import PROFILES, identifier, plan_digest
 
 SCHEMA = 'motionbrain.model_grasp_trial.v1'
 CONTACT_SCHEMA = 'motionbrain.model_close_contact_trial.v1'
+APPROACH_SCHEMA = 'motionbrain.development_noncontact_approach.v1'
 
 
 def _number(value):
@@ -56,12 +57,13 @@ class FrozenModelBank:
         return select(self._models[stage['modelId']], state, stage['target'], stage['commands'], context)
 
 
-def validate_scope(scope, bank):
+def validate_scope(scope, bank, *, position_only=False):
     require(isinstance(scope, dict) and set(scope) == {
         'schemaVersion', 'trialId', 'hostClockId', 'controllerBootId', 'modelHashes', 'stages',
         'maxCommands', 'maxRequestedMs', 'maxSeconds', 'maxObservationAgeSeconds',
         'maxDecisionAgeSeconds', 'postOffSeconds', 'retentionSeconds'}, 'grasp_scope_fields')
-    require(scope['schemaVersion'] in (SCHEMA, CONTACT_SCHEMA) and identifier(scope['trialId'])
+    schemas = (APPROACH_SCHEMA,) if position_only else (SCHEMA, CONTACT_SCHEMA)
+    require(scope['schemaVersion'] in schemas and identifier(scope['trialId'])
             and isinstance(scope['hostClockId'], str) and bool(scope['hostClockId'])
             and isinstance(scope['controllerBootId'], str)
             and re.fullmatch('[0-9a-f]{32}', scope['controllerBootId']) is not None
@@ -85,7 +87,8 @@ def validate_scope(scope, bank):
             'id', 'kind', 'modelId', 'target', 'tolerancePx', 'commands', 'maxCommands'}, 'stage_fields')
         require(identifier(stage['id']) and stage['id'] not in seen, 'unique_stage_required')
         seen.add(stage['id'])
-        require(stage['kind'] == ('close' if index == len(stages)-1 else 'position'),
+        require(stage['kind'] == ('position' if position_only else
+                                 'close' if index == len(stages)-1 else 'position'),
                 'position_then_close_required')
         objects.add(bank.context(stage['modelId'])['object'])
         vector(stage['target'])
@@ -130,12 +133,21 @@ class ModelGraspTrial:
     context onto an unverified image. This core does not invent perception.
     """
     def __init__(self, scope, bank, observer, port, store, *, evidence_root, clock=time):
-        self.scope = validate_scope(scope, bank)
+        self.scope = self._validate_scope(scope, bank)
         require(port.boot_id == scope['controllerBootId'], 'controller_boot_binding_changed')
         self.bank, self.observer, self.port, self.store, self.clock = bank, observer, port, store, clock
         self.evidence_root = Path(evidence_root).resolve(strict=True)
         require(self.evidence_root.is_dir(), 'private_observation_evidence_directory_required')
         self.used = False
+
+    def _validate_scope(self, scope, bank):
+        return validate_scope(scope, bank)
+
+    def _execute(self, pulse, guard):
+        return self.port.execute(pulse, self._active_tick, before_run=guard)
+
+    def _position_stop(self, stage, state):
+        return None
 
     def _deadline(self):
         require(self.clock.monotonic() < self.deadline, 'trial_deadline')
@@ -190,7 +202,8 @@ class ModelGraspTrial:
                 'observation_stale_or_noncausal')
         if after_off is not None:
             require(times[0] >= after_off + self.scope['postOffSeconds'], 'post_off_window_not_ready')
-        state = point_state(record['annotation'], frame)
+        extractor = getattr(self, '_extract_state', point_state)
+        state = extractor(record['annotation'], frame)
         return state
 
     def _review_evidence(self, proof):
@@ -303,6 +316,10 @@ class ModelGraspTrial:
                         require(stage['kind'] != 'close', 'closed_geometry_is_not_grasp_proof')
                         stage_report['status'] = 'observed_target_reached'
                         break
+                    stop_reason = self._position_stop(stage, state)
+                    if stop_reason is not None:
+                        stage_report['status'] = report['status'] = stop_reason
+                        return report
                     if used >= stage['maxCommands']:
                         stage_report['status'] = 'budget_reached'
                         report['status'] = 'budget_reached'
@@ -359,9 +376,10 @@ class ModelGraspTrial:
                         require(now + command['durationMs']/1000 < self.deadline,
                                 'insufficient_trial_time_for_command')
                         step['dispatchObservation'] = copy.deepcopy(current)
+                        return at
 
                     try:
-                        receipt = self.port.execute(pulse, self._active_tick, before_run=guard)
+                        receipt = self._execute(pulse, guard)
                         require(guard_calls == 1, 'dispatch_guard_not_called')
                         off_at = self._receipt(receipt, pulse)
                         step.update(status='executed', receipt=copy.deepcopy(receipt))
@@ -386,6 +404,7 @@ class ModelGraspTrial:
                         report['graspVerified'] = proof['status'] == 'held'
                         report['status'] = 'held' if report['graspVerified'] else 'grasp_' + proof['status']
                         return report
+            report['status'] = 'observed_target_reached'
         except (Exception, KeyboardInterrupt) as exc:
             report['errors'].append(dict(type=type(exc).__name__,
                 reason=str(exc) if isinstance(exc, ValueError) else 'trial_interrupted_or_failed'))
