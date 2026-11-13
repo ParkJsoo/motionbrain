@@ -234,5 +234,75 @@ class CrosssectionTests(unittest.TestCase):
         self.assertAlmostEqual(result['state'][2],144,delta=.1)
 
 
+class ObservedShaft95Tests(unittest.TestCase):
+    def setUp(self):
+        self.p = default_parameters(preset='current_m1_observed_shaft95')
+        self.image = np.full((240, 320, 3), 220, np.uint8)
+        self.image[67:133, 150:164] = np.random.default_rng(5).integers(120, 220, (66, 14, 3), dtype=np.uint8)
+        self.image[70:116, 80:107] = 20
+        self.image[70:116, 200:227] = 20
+        self.raw = CrosssectionTests.encode(self.image)
+        self.reg = register(self.raw, [160, 95], dict(physicalView='synthetic', object='test', poseRegime='M1'), self.p)
+        self.tracker = RegisteredGripperCrosssection(self.reg, self.raw)
+
+    def observe(self, image):
+        return self.tracker.observe_shaft(CrosssectionTests.encode(image), 'fixed-test')
+
+    def test_same_run_multiple_witnesses_report_direct95_deterministically(self):
+        image = self.image.copy()
+        # 합집합 폭 변화9는 통과창이 아니지만 양쪽의 local 창은 각각 엄격하게 유효하다.
+        image[70:116, 200:227] = 220
+        for y in range(70, 116):
+            width = 33 if y == 70 else 24 if y == 115 else 27
+            center = 214 if y == 95 else 213
+            image[y, center-width//2:center-width//2+width] = 20
+        result = self.observe(image)
+        self.assertEqual(result, self.observe(image))
+        q = result['quality']['jawRight']
+        self.assertGreater(q['qualityWitnessCount'], 1)
+        self.assertEqual(q['point'], [q['primaryRun']['centerPx'], 95])
+        self.assertAlmostEqual(q['point'][0], 214)
+        self.assertTrue(any(abs(w['fittedPoint'][0]-q['point'][0]) > .1 for w in q['qualityWitnesses']))
+        self.assertTrue(all(w['widthRangePx'][1]-w['widthRangePx'][0] <= 8 for w in q['qualityWitnesses']))
+        self.assertFalse(q['sameRunWitnessesAreIndependentObservations'])
+        self.assertFalse(q['extrapolationUsed'])
+        self.assertIn('unique_direct_observed_image_row95', self.reg['seedSemantics'])
+
+    def test_real_two_runs_any_scan_row_reject(self):
+        image = self.image.copy(); image[70, 235:255] = 20
+        with self.assertRaisesRegex(ValueError, 'crosssection_ambiguous_run'):
+            self.observe(image)
+        image = self.image.copy(); image[95, 235:255] = 20
+        with self.assertRaisesRegex(ValueError, 'crosssection_ambiguous_run'):
+            self.observe(image)
+
+    def test_primary_row_missing_bad_contrast_and_width_reject(self):
+        for value, width in ((220,27), (90,27), (20,17)):
+            image = self.image.copy(); image[95, 165:260] = 110 if value == 90 else 220
+            image[95, 200:200+width] = value
+            with self.subTest(value=value, width=width), self.assertRaisesRegex(ValueError, 'reference_row_not_observed'):
+                self.observe(image)
+
+    def test_insufficient_count_span_residual_and_width_support_reject(self):
+        for kind in ('count', 'span', 'residual', 'width'):
+            image = self.image.copy(); image[70:116, 165:260] = 220
+            rows = range(88,103) if kind == 'count' else range(88,104) if kind == 'span' else range(70,116)
+            for y in rows:
+                width = (18 if y%2 else 36) if kind == 'width' else 27
+                center = (205 if y%2 else 215) if kind == 'residual' else 213
+                image[y, center-width//2:center-width//2+width] = 20
+            with self.subTest(kind=kind), self.assertRaisesRegex(ValueError, 'rows_insufficient|local_support_insufficient'):
+                self.observe(image)
+
+    def test_parameter_contract_is_fixed_and_old_semantics_unchanged(self):
+        from learning.registered_gripper_crosssection import SEMANTICS, DISTAL_SEMANTICS, _seed_semantics
+        self.assertEqual(_seed_semantics(default_parameters()), SEMANTICS)
+        self.assertEqual(_seed_semantics(default_parameters(preset='current_m1_close')), SEMANTICS)
+        self.assertEqual(_seed_semantics(default_parameters(preset='current_m1_distal_shaft')), DISTAL_SEMANTICS)
+        p = copy.deepcopy(self.p); p['shaft']['maximumWidthRangePx'] = 9
+        with self.assertRaisesRegex(ValueError, 'fixed_configuration_changed'):
+            register(self.raw, [160,95], self.reg['sceneContext'], p)
+
+
 if __name__ == '__main__':
     unittest.main()

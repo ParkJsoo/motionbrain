@@ -17,13 +17,15 @@ SHAFT_METHOD = 'registered_gripper_shaft_only_points'
 SHAFT_STATE = ['shaftSeparationPx']
 STATE = ['objectMinusJawMidXpx', 'objectMinusJawMidYpx', 'shaftSeparationPx']
 SEMANTICS = 'object_top_center_and_independent_shaft_centerline_intersections_at_image_row55_not_tips_contact_or_physical_opening'
+OBSERVED95_SEMANTICS = ('object_top_center_and_independent_shaft_unique_direct_observed_image_row95_centers'
+                        '_with_local_straight_support_not_global_uniform_width_not_tips_contact_or_physical_opening')
 DISTAL_SEMANTICS = ('object_top_center_and_independent_distal_shaft_line_fit_rows70_90_extrapolated_to_image_row55'
                     '_not_direct_row55_pixels_not_tips_contact_or_physical_opening')
 
 
 def default_parameters(*, preset=None):
     """기본 계약을 보존하고 현재 M1 닫기·직선부 관측을 별도 preset으로 등록한다."""
-    _require(preset in (None, 'current_m1_close', 'current_m1_distal_shaft'), 'crosssection_unknown_parameter_preset')
+    _require(preset in (None, 'current_m1_close', 'current_m1_distal_shaft', 'current_m1_observed_shaft95'), 'crosssection_unknown_parameter_preset')
     parameters = dict(imageShape=[240, 320], objectPatchRoi=[140, 67, 206, 133],
                 objectSearchRoi=[116, 43, 230, 157], minimumNcc=.85,
                 minimumPeakGap=.04, peakExclusionRadius=3, minimumTemplateStd=1.5,
@@ -37,6 +39,9 @@ def default_parameters(*, preset=None):
     if preset == 'current_m1_distal_shaft':
         parameters['shaft']['rows'] = [70, 90]
         parameters['shaft']['referenceRow'] = 55
+    if preset == 'current_m1_observed_shaft95':
+        parameters['shaft'].update(rows=[70, 115], referenceRow=95,
+            rois=dict(jawLeft=[60, 150], jawRight=[165, 260]))
     return parameters
 
 
@@ -44,9 +49,10 @@ def _parameters(p):
     expected = default_parameters()
     current_close = default_parameters(preset='current_m1_close')
     current_distal = default_parameters(preset='current_m1_distal_shaft')
+    observed95 = default_parameters(preset='current_m1_observed_shaft95')
     _require(isinstance(p, dict) and set(p) == set(expected), 'crosssection_parameter_fields')
     _require(p['imageShape'] == expected['imageShape'] and
-             p['shaft'] in (expected['shaft'], current_close['shaft'], current_distal['shaft']),
+             p['shaft'] in (expected['shaft'], current_close['shaft'], current_distal['shaft'], observed95['shaft']),
              'crosssection_fixed_configuration_changed')
     _require(p['objectPatchRoi'] == expected['objectPatchRoi']
              and p['objectSearchRoi'] == expected['objectSearchRoi'], 'crosssection_object_roi_changed')
@@ -73,6 +79,8 @@ def _fail(condition, reason, diagnostic):
 
 def _seed_semantics(parameters):
     shaft = parameters.get('shaft') if isinstance(parameters, dict) else None
+    if isinstance(shaft, dict) and shaft.get('rows') == [70, 115] and shaft.get('referenceRow') == 95:
+        return OBSERVED95_SEMANTICS
     if isinstance(shaft, dict) and shaft.get('rows') == [70, 90] and shaft.get('referenceRow') == 55:
         return DISTAL_SEMANTICS
     return SEMANTICS
@@ -115,6 +123,8 @@ def _shaft(gray, name, p):
         _fail(len(candidates) <= 1, 'crosssection_ambiguous_run', diagnostic)
         if len(candidates) == 1 and candidates[0]['contrastPassed']:
             item.update(accepted=True, selected=candidates[0]); accepted.append((y, candidates[0]))
+    if p['rows'] == [70, 115] and p['referenceRow'] == 95:
+        return _observed_row95(accepted, p, diagnostic)
     _fail(len(accepted) >= p['minimumRows'], 'crosssection_rows_insufficient', diagnostic)
     ys = np.array([r[0] for r in accepted], float)
     centers = np.array([r[1]['centerPx'] for r in accepted])
@@ -131,6 +141,45 @@ def _shaft(gray, name, p):
     _fail(residual <= p['maximumCenterLineResidualPx']
           and max(widths)-min(widths) <= p['maximumWidthRangePx'],
           'crosssection_rows_inconsistent', diagnostic)
+    return diagnostic['point'], diagnostic
+
+
+def _observed_row95(accepted, p, diagnostic):
+    """실측 row95 중심은 고정하며 주변 직선창은 품질 존재 증거로만 사용한다.
+
+    같은 행의 같은 run을 공유하는 복수창은 별도 측정 가설이 아니다.
+    내부 유효행을 임의 제거하지 않으며 전체 scan의 폭 균일성을 주장하지 않는다.
+    """
+    primary = next((candidate for y, candidate in accepted if y == 95), None)
+    _fail(primary is not None, 'crosssection_reference_row_not_observed', diagnostic)
+    _fail(len(accepted) >= p['minimumRows'], 'crosssection_rows_insufficient', diagnostic)
+    witnesses = []
+    for i in range(len(accepted)):
+        for j in range(i+p['minimumRows']-1, len(accepted)):
+            group = accepted[i:j+1]
+            ys = np.array([row[0] for row in group], float)
+            if not ys[0] <= 95 <= ys[-1] or float(np.ptp(ys)) < p['minimumRowSpan']:
+                continue
+            widths = [row[1]['widthPx'] for row in group]
+            if max(widths)-min(widths) > p['maximumWidthRangePx']:
+                continue
+            centers = np.array([row[1]['centerPx'] for row in group])
+            slope, intercept = np.polyfit(ys-95, centers, 1)
+            residual = float(np.max(np.abs(centers-(slope*(ys-95)+intercept))))
+            if residual > p['maximumCenterLineResidualPx']:
+                continue
+            witnesses.append(dict(acceptedRows=len(group), rowRange=[int(ys[0]), int(ys[-1])],
+                rowSpan=float(np.ptp(ys)), slope=float(slope), fittedPoint=[float(intercept), 95],
+                maximumResidualPx=residual, widthRangePx=[min(widths), max(widths)]))
+    diagnostic.update(method='independent_direct_observed_row95_with_local_support_v1',
+        coordinateMeaning='unique_threshold_edge_center_directly_observed_at_image_row95',
+        point=[primary['centerPx'], 95], primaryRun=copy.deepcopy(primary),
+        observedRowRange=[70, 115], reportedReferenceRow=95,
+        qualityWitnesses=witnesses, qualityWitnessCount=len(witnesses),
+        localStraightSupportOnly=True, globalWidthUniformityRequired=False,
+        sameRunWitnessesAreIndependentObservations=False,
+        extrapolationUsed=False, measurementAccuracyVerified=False)
+    _fail(bool(witnesses), 'crosssection_local_support_insufficient', diagnostic)
     return diagnostic['point'], diagnostic
 
 
