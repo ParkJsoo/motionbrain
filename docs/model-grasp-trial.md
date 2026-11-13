@@ -87,7 +87,7 @@ shaft 목표는 접촉이나 파지 목표의 자동 판정이 아니다.
 
 `m1_shaft_learning.fit_after(rows)`는 같은 입력·원본 검증을 사용하면서
 명령별 **사후 shaft 간격 자체**를 표준화한 사전 간격으로 회귀하는 별도 API다.
-정규화 계수 `alpha=1`의 ridge이며 모델 schema는
+규제 계수 `alpha=1`의 ridge이며 모델 schema는
 `motionbrain.m1_shaft_after_ridge.v1`, `regressionTarget=after`로 분리한다.
 기존 `fit(rows)`의 delta 회귀와 등록·모델 해시를 바꾸지 않는다. 새 모델에도
 명령별 평균 delta를 보존하여 입력 간격+평균 delta인 `commandMean` 기준선과

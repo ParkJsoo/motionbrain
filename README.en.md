@@ -46,13 +46,14 @@ These experiments use different joints, models and observation conditions. MAE (
 | **M3 relative-state prediction near the goal** | **18 training** records; among **12 new post-freeze evaluations**, 11 common supported records had mean vector error **1.074px** for ridge and **1.341px** for command mean | Insufficient downward evaluations initially; conditional supplementation still completed only **15/16**, so no overall pass. Zero model-selected approach/grasp/lift actions in that prediction-evaluation cohort |
 | **Physical approach with a new M3 development model** | Frozen V2 selected **one UP command**; a fresh image reached the coordinate-wise goal tolerances | One manual return was separate. A single result on the tolerance boundary; repeated correction, repeatability, grasping and lifting remain unvalidated |
 | **Model-selected M1 close: initial cohort** | A frozen model compared CLOSE with stop and selected **one physical command**: shaft separation **126.677 → 113.767px**, output OFF verified | Nine manual preparation/collection commands were separate. The 85.3px goal was not reached. Ridge error **1.265px**, command mean **0.989px**: the mean was more accurate. Repeated correction, grasping and lifting remain unvalidated |
+| **Model-selected M1 closure after realignment** | A new frozen model executed **one command**, separate from four manual commands: **79.185 → 67.908px**, reference-goal error **0.152px**, OFF verified. The user confirmed bilateral jaw contact on site | One new post-freeze case with a direct after-state model. The object remained table-supported; retention, lifting, repeatability and generalization remain unvalidated |
 | **Manual contact-and-rise experiment** | Closing and rising were observed, but the object stayed on the table: **no retained lift** | Separate from model-selection results. The final rise failed the observed-change criterion |
 
 [M2 goal approach (Korean)](docs/evidence/2026-10-31-first-model-goal-approach.md) · [M4 frozen evaluation (Korean)](docs/evidence/2026-11-04-m4-action-prediction.md) · [Lift models, observations and failures (Korean)](docs/m4-up-commissioning.md) · [M1 evaluation and physical contact experiment (Korean)](docs/evidence/2026-11-09-shaft-evaluation-and-contact-probe.md)
 
-[M1 close: initial command, two-command follow-up and observation-deadline failure (Korean)](docs/evidence/2026-11-13-model-selected-m1-close.md)
+[M1 close, observation-deadline failure and bilateral contact after realignment: conditions and denominators (Korean)](docs/evidence/2026-11-13-model-selected-m1-close.md)
 
-A separate follow-up model reselected from a fresh observation and executed **two commands with OFF verified**, but failed at the 45-second deadline before the second after-observation. Across these two trials, three model commands were confirmed; goal completion, grasping and lifting remain unvalidated.
+A separate follow-up model reselected from a fresh observation and executed **two commands with OFF verified**, but failed at the 45-second deadline before the second after-observation. Across those earlier two trials, three model commands were confirmed; goal completion, grasping and lifting were not established.
 
 [New M3 physical approach: conditions, manual preparation and failure denominators (Korean)](docs/evidence/2026-11-13-bounded-m3-approach.md)
 
