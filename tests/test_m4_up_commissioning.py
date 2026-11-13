@@ -800,6 +800,19 @@ class ReturnScopeTests(unittest.TestCase):
         for digest in m.RECORDED_IMPLEMENTATION_DIGESTS:
             with self.subTest(digest=digest),self.assertRaisesRegex(ValueError,'recorded_implementation'):
                 m.validate_recorded_scope(dict(s,implementationSha256=digest))
+    def test_completed_return_implementation_is_readonly_auditable_not_live(self):
+        for angle in (198.45,197.13):
+            s=self.planned();s.update(expectedStartAngleDeg=angle,implementationSha256=m.RETURN_RECORDED_DIGEST)
+            with self.subTest(start=angle):
+                self.assertEqual(m.validate_recorded_scope(s),s)
+                with self.assertRaisesRegex(ValueError,'implementation_changed'):m.validate_scope(s)
+        s=self.planned();s['implementationSha256']='f'*64
+        with self.assertRaisesRegex(ValueError,'recorded_implementation'):m.validate_recorded_scope(s)
+        s=self.planned();s.update(implementationSha256=m.RETURN_RECORDED_DIGEST,maxCommands=2)
+        with self.assertRaises(ValueError):m.validate_recorded_scope(s)
+        old=scope();old['implementationSha256']=m.RETURN_RECORDED_DIGEST
+        with self.assertRaisesRegex(ValueError,'recorded_implementation'):m.validate_recorded_scope(old)
+
     def test_actual650_digest_audits_its_old_schemas_but_is_not_live(self):
         s=scope();s.update(schemaVersion=m.CONTACT_MANUAL650_SCHEMA,pulse=copy.deepcopy(m.LEARNING_PULSE),
                           expectedStartAngleDeg=196.17,maxObservedDeltaDeg=3.,implementationSha256=m.KNOWN_CONTACT650_RECORDED_DIGEST)

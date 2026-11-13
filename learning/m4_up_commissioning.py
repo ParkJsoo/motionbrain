@@ -171,6 +171,7 @@ def validate_scope(scope):
 # 이전 scope·proof 준비 구현의 원본 재감사 전용이다.
 # 실행 승인·현재 구현 검사를 대체하지 않는다.
 # known-contact500이 존재한 직전 구현이며 새650의 재감사에는 쓰지 않는다.
+RETURN_RECORDED_DIGEST = 'b2b1e07021854b2458f069e05dbfa7512df24d5f310383d443393338d28fe12e'
 KNOWN_CONTACT650_RECORDED_DIGEST = 'a6e0f896ffc144e8b47a09a52623eb1b1f47deabc88705af1d25c1a25a2c1946'
 KNOWN_CONTACT500_RECORDED_DIGEST = '8e5a6e077280e0c80690b2ee21368a9cca6747e76a6ca3c9a20c614c0c7cfd21'
 RECORDED_IMPLEMENTATION_DIGESTS = frozenset({
@@ -187,6 +188,10 @@ def validate_recorded_scope(scope):
     require(isinstance(scope, dict), 'm4_scope_fields')
     if scope.get('implementationSha256') == implementation_digest():
         return validate_scope(scope)
+    if scope.get('schemaVersion')==RETURN_SCHEMA and scope.get('implementationSha256')==RETURN_RECORDED_DIGEST:
+        candidate=copy.deepcopy(scope);candidate['implementationSha256']=implementation_digest()
+        validate_scope(candidate)
+        return copy.deepcopy(scope)
     require(scope.get('schemaVersion') != RETURN_SCHEMA and
             (scope.get('schemaVersion') != CONTACT_MANUAL650_SCHEMA or
              scope.get('implementationSha256') == KNOWN_CONTACT650_RECORDED_DIGEST) and

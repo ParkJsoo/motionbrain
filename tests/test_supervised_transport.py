@@ -460,6 +460,54 @@ class TransportTests(unittest.TestCase):
         self.assertEqual(sum(p == {'action': 'run'} for _, p in device.requests), 1)
         self.assertTrue(result['offVerified']);self.assertIsNone(port._before_run)
 
+    def test_after_armed_hook_is_once_outside_RUN_timeout_before_intent(self):
+        port, device, store = self.setup_port();calls=[]
+        def prepare():
+            self.assertEqual(device.state,'ARMED')
+            self.assertFalse(any(device.speeds.values()))
+            self.assertFalse(any(v.get('payload')=={'action':'run'} for v in store.rows.values()))
+            device.clock.sleep(port.timeout+1.)
+            calls.append('prepared')
+        result=port.execute(pulse(),lambda:None,after_armed_before_run=prepare,
+                            before_run=lambda:calls.append('final'))
+        self.assertEqual(calls,['prepared','final']);self.assertTrue(result['offVerified'])
+        self.assertEqual(sum(p=={'action':'run'} for _,p in device.requests),1)
+
+    def test_after_armed_rejection_has_no_RUN_intent_or_send_and_cleans_up(self):
+        port,device,store=self.setup_port();calls=[]
+        def reject():
+            calls.append(True);raise ValueError('no_run_rehearsal_complete')
+        with self.assertRaisesRegex(ValueError,'no_run_rehearsal_complete'):
+            port.execute(pulse(),lambda:None,after_armed_before_run=reject)
+        self.assertEqual(calls,[True]);self.assertFalse(port.may_have_run)
+        self.assertFalse(any(v.get('payload')=={'action':'run'} for v in store.rows.values()))
+        self.assertFalse(any(p=={'action':'run'} for _,p in device.requests))
+        self.assertFalse(device.queue);self.assertFalse(any(device.speeds.values()))
+        self.assertIsNone(port._before_run)
+
+    def test_after_armed_noncallable_rejects_before_device_access(self):
+        port,device,_=self.setup_port()
+        with self.assertRaisesRegex(ValueError,'after_armed_before_run_callback_required'):
+            port.execute(pulse(),lambda:None,after_armed_before_run=True)
+        self.assertEqual(device.requests,[])
+
+    def test_default_hook_does_not_add_keyword_to_existing_adapter(self):
+        class LegacyAdapter(SequencePort):
+            def _execute_validated(self,pulse,tick,*,before_run=None,monitor_policy=None):
+                return 'unchanged'
+        port=object.__new__(LegacyAdapter)
+        self.assertEqual(port.execute(pulse(),lambda:None),'unchanged')
+
+    def test_after_armed_hook_camera_failure_is_checked_before_RUN_intent(self):
+        port,device,store=self.setup_port();failed=[]
+        def tick():
+            if failed:raise ValueError('camera_failed_during_preparation')
+        with self.assertRaisesRegex(ValueError,'camera_failed_during_preparation'):
+            port.execute(pulse(),tick,after_armed_before_run=lambda:failed.append(True))
+        self.assertFalse(any(v.get('payload')=={'action':'run'} for v in store.rows.values()))
+        self.assertFalse(any(p=={'action':'run'} for _,p in device.requests))
+        self.assertFalse(any(device.speeds.values()))
+
     def test_before_run_rejection_never_sends_and_keeps_cleanup(self):
         for error in (ValueError('stale_observation'), KeyboardInterrupt()):
             with self.subTest(error=type(error).__name__):

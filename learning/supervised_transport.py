@@ -608,15 +608,21 @@ class SequencePort:
             self._finish_result = self._stop_and_clear(restore_default=True, emergency=True)
         return self._finish_result
 
-    def execute(self, pulse, tick, *, before_run=None, monitor_policy=None):
+    def execute(self, pulse, tick, *, before_run=None, after_armed_before_run=None, monitor_policy=None):
         """Execute once; an optional guard may reject just before RUN is sent.
 
         The guard runs after the RUN intent is durable and inside its request
         deadline. It must raise to reject; no return value grants authority or
         replaces the caller's own authorization and observation checks.
+
+        after_armed_before_run runs once after ARMED/OFF preparation, outside
+        the RUN request deadline and before its durable intent. It may acquire
+        fresh observations or reject; before_run remains the nonblocking guard.
         """
+        prepare = ({} if after_armed_before_run is None else
+                   {'after_armed_before_run': after_armed_before_run})
         return self._execute_validated(validate_pulse(pulse), tick, before_run=before_run,
-                                       monitor_policy=monitor_policy)
+                                       monitor_policy=monitor_policy, **prepare)
 
     def _monitor_wrist_deadline(self, end, tick):
         verified = False
@@ -650,7 +656,8 @@ class SequencePort:
         if self.clock.monotonic()-end > .02:
             raise TimeoutError('monitor_deadline_overrun')
 
-    def _execute_validated(self, pulse, tick, *, before_run=None, stop_when=None, monitor_policy=None):
+    def _execute_validated(self, pulse, tick, *, before_run=None, after_armed_before_run=None,
+                           stop_when=None, monitor_policy=None):
         """Shared finite body for internally validated, narrowly scoped adapters.
 
         General callers must use execute(). The commissioning adapter validates
@@ -658,6 +665,8 @@ class SequencePort:
         """
         if before_run is not None and not callable(before_run):
             raise ValueError('before_run_callback_required')
+        if after_armed_before_run is not None and not callable(after_armed_before_run):
+            raise ValueError('after_armed_before_run_callback_required')
         if stop_when is not None and not callable(stop_when):
             raise ValueError('stop_when_callback_required')
         validate_monitor_policy(pulse, monitor_policy)
@@ -693,6 +702,9 @@ class SequencePort:
                 raise ValueError('unexpected_output_before_run')
             self._active_pulse = pulse
             tick()
+            if after_armed_before_run is not None:
+                after_armed_before_run()
+                tick()
             self._call('/sequence', {'action': 'run'}, run=True)
             before = self.last_dispatch_before
             after = self.last_dispatch_after

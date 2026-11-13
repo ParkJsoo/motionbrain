@@ -78,6 +78,40 @@ class ManualCollectionTests(unittest.TestCase):
     def pulse(self, joint='wrist', direction='up'):
         return self.manager.pulse(dict(joint=joint, direction=direction, percent=20, durationMs=200))
 
+    def test_after_armed_hook_forwarded_once_without_changing_pulse_caps(self):
+        self.start();original=self.manager.port.execute;calls=[]
+        def execute(pulse,tick,**kwargs):
+            self.assertEqual(set(kwargs),{'after_armed_before_run'})
+            kwargs['after_armed_before_run']()
+            return original(pulse,tick)
+        self.manager.port.execute=execute
+        self.manager.pulse(dict(joint='wrist',direction='up',percent=20,durationMs=200),
+                           after_armed_before_run=lambda:calls.append(True))
+        self.assertEqual(calls,[True]);self.assertEqual(len(self.manager.port.executions),1)
+
+    def test_after_armed_invalid_hook_rejected_before_session_or_hardware(self):
+        with self.assertRaisesRegex(ValueError,'after_armed_before_run_callback_required'):
+            self.manager.pulse({},after_armed_before_run=True)
+        self.assertIsNone(self.manager.current)
+
+    def test_after_armed_hook_keeps_60_and_120_recording_start_cutoffs(self):
+        for seconds in (60,120):
+            with self.subTest(seconds=seconds):
+                manager=ManualCollection(self.root/f'prepared-{seconds}',self.helper,'http://127.0.0.1',
+                    'secret','cam',journal_path=self.root/f'prepared-{seconds}.sqlite',clock=self.clock,
+                    camera_factory=Camera,port_factory=Port,recording_seconds=seconds)
+                try:
+                    manager.start(dict(joint='gripper',poseContext='fixed',onsiteConfirmed=True))
+                    port=manager.port
+                    def execute(pulse,tick,**kwargs):return kwargs['after_armed_before_run']()
+                    port.execute=execute
+                    self.clock.now=manager.started+seconds-11
+                    with self.assertRaisesRegex(ValueError,'recording_near_budget_end'):
+                        manager.pulse(dict(joint='gripper',direction='open',percent=60,durationMs=650),
+                            after_armed_before_run=lambda:self.clock.sleep(2))
+                    self.assertEqual(port.executions,[])
+                finally:manager.close()
+
     def transport(self, fail_start=False):
         from tests.test_supervised_transport import CompactTransportTests
         template, device, _ = CompactTransportTests().setup_port()

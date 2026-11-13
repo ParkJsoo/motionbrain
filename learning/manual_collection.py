@@ -446,10 +446,12 @@ class ManualCollection:
             raise ValueError('session_command_budget_reached')
         return dict(**payload, motor=profile['motor'], expectedPwm=sign*(payload['percent']*255//100))
 
-    def pulse(self, payload, *, before_run=None, monitor_policy=None):
+    def pulse(self, payload, *, before_run=None, after_armed_before_run=None, monitor_policy=None):
         """선택적으로 RUN 직전의 비차단 관측·선택 가드를 전달한다."""
         if before_run is not None and not callable(before_run):
             raise ValueError('before_run_callback_required')
+        if after_armed_before_run is not None and not callable(after_armed_before_run):
+            raise ValueError('after_armed_before_run_callback_required')
         if self.busy or not self.current or self.current['phase'] != 'recording':
             raise ValueError('recording_required')
         pulse = self._validate_pulse(payload)
@@ -478,6 +480,13 @@ class ManualCollection:
             self.store.write_json(f'command-{self.command_count:03d}-intent.json', intent)
             self._event(intent)
             guard = {} if before_run is None else {'before_run': before_run}
+            if after_armed_before_run is not None:
+                def prepared():
+                    after_armed_before_run()
+                    self.camera.check()
+                    if self.clock.monotonic()-self.started > self.recording_seconds-10:
+                        raise ValueError('recording_near_budget_end')
+                guard['after_armed_before_run'] = prepared
             if monitor_policy is not None:
                 guard['monitor_policy'] = monitor_policy
             receipt = self.port.execute(pulse, self.camera.check, **guard)

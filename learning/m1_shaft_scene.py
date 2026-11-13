@@ -237,6 +237,9 @@ class M1ShaftSceneGuard(CurrentSceneExternalGuard):
             self.reject()
             raise
 
+    def _review_status(self):
+        return self.port.check_idle()
+
     def _review_checked(self, record, result, *, deadline, tick):
         require(not self.active and self.clock.monotonic() < deadline, 'M1_idle_review_required')
         self._verify_assets(); self.check(); tick()
@@ -248,7 +251,7 @@ class M1ShaftSceneGuard(CurrentSceneExternalGuard):
             actual_scene=self.scene_context, now=self.clock.monotonic(), max_age_seconds=self.config['maxAgeSeconds'])
         require(checked == result and _source_record(checked) == record, 'M1_bound_observation_changed')
         image, frame = self._frame(); external = self._measure(image)
-        status = self.port.check_idle(); angle = SequencePort._shoulder_angle(status)
+        status = self._review_status(); angle = SequencePort._shoulder_angle(status)
         require(status['shoulderAngle'].get('active') is False and
                 abs(angle-self.tracking['expectedM4']) <= self.tracking['maximumM4Difference'], 'M1_fixed_M4_changed')
         require(max(abs(a-b) for a,b in zip(external['objectBox'], self.fixed_object['external']['objectBox'])) <= self._object_box_limit(),

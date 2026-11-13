@@ -20,6 +20,7 @@ class M1TableReleaseGuard(M1ShaftSceneGuard):
 
     def __init__(self, *args, **kwargs):
         self._release_consumed = False
+        self._armed_review_sequence = None
         super().__init__(*args, **kwargs)
 
     def _expected_m4(self):
@@ -43,6 +44,38 @@ class M1TableReleaseGuard(M1ShaftSceneGuard):
         super()._validate_loaded_reference()
         require(self.tracking['maximumM4Difference'] == .25,
                 'table_release_quarter_degree_required')
+
+    def review_armed(self, record, result, *, expected_sequence, deadline, tick):
+        """RUN 요청 제한시간 밖의 명시적 ARMED·전축 OFF 관측이다."""
+        try:
+            require(self._armed_review_sequence is None and type(expected_sequence) is int and
+                    expected_sequence > 0, 'table_release_armed_review_sequence')
+            self._armed_review_sequence = expected_sequence
+            return self._review_checked(record, result, deadline=deadline, tick=tick)
+        except BaseException:
+            self.reject()
+            raise
+        finally:
+            self._armed_review_sequence = None
+
+    def _review_status(self):
+        if self._armed_review_sequence is None:
+            return super()._review_status()
+        sequence = self._armed_review_sequence
+        pulse = self.port._active_pulse
+        require(isinstance(pulse, dict) and all(pulse.get(k) == v for k,v in COMMAND.items()),
+                'table_release_armed_exact_open_required')
+        require(self.port.boot_id == self.config['controllerBootId'] and self.port.last_sequence == sequence,
+                'table_release_armed_identity_changed')
+        status = self.port._status()
+        # 예정 pulse를 넘기지 않는다. 현재 M1을 포함한 전축 OFF를 요구한다.
+        self.port._check_status(status, 'ARMED')
+        self.port._queue(1)
+        self.port._outputs()
+        require(self.port.boot_id == self.config['controllerBootId'] and self.port.last_sequence == sequence and
+                self.port.last_outputs == {i: 0 for i in range(1, 6)},
+                'table_release_armed_output_changed')
+        return status
 
     def validate_command(self, command):
         # 사후 판독 실패·잘못된 명령도 같은 guard로 재시도하지 않는다.
