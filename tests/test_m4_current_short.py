@@ -15,9 +15,9 @@ class ShortActorTests(unittest.TestCase):
     def setUp(self):
         fixtures.CommissioningTests.setUp(self)
         self.scope.update(schemaVersion=core.CURRENT_SHORT_TASK_SCHEMA,
-            pulse=short.short_task_pulse('up',short.current_short_policy(getattr(self,'up_cap',350))),expectedStartAngleDeg=197.22,
+            pulse=short.short_task_pulse('up',short.current_short_policy(getattr(self,'up_cap',350),getattr(self,'down_cap',200))),expectedStartAngleDeg=197.22,
             startAngleToleranceDeg=.1,maxObservedDeltaDeg=.9,maxObservationAgeSeconds=3.,
-            goalAngleDeg=197.85,shortTaskPolicy=short.current_short_policy(getattr(self,'up_cap',350)))
+            goalAngleDeg=197.85,shortTaskPolicy=short.current_short_policy(getattr(self,'up_cap',350),getattr(self,'down_cap',200)))
         self.device.angle=197.22
         self.reset_actor()
     def reset_actor(self):
@@ -35,7 +35,7 @@ class ShortActorTests(unittest.TestCase):
         self.assertEqual(sum(p=={'action':'run'} for _,p in self.posts()),1)
         self.assertFalse(r['liftVerified']);self.assertFalse(r['modelSelected'])
     def test_DOWN_goal_has_separate_profile_and_support(self):
-        self.scope.update(pulse=short.short_task_pulse('down'),goalAngleDeg=197.22,expectedStartAngleDeg=197.85)
+        self.scope.update(pulse=short.short_task_pulse('down',self.scope['shortTaskPolicy']),goalAngleDeg=197.22,expectedStartAngleDeg=197.85)
         self.scope['context']['supportMode']='gripper_supported';self.device.angle=197.85
         def no_table(record):
             record['onsite']['tableSupportVerified']=False
@@ -45,7 +45,7 @@ class ShortActorTests(unittest.TestCase):
         self.observer.on_before=no_table;self.reset_actor()
         self.device.after_run=lambda d:setattr(d,'angle',197.21)
         r=self.run_trial();self.assertEqual(r['status'],'completed',r)
-        self.assertEqual(r['receipt']['monitorTimingPolicy'],short.DOWN_MONITOR_POLICY)
+        self.assertEqual(r['receipt']['monitorTimingPolicy'],self.scope['shortTaskPolicy']['downMonitorTimingPolicy'])
         self.assertEqual(r['receipt']['stopReason'],'observed_current_short_down_goal')
         self.assertTrue(r['finalIdleOffVerified'])
     def test_precise_drift_never_RUN(self):
@@ -82,6 +82,18 @@ class ShortMonitorTests(unittest.TestCase):
     setUp=monitorfixtures.TargetMonitorTests.setUp
     RUNs=monitorfixtures.TargetMonitorTests.RUNs
     STOPs=monitorfixtures.TargetMonitorTests.STOPs
+    def test_DOWN250_slow_first_safety_read_times_out_OFF_no_retry(self):
+        self.pulse=short.short_task_pulse('down',short.current_short_policy(550,250));self.policy=short.DOWN_MONITOR_POLICY250
+        original=self.device.open;delayed=[]
+        def slow(request,timeout):
+            if self.device.running and request.data is None and not delayed:
+                delayed.append(True);self.clock.sleep(.251)
+            return original(request,timeout)
+        self.device.open=slow
+        with self.assertRaisesRegex(TimeoutError,'request_deadline'):self.execute()
+        self.assertEqual(len(self.RUNs()),1);self.assertEqual(len(self.STOPs()),1);self.assertTrue(self.port.off_verified)
+        with self.assertRaises(ValueError):
+            transport.validate_monitor_policy(self.pulse,short.DOWN_MONITOR_POLICY)
     def execute(self,goal=lambda status:False):
         return self.port._execute_validated(self.pulse,lambda:None,stop_when=goal,monitor_policy=self.policy)
     def test_short_DOWN_delayed_first_safety_read_times_out_OFF_one_RUN(self):
@@ -137,11 +149,11 @@ class ShortRawDataTests(unittest.TestCase):
     def setUp(self):
         from tests import test_task_transition_data as df
         from learning import task_transition_data as data
-        self.data=data;self.policy=short.current_short_policy(getattr(self,'up_cap',350));self.o=df.TaskTransitionDataTests();self.o.pulse=short.short_task_pulse('up',self.policy);self.o.setUp()
+        self.data=data;self.policy=short.current_short_policy(getattr(self,'up_cap',350),getattr(self,'down_cap',200));self.o=df.TaskTransitionDataTests();self.o.pulse=short.short_task_pulse('up',self.policy);self.o.setUp()
         self.addCleanup(self.o.doCleanups);fx=self.o.fixture
         self.o.angle_patch.stop();p=patch.object(data,'_angle',return_value=197.22);p.start();self.addCleanup(p.stop)
         s=fx.read('scope.json');s.update(schemaVersion=short.SCHEMA,expectedStartAngleDeg=197.22,
-            startAngleToleranceDeg=.1,maxObservedDeltaDeg=.9,maxObservationAgeSeconds=3.,goalAngleDeg=197.85,shortTaskPolicy=short.current_short_policy(getattr(self,'up_cap',350)))
+            startAngleToleranceDeg=.1,maxObservedDeltaDeg=.9,maxObservationAgeSeconds=3.,goalAngleDeg=197.85,shortTaskPolicy=short.current_short_policy(getattr(self,'up_cap',350),getattr(self,'down_cap',200)))
         fx.write('scope.json',s)
         r=fx.read('result.json');r.update(schemaVersion=short.SCHEMA,scopeSha256=digest(s))
         r['receipt'].update(stoppedEarly=False,stopReason='requested_period_complete',
@@ -203,6 +215,9 @@ class RecordedShortCompatibilityTests(unittest.TestCase):
                 other['pulse']=short.short_task_pulse('up',other['shortTaskPolicy'])
                 with self.assertRaisesRegex(ValueError,'recorded_implementation_unknown'):
                     core.validate_recorded_scope(other)
+                other=copy.deepcopy(original);other['shortTaskPolicy']=short.current_short_policy(cap,250)
+                with self.assertRaisesRegex(ValueError,'recorded_implementation_unknown'):
+                    core.validate_recorded_scope(other)
 
 
 class ShortActor450Tests(ShortActorTests):
@@ -237,3 +252,20 @@ class ShortModelBinding550Tests(ShortModelBindingTests):
         self.o.executor.m4_factory=wrong
         with self.assertRaisesRegex(ValueError,'short_policy_mismatch'):self.call()
         self.assertEqual(self.o.run_calls,0)
+
+class ShortActorDown250Tests(ShortActorTests):
+    up_cap=550
+    down_cap=250
+
+class ShortRawDataDown250Tests(ShortRawDataTests):
+    up_cap=550
+    down_cap=250
+    def test200_registration_cannot_relabel250_paired_source(self):
+        reg,ann=self.o.annotations();reg['context']['executionPolicy']=short.current_short_policy(550,200)
+        ann['registrationSha256']=digest(reg)
+        with self.assertRaisesRegex(ValueError,'execution_policy_changed'):
+            self.data.build_manual_m4_row(self.o.root,reg,ann)
+
+class ShortModelBindingDown250Tests(ShortModelBindingTests):
+    def setUp(self):
+        super().setUp();self.policy=short.current_short_policy(550,250)

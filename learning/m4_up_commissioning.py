@@ -271,9 +271,9 @@ def validate_recorded_scope(scope):
     if (scope.get('schemaVersion')==CURRENT_SHORT_TASK_SCHEMA
             and isinstance(scope.get('shortTaskPolicy'),dict)
             and ((scope.get('implementationSha256')==CURRENT_SHORT_350_RECORDED_DIGEST
-                  and scope['shortTaskPolicy'].get('upDurationCapMs')==350)
+                  and scope['shortTaskPolicy']==current_short.current_short_policy(350,200))
                  or (scope.get('implementationSha256')==CURRENT_SHORT_450_RECORDED_DIGEST
-                     and scope['shortTaskPolicy'].get('upDurationCapMs')==450))):
+                     and scope['shortTaskPolicy']==current_short.current_short_policy(450,200)))):
         candidate=copy.deepcopy(scope);candidate['implementationSha256']=implementation_digest()
         validate_scope(candidate)
         return copy.deepcopy(scope)
