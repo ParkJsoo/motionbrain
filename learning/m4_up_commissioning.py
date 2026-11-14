@@ -87,7 +87,7 @@ PUBLIC_FAILURE_CODES = frozenset({
     'm4_native_pre_dispatch_unavailable', 'm4_controller_proof_stale',
     'm4_pre_run_guard_stale', 'm4_pinned_before_outside_dispatch_window',
     'm4_start_context_changed', 'm4_observed_excursion', 'm4_camera_wait_expired',
-    'm4_target_up_global_excursion','m4_target_up_already_at_goal',
+    'm4_target_up_global_excursion','m4_target_up_already_at_goal','m4_target_up_headroom_unverified',
     'm4_output_cursor_invalid','m4_output_cursor_regressed','m4_output_cursor_baseline_changed'})
 
 
@@ -189,14 +189,15 @@ def target_up_policy(scope):
     require(scope.get('schemaVersion')==TARGET_UP_SCHEMA,'m4_target_up_policy_required')
     return dict(schemaVersion=TARGET_UP_SCHEMA,goalAngleDeg=scope['goalAngleDeg'],
                 returnGoalAngleDeg=scope['returnGoalAngleDeg'],globalReferenceDeg=scope['globalReferenceDeg'],globalUpperDeg=TARGET_UP_GLOBAL_UPPER,
-                pulseDurationCapMs=650)
+                pulseDurationCapMs=650,monitorTimingPolicy=transport.M4_TARGET_UP_DEADLINE_POLICY)
 
 
 def validate_target_up_policy(policy):
     """동일 탁상 코호트의 UP 중단·DOWN 복귀 목표를 함께 고정한다."""
     require(isinstance(policy,dict) and set(policy)=={
-        'schemaVersion','goalAngleDeg','returnGoalAngleDeg','globalReferenceDeg','globalUpperDeg','pulseDurationCapMs'}
+        'schemaVersion','goalAngleDeg','returnGoalAngleDeg','globalReferenceDeg','globalUpperDeg','pulseDurationCapMs','monitorTimingPolicy'}
         and policy['schemaVersion']==TARGET_UP_SCHEMA
+        and policy['monitorTimingPolicy']==transport.M4_TARGET_UP_DEADLINE_POLICY
         and all(transport.finite_number(policy[k]) for k in
                 ('goalAngleDeg','returnGoalAngleDeg','globalReferenceDeg','globalUpperDeg'))
         and policy['globalReferenceDeg']==TARGET_UP_GLOBAL_REFERENCE
@@ -214,6 +215,7 @@ def validate_target_up_policy(policy):
 RETURN_RECORDED_DIGEST = 'b2b1e07021854b2458f069e05dbfa7512df24d5f310383d443393338d28fe12e'
 KNOWN_CONTACT650_RECORDED_DIGEST = 'a6e0f896ffc144e8b47a09a52623eb1b1f47deabc88705af1d25c1a25a2c1946'
 CURRENT_FIXED_RECORDED_DIGEST = '9b2945710d45a9932b87a2e1e05b62f6d17567be06445f1d721d0723f15c4cac'
+TARGET_UP_INITIAL_RECORDED_DIGEST = 'f0b4677455cb3ad03112c2bde815395d515e7e325db26b786345248a4f31c44b'
 KNOWN_CONTACT500_RECORDED_DIGEST = '8e5a6e077280e0c80690b2ee21368a9cca6747e76a6ca3c9a20c614c0c7cfd21'
 RECORDED_IMPLEMENTATION_DIGESTS = frozenset({
     '87239bd44387e1e1ca522f9be5af2865eac376868c4c14efee20e001b503cccc',
@@ -230,6 +232,12 @@ def validate_recorded_scope(scope):
     require(isinstance(scope, dict), 'm4_scope_fields')
     if scope.get('implementationSha256') == implementation_digest():
         return validate_scope(scope)
+    if (scope.get('schemaVersion')==TARGET_UP_SCHEMA
+            and scope.get('implementationSha256')==TARGET_UP_INITIAL_RECORDED_DIGEST):
+        # 원래 실패 원본의 감사만 허용한다. 이 digest로 새 실행할 수 없다.
+        candidate=copy.deepcopy(scope);candidate['implementationSha256']=implementation_digest()
+        validate_scope(candidate)
+        return copy.deepcopy(scope)
     if (scope.get('schemaVersion') in (CONTACT_MANUAL650_SCHEMA,RETURN_SCHEMA)
             and scope.get('implementationSha256')==CURRENT_FIXED_RECORDED_DIGEST):
         candidate=copy.deepcopy(scope);candidate['implementationSha256']=implementation_digest()
@@ -360,6 +368,7 @@ class _CommissioningPort(transport.SequencePort):
             kwargs['stop_when']=lambda status:self._shoulder_angle(status)<=self.owner.scope['goalAngleDeg']+.1
         elif self.owner.scope['schemaVersion']==TARGET_UP_SCHEMA:
             kwargs['stop_when']=lambda status:self._shoulder_angle(status)>=self.owner.scope['goalAngleDeg']
+            kwargs['monitor_policy']=transport.M4_TARGET_UP_DEADLINE_POLICY
         receipt=super()._execute_validated(pulse, tick, before_run=before_run,**kwargs)
         if self.owner.scope['schemaVersion']==TARGET_UP_SCHEMA:
             receipt['stopReason']='observed_target_up_goal' if receipt['stoppedEarly'] else 'requested_period_complete'
@@ -486,6 +495,11 @@ class _CommissioningPort(transport.SequencePort):
                 require(angle>scope['goalAngleDeg']+.1,'m4_return_already_at_floor')
             if scope['schemaVersion']==TARGET_UP_SCHEMA:
                 require(angle<scope['goalAngleDeg']-.1,'m4_target_up_already_at_goal')
+                # 목표각과 상한 사이 .25도만으로 정지 여유를 추정하지 않는다.
+                # 선언한 전체 관측 이동 폭이 기존 전역 상한 안에 들어야 한다.
+                # 이 입구 검사도 미보정 관성/물리 정지 거리의 보증은 아니다.
+                require(angle+scope['maxObservedDeltaDeg']<=TARGET_UP_GLOBAL_UPPER,
+                        'm4_target_up_headroom_unverified')
         if self.owner.baseline_angle is not None:
             delta = angle-self.owner.baseline_angle
             direction_ok = delta<=.25 if scope['schemaVersion']==RETURN_SCHEMA else delta>=-.25

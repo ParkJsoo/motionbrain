@@ -135,6 +135,7 @@ def audit_manual_m4(root):
     if scope['schemaVersion']==core.TARGET_UP_SCHEMA:
         execution_policy=core.target_up_policy(scope)
         require(receipt.get('plannedTargetUp')==execution_policy
+                and receipt.get('monitorTimingPolicy')==execution_policy['monitorTimingPolicy']
                 and type(receipt.get('stoppedEarly')) is bool
                 and receipt.get('stopReason')==('observed_target_up_goal' if receipt['stoppedEarly']
                                                else 'requested_period_complete'),

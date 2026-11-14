@@ -15,9 +15,9 @@ class TargetUpTests(unittest.TestCase):
     def setUp(self):
         fixtures.CommissioningTests.setUp(self)
         self.scope.update(schemaVersion=core.TARGET_UP_SCHEMA,pulse=copy.deepcopy(core.LEARNING_PULSE),
-            expectedStartAngleDeg=196.69,startAngleToleranceDeg=.25,maxObservedDeltaDeg=3.,
-            goalAngleDeg=197.5,returnGoalAngleDeg=196.59,globalReferenceDeg=195.29)
-        self.device.angle=196.69
+            expectedStartAngleDeg=195.29,startAngleToleranceDeg=.25,maxObservedDeltaDeg=3.,
+            goalAngleDeg=197.5,returnGoalAngleDeg=195.19,globalReferenceDeg=195.29)
+        self.device.angle=195.29
         self.trial=core.M4UpCommissioning(self.scope,self.observer,'private-token',self.store,
             evidence_root=self.evidence,clock=self.clock)
         self.trial.port.opener=self.device
@@ -43,6 +43,16 @@ class TargetUpTests(unittest.TestCase):
         self.assertFalse(result['receipt']['stoppedEarly'])
         self.assertEqual(result['receipt']['stopReason'],'requested_period_complete')
         self.assertEqual(sum(payload=={'action':'run'} for _,payload in self.posts()),1)
+
+    def test_actual_failed_start_has_no_full_excursion_headroom_and_never_arms(self):
+        self.trial.scope.update(expectedStartAngleDeg=196.78,returnGoalAngleDeg=196.59)
+        self.trial.digest=plan_digest(self.trial.scope)
+        self.device.angle=196.78
+        result=self.trial.run(confirmed_scope_sha256=self.trial.digest)
+        self.assertEqual(result['status'],'failed')
+        self.assertFalse(result['mayHaveRun']);self.assertFalse(self.posts())
+        self.assertFalse(self.observer.started)
+        self.assertIn('m4_target_up_headroom_unverified',[e.get('code') for e in result['errors']])
 
     def test_already_at_goal_or_precise_start_drift_rejected_before_RUN(self):
         self.device.angle=197.5
@@ -72,7 +82,7 @@ class TargetUpTests(unittest.TestCase):
         result=self.run_trial();self.assertFalse(result['mayHaveRun']);self.assertFalse(self.posts())
 
     def test_scope_exact_goal_and_global_reference_and_legacy_unchanged(self):
-        for changes in [dict(goalAngleDeg=196.79),dict(goalAngleDeg=198.29),
+        for changes in [dict(goalAngleDeg=195.3),dict(goalAngleDeg=198.29),
                         dict(globalReferenceDeg=196.),dict(startAngleToleranceDeg=.5),
                         dict(goalAngleDeg=True),dict(returnGoalAngleDeg=196.),dict(returnGoalAngleDeg=True),dict(pulse=core.LIFT_PULSE)]:
             with self.subTest(changes=changes),self.assertRaises(ValueError):
@@ -85,6 +95,15 @@ class TargetUpTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'implementation_changed'):core.validate_scope(old)
         with self.assertRaisesRegex(ValueError,'recorded_implementation_unknown'):
             core.validate_recorded_scope(dict(self.scope,implementationSha256=core.CURRENT_FIXED_RECORDED_DIGEST))
+
+    def test_original_failed_target_scope_remains_recorded_only(self):
+        original=dict(self.scope,expectedStartAngleDeg=196.78,returnGoalAngleDeg=196.59,
+                      implementationSha256=core.TARGET_UP_INITIAL_RECORDED_DIGEST)
+        self.assertEqual(core.validate_recorded_scope(original),original)
+        with self.assertRaisesRegex(ValueError,'implementation_changed'):
+            core.validate_scope(original)
+        with self.assertRaisesRegex(ValueError,'recorded_implementation_unknown'):
+            core.validate_recorded_scope(dict(original,schemaVersion=core.RETURN_SCHEMA))
 
 
     def test_target_policy_parent_hooks_preserve_ARM_fresh_capture_and_normal_stop(self):
@@ -130,7 +149,9 @@ class TargetUpDataTests(unittest.TestCase):
             startAngleToleranceDeg=.25,maxObservedDeltaDeg=3.,goalAngleDeg=197.5,returnGoalAngleDeg=194.9,globalReferenceDeg=195.29)
         fx.write('scope.json',scope);self.scope=scope
         result=fx.read('result.json');result.update(schemaVersion=core.TARGET_UP_SCHEMA,scopeSha256=plan_digest(scope))
-        result['receipt'].update(stoppedEarly=False,stopReason='requested_period_complete',plannedTargetUp=core.target_up_policy(scope))
+        result['receipt'].update(stoppedEarly=False,stopReason='requested_period_complete',
+            plannedTargetUp=core.target_up_policy(scope),
+            monitorTimingPolicy=core.transport.M4_TARGET_UP_DEADLINE_POLICY)
         fx.write('result.json',result)
 
     def test_planned_cap_row_preserves_target_policy_and_rejects_fixed_context(self):
@@ -146,6 +167,12 @@ class TargetUpDataTests(unittest.TestCase):
 
     def test_changed_stop_policy_in_receipt_rejected(self):
         result=self.owner.fixture.read('result.json');result['receipt']['plannedTargetUp']['goalAngleDeg']=198.
+        self.owner.fixture.write('result.json',result)
+        with self.assertRaisesRegex(ValueError,'receipt_policy_changed'):self.owner.audit()
+
+    def test_old_unbounded_monitor_receipt_cannot_enter_new_training_policy(self):
+        result=self.owner.fixture.read('result.json')
+        result['receipt'].pop('monitorTimingPolicy')
         self.owner.fixture.write('result.json',result)
         with self.assertRaisesRegex(ValueError,'receipt_policy_changed'):self.owner.audit()
 

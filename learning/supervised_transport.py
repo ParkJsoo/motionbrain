@@ -30,6 +30,7 @@ WRIST_DEADLINE_POLICY = 'wrist-deadline-550-v1'
 ELBOW_DEADLINE_POLICY = 'elbow-deadline-350-v1'
 ELBOW_PLATEAU_POLICY = 'elbow-plateau-650-v1'
 ELBOW_FINE_POLICY = 'elbow-fine-450-v1'
+M4_TARGET_UP_DEADLINE_POLICY = 'm4-target-up-deadline-650-v1'
 WRIST_READ_BUDGET_REVISION = 'shared-command-deadline-v2'
 QUIET_IDLE_POLL_SECONDS = .5
 
@@ -51,7 +52,11 @@ def validate_monitor_policy(pulse, policy):
              and pulse['direction'] in ('up', 'down')
              and type(pulse['percent']) is int and type(pulse['durationMs']) is int
              and (pulse['percent'], pulse['durationMs']) == elbow_profiles[policy])
-    if not (wrist or elbow):
+    target_up = (policy == M4_TARGET_UP_DEADLINE_POLICY
+                 and pulse.get('joint') == 'shoulder' and pulse.get('direction') == 'up'
+                 and all(type(pulse.get(k)) is int for k in ('motor','percent','durationMs','expectedPwm'))
+                 and (pulse['motor'],pulse['percent'],pulse['durationMs'],pulse['expectedPwm']) == (4,50,650,127))
+    if not (wrist or elbow or target_up):
         raise ValueError('unsupported_monitor_timing_policy')
 
 
@@ -180,13 +185,17 @@ class SequencePort:
             if not emergency:
                 raise
 
-    def _call(self, path, payload=None, *, emergency=False, run=False, quiet_disconnect_retry=False, request_timeout=None, quiet_monitor_timeout=False, initial_output_read=False, read_deadline=None):
+    def _call(self, path, payload=None, *, emergency=False, run=False, quiet_disconnect_retry=False, request_timeout=None, quiet_monitor_timeout=False, initial_output_read=False, read_deadline=None, protect_read_persistence=False):
         self._last_http_failure_serial = None
         endpoint = urllib.parse.urlsplit(path).path
         if read_deadline is not None and (not finite_number(read_deadline)
                 or payload is not None or emergency or run or quiet_disconnect_retry
                 or endpoint not in ('/status', '/collection_status', '/action_outputs')):
             raise ValueError('readonly_monitor_deadline_required')
+        if type(protect_read_persistence) is not bool or (protect_read_persistence and read_deadline is None):
+            raise ValueError('protected_read_deadline_required')
+        if protect_read_persistence:
+            validate_monitor_policy(self._active_pulse or {}, M4_TARGET_UP_DEADLINE_POLICY)
         if endpoint not in ('/status', '/collection_status', '/sequence', '/actions', '/action_outputs', '/command', '/motor'):
             raise ValueError('unsupported_endpoint')
         if '?' in path and (endpoint != '/action_outputs' or payload is not None):
@@ -216,9 +225,34 @@ class SequencePort:
         name = f'http-{self.serial:06d}'
         event = {'path': path, 'method': 'GET' if payload is None else 'POST',
                  'payload': payload, 'startedAt': self.clock.monotonic(), 'timeoutSeconds': budget}
+        priority_stop = (getattr(self, '_target_stop_priority', False) and emergency
+                         and self.may_have_run and path == '/command' and payload == {'cmd': 'stop'})
         # No token/header is ever persisted. Intent must be durable before any
         # normal write; emergency cleanup proceeds even when storage is broken.
-        self._save(name + '-intent.json', event, emergency)
+        def save_read_phase(filename, value):
+            if priority_stop:
+                # Emergency TARGET STOP must not wait for an intent fsync.
+                # Keep the original name/time and flush only after OFF cleanup.
+                self._target_deferred_evidence.append((filename, copy.deepcopy(value)))
+                return
+            if not protect_read_persistence:
+                return self._save(filename, value, emergency)
+            remaining = read_deadline-self.clock.monotonic()
+            if remaining <= 0:
+                raise TimeoutError('request_deadline')
+            # A separate, non-nested alarm covers disk persistence too. Network
+            # I/O below receives only the remainder of the SAME absolute budget.
+            with deadline(remaining):
+                self._save(filename, value, emergency)
+            if self.clock.monotonic() >= read_deadline:
+                raise TimeoutError('request_deadline')
+        try:
+            save_read_phase(name + '-intent.json', event)
+        except BaseException as exc:
+            if protect_read_persistence or priority_stop:
+                self._target_deferred_evidence.append((name+'-error.json',
+                    dict(error=type(exc).__name__,endedAt=self.clock.monotonic())))
+            raise
         body = None if payload is None else urllib.parse.urlencode(payload).encode('ascii')
         headers = {'Connection': 'close'}
         if payload is not None:
@@ -297,9 +331,15 @@ class SequencePort:
             if len(raw) > 65536 or code != 200:
                 raise ValueError('invalid_http_response')
             parsed = response_json(raw, path)
-            self._save(name + '-response.json', {'httpStatus': code,
+            response_event = {'httpStatus': code,
                 'receivedAt': self.clock.monotonic(), 'rawUtf8': raw.decode('utf-8'),
-                'parsed': parsed}, emergency)
+                'parsed': parsed}
+            try:
+                save_read_phase(name + '-response.json', response_event)
+            except BaseException:
+                if protect_read_persistence:
+                    self._target_deferred_evidence.append((name+'-late-response.json',response_event))
+                raise
             if read_deadline is not None and self.clock.monotonic() >= read_deadline:
                 raise TimeoutError('request_deadline')
             if payload is not None and parsed.get('success') is not True:
@@ -308,8 +348,13 @@ class SequencePort:
         except BaseException as exc:
             call_failed = True
             # Error text may originate outside this module; retain type only.
-            self._save(name + '-error.json', {'error': type(exc).__name__,
-                       'endedAt': self.clock.monotonic()}, True)
+            error_event = {'error': type(exc).__name__, 'endedAt': self.clock.monotonic()}
+            if protect_read_persistence or priority_stop:
+                # Do not spend an expired output deadline fsyncing error logs
+                # before the owning execute path dispatches STOP.
+                self._target_deferred_evidence.append((name+'-error.json',error_event))
+            else:
+                self._save(name + '-error.json', error_event, True)
             self._last_http_failure_serial = self.serial
             raise
         finally:
@@ -661,6 +706,52 @@ class SequencePort:
         if self.clock.monotonic()-end > .02:
             raise TimeoutError('monitor_deadline_overrun')
 
+    def _monitor_target_up_deadline(self, end, tick, pulse, baseline_angle, stop_when):
+        """현재 TARGET UP만: 공유 GET 기한과 STOP 우선 꼬리 구간.
+
+        호스트의 감시/STOP 요청 시점을 제한한다. 원격 PWM의 650ms 물리 상한을
+        보증하지 않으며 응답·저장·스케줄링 지연은 원본과 진단에 남긴다.
+        """
+        verified = False
+        diagnostic = dict(deadline=end, goalObserved=None, completeSafetyStatusVerified=False)
+        self._target_monitor_diagnostic = diagnostic
+        while self.clock.monotonic() < end:
+            tick()
+            remaining = end-self.clock.monotonic()
+            if remaining <= 0:
+                break
+            if verified and remaining <= .2:
+                self.clock.sleep(min(.02, remaining))
+                continue
+            self._outputs(deadline=end, read_deadline=end, protect_read_persistence=True)
+            remaining = end-self.clock.monotonic()
+            if remaining <= 0:
+                break
+            if verified and remaining <= .2:
+                continue
+            status = self._status(request_timeout=remaining, read_deadline=end, protect_read_persistence=True)
+            completed = self.clock.monotonic()
+            self._check_status(status, 'ARMED', pulse, baseline_angle)
+            verified = True
+            diagnostic['completeSafetyStatusVerified'] = True
+            reached = stop_when(copy.deepcopy(status))
+            if type(reached) is not bool:
+                raise ValueError('stop_when_boolean_required')
+            evaluated = self.clock.monotonic()
+            diagnostic['goalObserved'] = dict(reached=reached, statusReadCompletedAt=completed,
+                evaluatedAt=evaluated, beforeDeadline=evaluated < end,
+                angleDeg=self._shoulder_angle(status))
+            if reached:
+                if evaluated-end > .02:
+                    raise TimeoutError('monitor_deadline_overrun')
+                return evaluated < end
+            self.clock.sleep(min(.05, max(0., end-self.clock.monotonic())))
+        if not verified:
+            raise ValueError('active_safety_status_not_verified')
+        if self.clock.monotonic()-end > .02:
+            raise TimeoutError('monitor_deadline_overrun')
+        return False
+
     def _execute_validated(self, pulse, tick, *, before_run=None, after_armed_before_run=None,
                            stop_when=None, monitor_policy=None):
         """Shared finite body for internally validated, narrowly scoped adapters.
@@ -675,7 +766,10 @@ class SequencePort:
         if stop_when is not None and not callable(stop_when):
             raise ValueError('stop_when_callback_required')
         validate_monitor_policy(pulse, monitor_policy)
-        if monitor_policy is not None and stop_when is not None:
+        target_monitor = monitor_policy == M4_TARGET_UP_DEADLINE_POLICY
+        if target_monitor and stop_when is None:
+            raise ValueError('target_up_goal_callback_required')
+        if monitor_policy is not None and stop_when is not None and not target_monitor:
             raise ValueError('monitor_policy_does_not_support_return_goal')
         self.may_have_run = False
         self.last_dispatch_before = None
@@ -686,6 +780,10 @@ class SequencePort:
         self._trace = []
         self._before_run = before_run
         stopped_early = False
+        self._target_monitor_diagnostic = None
+        self._target_deferred_evidence = []
+        self._target_stop_priority = target_monitor
+        failure_in_flight = False
         try:
             tick()
             snapshot = self.preflight()
@@ -715,7 +813,10 @@ class SequencePort:
             after = self.last_dispatch_after
             # Poll outputs first after RUN so a slow status response cannot
             # needlessly age the 128-entry output ring before its first drain.
-            if monitor_policy is not None:
+            if target_monitor:
+                stopped_early = self._monitor_target_up_deadline(
+                    after+pulse['durationMs']/1000, tick, pulse, baseline_angle, stop_when)
+            elif monitor_policy is not None:
                 self._monitor_wrist_deadline(after+pulse['durationMs']/1000, tick)
             while monitor_policy is None:
                 tick()
@@ -754,12 +855,25 @@ class SequencePort:
             if monitor_policy is not None:
                 receipt.update(monitorTimingPolicy=monitor_policy, monitorStatusVerified=True,
                                monitorReadBudgetRevision=WRIST_READ_BUDGET_REVISION)
+            if target_monitor:
+                receipt['targetUpMonitor'] = copy.deepcopy(self._target_monitor_diagnostic)
             if stop_when is not None:
                 receipt.update(stoppedEarly=stopped_early,
                                stopReason='observed_return_goal' if stopped_early else 'requested_period_complete')
             return receipt
         except BaseException:
+            failure_in_flight = True
             self.finish()
+            if target_monitor and self._target_monitor_diagnostic is not None:
+                # Persist failure diagnostics only after existing STOP/OFF cleanup.
+                self._save(f'target-up-monitor-{self.serial:06d}-diagnostic.json',
+                           copy.deepcopy(self._target_monitor_diagnostic), emergency=True)
             raise
         finally:
             self._before_run = None
+            self._target_stop_priority = False
+            if target_monitor:
+                for name, value in self._target_deferred_evidence:
+                    self._save(name, value, emergency=True)
+                if self.evidence_failed and not failure_in_flight:
+                    raise ValueError('target_monitor_evidence_failed')
