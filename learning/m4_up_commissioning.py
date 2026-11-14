@@ -32,6 +32,9 @@ CONTACT_PROBE_SCHEMA = 'motionbrain.m4_up_contact_uncertain_probe.v1'
 CONTACT_SHORT_SCHEMA = 'motionbrain.m4_up_known_contact_manual_short500.v1'
 CONTACT_MANUAL650_SCHEMA = 'motionbrain.m4_up_known_contact_manual_response650.v1'
 RETURN_SCHEMA = 'motionbrain.m4_manual_table_return.v1'
+TARGET_UP_SCHEMA = 'motionbrain.m4_current_target_up_angle_stop.v1'
+TARGET_UP_GLOBAL_REFERENCE = 195.29
+TARGET_UP_GLOBAL_UPPER = 198.29
 RETURN_PULSE = dict(joint='shoulder',motor=4,direction='down',percent=35,durationMs=400,expectedPwm=-89)
 PULSE = dict(joint='shoulder', motor=4, direction='up', percent=16,
              durationMs=200, expectedPwm=40)
@@ -84,6 +87,7 @@ PUBLIC_FAILURE_CODES = frozenset({
     'm4_native_pre_dispatch_unavailable', 'm4_controller_proof_stale',
     'm4_pre_run_guard_stale', 'm4_pinned_before_outside_dispatch_window',
     'm4_start_context_changed', 'm4_observed_excursion', 'm4_camera_wait_expired',
+    'm4_target_up_global_excursion','m4_target_up_already_at_goal',
     'm4_output_cursor_invalid','m4_output_cursor_regressed','m4_output_cursor_baseline_changed'})
 
 
@@ -108,7 +112,9 @@ def validate_scope(scope):
     is_probe = isinstance(scope, dict) and scope.get('schemaVersion') == CONTACT_PROBE_SCHEMA
     is_noncontact = isinstance(scope, dict) and scope.get('schemaVersion') == NONCONTACT_SCHEMA
     is_return = isinstance(scope, dict) and scope.get('schemaVersion') == RETURN_SCHEMA
+    is_target_up = isinstance(scope,dict) and scope.get('schemaVersion') == TARGET_UP_SCHEMA
     extra = ({'phase','observationContractSha256','modelPath','modelSha256'} if is_learning
+             else {'goalAngleDeg','returnGoalAngleDeg','globalReferenceDeg'} if is_target_up
              else {'goalAngleDeg'} if is_return
              else {'contactState'} if is_probe else {'load'} if is_noncontact else set())
     require(isinstance(scope, dict) and set(scope) == extra | {
@@ -116,7 +122,7 @@ def validate_scope(scope):
         'implementationSha256', 'context', 'pulse', 'defaultSpeed', 'maxCommands',
         'expectedStartAngleDeg', 'startAngleToleranceDeg', 'maxObservedDeltaDeg',
         'maxSeconds', 'maxObservationAgeSeconds', 'postOffSeconds'}, 'm4_scope_fields')
-    require(scope['schemaVersion'] in (SCHEMA,LIFT_SCHEMA,CONTACT_PROBE_SCHEMA,NONCONTACT_SCHEMA,CONTACT_SHORT_SCHEMA,CONTACT_MANUAL650_SCHEMA,RETURN_SCHEMA)+LEARNING_SCHEMAS and identifier(scope['trialId'])
+    require(scope['schemaVersion'] in (SCHEMA,LIFT_SCHEMA,CONTACT_PROBE_SCHEMA,NONCONTACT_SCHEMA,CONTACT_SHORT_SCHEMA,CONTACT_MANUAL650_SCHEMA,RETURN_SCHEMA,TARGET_UP_SCHEMA)+LEARNING_SCHEMAS and identifier(scope['trialId'])
             and identifier(scope['hostClockId']) and isinstance(scope['controllerBootId'], str)
             and re.fullmatch('[0-9a-f]{32}', scope['controllerBootId']) is not None,
             'm4_scope_identity')
@@ -125,7 +131,7 @@ def validate_scope(scope):
     profile = (next((p for p in candidates if p==scope['pulse']),{}) if is_learning
                else next((p for p in CONTACT_PROBE_PULSES if p==scope['pulse']),{}) if is_probe
                else RETURN_PULSE if scope['schemaVersion']==RETURN_SCHEMA
-               else LEARNING_PULSE if scope['schemaVersion']==CONTACT_MANUAL650_SCHEMA
+               else LEARNING_PULSE if scope['schemaVersion'] in (CONTACT_MANUAL650_SCHEMA,TARGET_UP_SCHEMA)
                else SHORT_PULSE if scope['schemaVersion']==CONTACT_SHORT_SCHEMA
                else PULSE if scope['schemaVersion'] in (SCHEMA, NONCONTACT_SCHEMA) else LIFT_PULSE)
     if is_probe:
@@ -144,13 +150,23 @@ def validate_scope(scope):
             and type(scope['defaultSpeed']) is int and scope['defaultSpeed'] == 255
             and type(scope['maxCommands']) is int and scope['maxCommands'] == 1,
             'm4_exact_single_pulse_required')
-    for k, value in [('startAngleToleranceDeg', .5), ('maxObservedDeltaDeg', 3. if is_learning or scope['schemaVersion'] in (CONTACT_SHORT_SCHEMA,CONTACT_MANUAL650_SCHEMA,RETURN_SCHEMA) else 1.),
+    for k, value in [('startAngleToleranceDeg', .25 if is_target_up else .5), ('maxObservedDeltaDeg', 3. if is_learning or scope['schemaVersion'] in (CONTACT_SHORT_SCHEMA,CONTACT_MANUAL650_SCHEMA,RETURN_SCHEMA,TARGET_UP_SCHEMA) else 1.),
                      ('maxSeconds', 60.), ('maxObservationAgeSeconds', 10.), ('postOffSeconds', 3.)]:
         require(transport.finite_number(scope[k]) and scope[k] == value, 'm4_fixed_limits_required')
     require(transport.finite_number(scope['expectedStartAngleDeg'])
             and 127.58 < scope['expectedStartAngleDeg'] < 296.12, 'm4_start_angle_invalid')
     if scope['schemaVersion'] in (LEARNING_SHORT_SCHEMA, MODEL_SHORT_SCHEMA, CONTACT_SHORT_SCHEMA, CONTACT_MANUAL650_SCHEMA):
         require(192.61 <= scope['expectedStartAngleDeg'] <= 197.61, 'm4_short_reference_band')
+    if is_target_up:
+        validate_target_up_policy(target_up_policy(scope))
+        require(transport.finite_number(scope['globalReferenceDeg'])
+                and scope['globalReferenceDeg']==TARGET_UP_GLOBAL_REFERENCE
+                and transport.finite_number(scope['goalAngleDeg'])
+                and abs(scope['returnGoalAngleDeg']-scope['expectedStartAngleDeg'])<=.25
+                and TARGET_UP_GLOBAL_REFERENCE-3. <= scope['expectedStartAngleDeg']
+                < scope['goalAngleDeg']-.1
+                and scope['goalAngleDeg'] <= TARGET_UP_GLOBAL_UPPER-.25,
+                'm4_target_up_goal_or_start_invalid')
     if scope['schemaVersion']==RETURN_SCHEMA:
         require(transport.finite_number(scope['goalAngleDeg']) and 192.61<=scope['goalAngleDeg']<=197.61
                 and scope['goalAngleDeg']+.1<scope['expectedStartAngleDeg']<=scope['goalAngleDeg']+3.,
@@ -168,11 +184,36 @@ def validate_scope(scope):
     return copy.deepcopy(scope)
 
 
+def target_up_policy(scope):
+    """계획 cap 명령과 결합한 새 UP 종료 정책. 실제 출력기간을 입력으로 쓰지 않는다."""
+    require(scope.get('schemaVersion')==TARGET_UP_SCHEMA,'m4_target_up_policy_required')
+    return dict(schemaVersion=TARGET_UP_SCHEMA,goalAngleDeg=scope['goalAngleDeg'],
+                returnGoalAngleDeg=scope['returnGoalAngleDeg'],globalReferenceDeg=scope['globalReferenceDeg'],globalUpperDeg=TARGET_UP_GLOBAL_UPPER,
+                pulseDurationCapMs=650)
+
+
+def validate_target_up_policy(policy):
+    """동일 탁상 코호트의 UP 중단·DOWN 복귀 목표를 함께 고정한다."""
+    require(isinstance(policy,dict) and set(policy)=={
+        'schemaVersion','goalAngleDeg','returnGoalAngleDeg','globalReferenceDeg','globalUpperDeg','pulseDurationCapMs'}
+        and policy['schemaVersion']==TARGET_UP_SCHEMA
+        and all(transport.finite_number(policy[k]) for k in
+                ('goalAngleDeg','returnGoalAngleDeg','globalReferenceDeg','globalUpperDeg'))
+        and policy['globalReferenceDeg']==TARGET_UP_GLOBAL_REFERENCE
+        and policy['globalUpperDeg']==TARGET_UP_GLOBAL_UPPER
+        and type(policy['pulseDurationCapMs']) is int and policy['pulseDurationCapMs']==650
+        and 192.61 <= policy['returnGoalAngleDeg'] <= 197.61
+        and policy['returnGoalAngleDeg']+.1 < policy['goalAngleDeg'] <= TARGET_UP_GLOBAL_UPPER-.25,
+        'm4_target_up_policy_invalid')
+    return copy.deepcopy(policy)
+
+
 # 이전 scope·proof 준비 구현의 원본 재감사 전용이다.
 # 실행 승인·현재 구현 검사를 대체하지 않는다.
 # known-contact500이 존재한 직전 구현이며 새650의 재감사에는 쓰지 않는다.
 RETURN_RECORDED_DIGEST = 'b2b1e07021854b2458f069e05dbfa7512df24d5f310383d443393338d28fe12e'
 KNOWN_CONTACT650_RECORDED_DIGEST = 'a6e0f896ffc144e8b47a09a52623eb1b1f47deabc88705af1d25c1a25a2c1946'
+CURRENT_FIXED_RECORDED_DIGEST = '9b2945710d45a9932b87a2e1e05b62f6d17567be06445f1d721d0723f15c4cac'
 KNOWN_CONTACT500_RECORDED_DIGEST = '8e5a6e077280e0c80690b2ee21368a9cca6747e76a6ca3c9a20c614c0c7cfd21'
 RECORDED_IMPLEMENTATION_DIGESTS = frozenset({
     '87239bd44387e1e1ca522f9be5af2865eac376868c4c14efee20e001b503cccc',
@@ -189,6 +230,11 @@ def validate_recorded_scope(scope):
     require(isinstance(scope, dict), 'm4_scope_fields')
     if scope.get('implementationSha256') == implementation_digest():
         return validate_scope(scope)
+    if (scope.get('schemaVersion') in (CONTACT_MANUAL650_SCHEMA,RETURN_SCHEMA)
+            and scope.get('implementationSha256')==CURRENT_FIXED_RECORDED_DIGEST):
+        candidate=copy.deepcopy(scope);candidate['implementationSha256']=implementation_digest()
+        validate_scope(candidate)
+        return copy.deepcopy(scope)
     if scope.get('schemaVersion')==RETURN_SCHEMA and scope.get('implementationSha256')==RETURN_RECORDED_DIGEST:
         candidate=copy.deepcopy(scope);candidate['implementationSha256']=implementation_digest()
         validate_scope(candidate)
@@ -312,7 +358,13 @@ class _CommissioningPort(transport.SequencePort):
         kwargs = {}
         if self.owner.scope['schemaVersion']==RETURN_SCHEMA:
             kwargs['stop_when']=lambda status:self._shoulder_angle(status)<=self.owner.scope['goalAngleDeg']+.1
-        return super()._execute_validated(pulse, tick, before_run=before_run,**kwargs)
+        elif self.owner.scope['schemaVersion']==TARGET_UP_SCHEMA:
+            kwargs['stop_when']=lambda status:self._shoulder_angle(status)>=self.owner.scope['goalAngleDeg']
+        receipt=super()._execute_validated(pulse, tick, before_run=before_run,**kwargs)
+        if self.owner.scope['schemaVersion']==TARGET_UP_SCHEMA:
+            receipt['stopReason']='observed_target_up_goal' if receipt['stoppedEarly'] else 'requested_period_complete'
+            receipt['plannedTargetUp']=target_up_policy(self.owner.scope)
+        return receipt
 
     def _call(self, path, payload=None, **kwargs):
         if not kwargs.get('emergency'):
@@ -426,10 +478,14 @@ class _CommissioningPort(transport.SequencePort):
         if getattr(self.owner,'task_hooks',None) is not None:
             self.owner.task_hooks['status_guard'](copy.deepcopy(status))
         scope = self.owner.scope
+        if scope['schemaVersion']==TARGET_UP_SCHEMA:
+            require(abs(angle-scope['globalReferenceDeg'])<=3.,'m4_target_up_global_excursion')
         if not self.may_have_run:
             require(abs(angle-scope['expectedStartAngleDeg']) <= scope['startAngleToleranceDeg'], 'm4_start_context_changed')
             if scope['schemaVersion']==RETURN_SCHEMA:
                 require(angle>scope['goalAngleDeg']+.1,'m4_return_already_at_floor')
+            if scope['schemaVersion']==TARGET_UP_SCHEMA:
+                require(angle<scope['goalAngleDeg']-.1,'m4_target_up_already_at_goal')
         if self.owner.baseline_angle is not None:
             delta = angle-self.owner.baseline_angle
             direction_ok = delta<=.25 if scope['schemaVersion']==RETURN_SCHEMA else delta>=-.25
@@ -455,13 +511,15 @@ class M4UpCommissioning:
                 {'prepare','before_run','status_guard','decisionSha256'}
                 and all(callable(task_hooks[k]) for k in ('prepare','before_run','status_guard'))
                 and _hash(task_hooks['decisionSha256'])
-                and self.scope['schemaVersion'] in (SCHEMA,CONTACT_MANUAL650_SCHEMA,RETURN_SCHEMA)),
+                and self.scope['schemaVersion'] in (SCHEMA,CONTACT_MANUAL650_SCHEMA,RETURN_SCHEMA,TARGET_UP_SCHEMA)),
                 'm4_task_hooks_require_scoped_fixed_actor')
         self.task_hooks = task_hooks
         self.selection_kind = ('manual_lift_fixed_profile' if self.scope['schemaVersion']==LIFT_SCHEMA
                                else 'manual_commissioning_fixed_profile')
         if self.scope['schemaVersion']==RETURN_SCHEMA:
             self.selection_kind = 'manual_table_return_angle_stop'
+        if self.scope['schemaVersion'] == TARGET_UP_SCHEMA:
+            self.selection_kind = 'manual_target_up_angle_stop'
         if self.scope['schemaVersion'] == CONTACT_MANUAL650_SCHEMA:
             self.selection_kind = 'manual_contact_response650_fixed_profile'
         if self.scope['schemaVersion'] == CONTACT_SHORT_SCHEMA:

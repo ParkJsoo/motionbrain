@@ -36,19 +36,30 @@ class ScopedCycleExecutor:
         if stage['kind'] not in ('lift','lower'):
             return self.execute_other(copy.deepcopy(command),after_armed_before_run=prepare,
                                       before_run=before_run,decision=copy.deepcopy(decision))
-        from learning.m4_up_commissioning import M4UpCommissioning, CONTACT_MANUAL650_SCHEMA, SCHEMA, RETURN_SCHEMA
+        from learning.m4_up_commissioning import M4UpCommissioning, CONTACT_MANUAL650_SCHEMA, SCHEMA, RETURN_SCHEMA, TARGET_UP_SCHEMA, target_up_policy, validate_target_up_policy
         from learning.supervised_transport import SequencePort
         require(safety['maximumM4ExcursionDeg']==3.,'cycle_M4_excursion_policy')
         def monitor(status):
+            if policy is not None:
+                require(abs(SequencePort._shoulder_angle(status)-policy['globalReferenceDeg']) <= 3.,
+                        'cycle_target_global_excursion')
             require(abs(SequencePort._shoulder_angle(status)-safety['M4ReferenceDeg']) <= 3.,
                     'cycle_active_M4_total_excursion')
         hooks=dict(prepare=prepare,before_run=before_run,status_guard=monitor,decisionSha256=digest(decision))
+        policy=stage.get('context',{}).get('executionPolicy')
+        if policy is not None:validate_target_up_policy(policy)
         actor,confirmed_scope_sha=self.m4_factory(copy.deepcopy(stage),copy.deepcopy(command),hooks)
         require(isinstance(actor,M4UpCommissioning) and actor.task_hooks is hooks
                 and actor.scope['controllerBootId']==safety['controllerBootId']
                 and {k:actor.scope['pulse'][k] for k in command}==command
-                and actor.scope['schemaVersion'] in ((SCHEMA,CONTACT_MANUAL650_SCHEMA)
+                and actor.scope['schemaVersion'] in ((SCHEMA,CONTACT_MANUAL650_SCHEMA,TARGET_UP_SCHEMA)
                     if stage['kind']=='lift' else (RETURN_SCHEMA,)), 'cycle_M4_scoped_actor_mismatch')
+        if actor.scope['schemaVersion']==TARGET_UP_SCHEMA:
+            require(policy==target_up_policy(actor.scope),'cycle_target_up_policy_mismatch')
+        elif policy is not None:
+            require(stage['kind']=='lower' and actor.scope['schemaVersion']==RETURN_SCHEMA
+                    and actor.scope.get('goalAngleDeg')==policy['returnGoalAngleDeg'],
+                    'cycle_target_return_policy_mismatch')
         require(confirmed_scope_sha==actor.digest,'cycle_M4_scope_not_confirmed')
         result=actor.run(confirmed_scope_sha256=confirmed_scope_sha)
         require(result['status']=='completed' and result['finalIdleOffVerified'] is True

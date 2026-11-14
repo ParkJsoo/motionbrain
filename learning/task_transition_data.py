@@ -21,7 +21,7 @@ SCHEMA = 'motionbrain.manual_m4_transition_audit.v1'
 REGISTRATION_SCHEMA = 'motionbrain.task_visual_state_registration.v1'
 ANNOTATION_SCHEMA = 'motionbrain.task_transition_annotation.v1'
 STATE = ('objectRisePx', 'toolRisePx', 'slipDyPx', 'startAngleDeg')
-MANUAL_SCHEMAS = (core.SCHEMA, core.CONTACT_MANUAL650_SCHEMA, core.RETURN_SCHEMA)
+MANUAL_SCHEMAS = (core.SCHEMA, core.CONTACT_MANUAL650_SCHEMA, core.RETURN_SCHEMA,core.TARGET_UP_SCHEMA)
 
 
 def _hash(value):
@@ -58,7 +58,11 @@ def _http(ev, receipt, pulse):
     require(all(_number(receipt.get(k)) for k in ('dispatchBefore', 'dispatchAfter', 'offAt'))
             and receipt['dispatchBefore'] <= receipt['dispatchAfter'] < receipt['offAt'],
             'task_receipt_time_order')
-    return statuses, boot, moving[0]['sequence']
+    stop_times=[event['requestStartedAt'] for event in events
+                if event['path']=='/command' and event['payload']=={'cmd':'stop'}
+                and event['requestStartedAt']>=receipt['dispatchAfter']]
+    require(bool(stop_times),'task_STOP_request_missing')
+    return statuses, boot, moving[0]['sequence'],min(stop_times)
 
 
 def _pair(ev, label, scope, receipt, frames, bridge):
@@ -126,7 +130,21 @@ def audit_manual_m4(root):
             'task_completed_manual_raw_required')
     require(result.get('parentModelSelected', False) is False, 'task_model_trial_not_manual_training')
     receipt = result['receipt']
-    statuses, boot, first = _http(ev, receipt, scope['pulse'])
+    statuses, boot, first,stop_started = _http(ev, receipt, scope['pulse'])
+    execution_policy=None
+    if scope['schemaVersion']==core.TARGET_UP_SCHEMA:
+        execution_policy=core.target_up_policy(scope)
+        require(receipt.get('plannedTargetUp')==execution_policy
+                and type(receipt.get('stoppedEarly')) is bool
+                and receipt.get('stopReason')==('observed_target_up_goal' if receipt['stoppedEarly']
+                                               else 'requested_period_complete'),
+                'task_target_up_receipt_policy_changed')
+        if receipt['stoppedEarly']:
+            require(any(receipt['dispatchAfter'] <= event['responseReceivedAt'] < stop_started
+                        and event['responseReceivedAt'] < receipt['dispatchAfter']+scope['pulse']['durationMs']/1000
+                        and event['response'].get('state')=='ARMED'
+                        and SequencePort._shoulder_angle(event['response']) >= scope['goalAngleDeg']
+                        for event in statuses),'task_target_up_stop_angle_missing')
     require(boot == scope['controllerBootId'], 'task_controller_boot_changed')
     frames, bridge = _native(ev, scope, result['observerClose'])
     pairs = {label:_pair(ev, label, scope, receipt, frames, bridge) for label in ('before','after')}
@@ -141,19 +159,28 @@ def audit_manual_m4(root):
     for event in statuses:
         if event['requestStartedAt'] < receipt['dispatchBefore']:
             continue
-        delta = SequencePort._shoulder_angle(event['response'])-angles['before']
+        angle=SequencePort._shoulder_angle(event['response'])
+        if execution_policy is not None:
+            require(abs(angle-execution_policy['globalReferenceDeg'])<=3.,'task_target_up_global_excursion')
+        delta = angle-angles['before']
         require(abs(delta) <= scope['maxObservedDeltaDeg']
                 and (delta <= .25 if scope['pulse']['direction'] == 'down' else delta >= -.25),
                 'task_observed_angle_excursion')
     require(all(digest((ev.root/name).read_bytes()) == sha for name,sha in ev.hashes.items()),
             'task_source_changed_during_audit')
-    return dict(schemaVersion=SCHEMA, status='raw_verified_annotation_required', sourceRoot=str(ev.root),
+    report=dict(schemaVersion=SCHEMA, status='raw_verified_annotation_required', sourceRoot=str(ev.root),
                 sourceResultSha256=ev.hashes['result.json'], sourceProofs=copy.deepcopy(ev.hashes),
                 originalContext=copy.deepcopy(scope['context']),
                 command={k:scope['pulse'][k] for k in ('joint','direction','percent','durationMs')},
                 supportMode=scope['context']['supportMode'], episode=[boot,str(first)],
                 pairs=pairs, anglesDeg=angles, originalOutcomeChanged=False,
                 trainingEligible=False, controlEligible=False, devicesAccessed=False)
+    if execution_policy is not None:report['executionPolicy']=execution_policy
+    if scope['schemaVersion']==core.RETURN_SCHEMA:
+        report['returnGoalAngleDeg']=scope['goalAngleDeg']
+        observed=[SequencePort._shoulder_angle(event['response']) for event in statuses]
+        report['observedAngleRangeDeg']=[min(observed),max(observed)]
+    return report
 
 
 def build_manual_m4_row(root, registration, annotation):
@@ -165,10 +192,22 @@ def build_manual_m4_row(root, registration, annotation):
             and isinstance(registration['measurementMethod'], str) and bool(registration['measurementMethod']),
             'task_state_registration_required')
     context = registration['context']
-    require(isinstance(context, dict) and set(context) == {'object','physicalView','poseRegime'}
-            and all(isinstance(v,str) and bool(v) for v in context.values())
-            and all(context[k] == report['originalContext'][k] for k in context),
+    require(isinstance(context, dict) and set(context) in (
+                {'object','physicalView','poseRegime'}, {'object','physicalView','poseRegime','executionPolicy'})
+            and all(isinstance(context.get(k),str) and bool(context[k]) for k in ('object','physicalView','poseRegime'))
+            and all(context[k] == report['originalContext'][k] for k in ('object','physicalView','poseRegime')),
             'task_registration_scene_changed')
+    if 'executionPolicy' in report:
+        require(context.get('executionPolicy')==report['executionPolicy'],'task_execution_policy_changed')
+    elif 'executionPolicy' in context:
+        # DOWN may share the same declared cohort policy, but historical fixed UP cannot.
+        policy=context['executionPolicy']
+        core.validate_target_up_policy(policy)
+        require(report['command']['direction']=='down'
+                and report.get('returnGoalAngleDeg')==policy['returnGoalAngleDeg']
+                and report['observedAngleRangeDeg'][0]>=policy['globalReferenceDeg']-3.
+                and report['observedAngleRangeDeg'][1]<=policy['globalUpperDeg'],
+                'task_execution_policy_changed')
     require(isinstance(registration['acceptedSourceContexts'], list)
             and report['originalContext'] in registration['acceptedSourceContexts'], 'task_source_context_not_registered')
     registration_sha = plan_digest(registration)
