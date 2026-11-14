@@ -183,6 +183,27 @@ class ManualCollection:
 
     def recover_failed_run_readonly(self, session_id, source_sha256, controller_boot_id):
         """소유한 실패 RUN의 현재 OFF만 확인한다. 원결과·정답·명령은 복구하지 않는다."""
+        return self._recover_failed_run_readonly(session_id, source_sha256, controller_boot_id)
+
+    def recover_failed_run_after_reboot_readonly(self, session_id, source_sha256,
+                                               original_boot_id, current_boot_id, original_controller_url):
+        """명시된 원부팅/주소를 보존하고 새 부팅의 현재 OFF만 별도 입증한다.
+
+        호출자는 해당 원장 행의 해소 허용을 받아야 한다. 과거 출력 결과나
+        설정 복원·학습 적격·실패 명령 재실행을 승인하지 않는다.
+        """
+        original_boot_id = _boot_identity({'bootId': original_boot_id})
+        current_boot_id = _boot_identity({'bootId': current_boot_id})
+        if original_boot_id == current_boot_id:
+            raise ValueError('failed_run_recovery_distinct_boots_required')
+        return self._recover_failed_run_readonly(session_id, source_sha256, current_boot_id,
+            original_boot_id=original_boot_id, original_controller_url=validate_target(original_controller_url))
+
+    def _recover_failed_run_readonly(self, session_id, source_sha256, controller_boot_id, *,
+                                     original_boot_id=None, original_controller_url=None):
+        rebooted = original_boot_id is not None
+        source_boot = original_boot_id if rebooted else controller_boot_id
+        source_url = original_controller_url if rebooted else self.controller_url
         if (self.busy or self.current is not None or self.port is not None or self.camera is not None
                 or self.store is not None or not identifier(session_id)):
             raise ValueError('failed_run_readonly_recovery_idle_owner_required')
@@ -203,8 +224,8 @@ class ManualCollection:
                 or original.get('error') not in ('command_failed_no_retry', 'output_off_unverified')
                 or original.get('finalIdleOffVerified') is not False or len(runs) != 1
                 or len([e for e in events if e.get('kind') == 'command']) != 1
-                or boots != {controller_boot_id} or plan.get('sessionId') != session_id
-                or plan.get('controllerUrl') != self.controller_url
+                or boots != {source_boot} or plan.get('sessionId') != session_id
+                or plan.get('controllerUrl') != source_url
                 or plan.get('camera', {}).get('deviceId') != self.device_id):
             raise ValueError('failed_run_recovery_owned_source_required')
         if self.journal is None:
@@ -234,6 +255,9 @@ class ManualCollection:
                 raise ValueError('failed_run_recovery_source_changed')
             store.write_json('proof.json', dict(sessionId=session_id, originalSessionSha256=source_sha256,
                 originalResultSha256=hashlib.sha256(row[3].encode()).hexdigest(), snapshot=snapshot,
+                originalControllerBootId=source_boot, currentControllerBootId=controller_boot_id,
+                originalControllerUrl=source_url, currentControllerUrl=self.controller_url,
+                controllerRebooted=rebooted, originalOutcomeReevaluated=False,
                 currentOffVerified=True, noWrites=True, originalOutcomeChanged=False,
                 originalConfigurationRestoreConfirmed=False, datasetEligible=False, replayAllowed=False,
                 followupRequiresNewProspectiveChecks=True))

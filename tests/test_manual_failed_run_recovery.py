@@ -114,3 +114,32 @@ class FailedRunRecoveryTests(unittest.TestCase):
         self.port_type.preflight=preflight
         with self.assertRaisesRegex(ValueError,'owned_block'): self.recover()
         self.assertEqual(self.db.execute('SELECT phase FROM supervised_blocks').fetchone()[0], 'off_unverified')
+
+    def test_explicit_reboot_recovery_preserves_original_boot_and_result(self):
+        self.port_type._call=lambda port,path: dict(bootId='b'*32)
+        self.manager.controller_url='http://127.0.0.1:9000'
+        result=self.manager.recover_failed_run_after_reboot_readonly(
+            self.sid,self.digest,'a'*32,'b'*32,self.plan['controllerUrl'])
+        self.assertTrue(result['currentOffVerified'])
+        proof=json.loads((self.session/'readonly-failed-run-recovery/proof.json').read_text())
+        self.assertEqual(proof['originalControllerBootId'],'a'*32)
+        self.assertEqual(proof['currentControllerBootId'],'b'*32)
+        self.assertFalse(proof['originalOutcomeReevaluated'])
+        self.assertEqual((self.session/'session.json').read_bytes(),self.raw)
+        self.assertEqual(self.db.execute('SELECT result_json FROM supervised_blocks').fetchone()[0],self.raw.decode())
+
+    def test_explicit_reboot_rejects_wrong_source_or_same_boot_before_io(self):
+        for source,current,url in [('a'*32,'a'*32,self.plan['controllerUrl']),
+                                   ('c'*32,'b'*32,self.plan['controllerUrl']),
+                                   ('a'*32,'b'*32,'http://foreign')]:
+            with self.assertRaises(ValueError):
+                self.manager.recover_failed_run_after_reboot_readonly(self.sid,self.digest,source,current,url)
+        self.unchanged()
+        self.assertEqual(self.ports,[])
+
+    def test_explicit_reboot_still_rejects_live_boot_change(self):
+        self.port_type._call=lambda port,path: dict(bootId='c'*32)
+        with self.assertRaisesRegex(ValueError,'boot_changed'):
+            self.manager.recover_failed_run_after_reboot_readonly(
+                self.sid,self.digest,'a'*32,'b'*32,self.plan['controllerUrl'])
+        self.unchanged()
