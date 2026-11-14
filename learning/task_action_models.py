@@ -197,7 +197,7 @@ def select_m4(model,state,target,commands,context,support_mode,*,minimum_improve
 
 
 def select_open(model,shaft_px,target,commands,context,*,table_supported,m4_angle_deg,
-                expected_m4_angle_deg,tolerance_deg=.25,minimum_improvement=0.):
+                expected_m4_angle_deg,tolerance_deg=.25,minimum_improvement=0.,observation_admission=None):
     """기존 shaft 예측을 쓰는 OPEN 전용 어댑터. CLOSE 선택 계약은 보존한다."""
     shaft.validate_model(model)
     require(table_supported is True, 'task_release_requires_table_support')
@@ -215,11 +215,17 @@ def select_open(model,shaft_px,target,commands,context,*,table_supported,m4_angl
                 and type(command['durationMs']) is int and 1<=command['durationMs']<=650,
                 'task_bounded_OPEN_only')
         keys.append(digest(command))
-        try: prediction=shaft.predict(model,x,command,context)
+        try:
+            if observation_admission is None:
+                prediction=shaft.predict(model,x,command,context);admission=None
+            else:
+                from learning.current_m1_uncertainty import predict_with_admission
+                prediction,admission=predict_with_admission(model,x,command,context,observation_admission)
         except ValueError as exc:
             rejected.append(dict(command=copy.deepcopy(command),reason=str(exc)));continue
         accepted.append(dict(kind='action',command=copy.deepcopy(command),predictedState={'shaftSeparationPx':prediction},
-                             error=(prediction-y)**2))
+                             error=(prediction-y)**2,
+                             **({'observationAdmission':admission} if admission is not None else {})))
     require(len(set(keys))==len(keys),'task_duplicate_candidate')
     stop=dict(kind='stop',command=None,predictedState={'shaftSeparationPx':x},error=(x-y)**2)
     return _rank(stop,accepted,rejected,digest(model),context,minimum_improvement)

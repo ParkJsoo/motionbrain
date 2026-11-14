@@ -74,6 +74,8 @@ class FullCycleSource:
 
     def preflight(self, scope, assets):
         self.scope=None;self.registrations={}
+        require(getattr(self.bank,'m1_observation_policies',{})==assets.get('m1ObservationPolicies',{}),
+                'full_source_M1_admission_policy_changed')
         missing={}; registrations={};stationary={}
         for stage in scope['stages']:
             kind=stage['kind']; errors=[]
@@ -108,6 +110,12 @@ class FullCycleSource:
                     registrations[kind]=(spec,observer)
                 elif kind in ('close','release'):
                     observer=RegisteredGripperCrosssection(registration,self._bound(spec['reference']))
+                    policy=self.bank.m1_observation_policies.get(kind)
+                    if policy is not None:
+                        from learning.current_m1_uncertainty import audit_calibration
+                        require(policy['liveEligible'] is True,'M1_admission_calibration_pending')
+                        audit_calibration(self.root,policy,model,raw,self._bound(spec['reference']),
+                                          self._bound(spec['guardConfig']))
                     registrations[kind]=(spec,observer)
                 else:
                     external=self._bound(spec['externalReference']); gripper=self._bound(spec['gripperReference'])
@@ -256,6 +264,10 @@ class FullCycleSource:
                     producerHostClockId=producer_id,controllerBootId=self.scope['controllerBootId'],
                     frames=frames,state=state,m4AngleDeg=epoch['angle'],stable=True,
                     outputSequence=epoch['sequence'],sourceRoute=route,auditedAt=now)
+        policy=getattr(self.bank,'m1_observation_policies',{}).get(stage['kind'])
+        if policy is not None:
+            from learning.pipeline_learning import digest
+            record['m1ObservationPolicySha256']=digest(policy)
         # Actual source scene declaration is checked by the existing bound parser;
         # its registered context must also exactly match the model asset above.
         key=plan_digest(source_record(record))

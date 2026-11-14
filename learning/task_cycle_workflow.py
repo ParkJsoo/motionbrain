@@ -82,7 +82,7 @@ class ScopedCycleExecutor:
 
 class FrozenCycleModelBank:
     """파일 SHA와 메모리 모델 SHA를 구분한다. 동작 중 재학습하지 않는다."""
-    def __init__(self, bindings, *, allow_development_approach=False):
+    def __init__(self, bindings, *, allow_development_approach=False, m1_observation_policies=None):
         require(isinstance(bindings, dict) and set(bindings) == set(STAGES), 'cycle_model_bank_stages')
         require(type(allow_development_approach) is bool, 'cycle_development_flag_required')
         self.bindings = copy.deepcopy(bindings)
@@ -102,25 +102,37 @@ class FrozenCycleModelBank:
             self.models[stage] = copy.deepcopy(model)
         require(len({m['context']['object'] for m in self.models.values()}) == 1, 'cycle_object_changed')
         self.hashes = {k:digest(v) for k,v in self.models.items()}
+        self.m1_observation_policies=copy.deepcopy(m1_observation_policies or {})
+        require(set(self.m1_observation_policies).issubset({'close','release'}),'cycle_M1_admission_stages')
+        from learning.current_m1_uncertainty import validate_policy
+        for kind,policy in self.m1_observation_policies.items():
+            validate_policy(policy,self.models[kind])
+            require(policy['command']['direction']==('close' if kind=='close' else 'open'),
+                    'cycle_M1_admission_direction')
+        self._m1_policies_sha=digest(self.m1_observation_policies)
 
     def verify_cached(self):
         require({k:digest(v) for k,v in self.models.items()} == self.hashes, 'cycle_cached_model_changed')
+        require(digest(self.m1_observation_policies)==self._m1_policies_sha,'cycle_M1_admission_policy_changed')
 
     def choose(self, stage, record):
         self.verify_cached()
         kind = stage['kind']; model = self.models[kind]
+        policy=self.m1_observation_policies.get(kind)
+        if policy is not None:
+            require(record.get('m1ObservationPolicySha256')==digest(policy),'cycle_M1_admission_source_binding')
         require(stage['modelSha256'] == self.hashes[kind]
                 and stage['context'] == record['context'] == model['context'], 'cycle_stage_model_mismatch')
         if kind == 'approach':
             result = relative.select(model, record['state'], stage['target'], stage['commands'], record['context'])
         elif kind == 'close':
             result = shaft.select(model, record['state']['shaftSeparationPx'], stage['target']['shaftSeparationPx'],
-                                  stage['commands'], record['context'])
+                                  stage['commands'], record['context'],observation_admission=policy)
         elif kind == 'release':
             result = actions.select_open(model, record['state']['shaftSeparationPx'],
                 stage['target']['shaftSeparationPx'], stage['commands'], record['context'],
                 table_supported=record['entry'].get('tableSupported'), m4_angle_deg=record['m4AngleDeg'],
-                expected_m4_angle_deg=stage['target']['expectedM4AngleDeg'])
+                expected_m4_angle_deg=stage['target']['expectedM4AngleDeg'],observation_admission=policy)
         else:
             require(record['state']['startAngleDeg'] == record['m4AngleDeg'], 'cycle_M4_input_angle_changed')
             result = actions.select_m4(model, record['state'], stage['target'], stage['commands'],

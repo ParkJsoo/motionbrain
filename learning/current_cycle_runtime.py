@@ -111,6 +111,8 @@ class CurrentCycleRuntime:
         require(plan_digest(dict(scope=self.scope,assets=self.assets,authorization=self.authorization))==self.memory_sha,
                 'runtime_memory_contract_changed')
         self.bank.verify_cached()
+        require(self.bank.m1_observation_policies==self.assets.get('m1ObservationPolicies',{}),
+                'runtime_M1_admission_policy_changed')
 
     def preflight(self):
         """파일/지원 계약 검사만 한다. 실제 세션·actor를 만들거나 시작하지 않는다."""

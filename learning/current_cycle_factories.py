@@ -112,7 +112,7 @@ def _audit_source_assets(root,bank,scope,assets):
     if missing:raise FactoryPreflightError(missing)
 
 
-def build_cycle_assets(root,scope,*,model_bindings,source_stages,journal_path,helper_binding):
+def build_cycle_assets(root,scope,*,model_bindings,source_stages,journal_path,helper_binding,m1_observation_policies=None):
     """실제 source preflight를 재사용한다. 부족 자산을 ready로 대신하지 않는다.
 
 model_bindings는 FrozenCycleModelBank의 절대 경로/SHA 계약, 나머지 binding은
@@ -131,13 +131,16 @@ root 아래 안전한 상대 경로/SHA다. 상태 등록과 픽셀 계측 등�
         if not isinstance(source_stages.get(kind),dict):errors.append('source_registration_missing')
         if errors:missing[kind]=errors
     if missing:raise FactoryPreflightError(missing)
-    bank=FrozenCycleModelBank(model_bindings,allow_development_approach=True)
+    bank=FrozenCycleModelBank(model_bindings,allow_development_approach=True,
+                             m1_observation_policies=m1_observation_policies)
     scope=validate_scope(scope)
     _bound(root,helper_binding)
     require(Path(journal_path).is_absolute(),'factory_absolute_journal_required')
     assets=dict(journalPath=str(journal_path),sourceStages=copy.deepcopy(source_stages),
         helper=copy.deepcopy(helper_binding),m4ImplementationSha256=implementation_digest(),
         phaseMode='source_bound_human',phaseProtocol='nonce_seed_anchor_fresh_once_v1')
+    if m1_observation_policies:
+        assets['m1ObservationPolicies']=copy.deepcopy(m1_observation_policies)
     # No factory, recorder, phase request, or device is created by this audit.
     _audit_source_assets(root,bank,scope,assets)
     for kind in ('lift','lower'):

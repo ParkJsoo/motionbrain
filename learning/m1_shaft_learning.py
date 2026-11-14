@@ -218,7 +218,7 @@ def predict(model, shaft_separation_px, command, context, *, baseline=False):
 
 
 def select(model, shaft_separation_px, target_shaft_px, commands, context, *,
-           predictor='shaftRidge', minimum_improvement_px=0.):
+           predictor='shaftRidge', minimum_improvement_px=0., observation_admission=None):
     """고정 scalar 예측으로 CLOSE와 정지를 비교한다. 접촉·파지를 추론하지 않는다.
 
     출력 후보는 전역 M1 상한인 60% 이하·650ms 이하 CLOSE에 한정한다.
@@ -243,12 +243,19 @@ def select(model, shaft_separation_px, target_shaft_px, commands, context, *,
     ranked, rejected = [stop], []
     for command in commands:
         try:
-            prediction = predict(model, x, command, context, baseline=predictor == 'commandMean')
+            if observation_admission is None:
+                prediction = predict(model, x, command, context, baseline=predictor == 'commandMean')
+                admission = None
+            else:
+                from learning.current_m1_uncertainty import predict_with_admission
+                prediction,admission = predict_with_admission(model,x,command,context,observation_admission,
+                    baseline=predictor == 'commandMean')
         except ValueError as exc:
             rejected.append(dict(command=copy.deepcopy(command), reason=str(exc)))
             continue
         ranked.append(dict(kind='action', command=copy.deepcopy(command),
-                           predictedShaftSeparationPx=prediction, errorPx=abs(prediction-target)))
+                           predictedShaftSeparationPx=prediction, errorPx=abs(prediction-target),
+                           **({'observationAdmission':admission} if admission is not None else {})))
     ranked.sort(key=lambda item: item['errorPx'])  # 안정 정렬이므로 동률이면 처음 넣은 정지가 우선한다.
     selected = ranked[0]
     improvement = stop['errorPx']-selected['errorPx']
