@@ -18,6 +18,10 @@
 
 M4 상태는 `objectRisePx`, `toolRisePx`, `slipDyPx`, `startAngleDeg`이며 입력에는 실행 전 영상·시작각·지지 상태만 사용한다. 실제 PWM·실제 출력 기간·사후 센서는 정답 또는 실행 증거다. 영상 수치의 주석은 사람 보조이며 인식 모델의 정확도로 세지 않는다. 모델은 계속 `controlEligible=false`다.
 
+저장된 M4 두 영상의 수치화는 `learning/task_visual_measurement.py`의 `register(external_bytes, gripper_bytes, parameters)`와 `measure(..., registration)`를 사용한다. 지정한 HSV·ROI·성분 크기로 외부 물체의 아래끝과 공구 마커를 찾고, 그리퍼의 물체 중심을 두 고정 기준점 템플릿에 대해 측정한다. 등록 기준 영상 하나를 모든 전이에 공통으로 사용한다. 각 전이의 before를 개별 0으로 초기화하지 않는다. 전체 등록 SHA와 원본 픽셀을 호출자가 고정·대조해야 하며, 크기 변화·잘림·경쟁 성분·낮은 템플릿 일치는 거절한다. 명시적으로 등록한 M1 폐합 형상이 고정된 M4 구간의 관측이며, OPEN처럼 턱 형상이 바뀌는 구간에 이 상대 이동 관측을 자동 적용하지 않는다.
+
+ROI·임계값·템플릿을 조정한 저장 영상은 관측 개발 자료다. 파라미터 변화에 따른 민감도는 물리 높이·실제 미끄러짐의 정확도나 예측 신뢰구간이 아니다. 미세한 관측 차이로 학습 입력 범위를 벗어나도 값을 0으로 바꾸거나 범위를 자동 확대하지 않는다. 다음 정상 동작의 시작 상태와 정지 관측 변동을 포함하는 자료가 부족한지 확인한다. 기존 자료는 장치 재부팅·촬영 구도·다른 관절 자세가 바뀐 새 계약에 자동 합치지 않는다. 새 계약으로의 재사용 검증과 실제 추가 수집량은 별도로 판단한다.
+
 실행기는 매 관측에서 모델·구도·부팅·두 영상·원본 감사·유효시간을 확인한다. 목표 판정도 별도의 `verify_goal`로 원본 증거를 검사해야 한다. 들기 완료는 마지막 출력 OFF 뒤의 두 관측과 보유 기간을 요구하고, 해제 완료는 탁상 지지와 양턱 분리를 요구한다. 픽셀 목표만으로 접촉·보유를 판정하지 않는다. 이미 달성된 단계를 건너뛰면 그 사실을 기록하며, 필수 동작이 빠진 결과를 전체 모델 실행으로 세지 않는다. 사람 판독 보조는 `humanAssisted`로 별도 기록한다.
 
 `ScopedCycleExecutor`는 M4에 기존 `M4UpCommissioning`만 사용한다. 명시적으로 승인된 scope SHA와 동일 후보·부팅·콜백을 대조한다. 일반 `SequencePort`에서 금지한 M4 UP을 우회해 호출하지 않는다. M4의 선택적 `task_hooks` 경로는 첫 동작 전 관측을 ARM 뒤로 지연해 한 번만 촬영하며 기존 재촬영 금지를 유지한다. 최종 판단은 RUN 요청 시간 안에서 블로킹 촬영 없이 검사한다. 기존 단발 각도 검사에 더해 전체 기준각의 3° 관측 중단 조건을 실행 중 상태 판독에도 적용한다. 이는 센서 판독에 따른 중단 조건이며 연속 시간의 물리 이동 보장은 아니다. 긴급 OFF 증명은 자세 검사 실패와 분리한다.
@@ -28,7 +32,7 @@ M4 상태는 `objectRisePx`, `toolRisePx`, `slipDyPx`, `startAngleDeg`이며 입
 
 ```sh
 python3 -m unittest tests.test_task_transition_data tests.test_task_action_models \
-  tests.test_finite_task_cycle tests.test_task_cycle_workflow
+  tests.test_finite_task_cycle tests.test_task_cycle_workflow tests.test_task_visual_measurement
 ```
 
 검증은 실제 모델 선택 함수를 연결한 합성 다섯 단계와 복수 재관측, 최소 수집→학습→고정→전체 시도, 지원 범위 밖 거절, 실패 무재송, 예산, 만료, 단계별 증거, OFF를 포함한다. 실물 결과와 반복 성공률은 별도 검증 대상이다.
