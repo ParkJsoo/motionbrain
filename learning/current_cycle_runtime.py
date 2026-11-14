@@ -249,7 +249,7 @@ class CurrentCycleRuntime:
             # ScopedCycleExecutor directly calls the validated M4 actor.run; general route
             # above directly starts/pulses/finishes the real ManualCollection.
             receipt=self.executor(stage,command,**kwargs)
-            ModelGraspTrial._receipt(self.cycle,receipt,bounded_command(stage['kind'],command))
+            ModelGraspTrial._receipt(self.cycle,receipt,bounded_command(stage['kind'],command,stage['context'].get('executionPolicy')))
             self.read_only.acknowledge_execution(copy.deepcopy(receipt))
             return receipt
         finally:

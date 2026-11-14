@@ -19,6 +19,8 @@ from learning.current_m1_contract import CurrentM1CollectionGuard
 from learning.current_observation_contract import CurrentTaskM3Guard
 from learning.current_m4_review import StationaryM4BeforeReviewer,SCHEMA as ANCHOR_SCHEMA
 from learning.current_m4_short import short_task_pulse,validate_current_short_policy
+from learning.m4_effective_policy import (POLICY_SCHEMA as EFFECTIVE_POLICY_SCHEMA,
+    validate_effective_policy,effective_task_pulse,SCHEMA as EFFECTIVE_SCHEMA)
 from learning.development_gripper_source import scene_context
 from learning.m1_shaft_scene import scene_context as shaft_scene
 from learning.finite_task_cycle import STAGES,validate_scope,bounded_command
@@ -45,15 +47,44 @@ def _bound(root,ref):
     return raw
 
 
+def _execution_policy(value):
+    if isinstance(value,dict) and value.get('schemaVersion')==EFFECTIVE_POLICY_SCHEMA:
+        return validate_effective_policy(value)
+    return validate_current_short_policy(value)
+
+
+def _execution_pulse(direction,policy):
+    return (effective_task_pulse(direction,policy) if policy['schemaVersion']==EFFECTIVE_POLICY_SCHEMA
+            else short_task_pulse(direction,policy))
+
+
+def _model_stage_support(bank,scope):
+    missing={};owned={}
+    for stage in scope['stages']:
+        kind=stage['kind']
+        if kind not in ('lift','lower'):continue
+        support='table_supported' if kind=='lift' else 'gripper_supported'
+        entries=bank.models[kind]['models'];rows=bank.models[kind]['trainingRows']
+        for command in stage['commands']:
+            matches=[e for e in entries if e['command']==command and e['supportMode']==support and e['count']>=2]
+            if not matches:missing.setdefault(kind,[]).append('factory_M4_candidate_support_two_rows_missing')
+        selected=[r for r in rows if r['command'] in stage['commands'] and r['supportMode']==support]
+        owned[kind]={tag+':'+value for r in selected for tag,value in
+            [('source',r['sourceHash']),('episode',plan_digest(r['episode']))]+[('frame',f) for f in r['frameIds']]}
+    if set(owned)=={'lift','lower'} and owned['lift'].intersection(owned['lower']):
+        for kind in ('lift','lower'):missing.setdefault(kind,[]).append('factory_M4_UP_DOWN_source_overlap')
+    if missing:raise FactoryPreflightError(missing)
+
+
 def _stage_contracts(root,scope,assets):
     missing={};policies={}
     for stage in scope['stages']:
         kind=stage['kind']
         try:
             if kind in ('lift','lower'):
-                policy=validate_current_short_policy(stage['context'].get('executionPolicy'))
+                policy=_execution_policy(stage['context'].get('executionPolicy'))
                 policies[kind]=policy
-                pulse=short_task_pulse('up' if kind=='lift' else 'down',policy)
+                pulse=_execution_pulse('up' if kind=='lift' else 'down',policy)
                 expected=[{k:pulse[k] for k in ('joint','direction','percent','durationMs')}]
                 require(stage['commands']==expected,'factory_current_short_candidates_required')
             else:
@@ -109,6 +140,9 @@ def _audit_source_assets(root,bank,scope,assets):
     try:_stage_contracts(root,scope,assets)
     except FactoryPreflightError as exc:
         for kind,errors in exc.missing.items():missing.setdefault(kind,[]).extend(errors)
+    try:_model_stage_support(bank,scope)
+    except FactoryPreflightError as exc:
+        for kind,errors in exc.missing.items():missing.setdefault(kind,[]).extend(errors)
     if missing:raise FactoryPreflightError(missing)
 
 
@@ -144,7 +178,7 @@ root 아래 안전한 상대 경로/SHA다. 상태 등록과 픽셀 계측 등�
     # No factory, recorder, phase request, or device is created by this audit.
     _audit_source_assets(root,bank,scope,assets)
     for kind in ('lift','lower'):
-        try:validate_current_short_policy(bank.models[kind]['context'].get('executionPolicy'))
+        try:_execution_policy(bank.models[kind]['context'].get('executionPolicy'))
         except ValueError as exc:missing[kind]=[str(exc)]
     if missing:raise FactoryPreflightError(missing)
     return assets,bank
@@ -162,6 +196,16 @@ class _ReadyObserver(M4DualCameraObserver):
 
     def check(self):
         self.resource_check();return super().check()
+
+    def observe(self,*,after_off,deadline,tick):
+        if after_off is None and self.scope['schemaVersion']==EFFECTIVE_SCHEMA:
+            self._armed_source_not_before=self.clock.monotonic()
+        return super().observe(after_off=after_off,deadline=deadline,tick=tick)
+
+    def _external(self,not_before,deadline,tick):
+        if self.scope['schemaVersion']==EFFECTIVE_SCHEMA:
+            not_before=max(not_before,getattr(self,'_armed_source_not_before',not_before))
+        return super()._external(not_before,deadline,tick)
 
 
 class _CheckedRecorder(ActionRecorder):
@@ -259,6 +303,7 @@ class CurrentRuntimeFactory:
         require(assets['m4ImplementationSha256']==implementation_digest(),'factory_M4_implementation_changed')
         _bound(self.asset_root,assets['helper'])
         _stage_contracts(self.asset_root,scope,assets)
+        _model_stage_support(self.bank,scope)
         for kind in STAGES:
             stage=next(s for s in scope['stages'] if s['kind']==kind)
             binding=self._model_bindings[kind]
@@ -271,9 +316,9 @@ class CurrentRuntimeFactory:
             for name in ('registration','stationaryRegistration','stationaryExternalReference','stationaryGripperReference'):
                 _bound(self.asset_root,spec[name])
             if kind in ('lift','lower'):
-                policy=validate_current_short_policy(stage['context'].get('executionPolicy'))
+                policy=_execution_policy(stage['context'].get('executionPolicy'))
                 _bound(self.asset_root,spec['modelStateRegistration'])
-                pulse=short_task_pulse('up' if kind=='lift' else 'down',policy)
+                pulse=_execution_pulse('up' if kind=='lift' else 'down',policy)
                 require(stage['commands']==[{k:pulse[k] for k in ('joint','direction','percent','durationMs')}],
                         'factory_current_short_candidates_required')
             else:_bound(self.asset_root,spec['guardConfig'])
@@ -399,8 +444,9 @@ class CurrentRuntimeFactory:
         serial=self._start_factory();require(stage['kind'] in ('lift','lower'),'factory_M4_stage')
         require(all(m.current is None or m.current['phase']=='completed' for m in self.managers)
                 and all(not m.busy for m in self.managers),'factory_general_session_pending')
-        policy=validate_current_short_policy(stage['context'].get('executionPolicy'))
-        direction='up' if stage['kind']=='lift' else 'down';pulse=short_task_pulse(direction,policy)
+        policy=_execution_policy(stage['context'].get('executionPolicy'))
+        effective=policy['schemaVersion']==EFFECTIVE_POLICY_SCHEMA
+        direction='up' if stage['kind']=='lift' else 'down';pulse=_execution_pulse(direction,policy)
         require(command=={k:pulse[k] for k in ('joint','direction','percent','durationMs')},'factory_current_short_command_required')
         record=self._entry(stage,command,hooks);ctx=self._spec(stage)['sourceContext']
         require(record['supportMode']==('table_supported' if direction=='up' else 'gripper_supported')
@@ -409,13 +455,14 @@ class CurrentRuntimeFactory:
                  and record['m4AngleDeg']+policy['maxObservedDeltaDeg']<=policy['originalGlobalUpperDeg'])
                 or (direction=='down' and policy['downGoalAngleDeg']+.1<record['m4AngleDeg']<=policy['originalGlobalUpperDeg']),
                 'factory_current_short_entry_angle_unsupported')
-        trial='cycle-short-'+uuid.uuid4().hex
-        scope=dict(schemaVersion=CURRENT_SHORT_TASK_SCHEMA,trialId=trial,hostClockId=trial,
+        trial=('cycle-effective-' if effective else 'cycle-short-')+uuid.uuid4().hex
+        scope=dict(schemaVersion=EFFECTIVE_SCHEMA if effective else CURRENT_SHORT_TASK_SCHEMA,trialId=trial,hostClockId=trial,
             controllerUrl=self.controller_url,controllerBootId=self.scope['controllerBootId'],
             implementationSha256=implementation_digest(),context=copy.deepcopy(ctx),pulse=pulse,defaultSpeed=255,
             maxCommands=1,expectedStartAngleDeg=policy['tableReferenceDeg'] if direction=='up' else record['m4AngleDeg'],
             startAngleToleranceDeg=.1,maxObservedDeltaDeg=policy['maxObservedDeltaDeg'],maxSeconds=60.,maxObservationAgeSeconds=3.,postOffSeconds=3.,
-            goalAngleDeg=policy['upGoalAngleDeg' if direction=='up' else 'downGoalAngleDeg'],shortTaskPolicy=policy)
+            goalAngleDeg=policy['upGoalAngleDeg' if direction=='up' else 'downGoalAngleDeg'])
+        scope['effectivePolicy' if effective else 'shortTaskPolicy']=policy
         # Validate before creating an output directory. Parent authorization binds
         # this policy and the exact FrozenBank decision, not an arbitrary pulse.
         from learning.m4_up_commissioning import validate_scope as validate_actor_scope
@@ -423,7 +470,9 @@ class CurrentRuntimeFactory:
         store=ArtifactStore(self.root/f'M4-{serial:03d}');anchor=self._anchor(stage,record,store)
         slot={}
         def epoch():
-            actor=slot['actor'];snapshot=actor.port._status();actor.port._check_status(snapshot,'ARMED')
+            actor=slot['actor']
+            if effective:return actor.read_armed_off_epoch(record['outputSequence'])
+            snapshot=actor.port._status();actor.port._check_status(snapshot,'ARMED')
             actor.port._outputs();actor.port._queue(1)
             require(actor.port.last_outputs=={i:0 for i in range(1,6)},'factory_M4_current_OFF_required')
             return dict(controllerBootId=actor.port.boot_id,cameraBootId=ctx['gripperCameraBootId'],
@@ -433,6 +482,11 @@ class CurrentRuntimeFactory:
         config=dict(helperPath=str(self.asset_root/self.assets['helper']['path']),helperSha256=self.assets['helper']['sha256'],cameraUrl=self.camera_url)
         observer=_ReadyObserver(scope,config,store,reviewer,resource_check=self.resource_check,clock=self.clock)
         actor=M4UpCommissioning(scope,observer,self.token,store,evidence_root=store.root,clock=self.clock,task_hooks=hooks)
+        if effective:
+            original_before=actor._before_run
+            def before_run():
+                original_before();reviewer.check_before_run()
+            actor._before_run=before_run
         slot['actor']=actor
         self.actors.append(actor)
         store.write_json('parent-cycle-model-binding.json',dict(parentScopeSha256=plan_digest(self.scope),

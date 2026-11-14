@@ -45,11 +45,17 @@ def _state(value):
     return np.asarray([value[k] for k in FIELDS], dtype=float)
 
 
-def _command(command, direction=None):
+def _command(command, direction=None, execution_policy=None):
     require(isinstance(command, dict) and set(command) == {'joint', 'direction', 'percent', 'durationMs'},
             'task_command_fields')
     require(command['joint'] == 'shoulder' and command['direction'] in ('up', 'down')
             and (direction is None or command['direction'] == direction), 'task_m4_direction_required')
+    from learning.m4_effective_policy import POLICY_SCHEMA,validate_effective_policy,effective_task_pulse
+    if isinstance(execution_policy,dict) and execution_policy.get('schemaVersion')==POLICY_SCHEMA:
+        policy=validate_effective_policy(execution_policy);pulse=effective_task_pulse(command['direction'],policy)
+        require(command=={k:pulse[k] for k in command} and all(type(command[k]) is type(pulse[k]) for k in command),
+                'task_effective_exact_command_required')
+        return digest(command)
     ceiling = (50, 650) if command['direction'] == 'up' else (35, 400)
     require(type(command['percent']) is int and 1 <= command['percent'] <= ceiling[0]
             and type(command['durationMs']) is int and 1 <= command['durationMs'] <= ceiling[1],
@@ -79,7 +85,7 @@ def _group_rows(rows, context):
             require(not seen[name].intersection(values), 'task_reused_'+name)
             seen[name].update(values)
         a,b = _state(row['before']), _state(row['after'])
-        key = _command(row['command'])+':'+row['supportMode']
+        key = _command(row['command'],execution_policy=context.get('executionPolicy'))+':'+row['supportMode']
         groups.setdefault(key, []).append((row,a,b))
     return groups
 
@@ -118,7 +124,7 @@ def validate_m4(model):
     require(isinstance(model.get('models'),list) and bool(model['models']), 'task_model_candidates_required')
     seen=set()
     for e in model['models']:
-        key=(_command(e['command']),e['supportMode'])
+        key=(_command(e['command'],execution_policy=model['context'].get('executionPolicy')),e['supportMode'])
         require(e['supportMode'] in SUPPORT and key not in seen and type(e['count']) is int
                 and e['count'] >= 2, 'task_model_candidate_identity')
         seen.add(key)
@@ -142,7 +148,7 @@ def coverage_m4(rows,context,required_probes):
     for probe in required_probes:
         require(isinstance(probe,dict) and set(probe)=={'stage','command','supportMode','state'}
                 and probe['stage'] in ('lift','lower') and probe['supportMode'] in SUPPORT, 'task_probe_fields')
-        key=_command(probe['command'],'up' if probe['stage']=='lift' else 'down')+':'+probe['supportMode']
+        key=_command(probe['command'],'up' if probe['stage']=='lift' else 'down',context.get('executionPolicy'))+':'+probe['supportMode']
         state=_state(probe['state']); values=groups.get(key,[])
         minimum=maximum=None; within=False
         if values:
@@ -176,7 +182,7 @@ def select_m4(model,state,target,commands,context,support_mode,*,minimum_improve
     require(context == model['context'] and support_mode in SUPPORT, 'task_observation_context_changed')
     x,y=_state(state),_state(target)
     require(isinstance(commands,list) and bool(commands), 'task_candidates_required')
-    keys=[_command(c) for c in commands]
+    keys=[_command(c,execution_policy=context.get('executionPolicy')) for c in commands]
     require(len(keys)==len(set(keys)), 'task_duplicate_candidate')
     stop=dict(kind='stop',command=None,predictedState=copy.deepcopy(state),error=float(np.sum((x-y)**2)))
     accepted,rejected=[],[]

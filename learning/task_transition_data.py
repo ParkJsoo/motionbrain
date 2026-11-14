@@ -21,7 +21,7 @@ SCHEMA = 'motionbrain.manual_m4_transition_audit.v1'
 REGISTRATION_SCHEMA = 'motionbrain.task_visual_state_registration.v1'
 ANNOTATION_SCHEMA = 'motionbrain.task_transition_annotation.v1'
 STATE = ('objectRisePx', 'toolRisePx', 'slipDyPx', 'startAngleDeg')
-MANUAL_SCHEMAS = (core.SCHEMA, core.CONTACT_MANUAL650_SCHEMA, core.RETURN_SCHEMA,core.TARGET_UP_SCHEMA,core.CURRENT_SHORT_TASK_SCHEMA)
+MANUAL_SCHEMAS = (core.SCHEMA, core.CONTACT_MANUAL650_SCHEMA, core.RETURN_SCHEMA,core.TARGET_UP_SCHEMA,core.CURRENT_SHORT_TASK_SCHEMA,core.EFFECTIVE_TASK_SCHEMA)
 
 
 def _hash(value):
@@ -132,15 +132,27 @@ def audit_manual_m4(root):
     receipt = result['receipt']
     statuses, boot, first,stop_started = _http(ev, receipt, scope['pulse'])
     execution_policy=None
-    if scope['schemaVersion']==core.CURRENT_SHORT_TASK_SCHEMA:
-        execution_policy=core.current_short.validate_current_short_policy(scope['shortTaskPolicy'])
+    if scope['schemaVersion'] in (core.CURRENT_SHORT_TASK_SCHEMA,core.EFFECTIVE_TASK_SCHEMA):
+        effective=scope['schemaVersion']==core.EFFECTIVE_TASK_SCHEMA
+        execution_policy=core.effective.validate_effective_policy(scope['effectivePolicy']) if effective else core.current_short.validate_current_short_policy(scope['shortTaskPolicy'])
         direction=scope['pulse']['direction']
-        require(receipt.get('plannedShortTaskPolicy')==execution_policy
+        require(receipt.get('plannedEffectivePolicy' if effective else 'plannedShortTaskPolicy')==execution_policy
                 and receipt.get('monitorTimingPolicy')==execution_policy[direction+'MonitorTimingPolicy']
                 and type(receipt.get('stoppedEarly')) is bool
-                and receipt.get('stopReason')==('observed_current_short_'+direction+'_goal'
+                and receipt.get('stopReason')==('observed_'+('effective_' if effective else 'current_short_')+direction+'_goal'
                     if receipt['stoppedEarly'] else 'requested_period_complete'),
                 'task_current_short_receipt_policy_changed')
+        if effective:
+            monitor=receipt.get('effectiveMonitor',{})
+            end=receipt['dispatchAfter']+scope['pulse']['durationMs']/1000
+            require(isinstance(monitor,dict) and monitor.get('deadline')==end
+                    and monitor.get('completeSafetyStatusVerified') is True
+                    and receipt.get('monitorStatusVerified') is True
+                    and receipt.get('monitorReadBudgetRevision')==core.transport.WRIST_READ_BUDGET_REVISION
+                    and stop_started<=end+.02
+                    and any(receipt['dispatchAfter']<=e['responseReceivedAt']<end
+                            and e['response'].get('state')=='ARMED' for e in statuses),
+                    'task_effective_active_monitor_or_STOP_deadline_missing')
         if receipt['stoppedEarly']:
             require(any(receipt['dispatchAfter'] <= e['responseReceivedAt'] < stop_started
                         and e['responseReceivedAt'] < receipt['dispatchAfter']+scope['pulse']['durationMs']/1000
@@ -166,6 +178,14 @@ def audit_manual_m4(root):
     frames, bridge = _native(ev, scope, result['observerClose'])
     pairs = {label:_pair(ev, label, scope, receipt, frames, bridge) for label in ('before','after')}
     before, after = pairs['before'], pairs['after']
+    if scope['schemaVersion']==core.EFFECTIVE_TASK_SCHEMA:
+        arm=[]
+        for path in sorted(ev.root.glob('http-*-intent.json')):
+            intent=ev.json(path.name)
+            if intent['path']=='/command' and intent['payload']=={'cmd':'arm'}:
+                arm.append(ev.json(path.name.replace('-intent.json','-response.json'))['receivedAt'])
+        require(len(arm)==1 and all(before[c]['sourceEarliest']>=arm[0] for c in ('external','gripper')),
+                'task_effective_before_must_follow_ARM')
     require(after['external']['frameIndex'] > before['external']['frameIndex']
             and after['gripper']['capturedUs'] > before['gripper']['capturedUs'], 'task_capture_order')
     angles = dict(before=_angle(statuses, receipt['dispatchBefore']-scope['maxObservationAgeSeconds'],
@@ -182,8 +202,8 @@ def audit_manual_m4(root):
             require(abs(angle-reference)<=3.,'task_target_up_global_excursion')
         delta = angle-angles['before']
         require(abs(delta) <= scope['maxObservedDeltaDeg']
-                and (delta <= (.10 if scope['schemaVersion']==core.CURRENT_SHORT_TASK_SCHEMA else .25)
-                     if scope['pulse']['direction'] == 'down' else delta >= (-.10 if scope['schemaVersion']==core.CURRENT_SHORT_TASK_SCHEMA else -.25)),
+                and (delta <= (.10 if scope['schemaVersion'] in (core.CURRENT_SHORT_TASK_SCHEMA,core.EFFECTIVE_TASK_SCHEMA) else .25)
+                     if scope['pulse']['direction'] == 'down' else delta >= (-.10 if scope['schemaVersion'] in (core.CURRENT_SHORT_TASK_SCHEMA,core.EFFECTIVE_TASK_SCHEMA) else -.25)),
                 'task_observed_angle_excursion')
     require(all(digest((ev.root/name).read_bytes()) == sha for name,sha in ev.hashes.items()),
             'task_source_changed_during_audit')

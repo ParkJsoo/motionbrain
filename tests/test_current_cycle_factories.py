@@ -238,7 +238,7 @@ class FactoryTests(unittest.TestCase):
             kind=stage['kind'];spec=self.assets['sourceStages'][kind];spec['context']=stage['context']
             for key in ('object','physicalView','poseRegime'):spec['sourceContext'][key]=stage['context'][key]
             if kind in ('lift','lower'):
-                pulse=short_task_pulse('up' if kind=='lift' else 'down',stage['context']['executionPolicy'])
+                pulse=factory._execution_pulse('up' if kind=='lift' else 'down',stage['context']['executionPolicy'])
                 stage['commands']=[{k:pulse[k] for k in ('joint','direction','percent','durationMs')}]
         self.auth['scopeSha256']=plan_digest(self.scope);self.owner=self.make()
         self.source.bank=bank;self.source.scope=copy.deepcopy(self.scope)
@@ -326,6 +326,34 @@ class FactoryTests(unittest.TestCase):
         self.bank.bindings['close']=dict(binding,sha256='f'*64)
         with self.assertRaisesRegex(ValueError,'model_bindings_changed'):
             self.owner.preflight(self.scope,self.assets)
+
+    def test_explicit_effective_model_builds_1200_actor_and_ARM_epoch_without_short_relabel(self):
+        from learning import task_action_models as actions,m4_up_commissioning as core
+        from learning.m4_effective_policy import effective_policy,effective_task_pulse,SCHEMA
+        from learning.task_cycle_workflow import FrozenCycleModelBank
+        policy=effective_policy();context=copy.deepcopy(self.bank.models['lift']['context']);context['executionPolicy']=policy
+        rows=fixtures.m4_rows()
+        for row in rows:
+            up=row['command']['direction']=='up';pulse=effective_task_pulse('up' if up else 'down',policy)
+            row.update(context=context,command={k:pulse[k] for k in ('joint','direction','percent','durationMs')})
+            row['before']['startAngleDeg']=197.22 if up else 197.85
+            row['after']['startAngleDeg']=197.85 if up else 197.22
+        ref=self.bind('effective-model.json',actions.fit_m4(rows,context));bindings=copy.deepcopy(self.bank.bindings)
+        bindings['lift']=bindings['lower']=dict(path=str(self.asset_root/ref['path']),sha256=ref['sha256'])
+        self.rebind_bank(FrozenCycleModelBank(bindings,allow_development_approach=True))
+        stage,command,hooks,native=self.seed_m4()
+        with patch.object(core,'REPO',self.repo),patch('learning.lossless_frame.decode',side_effect=native.decode),\
+             patch('learning.current_m4_review.measure',return_value={}),patch.object(core.M4UpCommissioning,'_before_run') as original:
+            actor,_=self.owner.m4(stage,command,hooks)
+            self.assertEqual(actor.scope['schemaVersion'],SCHEMA);self.assertEqual(actor.scope['effectivePolicy'],policy)
+            self.assertNotIn('shortTaskPolicy',actor.scope);self.assertEqual(actor.scope['pulse']['durationMs'],1200)
+            with patch.object(actor,'read_armed_off_epoch',return_value={}) as epoch:
+                actor.observer.reviewer.read_epoch();epoch.assert_called_once_with(5)
+            with patch.object(actor.observer.reviewer,'check_before_run') as memory:
+                actor._before_run();original.assert_called_once();memory.assert_called_once()
+        bad=copy.deepcopy(self.scope)
+        next(s for s in bad['stages'] if s['kind']=='lift')['commands'][0]['durationMs']=600
+        with self.assertRaises(factory.FactoryPreflightError):factory._stage_contracts(self.asset_root,bad,self.assets)
 
 
 if __name__=='__main__':unittest.main()

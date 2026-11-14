@@ -26,11 +26,17 @@ def sha(x):
     return isinstance(x, str) and len(x) == 64 and all(c in '0123456789abcdef' for c in x)
 
 
-def bounded_command(stage, command):
+def bounded_command(stage, command, execution_policy=None):
     """새 실행 허용이 아니라 상위 과업의 추가 제한이다."""
     require(isinstance(command, dict) and set(command) == {'joint', 'direction', 'percent', 'durationMs'},
             'cycle_command_fields')
     joint, direction = command['joint'], command['direction']
+    from learning.m4_effective_policy import POLICY_SCHEMA,validate_effective_policy,effective_task_pulse
+    if stage in ('lift','lower') and isinstance(execution_policy,dict) and execution_policy.get('schemaVersion')==POLICY_SCHEMA:
+        policy=validate_effective_policy(execution_policy);pulse=effective_task_pulse('up' if stage=='lift' else 'down',policy)
+        require(command=={k:pulse[k] for k in command} and all(type(command[k]) is type(pulse[k]) for k in command),
+                'cycle_effective_exact_command_required')
+        return pulse
     limits = {'close': ('gripper', 'close', 60, 650, 1, -1),
               'release': ('gripper', 'open', 60, 650, 1, 1),
               'lift': ('shoulder', 'up', 50, 650, 4, 1),
@@ -74,7 +80,7 @@ def validate_scope(scope):
         keys = [plan_digest(c) for c in stage['commands']]
         require(len(keys) == len(set(keys)), 'cycle_duplicate_candidate')
         for command in stage['commands']:
-            bounded_command(kind, command)
+            bounded_command(kind, command,stage['context'].get('executionPolicy'))
     require(len({s['context'].get('object') for s in scope['stages']}) == 1
             and isinstance(scope['stages'][0]['context'].get('object'), str)
             and bool(scope['stages'][0]['context']['object']), 'cycle_object_changed')
@@ -174,7 +180,7 @@ class FiniteTaskCycle:
         require(selected.get('kind') in ('stop', 'action'), 'cycle_selection_invalid')
         if selected['kind'] == 'action':
             require(selected.get('command') in stage['commands'], 'cycle_unlisted_command')
-            bounded_command(stage['kind'], selected['command'])
+            bounded_command(stage['kind'], selected['command'],stage['context'].get('executionPolicy'))
         else:
             require(selected.get('command') is None, 'cycle_stop_has_command')
         return copy.deepcopy(decision)
@@ -299,7 +305,7 @@ class FiniteTaskCycle:
                             safety=dict(controllerBootId=self.scope['controllerBootId'],
                                         M4ReferenceDeg=self.m4_reference, maximumM4ExcursionDeg=3.))
                         require(len(prepared) == len(guards) == 1, 'cycle_dispatch_callbacks_missing')
-                        off_at = ModelGraspTrial._receipt(self, receipt, bounded_command(stage['kind'], command))
+                        off_at = ModelGraspTrial._receipt(self, receipt, bounded_command(stage['kind'], command,stage['context'].get('executionPolicy')))
                         require(receipt['dispatchBefore'] >= guards[0], 'cycle_receipt_before_guard')
                         self._idle()
                         step.update(status='executed', receipt=copy.deepcopy(receipt))

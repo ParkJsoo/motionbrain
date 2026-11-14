@@ -32,6 +32,8 @@ ELBOW_PLATEAU_POLICY = 'elbow-plateau-650-v1'
 ELBOW_FINE_POLICY = 'elbow-fine-450-v1'
 M4_TARGET_UP_DEADLINE_POLICY = 'm4-target-up-deadline-650-v1'
 RECOVERY_DOWN_DEADLINE_POLICY = 'm4-band-recovery-down-deadline-400-v1'
+EFFECTIVE_UP_DEADLINE_POLICY = 'm4-effective-up-deadline-1200-v1'
+EFFECTIVE_DOWN_DEADLINE_POLICY = 'm4-effective-down-deadline-1200-v1'
 CURRENT_SHORT_UP_DEADLINE_POLICY = 'm4-current-short-up-deadline-350-v1'
 CURRENT_SHORT_UP450_DEADLINE_POLICY = 'm4-current-short-up-deadline-450-v1'
 CURRENT_SHORT_UP550_DEADLINE_POLICY = 'm4-current-short-up-deadline-550-v1'
@@ -41,7 +43,7 @@ CURRENT_SHORT_DOWN250_DEADLINE_POLICY = 'm4-current-short-down-deadline-250-v1'
 CURRENT_SHORT_DOWN300_DEADLINE_POLICY = 'm4-current-short-down-deadline-300-v1'
 CURRENT_SHORT_DOWN350_DEADLINE_POLICY = 'm4-current-short-down-deadline-350-v1'
 CURRENT_SHORT_MONITOR_POLICIES = (CURRENT_SHORT_UP_DEADLINE_POLICY,CURRENT_SHORT_UP450_DEADLINE_POLICY,CURRENT_SHORT_UP550_DEADLINE_POLICY,CURRENT_SHORT_UP600_DEADLINE_POLICY,CURRENT_SHORT_DOWN_DEADLINE_POLICY,CURRENT_SHORT_DOWN250_DEADLINE_POLICY,CURRENT_SHORT_DOWN300_DEADLINE_POLICY,CURRENT_SHORT_DOWN350_DEADLINE_POLICY)
-BOUNDED_M4_MONITOR_POLICIES = (M4_TARGET_UP_DEADLINE_POLICY,RECOVERY_DOWN_DEADLINE_POLICY,
+BOUNDED_M4_MONITOR_POLICIES = (EFFECTIVE_UP_DEADLINE_POLICY,EFFECTIVE_DOWN_DEADLINE_POLICY,M4_TARGET_UP_DEADLINE_POLICY,RECOVERY_DOWN_DEADLINE_POLICY,
                               CURRENT_SHORT_UP_DEADLINE_POLICY,CURRENT_SHORT_UP450_DEADLINE_POLICY,CURRENT_SHORT_UP550_DEADLINE_POLICY,CURRENT_SHORT_UP600_DEADLINE_POLICY,CURRENT_SHORT_DOWN_DEADLINE_POLICY,CURRENT_SHORT_DOWN250_DEADLINE_POLICY,CURRENT_SHORT_DOWN300_DEADLINE_POLICY,CURRENT_SHORT_DOWN350_DEADLINE_POLICY)
 WRIST_READ_BUDGET_REVISION = 'shared-command-deadline-v2'
 QUIET_IDLE_POLL_SECONDS = .5
@@ -80,6 +82,8 @@ def validate_monitor_policy(pulse, policy):
     short_profiles[CURRENT_SHORT_DOWN250_DEADLINE_POLICY]=('down',4,35,250,-89)
     short_profiles[CURRENT_SHORT_DOWN300_DEADLINE_POLICY]=('down',4,35,300,-89)
     short_profiles[CURRENT_SHORT_DOWN350_DEADLINE_POLICY]=('down',4,35,350,-89)
+    short_profiles[EFFECTIVE_UP_DEADLINE_POLICY]=('up',4,50,1200,127)
+    short_profiles[EFFECTIVE_DOWN_DEADLINE_POLICY]=('down',4,35,1200,-89)
     short = (isinstance(policy,str) and policy in short_profiles and pulse.get('joint')=='shoulder'
              and all(type(pulse.get(k)) is int for k in ('motor','percent','durationMs','expectedPwm'))
              and tuple(pulse.get(k) for k in ('direction','motor','percent','durationMs','expectedPwm'))==short_profiles[policy])
@@ -888,7 +892,8 @@ class SequencePort:
                 receipt.update(monitorTimingPolicy=monitor_policy, monitorStatusVerified=True,
                                monitorReadBudgetRevision=WRIST_READ_BUDGET_REVISION)
             if target_monitor:
-                key = ('currentShortMonitor' if monitor_policy in CURRENT_SHORT_MONITOR_POLICIES
+                key = ('effectiveMonitor' if monitor_policy in (EFFECTIVE_UP_DEADLINE_POLICY,EFFECTIVE_DOWN_DEADLINE_POLICY)
+                       else 'currentShortMonitor' if monitor_policy in CURRENT_SHORT_MONITOR_POLICIES
                        else 'recoveryDownMonitor' if monitor_policy == RECOVERY_DOWN_DEADLINE_POLICY else 'targetUpMonitor')
                 receipt[key] = copy.deepcopy(self._target_monitor_diagnostic)
             if stop_when is not None:
@@ -900,7 +905,8 @@ class SequencePort:
             self.finish()
             if target_monitor and self._target_monitor_diagnostic is not None:
                 # Persist failure diagnostics only after existing STOP/OFF cleanup.
-                prefix = ('current-short-monitor' if monitor_policy in CURRENT_SHORT_MONITOR_POLICIES
+                prefix = ('effective-monitor' if monitor_policy in (EFFECTIVE_UP_DEADLINE_POLICY,EFFECTIVE_DOWN_DEADLINE_POLICY)
+                          else 'current-short-monitor' if monitor_policy in CURRENT_SHORT_MONITOR_POLICIES
                           else 'recovery-down-monitor' if monitor_policy == RECOVERY_DOWN_DEADLINE_POLICY else 'target-up-monitor')
                 self._save(f'{prefix}-{self.serial:06d}-diagnostic.json',
                            copy.deepcopy(self._target_monitor_diagnostic), emergency=True)
