@@ -4,6 +4,13 @@ from learning.current_m4_short import current_short_policy,validate_current_shor
 
 
 class CurrentShortPolicyTests(unittest.TestCase):
+    def test_explicit550_policy_is_distinct_from450(self):
+        policy=current_short_policy(550)
+        self.assertEqual(validate_current_short_policy(policy),policy)
+        self.assertEqual(short_task_pulse('up',policy)['durationMs'],550)
+        self.assertEqual(short_task_pulse('down',policy)['durationMs'],200)
+        self.assertNotEqual(policy,current_short_policy(450))
+        self.assertEqual(current_short_policy()['upDurationCapMs'],350)
     def test_explicit450_policy_has_distinct_cap_and_monitor(self):
         policy=current_short_policy(up_duration_ms=450)
         self.assertEqual(validate_current_short_policy(policy),policy)

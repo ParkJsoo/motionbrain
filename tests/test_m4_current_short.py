@@ -96,14 +96,14 @@ class ShortMonitorTests(unittest.TestCase):
         self.assertEqual(len(self.RUNs()),1);self.assertEqual(len(self.STOPs()),1)
         self.assertTrue(self.port.off_verified)
     def test_both_caps_have_complete_safety_status_and_STOP_priority(self):
-        for direction,cap in (('up',350),('up',450),('down',350),('down',450)):
+        for direction,cap in (('up',350),('up',450),('up',550),('down',350),('down',450),('down',550)):
             self.setUp();policy=short.current_short_policy(cap);self.pulse=short.short_task_pulse(direction,policy)
             self.policy=policy[direction+'MonitorTimingPolicy']
             r=self.execute();self.assertTrue(r['currentShortMonitor']['completeSafetyStatusVerified'])
             self.assertLessEqual(self.STOPs()[0]['startedAt'],r['dispatchAfter']+self.pulse['durationMs']/1000+.001)
             self.assertEqual(len(self.RUNs()),1);self.assertTrue(r['offVerified'])
     def test350_and450_monitor_profiles_cannot_be_swapped(self):
-        for cap,wrong in ((350,short.UP_MONITOR_POLICY450),(450,short.UP_MONITOR_POLICY)):
+        for cap,wrong in ((350,short.UP_MONITOR_POLICY450),(450,short.UP_MONITOR_POLICY),(550,short.UP_MONITOR_POLICY450),(450,short.UP_MONITOR_POLICY550)):
             with self.subTest(cap=cap),self.assertRaises(ValueError):
                 transport.validate_monitor_policy(short.short_task_pulse('up',short.current_short_policy(cap)),wrong)
 
@@ -186,21 +186,23 @@ class ShortCandidateSupportTests(unittest.TestCase):
         self.assertEqual(choice['rejected'][0]['reason'],'task_candidate_support_missing')
         self.assertFalse(choice['executionAuthorized'])
 
-class Recorded350CompatibilityTests(unittest.TestCase):
-    def test_recorded_zero_effect_350_source_is_preserved_but_not_executable(self):
-        policy=short.current_short_policy(350)
-        original=dict(fixtures.scope(),schemaVersion=core.CURRENT_SHORT_TASK_SCHEMA,
-            pulse=short.short_task_pulse('up',policy),expectedStartAngleDeg=197.22,
-            startAngleToleranceDeg=.1,maxObservedDeltaDeg=.9,maxObservationAgeSeconds=3.,
-            goalAngleDeg=197.85,shortTaskPolicy=policy,
-            implementationSha256=core.CURRENT_SHORT_350_RECORDED_DIGEST)
-        self.assertEqual(core.validate_recorded_scope(original),original)
-        with self.assertRaisesRegex(ValueError,'implementation_changed'):
-            core.validate_scope(original)
-        other=copy.deepcopy(original);other['shortTaskPolicy']=short.current_short_policy(450)
-        other['pulse']=short.short_task_pulse('up',other['shortTaskPolicy'])
-        with self.assertRaisesRegex(ValueError,'recorded_implementation_unknown'):
-            core.validate_recorded_scope(other)
+class RecordedShortCompatibilityTests(unittest.TestCase):
+    def test_recorded_zero_effect_sources_are_preserved_but_not_executable(self):
+        for cap,old_sha,next_cap in [(350,core.CURRENT_SHORT_350_RECORDED_DIGEST,450),
+                                     (450,core.CURRENT_SHORT_450_RECORDED_DIGEST,550)]:
+            with self.subTest(cap=cap):
+                policy=short.current_short_policy(cap)
+                original=dict(fixtures.scope(),schemaVersion=core.CURRENT_SHORT_TASK_SCHEMA,
+                    pulse=short.short_task_pulse('up',policy),expectedStartAngleDeg=197.22,
+                    startAngleToleranceDeg=.1,maxObservedDeltaDeg=.9,maxObservationAgeSeconds=3.,
+                    goalAngleDeg=197.85,shortTaskPolicy=policy,implementationSha256=old_sha)
+                self.assertEqual(core.validate_recorded_scope(original),original)
+                with self.assertRaisesRegex(ValueError,'implementation_changed'):
+                    core.validate_scope(original)
+                other=copy.deepcopy(original);other['shortTaskPolicy']=short.current_short_policy(next_cap)
+                other['pulse']=short.short_task_pulse('up',other['shortTaskPolicy'])
+                with self.assertRaisesRegex(ValueError,'recorded_implementation_unknown'):
+                    core.validate_recorded_scope(other)
 
 
 class ShortActor450Tests(ShortActorTests):
@@ -212,3 +214,26 @@ class ShortRawData450Tests(ShortRawDataTests):
 class ShortModelBinding450Tests(ShortModelBindingTests):
     def setUp(self):
         super().setUp();self.policy=short.current_short_policy(450)
+
+class ShortActor550Tests(ShortActorTests):
+    up_cap=550
+
+class ShortRawData550Tests(ShortRawDataTests):
+    up_cap=550
+    def test450_registration_cannot_relabel550_source(self):
+        reg,ann=self.o.annotations();reg['context']['executionPolicy']=short.current_short_policy(450)
+        ann['registrationSha256']=digest(reg)
+        with self.assertRaisesRegex(ValueError,'execution_policy_changed'):
+            self.data.build_manual_m4_row(self.o.root,reg,ann)
+
+class ShortModelBinding550Tests(ShortModelBindingTests):
+    def setUp(self):
+        super().setUp();self.policy=short.current_short_policy(550)
+    def test450_actor_policy_cannot_execute550_model_command(self):
+        original=self.o.executor.m4_factory
+        def wrong(stage,command,hooks):
+            actor,_=original(stage,command,hooks);actor.scope['shortTaskPolicy']=short.current_short_policy(450)
+            actor.digest=digest(actor.scope);return actor,actor.digest
+        self.o.executor.m4_factory=wrong
+        with self.assertRaisesRegex(ValueError,'short_policy_mismatch'):self.call()
+        self.assertEqual(self.o.run_calls,0)

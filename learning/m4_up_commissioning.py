@@ -251,6 +251,7 @@ CURRENT_FIXED_RECORDED_DIGEST = '9b2945710d45a9932b87a2e1e05b62f6d17567be06445f1
 TARGET_UP_INITIAL_RECORDED_DIGEST = 'f0b4677455cb3ad03112c2bde815395d515e7e325db26b786345248a4f31c44b'
 BAND_RECOVERY_INITIAL_RECORDED_DIGEST = 'ed964b4b8ba70518abe96ffda2e118998b823c83408b4ebce48fc3fe787e5696'
 CURRENT_SHORT_350_RECORDED_DIGEST = 'c3a42c5333e96621defc8ddb7726d94903441c811e54dee4c8f48758b0c79501'
+CURRENT_SHORT_450_RECORDED_DIGEST = '554d7841be65fb1b232a4d068c53386837d6e45f6e648df05ea84f3135778cd5'
 KNOWN_CONTACT500_RECORDED_DIGEST = '8e5a6e077280e0c80690b2ee21368a9cca6747e76a6ca3c9a20c614c0c7cfd21'
 RECORDED_IMPLEMENTATION_DIGESTS = frozenset({
     '87239bd44387e1e1ca522f9be5af2865eac376868c4c14efee20e001b503cccc',
@@ -268,9 +269,11 @@ def validate_recorded_scope(scope):
     if scope.get('implementationSha256') == implementation_digest():
         return validate_scope(scope)
     if (scope.get('schemaVersion')==CURRENT_SHORT_TASK_SCHEMA
-            and scope.get('implementationSha256')==CURRENT_SHORT_350_RECORDED_DIGEST
             and isinstance(scope.get('shortTaskPolicy'),dict)
-            and scope['shortTaskPolicy'].get('upDurationCapMs')==350):
+            and ((scope.get('implementationSha256')==CURRENT_SHORT_350_RECORDED_DIGEST
+                  and scope['shortTaskPolicy'].get('upDurationCapMs')==350)
+                 or (scope.get('implementationSha256')==CURRENT_SHORT_450_RECORDED_DIGEST
+                     and scope['shortTaskPolicy'].get('upDurationCapMs')==450))):
         candidate=copy.deepcopy(scope);candidate['implementationSha256']=implementation_digest()
         validate_scope(candidate)
         return copy.deepcopy(scope)
