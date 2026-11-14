@@ -193,4 +193,3 @@ class StationaryM4BeforeReviewer:
         now=self.clock.monotonic();limit=min(3.,self.scope['maxObservationAgeSeconds'])
         require(now<self._accepted_deadline and all(0<=now-frame['sourceEarliest']<=limit
                     for frame in self._accepted_frames.values()),'M4_stationary_RUN_freshness_expired')
-
