@@ -21,7 +21,7 @@ SCHEMA = 'motionbrain.manual_m4_transition_audit.v1'
 REGISTRATION_SCHEMA = 'motionbrain.task_visual_state_registration.v1'
 ANNOTATION_SCHEMA = 'motionbrain.task_transition_annotation.v1'
 STATE = ('objectRisePx', 'toolRisePx', 'slipDyPx', 'startAngleDeg')
-MANUAL_SCHEMAS = (core.SCHEMA, core.CONTACT_MANUAL650_SCHEMA, core.RETURN_SCHEMA,core.TARGET_UP_SCHEMA)
+MANUAL_SCHEMAS = (core.SCHEMA, core.CONTACT_MANUAL650_SCHEMA, core.RETURN_SCHEMA,core.TARGET_UP_SCHEMA,core.CURRENT_SHORT_TASK_SCHEMA)
 
 
 def _hash(value):
@@ -132,6 +132,22 @@ def audit_manual_m4(root):
     receipt = result['receipt']
     statuses, boot, first,stop_started = _http(ev, receipt, scope['pulse'])
     execution_policy=None
+    if scope['schemaVersion']==core.CURRENT_SHORT_TASK_SCHEMA:
+        execution_policy=core.current_short.validate_current_short_policy(scope['shortTaskPolicy'])
+        direction=scope['pulse']['direction']
+        require(receipt.get('plannedShortTaskPolicy')==execution_policy
+                and receipt.get('monitorTimingPolicy')==execution_policy[direction+'MonitorTimingPolicy']
+                and type(receipt.get('stoppedEarly')) is bool
+                and receipt.get('stopReason')==('observed_current_short_'+direction+'_goal'
+                    if receipt['stoppedEarly'] else 'requested_period_complete'),
+                'task_current_short_receipt_policy_changed')
+        if receipt['stoppedEarly']:
+            require(any(receipt['dispatchAfter'] <= e['responseReceivedAt'] < stop_started
+                        and e['responseReceivedAt'] < receipt['dispatchAfter']+scope['pulse']['durationMs']/1000
+                        and e['response'].get('state')=='ARMED'
+                        and (SequencePort._shoulder_angle(e['response']) >= scope['goalAngleDeg'] if direction=='up'
+                             else SequencePort._shoulder_angle(e['response']) <= scope['goalAngleDeg'])
+                        for e in statuses),'task_current_short_stop_angle_missing')
     if scope['schemaVersion']==core.TARGET_UP_SCHEMA:
         execution_policy=core.target_up_policy(scope)
         require(receipt.get('plannedTargetUp')==execution_policy
@@ -162,10 +178,12 @@ def audit_manual_m4(root):
             continue
         angle=SequencePort._shoulder_angle(event['response'])
         if execution_policy is not None:
-            require(abs(angle-execution_policy['globalReferenceDeg'])<=3.,'task_target_up_global_excursion')
+            reference=execution_policy.get('originalGlobalReferenceDeg',execution_policy.get('globalReferenceDeg'))
+            require(abs(angle-reference)<=3.,'task_target_up_global_excursion')
         delta = angle-angles['before']
         require(abs(delta) <= scope['maxObservedDeltaDeg']
-                and (delta <= .25 if scope['pulse']['direction'] == 'down' else delta >= -.25),
+                and (delta <= (.10 if scope['schemaVersion']==core.CURRENT_SHORT_TASK_SCHEMA else .25)
+                     if scope['pulse']['direction'] == 'down' else delta >= (-.10 if scope['schemaVersion']==core.CURRENT_SHORT_TASK_SCHEMA else -.25)),
                 'task_observed_angle_excursion')
     require(all(digest((ev.root/name).read_bytes()) == sha for name,sha in ev.hashes.items()),
             'task_source_changed_during_audit')

@@ -32,6 +32,11 @@ ELBOW_PLATEAU_POLICY = 'elbow-plateau-650-v1'
 ELBOW_FINE_POLICY = 'elbow-fine-450-v1'
 M4_TARGET_UP_DEADLINE_POLICY = 'm4-target-up-deadline-650-v1'
 RECOVERY_DOWN_DEADLINE_POLICY = 'm4-band-recovery-down-deadline-400-v1'
+CURRENT_SHORT_UP_DEADLINE_POLICY = 'm4-current-short-up-deadline-350-v1'
+CURRENT_SHORT_DOWN_DEADLINE_POLICY = 'm4-current-short-down-deadline-200-v1'
+CURRENT_SHORT_MONITOR_POLICIES = (CURRENT_SHORT_UP_DEADLINE_POLICY,CURRENT_SHORT_DOWN_DEADLINE_POLICY)
+BOUNDED_M4_MONITOR_POLICIES = (M4_TARGET_UP_DEADLINE_POLICY,RECOVERY_DOWN_DEADLINE_POLICY,
+                              CURRENT_SHORT_UP_DEADLINE_POLICY,CURRENT_SHORT_DOWN_DEADLINE_POLICY)
 WRIST_READ_BUDGET_REVISION = 'shared-command-deadline-v2'
 QUIET_IDLE_POLL_SECONDS = .5
 
@@ -61,7 +66,12 @@ def validate_monitor_policy(pulse, policy):
                      and pulse.get('joint') == 'shoulder' and pulse.get('direction') == 'down'
                      and all(type(pulse.get(k)) is int for k in ('motor','percent','durationMs','expectedPwm'))
                      and (pulse['motor'],pulse['percent'],pulse['durationMs'],pulse['expectedPwm']) == (4,35,400,-89))
-    if not (wrist or elbow or target_up or recovery_down):
+    short_profiles = {CURRENT_SHORT_UP_DEADLINE_POLICY: ('up',4,50,350,127),
+                      CURRENT_SHORT_DOWN_DEADLINE_POLICY: ('down',4,35,200,-89)}
+    short = (isinstance(policy,str) and policy in short_profiles and pulse.get('joint')=='shoulder'
+             and all(type(pulse.get(k)) is int for k in ('motor','percent','durationMs','expectedPwm'))
+             and tuple(pulse.get(k) for k in ('direction','motor','percent','durationMs','expectedPwm'))==short_profiles[policy])
+    if not (wrist or elbow or target_up or recovery_down or short):
         raise ValueError('unsupported_monitor_timing_policy')
 
 
@@ -201,7 +211,7 @@ class SequencePort:
             raise ValueError('protected_read_deadline_required')
         if protect_read_persistence:
             policy = getattr(self, '_bounded_m4_monitor_policy', None)
-            if policy not in (M4_TARGET_UP_DEADLINE_POLICY, RECOVERY_DOWN_DEADLINE_POLICY):
+            if policy not in BOUNDED_M4_MONITOR_POLICIES:
                 raise ValueError('bounded_m4_read_policy_required')
             validate_monitor_policy(self._active_pulse or {}, policy)
         if endpoint not in ('/status', '/collection_status', '/sequence', '/actions', '/action_outputs', '/command', '/motor'):
@@ -715,9 +725,9 @@ class SequencePort:
             raise TimeoutError('monitor_deadline_overrun')
 
     def _monitor_target_up_deadline(self, end, tick, pulse, baseline_angle, stop_when):
-        """현재 TARGET UP만: 공유 GET 기한과 STOP 우선 꼬리 구간.
+        """명시적 M4 bounded 정책: 공유 GET 기한과 STOP 우선 꼬리 구간.
 
-        호스트의 감시/STOP 요청 시점을 제한한다. 원격 PWM의 650ms 물리 상한을
+        호스트의 감시/STOP 요청 시점을 제한한다. 원격 PWM의 요청 기간 물리 상한을
         보증하지 않으며 응답·저장·스케줄링 지연은 원본과 진단에 남긴다.
         """
         verified = False
@@ -774,7 +784,7 @@ class SequencePort:
         if stop_when is not None and not callable(stop_when):
             raise ValueError('stop_when_callback_required')
         validate_monitor_policy(pulse, monitor_policy)
-        target_monitor = monitor_policy in (M4_TARGET_UP_DEADLINE_POLICY, RECOVERY_DOWN_DEADLINE_POLICY)
+        target_monitor = monitor_policy in BOUNDED_M4_MONITOR_POLICIES
         if target_monitor and stop_when is None:
             raise ValueError('recovery_down_goal_callback_required' if monitor_policy == RECOVERY_DOWN_DEADLINE_POLICY
                              else 'target_up_goal_callback_required')
@@ -866,7 +876,8 @@ class SequencePort:
                 receipt.update(monitorTimingPolicy=monitor_policy, monitorStatusVerified=True,
                                monitorReadBudgetRevision=WRIST_READ_BUDGET_REVISION)
             if target_monitor:
-                key = 'recoveryDownMonitor' if monitor_policy == RECOVERY_DOWN_DEADLINE_POLICY else 'targetUpMonitor'
+                key = ('currentShortMonitor' if monitor_policy in CURRENT_SHORT_MONITOR_POLICIES
+                       else 'recoveryDownMonitor' if monitor_policy == RECOVERY_DOWN_DEADLINE_POLICY else 'targetUpMonitor')
                 receipt[key] = copy.deepcopy(self._target_monitor_diagnostic)
             if stop_when is not None:
                 receipt.update(stoppedEarly=stopped_early,
@@ -877,7 +888,8 @@ class SequencePort:
             self.finish()
             if target_monitor and self._target_monitor_diagnostic is not None:
                 # Persist failure diagnostics only after existing STOP/OFF cleanup.
-                prefix = 'recovery-down-monitor' if monitor_policy == RECOVERY_DOWN_DEADLINE_POLICY else 'target-up-monitor'
+                prefix = ('current-short-monitor' if monitor_policy in CURRENT_SHORT_MONITOR_POLICIES
+                          else 'recovery-down-monitor' if monitor_policy == RECOVERY_DOWN_DEADLINE_POLICY else 'target-up-monitor')
                 self._save(f'{prefix}-{self.serial:06d}-diagnostic.json',
                            copy.deepcopy(self._target_monitor_diagnostic), emergency=True)
             raise

@@ -23,6 +23,7 @@ from learning.mac_clock_bridge import validate_sample
 from learning.manual_collection_dataset import require
 from learning.supervised_collection import identifier, plan_digest
 from learning import supervised_transport as transport
+from learning import current_m4_short as current_short
 
 REPO = Path(__file__).resolve().parents[1]
 SCHEMA = 'motionbrain.m4_up_commissioning.v1'
@@ -33,6 +34,7 @@ CONTACT_SHORT_SCHEMA = 'motionbrain.m4_up_known_contact_manual_short500.v1'
 CONTACT_MANUAL650_SCHEMA = 'motionbrain.m4_up_known_contact_manual_response650.v1'
 RETURN_SCHEMA = 'motionbrain.m4_manual_table_return.v1'
 BAND_RETURN_RECOVERY_SCHEMA = 'motionbrain.m4_out_of_band_down_recovery.v1'
+CURRENT_SHORT_TASK_SCHEMA = current_short.SCHEMA
 TARGET_UP_SCHEMA = 'motionbrain.m4_current_target_up_angle_stop.v1'
 TARGET_UP_GLOBAL_REFERENCE = 195.29
 TARGET_UP_GLOBAL_UPPER = 198.29
@@ -89,6 +91,7 @@ PUBLIC_FAILURE_CODES = frozenset({
     'm4_pre_run_guard_stale', 'm4_pinned_before_outside_dispatch_window',
     'm4_start_context_changed', 'm4_observed_excursion', 'm4_camera_wait_expired',
     'm4_target_up_global_excursion','m4_target_up_already_at_goal',
+    'm4_current_short_global_excursion','m4_current_short_upper_headroom_insufficient','m4_current_short_already_at_goal',
     'm4_recovery_corridor_exceeded','m4_recovery_already_at_goal','m4_recovery_current_OFF_source_expired','m4_target_up_headroom_unverified',
     'm4_output_cursor_invalid','m4_output_cursor_regressed','m4_output_cursor_baseline_changed'})
 
@@ -100,7 +103,8 @@ def sha(raw):
 def implementation_digest():
     return sha(b'\0'.join(p.read_bytes() for p in (
         Path(__file__),Path(transport.__file__),Path(__file__).with_name('m4_up_observer.py'),
-        Path(__file__).with_name('m4_lift_learning.py'),Path(__file__).with_name('m4_band_recovery.py'))))
+        Path(__file__).with_name('m4_lift_learning.py'),Path(__file__).with_name('m4_band_recovery.py'),
+        Path(__file__).with_name('current_m4_short.py'))))
 
 
 def _hash(value):
@@ -116,7 +120,9 @@ def validate_scope(scope):
     is_return = isinstance(scope, dict) and scope.get('schemaVersion') == RETURN_SCHEMA
     is_target_up = isinstance(scope,dict) and scope.get('schemaVersion') == TARGET_UP_SCHEMA
     is_band_recovery = isinstance(scope,dict) and scope.get('schemaVersion') == BAND_RETURN_RECOVERY_SCHEMA
+    is_current_short = isinstance(scope,dict) and scope.get('schemaVersion') == CURRENT_SHORT_TASK_SCHEMA
     extra = ({'phase','observationContractSha256','modelPath','modelSha256'} if is_learning
+             else {'goalAngleDeg','shortTaskPolicy'} if is_current_short
              else {'goalAngleDeg','originalGlobalReferenceDeg','originalGlobalUpperDeg',
                    'recoveryEntryUpperDeg','recoveryEvidence'} if is_band_recovery
              else {'goalAngleDeg','returnGoalAngleDeg','globalReferenceDeg'} if is_target_up
@@ -127,13 +133,14 @@ def validate_scope(scope):
         'implementationSha256', 'context', 'pulse', 'defaultSpeed', 'maxCommands',
         'expectedStartAngleDeg', 'startAngleToleranceDeg', 'maxObservedDeltaDeg',
         'maxSeconds', 'maxObservationAgeSeconds', 'postOffSeconds'}, 'm4_scope_fields')
-    require(scope['schemaVersion'] in (SCHEMA,LIFT_SCHEMA,CONTACT_PROBE_SCHEMA,NONCONTACT_SCHEMA,CONTACT_SHORT_SCHEMA,CONTACT_MANUAL650_SCHEMA,RETURN_SCHEMA,TARGET_UP_SCHEMA,BAND_RETURN_RECOVERY_SCHEMA)+LEARNING_SCHEMAS and identifier(scope['trialId'])
+    require(scope['schemaVersion'] in (SCHEMA,LIFT_SCHEMA,CONTACT_PROBE_SCHEMA,NONCONTACT_SCHEMA,CONTACT_SHORT_SCHEMA,CONTACT_MANUAL650_SCHEMA,RETURN_SCHEMA,TARGET_UP_SCHEMA,BAND_RETURN_RECOVERY_SCHEMA,CURRENT_SHORT_TASK_SCHEMA)+LEARNING_SCHEMAS and identifier(scope['trialId'])
             and identifier(scope['hostClockId']) and isinstance(scope['controllerBootId'], str)
             and re.fullmatch('[0-9a-f]{32}', scope['controllerBootId']) is not None,
             'm4_scope_identity')
     transport.validate_target(scope['controllerUrl'])
     require(scope['implementationSha256'] == implementation_digest(), 'm4_implementation_changed')
-    profile = (next((p for p in candidates if p==scope['pulse']),{}) if is_learning
+    profile = (next((current_short.short_task_pulse(d) for d in ('up','down') if current_short.short_task_pulse(d)==scope['pulse']),{}) if is_current_short
+               else next((p for p in candidates if p==scope['pulse']),{}) if is_learning
                else next((p for p in CONTACT_PROBE_PULSES if p==scope['pulse']),{}) if is_probe
                else RETURN_PULSE if scope['schemaVersion'] in (RETURN_SCHEMA,BAND_RETURN_RECOVERY_SCHEMA)
                else LEARNING_PULSE if scope['schemaVersion'] in (CONTACT_MANUAL650_SCHEMA,TARGET_UP_SCHEMA)
@@ -155,8 +162,8 @@ def validate_scope(scope):
             and type(scope['defaultSpeed']) is int and scope['defaultSpeed'] == 255
             and type(scope['maxCommands']) is int and scope['maxCommands'] == 1,
             'm4_exact_single_pulse_required')
-    for k, value in [('startAngleToleranceDeg', .10 if is_band_recovery else .25 if is_target_up else .5), ('maxObservedDeltaDeg', 3. if is_learning or scope['schemaVersion'] in (CONTACT_SHORT_SCHEMA,CONTACT_MANUAL650_SCHEMA,RETURN_SCHEMA,TARGET_UP_SCHEMA) else 1.),
-                     ('maxSeconds', 60.), ('maxObservationAgeSeconds', 10.), ('postOffSeconds', 3.)]:
+    for k, value in [('startAngleToleranceDeg', .10 if is_band_recovery or is_current_short else .25 if is_target_up else .5), ('maxObservedDeltaDeg', 3. if is_learning or scope['schemaVersion'] in (CONTACT_SHORT_SCHEMA,CONTACT_MANUAL650_SCHEMA,RETURN_SCHEMA,TARGET_UP_SCHEMA) else 1.),
+                     ('maxSeconds', 60.), ('maxObservationAgeSeconds', 3. if is_current_short else 10.), ('postOffSeconds', 3.)]:
         require(transport.finite_number(scope[k]) and scope[k] == value, 'm4_fixed_limits_required')
     require(transport.finite_number(scope['expectedStartAngleDeg'])
             and 127.58 < scope['expectedStartAngleDeg'] < 296.12, 'm4_start_angle_invalid')
@@ -187,11 +194,21 @@ def validate_scope(scope):
                 and all(isinstance(ref,dict) and set(ref)=={'path','sha256'} and _hash(ref['sha256'])
                         and isinstance(ref['path'],str) and bool(ref['path'])
                         for ref in scope['recoveryEvidence'].values()),'m4_band_recovery_exact_contract')
+    if is_current_short:
+        policy=current_short.validate_current_short_policy(scope['shortTaskPolicy'])
+        up=scope['pulse']['direction']=='up'
+        require(transport.finite_number(scope['goalAngleDeg'])
+                and scope['goalAngleDeg']==policy['upGoalAngleDeg' if up else 'downGoalAngleDeg']
+                and policy['originalGlobalReferenceDeg']-3. <= scope['expectedStartAngleDeg'] <= policy['originalGlobalUpperDeg']
+                and ((up and scope['expectedStartAngleDeg']==policy['tableReferenceDeg'])
+                     or (not up and scope['expectedStartAngleDeg']>scope['goalAngleDeg']+.1)),
+                'm4_current_short_goal_or_start_invalid')
     ctx = scope['context']
     require(isinstance(ctx, dict) and set(ctx) == {
         'physicalView', 'poseRegime', 'object', 'supportMode', 'externalDeviceId',
         'externalViewId', 'gripperCameraBootId'} and
-        ctx['supportMode'] == ('empty_no_object' if is_noncontact else 'gripper_supported' if scope['schemaVersion'] in (RETURN_SCHEMA,BAND_RETURN_RECOVERY_SCHEMA) else 'table_supported')
+        ctx['supportMode'] == ('empty_no_object' if is_noncontact else 'gripper_supported' if scope['schemaVersion'] in (RETURN_SCHEMA,BAND_RETURN_RECOVERY_SCHEMA)
+                              or is_current_short and scope['pulse']['direction']=='down' else 'table_supported')
         and all(isinstance(v, str) and bool(v) for v in ctx.values())
         and re.fullmatch('[0-9a-f]{32}', ctx['gripperCameraBootId']) is not None,
         'm4_current_contact_context_required')
@@ -232,6 +249,7 @@ RETURN_RECORDED_DIGEST = 'b2b1e07021854b2458f069e05dbfa7512df24d5f310383d4433933
 KNOWN_CONTACT650_RECORDED_DIGEST = 'a6e0f896ffc144e8b47a09a52623eb1b1f47deabc88705af1d25c1a25a2c1946'
 CURRENT_FIXED_RECORDED_DIGEST = '9b2945710d45a9932b87a2e1e05b62f6d17567be06445f1d721d0723f15c4cac'
 TARGET_UP_INITIAL_RECORDED_DIGEST = 'f0b4677455cb3ad03112c2bde815395d515e7e325db26b786345248a4f31c44b'
+BAND_RECOVERY_INITIAL_RECORDED_DIGEST = 'ed964b4b8ba70518abe96ffda2e118998b823c83408b4ebce48fc3fe787e5696'
 KNOWN_CONTACT500_RECORDED_DIGEST = '8e5a6e077280e0c80690b2ee21368a9cca6747e76a6ca3c9a20c614c0c7cfd21'
 RECORDED_IMPLEMENTATION_DIGESTS = frozenset({
     '87239bd44387e1e1ca522f9be5af2865eac376868c4c14efee20e001b503cccc',
@@ -248,6 +266,11 @@ def validate_recorded_scope(scope):
     require(isinstance(scope, dict), 'm4_scope_fields')
     if scope.get('implementationSha256') == implementation_digest():
         return validate_scope(scope)
+    if (scope.get('schemaVersion')==BAND_RETURN_RECOVERY_SCHEMA
+            and scope.get('implementationSha256')==BAND_RECOVERY_INITIAL_RECORDED_DIGEST):
+        candidate=copy.deepcopy(scope);candidate['implementationSha256']=implementation_digest()
+        validate_scope(candidate)
+        return copy.deepcopy(scope)
     if (scope.get('schemaVersion')==TARGET_UP_SCHEMA
             and scope.get('implementationSha256')==TARGET_UP_INITIAL_RECORDED_DIGEST):
         # 원래 실패 원본의 감사만 허용한다. 이 digest로 새 실행할 수 없다.
@@ -265,6 +288,7 @@ def validate_recorded_scope(scope):
         return copy.deepcopy(scope)
     require(scope.get('schemaVersion') != RETURN_SCHEMA and
             scope.get('schemaVersion') != BAND_RETURN_RECOVERY_SCHEMA and
+            scope.get('schemaVersion') != CURRENT_SHORT_TASK_SCHEMA and
             (scope.get('schemaVersion') != CONTACT_MANUAL650_SCHEMA or
              scope.get('implementationSha256') == KNOWN_CONTACT650_RECORDED_DIGEST) and
             (scope.get('schemaVersion') != CONTACT_SHORT_SCHEMA or
@@ -389,12 +413,22 @@ class _CommissioningPort(transport.SequencePort):
         elif self.owner.scope['schemaVersion']==TARGET_UP_SCHEMA:
             kwargs['stop_when']=lambda status:self._shoulder_angle(status)>=self.owner.scope['goalAngleDeg']
             kwargs['monitor_policy']=transport.M4_TARGET_UP_DEADLINE_POLICY
+        elif self.owner.scope['schemaVersion']==CURRENT_SHORT_TASK_SCHEMA:
+            up=pulse['direction']=='up'
+            kwargs['stop_when']=(lambda status:self._shoulder_angle(status)>=self.owner.scope['goalAngleDeg']) if up else (
+                                lambda status:self._shoulder_angle(status)<=self.owner.scope['goalAngleDeg'])
+            kwargs['monitor_policy']=(transport.CURRENT_SHORT_UP_DEADLINE_POLICY if up else
+                                      transport.CURRENT_SHORT_DOWN_DEADLINE_POLICY)
         receipt=super()._execute_validated(pulse, tick, before_run=before_run,**kwargs)
         if self.owner.scope['schemaVersion']==TARGET_UP_SCHEMA:
             receipt['stopReason']='observed_target_up_goal' if receipt['stoppedEarly'] else 'requested_period_complete'
             receipt['plannedTargetUp']=target_up_policy(self.owner.scope)
         if self.owner.scope['schemaVersion']==BAND_RETURN_RECOVERY_SCHEMA:
             receipt['stopReason']='observed_band_recovery_goal' if receipt['stoppedEarly'] else 'requested_period_complete'
+        if self.owner.scope['schemaVersion']==CURRENT_SHORT_TASK_SCHEMA:
+            receipt['stopReason']=('observed_current_short_'+pulse['direction']+'_goal'
+                if receipt['stoppedEarly'] else 'requested_period_complete')
+            receipt['plannedShortTaskPolicy']=copy.deepcopy(self.owner.scope['shortTaskPolicy'])
         return receipt
 
     def _call(self, path, payload=None, **kwargs):
@@ -509,6 +543,11 @@ class _CommissioningPort(transport.SequencePort):
         if getattr(self.owner,'task_hooks',None) is not None:
             self.owner.task_hooks['status_guard'](copy.deepcopy(status))
         scope = self.owner.scope
+        short=scope['schemaVersion']==CURRENT_SHORT_TASK_SCHEMA
+        if short:
+            policy=scope['shortTaskPolicy']
+            require(policy['originalGlobalReferenceDeg']-3. <= angle <= policy['originalGlobalUpperDeg'],
+                    'm4_current_short_global_excursion')
         if scope['schemaVersion']==BAND_RETURN_RECOVERY_SCHEMA:
             require(scope['expectedStartAngleDeg']-scope['maxObservedDeltaDeg'] <= angle <= scope['recoveryEntryUpperDeg'],
                     'm4_recovery_corridor_exceeded')
@@ -520,6 +559,12 @@ class _CommissioningPort(transport.SequencePort):
                 require(angle>scope['goalAngleDeg']+.1,'m4_return_already_at_floor')
             if scope['schemaVersion']==BAND_RETURN_RECOVERY_SCHEMA:
                 require(angle>scope['goalAngleDeg'],'m4_recovery_already_at_goal')
+            if short:
+                if scope['pulse']['direction']=='up':
+                    require(angle+scope['maxObservedDeltaDeg']<=policy['originalGlobalUpperDeg'],
+                            'm4_current_short_upper_headroom_insufficient')
+                    require(angle<scope['goalAngleDeg'],'m4_current_short_already_at_goal')
+                else:require(angle>scope['goalAngleDeg'],'m4_current_short_already_at_goal')
             if scope['schemaVersion']==TARGET_UP_SCHEMA:
                 require(angle<scope['goalAngleDeg']-.1,'m4_target_up_already_at_goal')
                 # 목표각과 상한 사이 .25도만으로 정지 여유를 추정하지 않는다.
@@ -529,7 +574,8 @@ class _CommissioningPort(transport.SequencePort):
                         'm4_target_up_headroom_unverified')
         if self.owner.baseline_angle is not None:
             delta = angle-self.owner.baseline_angle
-            direction_ok = (delta<=.10 if scope['schemaVersion']==BAND_RETURN_RECOVERY_SCHEMA else
+            direction_ok = ((delta>=-.10 if scope['pulse']['direction']=='up' else delta<=.10) if short else
+                            delta<=.10 if scope['schemaVersion']==BAND_RETURN_RECOVERY_SCHEMA else
                             delta<=.25 if scope['schemaVersion']==RETURN_SCHEMA else delta>=-.25)
             require(abs(delta) <= scope['maxObservedDeltaDeg'] and direction_ok, 'm4_observed_excursion')
 
@@ -558,7 +604,7 @@ class M4UpCommissioning:
                 {'prepare','before_run','status_guard','decisionSha256'}
                 and all(callable(task_hooks[k]) for k in ('prepare','before_run','status_guard'))
                 and _hash(task_hooks['decisionSha256'])
-                and self.scope['schemaVersion'] in (SCHEMA,CONTACT_MANUAL650_SCHEMA,RETURN_SCHEMA,TARGET_UP_SCHEMA)),
+                and self.scope['schemaVersion'] in (SCHEMA,CONTACT_MANUAL650_SCHEMA,RETURN_SCHEMA,TARGET_UP_SCHEMA,CURRENT_SHORT_TASK_SCHEMA)),
                 'm4_task_hooks_require_scoped_fixed_actor')
         self.task_hooks = task_hooks
         self.selection_kind = ('manual_lift_fixed_profile' if self.scope['schemaVersion']==LIFT_SCHEMA
@@ -567,6 +613,8 @@ class M4UpCommissioning:
             self.selection_kind = 'manual_table_return_angle_stop'
         if self.scope['schemaVersion']==BAND_RETURN_RECOVERY_SCHEMA:
             self.selection_kind = 'manual_out_of_band_down_recovery'
+        if self.scope['schemaVersion']==CURRENT_SHORT_TASK_SCHEMA:
+            self.selection_kind = 'manual_current_short_paired_'+self.scope['pulse']['direction']
         if self.scope['schemaVersion'] == TARGET_UP_SCHEMA:
             self.selection_kind = 'manual_target_up_angle_stop'
         if self.scope['schemaVersion'] == CONTACT_MANUAL650_SCHEMA:
@@ -654,7 +702,8 @@ class M4UpCommissioning:
         if self.scope.get('schemaVersion') == NONCONTACT_SCHEMA:
             require(not onsite['jawContactVerified'] and not onsite['tableSupportVerified'],
                     'm4_noncontact_review_required')
-        elif self.scope['schemaVersion'] in (RETURN_SCHEMA,BAND_RETURN_RECOVERY_SCHEMA):
+        elif self.scope['schemaVersion'] in (RETURN_SCHEMA,BAND_RETURN_RECOVERY_SCHEMA) or (
+                self.scope['schemaVersion']==CURRENT_SHORT_TASK_SCHEMA and self.scope['pulse']['direction']=='down'):
             require(onsite['jawContactVerified'] and (after_off is not None or onsite['tableSupportVerified'] is False),
                     'm4_return_support_review_required')
         elif after_off is None:
@@ -710,6 +759,11 @@ class M4UpCommissioning:
         self._require_fresh_controller_proof(now)
         if self.task_hooks is not None:
             self.task_hooks['before_run']()
+        if self.scope['schemaVersion']==CURRENT_SHORT_TASK_SCHEMA:
+            now=self.clock.monotonic()
+            require(now-started <= .1 and now < self.deadline
+                    and all(now-frame['sourceEarliest'] <= 3. for frame in frames.values()),
+                    'm4_pre_run_guard_stale')
         if self.learning:
             admission_started = self.clock.monotonic()
             self._require_pinned_native_window(frames['external'], admission_started)
