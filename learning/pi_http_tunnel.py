@@ -31,10 +31,12 @@ class PiHttpTunnel:
     생성자는 검증만 수행한다. start() 또는 with 진입 시 SSH를 시작하며,
     SSH 인증·포워드 설치 후 실행되는 원격 Python의 READY를 기다린다.
     준비 성공은 장치 HTTP 응답이나 실물 실행 준비가 확인됐다는 뜻이 아니다.
+    일반 hold 한도는 180초다. cycle_limit_seconds를 명시한 경우에만 과업 한도
+    최대 600초와 정리 여유 60초 안에서 유한 hold를 선언할 수 있다.
     """
     def __init__(self, pi_alias, forwards, *, startup_seconds=6., hold_seconds=120,
                  store=None, log_name='pi-http-tunnel-diagnostic.json',
-                 max_log_bytes=65536, clock=time):
+                 max_log_bytes=65536, clock=time, cycle_limit_seconds=None):
         if not isinstance(pi_alias, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,100}', pi_alias):
             raise ValueError('explicit_pi_ssh_alias_required')
         if not isinstance(forwards, list) or not 1 <= len(forwards) <= 2:
@@ -56,7 +58,10 @@ class PiHttpTunnel:
                 raise ValueError('private_device_ipv4_required')
         if not _number(startup_seconds) or not 0 < startup_seconds <= 6:
             raise ValueError('bounded_tunnel_startup_required')
-        if type(hold_seconds) is not int or not 1 <= hold_seconds <= 180:
+        if cycle_limit_seconds is not None and (not _number(cycle_limit_seconds) or not 0<cycle_limit_seconds<=600):
+            raise ValueError('bounded_explicit_cycle_limit_required')
+        maximum_hold=180 if cycle_limit_seconds is None else cycle_limit_seconds+60
+        if type(hold_seconds) is not int or not 1 <= hold_seconds <= maximum_hold:
             raise ValueError('bounded_remote_hold_required')
         if type(max_log_bytes) is not int or not 1024 <= max_log_bytes <= 65536:
             raise ValueError('bounded_tunnel_log_required')
@@ -64,9 +69,10 @@ class PiHttpTunnel:
             raise ValueError('safe_tunnel_log_name_required')
         self.pi_alias, self.forwards = pi_alias, copy.deepcopy(forwards)
         self.startup_seconds, self.hold_seconds = startup_seconds, hold_seconds
+        self.cycle_limit_seconds=cycle_limit_seconds
         self.store, self.log_name, self.max_log_bytes, self.clock = store, log_name, max_log_bytes, clock
         self._declaration = (pi_alias, copy.deepcopy(forwards), startup_seconds, hold_seconds,
-                             max_log_bytes, log_name)
+                             max_log_bytes, log_name, cycle_limit_seconds)
         self._ready_line = 'MOTIONBRAIN_PI_HTTP_TUNNEL_READY_' + uuid.uuid4().hex
         self.process = None
         self._selector = None
@@ -78,7 +84,7 @@ class PiHttpTunnel:
 
     def _check_declaration(self):
         if (self.pi_alias, self.forwards, self.startup_seconds, self.hold_seconds,
-                self.max_log_bytes, self.log_name) != self._declaration:
+                self.max_log_bytes, self.log_name, self.cycle_limit_seconds) != self._declaration:
             raise PiHttpTunnelError('tunnel_declaration_changed')
 
     def _command(self):
@@ -163,7 +169,8 @@ class PiHttpTunnel:
                     returnCode=None if self.process is None else self.process.poll(),
                     stdoutBytes=len(self._output['stdout']), stderrBytes=len(self._output['stderr']),
                     cleanupErrors=list(self._cleanup_errors), deviceRequests=0,
-                    readinessTcpConnections=0, automaticRetry=False)
+                    readinessTcpConnections=0, automaticRetry=False,
+                    cycleLimitSeconds=self.cycle_limit_seconds,holdSeconds=self.hold_seconds)
 
     def close(self):
         if self._closed:

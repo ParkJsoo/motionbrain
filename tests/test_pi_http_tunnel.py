@@ -46,6 +46,28 @@ class PiHttpTunnelTests(unittest.TestCase):
             self.assertFalse(spawn.called); self.assertFalse(connect.called)
             self.assertIsNone(tunnel.process)
 
+    def test_long_cycle_hold_requires_explicit_limit_and_retains_old_181_rejection(self):
+        with self.assertRaisesRegex(ValueError,'remote_hold'):self.tunnel(hold_seconds=181)
+        with patch('learning.pi_http_tunnel.subprocess.Popen') as spawn:
+            tunnel=self.tunnel(hold_seconds=660,cycle_limit_seconds=600.)
+            self.assertEqual(tunnel.hold_seconds,660);self.assertEqual(tunnel.cycle_limit_seconds,600.)
+            self.assertIn('time.sleep(660)',tunnel._command()[-1]);spawn.assert_not_called()
+        for kwargs in [dict(hold_seconds=661,cycle_limit_seconds=600),dict(hold_seconds=660,cycle_limit_seconds=599),
+                       dict(hold_seconds=181,cycle_limit_seconds=120),dict(hold_seconds=60,cycle_limit_seconds=True),
+                       dict(hold_seconds=60,cycle_limit_seconds=601),dict(hold_seconds=60,cycle_limit_seconds=float('nan'))]:
+            with self.subTest(kwargs=kwargs),self.assertRaises(ValueError):self.tunnel(**kwargs)
+
+    def test_cycle_limit_is_immutable_and_own_child_cleanup_is_unchanged(self):
+        tunnel=self.tunnel(hold_seconds=660,cycle_limit_seconds=600)
+        with self.mock_child(tunnel):
+            with tunnel:tunnel.check()
+        self.assertTrue(tunnel.summary['closed']);self.assertEqual(tunnel.summary['cycleLimitSeconds'],600)
+        self.assertEqual(tunnel.summary['holdSeconds'],660);self.assertIsNotNone(tunnel.process.returncode)
+        changed=self.tunnel(hold_seconds=660,cycle_limit_seconds=600);changed.cycle_limit_seconds=601
+        with patch('learning.pi_http_tunnel.subprocess.Popen') as spawn:
+            with self.assertRaisesRegex(PiHttpTunnelError,'declaration_changed'):changed.start()
+            spawn.assert_not_called()
+
     def test_delayed_remote_ready_confirms_connection_without_tcp_probe(self):
         tunnel = self.tunnel(startup_seconds=1)
         started = time.monotonic()
