@@ -38,6 +38,7 @@
 | 문서 | 역할 |
 | --- | --- |
 | [유한 출력 프로파일](finite-output-profile.md) | M2 고정 출력 구현·실물 시운전과 계측 거부·불확실성 검토 |
+| [M4 장치 목표 가드 준비 코어](m4-device-goal-guard.md) | 기본 비활성 상태기계·전송 계약의 오프라인 검증과 미연결 범위 |
 | [무명령 관측 반복성](stationary-repeatability.md) | 관측창·조명 조건 비교와 측정 변동 해석의 한계 |
 | [Mac 카메라 계측](mac-direct-camera.md) | 영상·USB 시각 연결 도구와 계측 결과 |
 | [화면 표식의 오프라인 시간 검증](optical-challenge-offline.md) | 기존 계약을 위한 선택적 합성 실험. 물리 노출 인증이나 새 행동 학습의 선행 조건이 아님 |

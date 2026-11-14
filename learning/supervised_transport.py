@@ -216,7 +216,7 @@ class SequencePort:
             if not emergency:
                 raise
 
-    def _call(self, path, payload=None, *, emergency=False, run=False, quiet_disconnect_retry=False, request_timeout=None, quiet_monitor_timeout=False, initial_output_read=False, read_deadline=None, protect_read_persistence=False):
+    def _call(self, path, payload=None, *, emergency=False, run=False, quiet_disconnect_retry=False, request_timeout=None, quiet_monitor_timeout=False, initial_output_read=False, read_deadline=None, protect_read_persistence=False, device_guard_terminal=False):
         self._last_http_failure_serial = None
         endpoint = urllib.parse.urlsplit(path).path
         if read_deadline is not None and (not finite_number(read_deadline)
@@ -249,7 +249,13 @@ class SequencePort:
                 and payload is None and not emergency and not run
                 ):
             raise ValueError('quiet_monitor_timeout_scope')
-        maximum = max(self.timeout, 1.5) if quiet_monitor_timeout or initial_output_read else self.timeout
+        if type(device_guard_terminal) is not bool:
+            raise ValueError('device_guard_terminal_scope')
+        if device_guard_terminal and not (getattr(self, '_device_goal_guard', None) is not None
+                and path == '/sequence' and payload is None and self.may_have_run
+                and not emergency and not run and request_timeout == 2.):
+            raise ValueError('device_guard_terminal_scope')
+        maximum = 2. if device_guard_terminal else max(self.timeout, 1.5) if quiet_monitor_timeout or initial_output_read else self.timeout
         budget = maximum if request_timeout is None else min(maximum, request_timeout)
         if read_deadline is not None:
             budget = min(budget, read_deadline-self.clock.monotonic())
@@ -787,7 +793,7 @@ class SequencePort:
         return False
 
     def _execute_validated(self, pulse, tick, *, before_run=None, after_armed_before_run=None,
-                           stop_when=None, monitor_policy=None):
+                           stop_when=None, monitor_policy=None, device_goal_guard=None):
         """Shared finite body for internally validated, narrowly scoped adapters.
 
         General callers must use execute(). The commissioning adapter validates
@@ -799,6 +805,11 @@ class SequencePort:
             raise ValueError('after_armed_before_run_callback_required')
         if stop_when is not None and not callable(stop_when):
             raise ValueError('stop_when_callback_required')
+        from learning import m4_device_guard_transport as device_guard
+        if device_goal_guard is not None:
+            device_goal_guard = device_guard.validate_request(device_goal_guard, pulse)
+            if monitor_policy is not None or stop_when is not None:
+                raise ValueError('device_guard_host_monitor_forbidden')
         validate_monitor_policy(pulse, monitor_policy)
         target_monitor = monitor_policy in BOUNDED_M4_MONITOR_POLICIES
         if target_monitor and stop_when is None:
@@ -820,15 +831,22 @@ class SequencePort:
         self._target_stop_priority = target_monitor
         self._bounded_m4_monitor_policy = monitor_policy if target_monitor else None
         failure_in_flight = False
+        self._device_goal_guard = device_goal_guard
+        terminal_record = None
         try:
             tick()
             snapshot = self.preflight()
             baseline_angle = self._shoulder_angle(snapshot['status']) if pulse['motor'] == 4 else None
+            if device_goal_guard is not None:
+                device_guard.capability(snapshot['sequence'], device_goal_guard)
             self.writes_possible = True
             self._call('/motor', {'action': 'default', 'speed': 255})
-            self._call('/sequence', {'action': 'add', 'joint': pulse['joint'],
-                'direction': pulse['direction'], 'speed': pulse['percent'], 'duration': pulse['durationMs']})
-            self._queue(1)
+            self._call('/sequence', device_guard.add_payload(device_goal_guard, pulse) if device_goal_guard is not None else
+                {'action': 'add', 'joint': pulse['joint'], 'direction': pulse['direction'],
+                 'speed': pulse['percent'], 'duration': pulse['durationMs']})
+            queued = self._queue(1)
+            if device_goal_guard is not None:
+                device_guard.capability(queued, device_goal_guard, state='queued', pulse=pulse)
             tick()
             self.off_verified = False
             self._call('/command', {'cmd': 'arm'})
@@ -844,17 +862,22 @@ class SequencePort:
             if after_armed_before_run is not None:
                 after_armed_before_run()
                 tick()
-            self._call('/sequence', {'action': 'run'}, run=True)
+            self._call('/sequence', device_guard.run_payload(device_goal_guard) if device_goal_guard is not None
+                       else {'action': 'run'}, run=True)
             before = self.last_dispatch_before
             after = self.last_dispatch_after
             # Poll outputs first after RUN so a slow status response cannot
             # needlessly age the 128-entry output ring before its first drain.
-            if target_monitor:
+            if device_goal_guard is not None:
+                terminal_record = device_guard.await_terminal(self, device_goal_guard, pulse, tick)
+                stopped_early = terminal_record['reason'] == 'goal'
+                self._outputs()
+            elif target_monitor:
                 stopped_early = self._monitor_target_up_deadline(
                     after+pulse['durationMs']/1000, tick, pulse, baseline_angle, stop_when)
             elif monitor_policy is not None:
                 self._monitor_wrist_deadline(after+pulse['durationMs']/1000, tick)
-            while monitor_policy is None:
+            while monitor_policy is None and device_goal_guard is None:
                 tick()
                 self._outputs()
                 status = self._status()
@@ -888,6 +911,9 @@ class SequencePort:
             receipt = {'dispatchBefore': before, 'dispatchAfter': after, 'offAt': off,
                     'outputTrace': trace, 'offVerified': True, 'motor': pulse['motor'],
                     'requestedPulse': pulse}
+            if terminal_record is not None:
+                receipt.update(deviceGoalGuard=terminal_record, plannedDeviceGoalGuard=device_goal_guard,
+                    stoppedEarly=stopped_early, stopReason='device_'+terminal_record['reason'])
             if monitor_policy is not None:
                 receipt.update(monitorTimingPolicy=monitor_policy, monitorStatusVerified=True,
                                monitorReadBudgetRevision=WRIST_READ_BUDGET_REVISION)
@@ -912,6 +938,7 @@ class SequencePort:
                            copy.deepcopy(self._target_monitor_diagnostic), emergency=True)
             raise
         finally:
+            self._device_goal_guard = None
             self._before_run = None
             self._target_stop_priority = False
             self._bounded_m4_monitor_policy = None

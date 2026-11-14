@@ -18,6 +18,8 @@ These are general repository reproduction steps. Device addresses, credentials a
 
 Physical execution follows each collector's scope, journal and stop procedure. [Finite output profiles (Korean)](docs/finite-output-profile.md) belong to the separate `esp32dev_m2_finite_trial` build and remain disabled in default builds. Read the measurement conditions alongside [stationary repeatability (Korean)](docs/stationary-repeatability.md). Software checks, completed outputs and training-data eligibility are separate results.
 
+The [M4 device goal guard preparation core (Korean)](docs/m4-device-goal-guard.md) currently validates only a default-disabled pure state machine and host wire contract. Firmware API, sensor, driver and model execution integration remain unimplemented. It is not a separate deployment environment or a usable physical execution path.
+
 ## Builds
 
 ESP32 uses PlatformIO. Host tests require Python, NumPy, OpenCV and Node.js (CI: Python 3.12 and Node.js 22). Native C++ checks require a C++ compiler and are skipped when it is unavailable. Replace `<...>` placeholders with installation-specific values. Run from the repository root:
