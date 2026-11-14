@@ -278,6 +278,47 @@ class ShortActorDown300Tests(ShortActorTests):
     up_cap=600
     down_cap=300
 
+class ShortActorDown350Tests(ShortActorTests):
+    up_cap=600
+    down_cap=350
+
+class ShortRawDataDown350Tests(ShortRawDataTests):
+    up_cap=600
+    down_cap=350
+
+class ShortModelBindingDown350Tests(ShortModelBindingTests):
+    def setUp(self):
+        super().setUp();self.policy=short.current_short_policy(600,350)
+
+class ShortMonitorDown350Tests(unittest.TestCase):
+    setUp=monitorfixtures.TargetMonitorTests.setUp
+    RUNs=monitorfixtures.TargetMonitorTests.RUNs
+    STOPs=monitorfixtures.TargetMonitorTests.STOPs
+    def test350_late_first_status_OFF_and_wrong_policy_rejected(self):
+        pulse=short.short_task_pulse('down',short.current_short_policy(600,350))
+        with self.assertRaises(ValueError):transport.validate_monitor_policy(pulse,short.DOWN_MONITOR_POLICY300)
+        original=self.device.open;seen=[]
+        def slow(request,timeout):
+            if self.device.running and request.data is None and not seen:
+                seen.append(True);self.clock.sleep(.351)
+            return original(request,timeout)
+        self.device.open=slow
+        with self.assertRaisesRegex(TimeoutError,'request_deadline'):
+            self.port._execute_validated(pulse,lambda:None,stop_when=lambda s:False,monitor_policy=short.DOWN_MONITOR_POLICY350)
+        self.assertEqual(len(self.RUNs()),1);self.assertEqual(len(self.STOPs()),1);self.assertTrue(self.port.off_verified)
+
+class Recorded600Down300CompatibilityTests(unittest.TestCase):
+    def test_only_exact600_300_is_recorded_readable(self):
+        policy=short.current_short_policy(600,300)
+        original=dict(fixtures.scope(),schemaVersion=core.CURRENT_SHORT_TASK_SCHEMA,
+            pulse=short.short_task_pulse('up',policy),expectedStartAngleDeg=197.22,
+            startAngleToleranceDeg=.1,maxObservedDeltaDeg=.9,maxObservationAgeSeconds=3.,
+            goalAngleDeg=197.85,shortTaskPolicy=policy,implementationSha256=core.CURRENT_SHORT_600_DOWN300_RECORDED_DIGEST)
+        self.assertEqual(core.validate_recorded_scope(original),original)
+        with self.assertRaisesRegex(ValueError,'implementation_changed'):core.validate_scope(original)
+        other=dict(original,shortTaskPolicy=short.current_short_policy(600,350))
+        with self.assertRaisesRegex(ValueError,'recorded_implementation_unknown'):core.validate_recorded_scope(other)
+
 class ShortRawDataDown300Tests(ShortRawDataTests):
     up_cap=600
     down_cap=300
