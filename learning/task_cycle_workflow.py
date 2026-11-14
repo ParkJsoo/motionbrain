@@ -37,7 +37,7 @@ class ScopedCycleExecutor:
             return self.execute_other(copy.deepcopy(command),after_armed_before_run=prepare,
                                       before_run=before_run,decision=copy.deepcopy(decision))
         from learning.m4_up_commissioning import M4UpCommissioning, CONTACT_MANUAL650_SCHEMA, SCHEMA, RETURN_SCHEMA, TARGET_UP_SCHEMA, target_up_policy, validate_target_up_policy
-        from learning.current_m4_short import SCHEMA as SHORT_SCHEMA, POLICY_SCHEMA as SHORT_POLICY_SCHEMA, validate_current_short_policy
+        from learning.current_m4_short import SCHEMA as SHORT_SCHEMA, POLICY_SCHEMA as SHORT_POLICY_SCHEMA, validate_current_short_policy, short_task_pulse
         from learning.supervised_transport import SequencePort
         require(safety['maximumM4ExcursionDeg']==3.,'cycle_M4_excursion_policy')
         def monitor(status):
@@ -60,7 +60,9 @@ class ScopedCycleExecutor:
                 and actor.scope['schemaVersion'] in ((SCHEMA,CONTACT_MANUAL650_SCHEMA,TARGET_UP_SCHEMA,SHORT_SCHEMA)
                     if stage['kind']=='lift' else (RETURN_SCHEMA,SHORT_SCHEMA)), 'cycle_M4_scoped_actor_mismatch')
         if actor.scope['schemaVersion']==SHORT_SCHEMA:
+            planned=short_task_pulse('up' if stage['kind']=='lift' else 'down',policy) if short_policy else {}
             require(short_policy and policy==actor.scope['shortTaskPolicy']
+                    and all(planned.get(k)==v for k,v in command.items())
                     and actor.scope.get('goalAngleDeg')==policy['upGoalAngleDeg' if stage['kind']=='lift' else 'downGoalAngleDeg'],
                     'cycle_current_short_policy_mismatch')
         elif short_policy:

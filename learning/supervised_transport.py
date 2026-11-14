@@ -33,10 +33,11 @@ ELBOW_FINE_POLICY = 'elbow-fine-450-v1'
 M4_TARGET_UP_DEADLINE_POLICY = 'm4-target-up-deadline-650-v1'
 RECOVERY_DOWN_DEADLINE_POLICY = 'm4-band-recovery-down-deadline-400-v1'
 CURRENT_SHORT_UP_DEADLINE_POLICY = 'm4-current-short-up-deadline-350-v1'
+CURRENT_SHORT_UP450_DEADLINE_POLICY = 'm4-current-short-up-deadline-450-v1'
 CURRENT_SHORT_DOWN_DEADLINE_POLICY = 'm4-current-short-down-deadline-200-v1'
-CURRENT_SHORT_MONITOR_POLICIES = (CURRENT_SHORT_UP_DEADLINE_POLICY,CURRENT_SHORT_DOWN_DEADLINE_POLICY)
+CURRENT_SHORT_MONITOR_POLICIES = (CURRENT_SHORT_UP_DEADLINE_POLICY,CURRENT_SHORT_UP450_DEADLINE_POLICY,CURRENT_SHORT_DOWN_DEADLINE_POLICY)
 BOUNDED_M4_MONITOR_POLICIES = (M4_TARGET_UP_DEADLINE_POLICY,RECOVERY_DOWN_DEADLINE_POLICY,
-                              CURRENT_SHORT_UP_DEADLINE_POLICY,CURRENT_SHORT_DOWN_DEADLINE_POLICY)
+                              CURRENT_SHORT_UP_DEADLINE_POLICY,CURRENT_SHORT_UP450_DEADLINE_POLICY,CURRENT_SHORT_DOWN_DEADLINE_POLICY)
 WRIST_READ_BUDGET_REVISION = 'shared-command-deadline-v2'
 QUIET_IDLE_POLL_SECONDS = .5
 
@@ -67,6 +68,7 @@ def validate_monitor_policy(pulse, policy):
                      and all(type(pulse.get(k)) is int for k in ('motor','percent','durationMs','expectedPwm'))
                      and (pulse['motor'],pulse['percent'],pulse['durationMs'],pulse['expectedPwm']) == (4,35,400,-89))
     short_profiles = {CURRENT_SHORT_UP_DEADLINE_POLICY: ('up',4,50,350,127),
+                      CURRENT_SHORT_UP450_DEADLINE_POLICY: ('up',4,50,450,127),
                       CURRENT_SHORT_DOWN_DEADLINE_POLICY: ('down',4,35,200,-89)}
     short = (isinstance(policy,str) and policy in short_profiles and pulse.get('joint')=='shoulder'
              and all(type(pulse.get(k)) is int for k in ('motor','percent','durationMs','expectedPwm'))

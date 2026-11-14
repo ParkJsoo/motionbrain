@@ -139,7 +139,7 @@ def validate_scope(scope):
             'm4_scope_identity')
     transport.validate_target(scope['controllerUrl'])
     require(scope['implementationSha256'] == implementation_digest(), 'm4_implementation_changed')
-    profile = (next((current_short.short_task_pulse(d) for d in ('up','down') if current_short.short_task_pulse(d)==scope['pulse']),{}) if is_current_short
+    profile = (next((current_short.short_task_pulse(d,scope['shortTaskPolicy']) for d in ('up','down') if current_short.short_task_pulse(d,scope['shortTaskPolicy'])==scope['pulse']),{}) if is_current_short
                else next((p for p in candidates if p==scope['pulse']),{}) if is_learning
                else next((p for p in CONTACT_PROBE_PULSES if p==scope['pulse']),{}) if is_probe
                else RETURN_PULSE if scope['schemaVersion'] in (RETURN_SCHEMA,BAND_RETURN_RECOVERY_SCHEMA)
@@ -250,6 +250,7 @@ KNOWN_CONTACT650_RECORDED_DIGEST = 'a6e0f896ffc144e8b47a09a52623eb1b1f47deabc887
 CURRENT_FIXED_RECORDED_DIGEST = '9b2945710d45a9932b87a2e1e05b62f6d17567be06445f1d721d0723f15c4cac'
 TARGET_UP_INITIAL_RECORDED_DIGEST = 'f0b4677455cb3ad03112c2bde815395d515e7e325db26b786345248a4f31c44b'
 BAND_RECOVERY_INITIAL_RECORDED_DIGEST = 'ed964b4b8ba70518abe96ffda2e118998b823c83408b4ebce48fc3fe787e5696'
+CURRENT_SHORT_350_RECORDED_DIGEST = 'c3a42c5333e96621defc8ddb7726d94903441c811e54dee4c8f48758b0c79501'
 KNOWN_CONTACT500_RECORDED_DIGEST = '8e5a6e077280e0c80690b2ee21368a9cca6747e76a6ca3c9a20c614c0c7cfd21'
 RECORDED_IMPLEMENTATION_DIGESTS = frozenset({
     '87239bd44387e1e1ca522f9be5af2865eac376868c4c14efee20e001b503cccc',
@@ -266,6 +267,13 @@ def validate_recorded_scope(scope):
     require(isinstance(scope, dict), 'm4_scope_fields')
     if scope.get('implementationSha256') == implementation_digest():
         return validate_scope(scope)
+    if (scope.get('schemaVersion')==CURRENT_SHORT_TASK_SCHEMA
+            and scope.get('implementationSha256')==CURRENT_SHORT_350_RECORDED_DIGEST
+            and isinstance(scope.get('shortTaskPolicy'),dict)
+            and scope['shortTaskPolicy'].get('upDurationCapMs')==350):
+        candidate=copy.deepcopy(scope);candidate['implementationSha256']=implementation_digest()
+        validate_scope(candidate)
+        return copy.deepcopy(scope)
     if (scope.get('schemaVersion')==BAND_RETURN_RECOVERY_SCHEMA
             and scope.get('implementationSha256')==BAND_RECOVERY_INITIAL_RECORDED_DIGEST):
         candidate=copy.deepcopy(scope);candidate['implementationSha256']=implementation_digest()
@@ -417,8 +425,7 @@ class _CommissioningPort(transport.SequencePort):
             up=pulse['direction']=='up'
             kwargs['stop_when']=(lambda status:self._shoulder_angle(status)>=self.owner.scope['goalAngleDeg']) if up else (
                                 lambda status:self._shoulder_angle(status)<=self.owner.scope['goalAngleDeg'])
-            kwargs['monitor_policy']=(transport.CURRENT_SHORT_UP_DEADLINE_POLICY if up else
-                                      transport.CURRENT_SHORT_DOWN_DEADLINE_POLICY)
+            kwargs['monitor_policy']=self.owner.scope['shortTaskPolicy'][pulse['direction']+'MonitorTimingPolicy']
         receipt=super()._execute_validated(pulse, tick, before_run=before_run,**kwargs)
         if self.owner.scope['schemaVersion']==TARGET_UP_SCHEMA:
             receipt['stopReason']='observed_target_up_goal' if receipt['stoppedEarly'] else 'requested_period_complete'
