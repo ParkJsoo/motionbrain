@@ -11,7 +11,8 @@ from tests.test_m4_noncontact import scope as noncontact_scope
 class RecordedScopeTests(unittest.TestCase):
     def setUp(self):
         self.f = fixtures.SourceAuditTests(); self.f.setUp(); self.addCleanup(self.f.doCleanups)
-        self.old = next(iter(core.RECORDED_IMPLEMENTATION_DIGESTS))
+        # NONCONTACT 도입 전 구현을 명시한다. frozenset 순서는 계약이 아니다.
+        self.old = 'ed3333408c4662d442c7bd61bec579c1da16dd8e9eae79448f261f57d9b249ba'
         self.scope = copy.deepcopy(self.f.planned)
         self.scope['implementationSha256'] = self.old
 
@@ -56,7 +57,7 @@ class RecordedBindingTests(unittest.TestCase):
     def test_offline_binding_does_not_grant_live_route_execution(self):
         import json
         f = fixtures.BindingTests(); f.setUp(); self.addCleanup(f.doCleanups)
-        f.scope['implementationSha256'] = next(iter(core.RECORDED_IMPLEMENTATION_DIGESTS))
+        f.scope['implementationSha256'] = 'ed3333408c4662d442c7bd61bec579c1da16dd8e9eae79448f261f57d9b249ba'
         path = f.local/'scope.json'; path.write_text(json.dumps(f.scope))
         f.binding['scopeSha256'] = batch_m4.sha(path.read_bytes())
         checked = batch_m4.validate_binding(f.plan,f.condition,f.binding,f.repo,recorded=True)

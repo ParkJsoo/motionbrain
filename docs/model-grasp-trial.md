@@ -2,6 +2,37 @@
 
 [상대 상태 모델](relative-action-selection.md) · [수집 방법](manual-data-collection.md)
 
+## 재관측 기반 전체 과업의 오프라인 연결
+
+`learning/finite_task_cycle.py`는 접근→닫기→들기·보유→내려놓기→해제를 유한 예산으로 연결한다. `learning/task_cycle_workflow.py`는 필요한 수동 수집, 원본 감사, 학습·모델 고정, 전체 시도 한 번을 같은 호출 경로로 잇는다. 기본 장치 포트·주소·인증·자동 실물 진입점은 없다. 합성 전이와 가짜 장치로 확인한 소프트웨어 연결이며 실제 전체 모델 제어 성공이나 현재 장치 실행 허용을 뜻하지 않는다.
+
+| 구성 | 역할과 한계 |
+| --- | --- |
+| `task_transition_data.audit_manual_m4` | 완료된 수동 M4의 scope·단일 RUN·실제 출력·OFF·두 영상·시간창을 재감사한다. 실패·불명확 결과는 학습 자료로 바꾸지 않는다. |
+| `task_transition_data.build_manual_m4_row` | 현재 등록 계약과 원본 픽셀·센서 시각에 묶인 명시 수치 주석을 개발 전이로 변환한다. 과거 원통의 ROI를 새 물체에 자동 적용하지 않는다. |
+| `task_action_models.fit_m4/select_m4` | 명령·지지 상태별 최소 두 전이로 영상 변화와 시작각 변화를 학습하고 UP/DOWN과 STOP을 비교한다. 각 입력 축의 학습 범위를 벗어나면 거절한다. 이 범위는 확률적 신뢰구간이나 실물 안전 보장이 아니다. |
+| `task_action_models.select_open` | 기존 shaft 예측기를 재사용해 OPEN과 STOP을 비교한다. 탁상 지지·M4 자세·출력/기간 제한을 검사한다. 기존 CLOSE 전용 선택기는 변경하지 않는다. |
+| `coverage_m4` | 부분 자료와 명시한 다음 시작 상태를 비교해 부족 행 수·관측 범위·추가 상태 수집 필요를 보고한다. 행 두 개만으로 모든 중간 상태를 지원한다고 판정하지 않는다. |
+| `FrozenCycleModelBank` | 접근·닫기·M4·OPEN 모델 파일을 SHA로 고정하고 실제 선택 함수에 연결한다. 동작 중 학습하지 않는다. |
+| `CollectionToCycle` | 지정한 수집만 단발 호출하고 감사·고정 후 `FiniteTaskCycle`을 한 번 실행한다. 수집 실패·불명확 결과 뒤에는 학습이나 모델 시도로 넘어가지 않는다. |
+
+M4 상태는 `objectRisePx`, `toolRisePx`, `slipDyPx`, `startAngleDeg`이며 입력에는 실행 전 영상·시작각·지지 상태만 사용한다. 실제 PWM·실제 출력 기간·사후 센서는 정답 또는 실행 증거다. 영상 수치의 주석은 사람 보조이며 인식 모델의 정확도로 세지 않는다. 모델은 계속 `controlEligible=false`다.
+
+실행기는 매 관측에서 모델·구도·부팅·두 영상·원본 감사·유효시간을 확인한다. 목표 판정도 별도의 `verify_goal`로 원본 증거를 검사해야 한다. 들기 완료는 마지막 출력 OFF 뒤의 두 관측과 보유 기간을 요구하고, 해제 완료는 탁상 지지와 양턱 분리를 요구한다. 픽셀 목표만으로 접촉·보유를 판정하지 않는다. 이미 달성된 단계를 건너뛰면 그 사실을 기록하며, 필수 동작이 빠진 결과를 전체 모델 실행으로 세지 않는다. 사람 판독 보조는 `humanAssisted`로 별도 기록한다.
+
+`ScopedCycleExecutor`는 M4에 기존 `M4UpCommissioning`만 사용한다. 명시적으로 승인된 scope SHA와 동일 후보·부팅·콜백을 대조한다. 일반 `SequencePort`에서 금지한 M4 UP을 우회해 호출하지 않는다. M4의 선택적 `task_hooks` 경로는 첫 동작 전 관측을 ARM 뒤로 지연해 한 번만 촬영하며 기존 재촬영 금지를 유지한다. 최종 판단은 RUN 요청 시간 안에서 블로킹 촬영 없이 검사한다. 기존 단발 각도 검사에 더해 전체 기준각의 3° 관측 중단 조건을 실행 중 상태 판독에도 적용한다. 이는 센서 판독에 따른 중단 조건이며 연속 시간의 물리 이동 보장은 아니다. 긴급 OFF 증명은 자세 검사 실패와 분리한다.
+
+다음 현장 연결 시에는 현재 촬영 계약·수치 관측자·접촉/지지 판독, 승인된 수집 목록, 모델 고정 경로, 관절별 포트와 actor factory를 명시적으로 결합한다. `m4_factory`는 `(actor, confirmed_scope_sha256)`을 반환하고 다른 관절은 기존 `after_armed_before_run`/`before_run`을 연결해야 한다. 수집 명령과 모델 명령의 분모는 분리한다. 장치 부팅이나 촬영 조건이 바뀌면 저장된 전이의 재사용 가능성을 확인하며 계약을 자동 바꿔 끼우지 않는다.
+
+장치 없이 연결과 실패 경계를 검증하는 명령:
+
+```sh
+python3 -m unittest tests.test_task_transition_data tests.test_task_action_models \
+  tests.test_finite_task_cycle tests.test_task_cycle_workflow
+```
+
+검증은 실제 모델 선택 함수를 연결한 합성 다섯 단계와 복수 재관측, 최소 수집→학습→고정→전체 시도, 지원 범위 밖 거절, 실패 무재송, 예산, 만료, 단계별 증거, OFF를 포함한다. 실물 결과와 반복 성공률은 별도 검증 대상이다.
+
 닫기 이후 들기는 [M4 위 방향 전용 경로](m4-up-commissioning.md)의 별도 고정 모델과 연결한다. 수동 식별·고정 평가·모델 선택을 구분한다. 기존 3점 관측 연결은 [2026-11-08 기록](evidence/2026-11-08-close-lift-integration.md), 별도 M1 scalar 코어의 실제 닫기·재선택과 관측 기한 실패는 [2026-11-13 기록](evidence/2026-11-13-model-selected-m1-close.md)을 따른다.
 
 `learning/model_grasp_trial.py`는 저장된 물체·양턱 상대 상태 모델로 위치 조정 후보를 선택하고, 실제 새 관측으로 목표 도달을 확인한 뒤 닫기 후보 하나를 선택하는 제한 시험 코어다. 기존 `relative_action_learning.select()`와 `SequencePort`를 재사용한다. 생성자·모델 로드는 장치에 접근하지 않는다. 기본 실행 CLI나 장치 검색·자동 학습은 제공하지 않는다.

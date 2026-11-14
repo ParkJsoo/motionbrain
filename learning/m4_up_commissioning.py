@@ -175,6 +175,7 @@ RETURN_RECORDED_DIGEST = 'b2b1e07021854b2458f069e05dbfa7512df24d5f310383d4433933
 KNOWN_CONTACT650_RECORDED_DIGEST = 'a6e0f896ffc144e8b47a09a52623eb1b1f47deabc88705af1d25c1a25a2c1946'
 KNOWN_CONTACT500_RECORDED_DIGEST = '8e5a6e077280e0c80690b2ee21368a9cca6747e76a6ca3c9a20c614c0c7cfd21'
 RECORDED_IMPLEMENTATION_DIGESTS = frozenset({
+    '87239bd44387e1e1ca522f9be5af2865eac376868c4c14efee20e001b503cccc',
     KNOWN_CONTACT500_RECORDED_DIGEST, KNOWN_CONTACT650_RECORDED_DIGEST,
     '0774c7e4a2914f9e7c58236c9953d913f5aa2974b2e195b3574740d9cbb6238c',
     'ed3333408c4662d442c7bd61bec579c1da16dd8e9eae79448f261f57d9b249ba',
@@ -422,6 +423,8 @@ class _CommissioningPort(transport.SequencePort):
         angle = self._shoulder_angle(status)
         self.owner.angles.append(dict(at=self.clock.monotonic(), angleDeg=angle, state=status['state']))
         if self.proving_off: return  # Original OFF proof stays distinct from a local excursion failure.
+        if getattr(self.owner,'task_hooks',None) is not None:
+            self.owner.task_hooks['status_guard'](copy.deepcopy(status))
         scope = self.owner.scope
         if not self.may_have_run:
             require(abs(angle-scope['expectedStartAngleDeg']) <= scope['startAngleToleranceDeg'], 'm4_start_context_changed')
@@ -445,8 +448,16 @@ class M4UpCommissioning:
     latest/check must be nonblocking and must never capture or perform HTTP.
     Only run() acquires the fixed shared journal and may contact a controller.
     """
-    def __init__(self, scope, observer, token, store, *, evidence_root, clock=time, registration=None, model=None):
+    def __init__(self, scope, observer, token, store, *, evidence_root, clock=time, registration=None, model=None,
+                 task_hooks=None):
         self.scope = validate_scope(scope); self.digest = plan_digest(self.scope)
+        require(task_hooks is None or (isinstance(task_hooks,dict) and set(task_hooks) ==
+                {'prepare','before_run','status_guard','decisionSha256'}
+                and all(callable(task_hooks[k]) for k in ('prepare','before_run','status_guard'))
+                and _hash(task_hooks['decisionSha256'])
+                and self.scope['schemaVersion'] in (SCHEMA,CONTACT_MANUAL650_SCHEMA,RETURN_SCHEMA)),
+                'm4_task_hooks_require_scoped_fixed_actor')
+        self.task_hooks = task_hooks
         self.selection_kind = ('manual_lift_fixed_profile' if self.scope['schemaVersion']==LIFT_SCHEMA
                                else 'manual_commissioning_fixed_profile')
         if self.scope['schemaVersion']==RETURN_SCHEMA:
@@ -586,6 +597,8 @@ class M4UpCommissioning:
                 and all(now-frame['sourceEarliest'] <= self.scope['maxObservationAgeSeconds']
                         for frame in frames.values()), 'm4_pre_run_guard_stale')
         self._require_fresh_controller_proof(now)
+        if self.task_hooks is not None:
+            self.task_hooks['before_run']()
         if self.learning:
             admission_started = self.clock.monotonic()
             self._require_pinned_native_window(frames['external'], admission_started)
@@ -605,6 +618,13 @@ class M4UpCommissioning:
 
     def _prepare_dispatch_inputs(self):
         if not self.learning:
+            if self.task_hooks is not None:
+                # Fresh native sources and parent selection are acquired after
+                # ARM, before RUN intent, outside the RUN request deadline.
+                self.before = self.observer.observe(after_off=None, deadline=self.deadline, tick=self._tick)
+                self.before_frames = self._observe(self.before)
+                self.store.write_json('before-observation.json',self.before)
+                self.task_hooks['prepare']()
             prepare_controller_proof(self.port,clock=self.clock,guard=self._guard,save=self.store.write_json)
             return
         for cycle in range(4):
@@ -665,6 +685,13 @@ class M4UpCommissioning:
             report.update(contactStateBefore='noncontact_empty', trialKind='noncontact_position')
         observer_started = claimed = False; phase = 'journal'
         try:
+            if self.task_hooks is not None:
+                # Actor-local fixed profile and parent model selection have
+                # separate provenance; do not label this as manual training.
+                report.update(parentModelDecisionSha256=self.task_hooks['decisionSha256'],
+                              parentModelSelected=True)
+                self.store.write_json('task-parent-decision-binding.json',dict(
+                    scopeSha256=self.digest,decisionSha256=self.task_hooks['decisionSha256']))
             self.journal = BoundedActionJournal(str(REPO/'.local/visual-actions/controller-commands.sqlite'), 10000)
             require(self.journal.readiness()['ready'], 'm4_shared_journal_unresolved')
             db = self.journal.connection
@@ -681,10 +708,12 @@ class M4UpCommissioning:
             phase = 'before_observation'; observer_started = True
             self.observer.start(deadline=self.deadline)
             if self.learning:self.observer.wait_pre_window(deadline=self.deadline,tick=lambda:self._tick(True))
-            self.before = self.observer.observe(after_off=None, deadline=self.deadline, tick=lambda: self._tick(True))
-            before_frames = self._observe(self.before); self._guard()
-            self.before_frames = copy.deepcopy(before_frames)
-            self.store.write_json('before-observation.json', self.before)
+            before_frames = None
+            if self.task_hooks is None:
+                self.before = self.observer.observe(after_off=None, deadline=self.deadline, tick=lambda: self._tick(True))
+                before_frames = self._observe(self.before); self._guard()
+                self.before_frames = copy.deepcopy(before_frames)
+                self.store.write_json('before-observation.json', self.before)
             if self.learning:
                 source,features=self._measure('before',self.before,before_frames)
                 report['beforeFeatures']=features
@@ -706,6 +735,8 @@ class M4UpCommissioning:
             phase = 'pulse'; self.in_pulse = True
             try: receipt = self.port._execute_validated(copy.deepcopy(self.selected_pulse), self._tick, before_run=self._before_run)
             finally: self.in_pulse = False
+            if self.task_hooks is not None:
+                before_frames = self.before_frames
             report['receipt'] = receipt
             report['modelSelectedCommandExecuted']=bool(self.learning and self.model_selection and self.port.may_have_run)
             phase = 'after_observation'
