@@ -74,6 +74,9 @@ class ApproachExternalGuard:
     def _expected_m4(self):
         return 196.17
 
+    def _expected_jaw_span(self):
+        return 123.
+
     def __init__(self, repository, config_binding, recorder, port, store, *, clock=time):
         self.repository = Path(repository).resolve(strict=True)
         self.recorder, self.port, self.store, self.clock = recorder, port, store, clock
@@ -262,6 +265,9 @@ class ApproachExternalGuard:
                 'approach_external_object_clipped')
         return dict(objectBox=[ox, oy, ox+w, oy+h], objectCenter=[ox+w/2, oy+h/2], objectArea=area)
 
+    def _review_status(self):
+        return self.port.check_idle()
+
     def review(self, record, result, *, deadline, tick):
         require(not self.active, 'approach_external_review_during_output')
         require(self.clock.monotonic() < deadline, 'approach_external_deadline')
@@ -272,7 +278,7 @@ class ApproachExternalGuard:
                 'approach_external_gripper_identity')
         image, frame = self._frame()
         external = self._measure(image)
-        status = self.port.check_idle()
+        status = self._review_status()
         angle = SequencePort._shoulder_angle(status)
         require(status['shoulderAngle'].get('active') is False and
                 abs(angle-self.tracking['expectedM4']) <= self.tracking['maximumM4Difference'],
@@ -280,7 +286,7 @@ class ApproachExternalGuard:
         require(max(abs(a-b) for a, b in zip(external['objectBox'], self.fixed_object['external']['objectBox']))
                 <= self._object_box_limit(),
                 'approach_external_fixed_object_extent_changed')
-        require(len(result['state']) == 3 and abs(result['state'][2]-123) <= 3,
+        require(len(result['state']) == 3 and abs(result['state'][2]-self._expected_jaw_span()) <= 3,
                 'approach_external_jaw_span_changed')
         box = result['object']['box']
         require(isinstance(box, list) and len(box) == 4 and 30 <= box[2]-box[0] <= 52,
