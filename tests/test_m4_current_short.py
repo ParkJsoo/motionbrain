@@ -108,14 +108,14 @@ class ShortMonitorTests(unittest.TestCase):
         self.assertEqual(len(self.RUNs()),1);self.assertEqual(len(self.STOPs()),1)
         self.assertTrue(self.port.off_verified)
     def test_both_caps_have_complete_safety_status_and_STOP_priority(self):
-        for direction,cap in (('up',350),('up',450),('up',550),('down',350),('down',450),('down',550)):
+        for direction,cap in (('up',350),('up',450),('up',550),('up',600),('down',350),('down',450),('down',550),('down',600)):
             self.setUp();policy=short.current_short_policy(cap);self.pulse=short.short_task_pulse(direction,policy)
             self.policy=policy[direction+'MonitorTimingPolicy']
             r=self.execute();self.assertTrue(r['currentShortMonitor']['completeSafetyStatusVerified'])
             self.assertLessEqual(self.STOPs()[0]['startedAt'],r['dispatchAfter']+self.pulse['durationMs']/1000+.001)
             self.assertEqual(len(self.RUNs()),1);self.assertTrue(r['offVerified'])
     def test350_and450_monitor_profiles_cannot_be_swapped(self):
-        for cap,wrong in ((350,short.UP_MONITOR_POLICY450),(450,short.UP_MONITOR_POLICY),(550,short.UP_MONITOR_POLICY450),(450,short.UP_MONITOR_POLICY550)):
+        for cap,wrong in ((350,short.UP_MONITOR_POLICY450),(450,short.UP_MONITOR_POLICY),(550,short.UP_MONITOR_POLICY450),(450,short.UP_MONITOR_POLICY550),(600,short.UP_MONITOR_POLICY550),(550,short.UP_MONITOR_POLICY600)):
             with self.subTest(cap=cap),self.assertRaises(ValueError):
                 transport.validate_monitor_policy(short.short_task_pulse('up',short.current_short_policy(cap)),wrong)
 
@@ -269,3 +269,33 @@ class ShortRawDataDown250Tests(ShortRawDataTests):
 class ShortModelBindingDown250Tests(ShortModelBindingTests):
     def setUp(self):
         super().setUp();self.policy=short.current_short_policy(550,250)
+
+class ShortActor600Tests(ShortActorTests):
+    up_cap=600
+    down_cap=250
+
+class ShortRawData600Tests(ShortRawDataTests):
+    up_cap=600
+    down_cap=250
+    def test550_registration_cannot_relabel600_source(self):
+        reg,ann=self.o.annotations();reg['context']['executionPolicy']=short.current_short_policy(550,250)
+        ann['registrationSha256']=digest(reg)
+        with self.assertRaisesRegex(ValueError,'execution_policy_changed'):
+            self.data.build_manual_m4_row(self.o.root,reg,ann)
+
+class ShortModelBinding600Tests(ShortModelBindingTests):
+    def setUp(self):
+        super().setUp();self.policy=short.current_short_policy(600,250)
+
+class Recorded550CompatibilityTests(unittest.TestCase):
+    def test_only_exact550_250_recorded_contract_is_readable(self):
+        policy=short.current_short_policy(550,250)
+        original=dict(fixtures.scope(),schemaVersion=core.CURRENT_SHORT_TASK_SCHEMA,
+            pulse=short.short_task_pulse('up',policy),expectedStartAngleDeg=197.22,
+            startAngleToleranceDeg=.1,maxObservedDeltaDeg=.9,maxObservationAgeSeconds=3.,
+            goalAngleDeg=197.85,shortTaskPolicy=policy,implementationSha256=core.CURRENT_SHORT_550_DOWN250_RECORDED_DIGEST)
+        self.assertEqual(core.validate_recorded_scope(original),original)
+        with self.assertRaisesRegex(ValueError,'implementation_changed'):core.validate_scope(original)
+        for policy in (short.current_short_policy(600,250),short.current_short_policy(550,200)):
+            other=dict(original,shortTaskPolicy=policy,pulse=short.short_task_pulse('up',policy))
+            with self.assertRaisesRegex(ValueError,'recorded_implementation_unknown'):core.validate_recorded_scope(other)

@@ -1,8 +1,10 @@
 """현재 197.22° 탁상 코호트의 새 짧은 UP/DOWN 계획 정책.
 
 .9°는 센서 관측에 따른 거절 한도이며 물리 정지거리 보장이 아니다. 명령의
-UP350·450·550/DOWN200·250ms는 요청 cap이다. 명시한 각 정책과 기존 고정·TARGET·복구
+UP350·450·550·600/DOWN200·250ms는 요청 cap이다. 명시한 각 정책과 기존 고정·TARGET·복구
 정책을 자동 혼합하지 않는다.
+600ms 후반의 시동을 마지막200ms의 GET 없는 STOP 우선 구간에서 관측하지
+못할 수 있다. 목표각 정지나 펄스 기간에 비례하는 물리 효과를 보증하지 않는다.
 """
 from __future__ import annotations
 
@@ -15,17 +17,18 @@ POLICY_SCHEMA='motionbrain.m4_current_short_paired_policy.v1'
 UP_MONITOR_POLICY='m4-current-short-up-deadline-350-v1'
 UP_MONITOR_POLICY450='m4-current-short-up-deadline-450-v1'
 UP_MONITOR_POLICY550='m4-current-short-up-deadline-550-v1'
+UP_MONITOR_POLICY600='m4-current-short-up-deadline-600-v1'
 DOWN_MONITOR_POLICY='m4-current-short-down-deadline-200-v1'
 DOWN_MONITOR_POLICY250='m4-current-short-down-deadline-250-v1'
 
 
 def current_short_policy(up_duration_ms=350,down_duration_ms=200):
-    require(type(up_duration_ms) is int and up_duration_ms in (350,450,550),'current_short_UP_cap_required')
+    require(type(up_duration_ms) is int and up_duration_ms in (350,450,550,600),'current_short_UP_cap_required')
     require(type(down_duration_ms) is int and down_duration_ms in (200,250),'current_short_DOWN_cap_required')
     return dict(schemaVersion=POLICY_SCHEMA,tableReferenceDeg=197.22,upGoalAngleDeg=197.85,
         downGoalAngleDeg=197.22,originalGlobalReferenceDeg=195.29,originalGlobalUpperDeg=198.29,
         maxObservedDeltaDeg=.9,upPercent=50,upDurationCapMs=up_duration_ms,downPercent=35,downDurationCapMs=down_duration_ms,
-        upMonitorTimingPolicy={350:UP_MONITOR_POLICY,450:UP_MONITOR_POLICY450,550:UP_MONITOR_POLICY550}[up_duration_ms],
+        upMonitorTimingPolicy={350:UP_MONITOR_POLICY,450:UP_MONITOR_POLICY450,550:UP_MONITOR_POLICY550,600:UP_MONITOR_POLICY600}[up_duration_ms],
         downMonitorTimingPolicy=DOWN_MONITOR_POLICY if down_duration_ms==200 else DOWN_MONITOR_POLICY250)
 
 
