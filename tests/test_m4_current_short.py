@@ -16,7 +16,7 @@ class ShortActorTests(unittest.TestCase):
         fixtures.CommissioningTests.setUp(self)
         self.scope.update(schemaVersion=core.CURRENT_SHORT_TASK_SCHEMA,
             pulse=short.short_task_pulse('up'),expectedStartAngleDeg=197.22,
-            startAngleToleranceDeg=.1,maxObservedDeltaDeg=1.,maxObservationAgeSeconds=3.,
+            startAngleToleranceDeg=.1,maxObservedDeltaDeg=.9,maxObservationAgeSeconds=3.,
             goalAngleDeg=197.85,shortTaskPolicy=short.current_short_policy())
         self.device.angle=197.22
         self.reset_actor()
@@ -48,12 +48,22 @@ class ShortActorTests(unittest.TestCase):
         self.assertEqual(r['receipt']['monitorTimingPolicy'],short.DOWN_MONITOR_POLICY)
         self.assertEqual(r['receipt']['stopReason'],'observed_current_short_down_goal')
         self.assertTrue(r['finalIdleOffVerified'])
-    def test_precise_drift_or_headroom_never_RUN(self):
-        self.device.angle=197.31 # precise tolerance passes, headroom fails
+    def test_precise_drift_never_RUN(self):
+        self.device.angle=197.33
         r=self.run_trial();self.assertFalse(r['mayHaveRun']);self.assertFalse(self.posts())
-        self.assertIn('m4_current_short_upper_headroom_insufficient',[e.get('code') for e in r['errors']])
-    def test_observed_one_degree_excursion_OFF_no_retry(self):
-        self.device.after_run=lambda d:setattr(d,'angle',198.24)
+        self.assertIn('m4_start_context_changed',[e.get('code') for e in r['errors']])
+    def test_observed_point9_excursion_OFF_no_retry(self):
+        self.device.after_run=lambda d:setattr(d,'angle',198.13)
+        r=self.run_trial();self.assertEqual(r['status'],'failed',r)
+        self.assertTrue(r['finalIdleOffVerified']);self.assertEqual(sum(p=={'action':'run'} for _,p in self.posts()),1)
+    def test_entire_start_tolerance_domain_has_original_headroom(self):
+        for start in (197.12,197.22,197.31,197.32):
+            with self.subTest(start=start):
+                self.assertLessEqual(start+self.scope['maxObservedDeltaDeg'],198.29)
+                self.device.angle=start
+                self.trial.port._check_status(self.device.status(),'IDLE')
+    def test_reverse_direction_observation_still_rejected(self):
+        self.device.after_run=lambda d:setattr(d,'angle',197.10)
         r=self.run_trial();self.assertEqual(r['status'],'failed',r)
         self.assertTrue(r['finalIdleOffVerified']);self.assertEqual(sum(p=={'action':'run'} for _,p in self.posts()),1)
     def test_changed_cap_or_policy_rejected(self):
@@ -127,7 +137,7 @@ class ShortRawDataTests(unittest.TestCase):
         self.addCleanup(self.o.doCleanups);fx=self.o.fixture
         self.o.angle_patch.stop();p=patch.object(data,'_angle',return_value=197.22);p.start();self.addCleanup(p.stop)
         s=fx.read('scope.json');s.update(schemaVersion=short.SCHEMA,expectedStartAngleDeg=197.22,
-            startAngleToleranceDeg=.1,maxObservationAgeSeconds=3.,goalAngleDeg=197.85,shortTaskPolicy=short.current_short_policy())
+            startAngleToleranceDeg=.1,maxObservedDeltaDeg=.9,maxObservationAgeSeconds=3.,goalAngleDeg=197.85,shortTaskPolicy=short.current_short_policy())
         fx.write('scope.json',s)
         r=fx.read('result.json');r.update(schemaVersion=short.SCHEMA,scopeSha256=digest(s))
         r['receipt'].update(stoppedEarly=False,stopReason='requested_period_complete',

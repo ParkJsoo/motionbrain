@@ -162,7 +162,7 @@ def validate_scope(scope):
             and type(scope['defaultSpeed']) is int and scope['defaultSpeed'] == 255
             and type(scope['maxCommands']) is int and scope['maxCommands'] == 1,
             'm4_exact_single_pulse_required')
-    for k, value in [('startAngleToleranceDeg', .10 if is_band_recovery or is_current_short else .25 if is_target_up else .5), ('maxObservedDeltaDeg', 3. if is_learning or scope['schemaVersion'] in (CONTACT_SHORT_SCHEMA,CONTACT_MANUAL650_SCHEMA,RETURN_SCHEMA,TARGET_UP_SCHEMA) else 1.),
+    for k, value in [('startAngleToleranceDeg', .10 if is_band_recovery or is_current_short else .25 if is_target_up else .5), ('maxObservedDeltaDeg', .9 if is_current_short else 3. if is_learning or scope['schemaVersion'] in (CONTACT_SHORT_SCHEMA,CONTACT_MANUAL650_SCHEMA,RETURN_SCHEMA,TARGET_UP_SCHEMA) else 1.),
                      ('maxSeconds', 60.), ('maxObservationAgeSeconds', 3. if is_current_short else 10.), ('postOffSeconds', 3.)]:
         require(transport.finite_number(scope[k]) and scope[k] == value, 'm4_fixed_limits_required')
     require(transport.finite_number(scope['expectedStartAngleDeg'])

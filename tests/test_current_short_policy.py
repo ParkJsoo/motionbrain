@@ -8,9 +8,10 @@ class CurrentShortPolicyTests(unittest.TestCase):
         policy=current_short_policy();self.assertEqual(validate_current_short_policy(policy),policy)
         self.assertEqual((short_task_pulse('up')['durationMs'],short_task_pulse('down')['durationMs']),(350,200))
         self.assertEqual(policy['originalGlobalUpperDeg'],198.29)
-        self.assertLessEqual(policy['tableReferenceDeg']+policy['maxObservedDeltaDeg'],policy['originalGlobalUpperDeg'])
+        self.assertEqual(policy['maxObservedDeltaDeg'],.9)
+        self.assertLessEqual(policy['tableReferenceDeg']+.10+policy['maxObservedDeltaDeg'],policy['originalGlobalUpperDeg'])
     def test_no_boolean_cap_or_changed_goal_global_or_monitor_policy(self):
-        for key,value in [('upDurationCapMs',650),('downDurationCapMs',400),('maxObservedDeltaDeg',3.),
+        for key,value in [('upDurationCapMs',650),('downDurationCapMs',400),('maxObservedDeltaDeg',1.),('maxObservedDeltaDeg',3.),
                           ('upPercent',True),('tableReferenceDeg',195.29),('downGoalAngleDeg',196.59),
                           ('upGoalAngleDeg',198.0),('originalGlobalUpperDeg',199.),
                           ('upMonitorTimingPolicy','m4-target-up-deadline-650-v1')]:

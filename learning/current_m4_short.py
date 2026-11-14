@@ -1,6 +1,6 @@
 """현재 197.22° 탁상 코호트의 새 짧은 UP/DOWN 계획 정책.
 
-1°는 센서 관측에 따른 거절 한도이며 물리 정지거리 보장이 아니다. 명령의
+.9°는 센서 관측에 따른 거절 한도이며 물리 정지거리 보장이 아니다. 명령의
 350/200ms는 요청 cap이다. 기존 고정·TARGET·복구 정책과 자동 혼합하지 않는다.
 """
 from __future__ import annotations
@@ -18,7 +18,7 @@ DOWN_MONITOR_POLICY='m4-current-short-down-deadline-200-v1'
 def current_short_policy():
     return dict(schemaVersion=POLICY_SCHEMA,tableReferenceDeg=197.22,upGoalAngleDeg=197.85,
         downGoalAngleDeg=197.22,originalGlobalReferenceDeg=195.29,originalGlobalUpperDeg=198.29,
-        maxObservedDeltaDeg=1.,upPercent=50,upDurationCapMs=350,downPercent=35,downDurationCapMs=200,
+        maxObservedDeltaDeg=.9,upPercent=50,upDurationCapMs=350,downPercent=35,downDurationCapMs=200,
         upMonitorTimingPolicy=UP_MONITOR_POLICY,downMonitorTimingPolicy=DOWN_MONITOR_POLICY)
 
 
