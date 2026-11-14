@@ -8,6 +8,7 @@ import json
 from hashlib import sha256
 from pathlib import Path
 import tempfile
+import threading
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock,patch
@@ -354,6 +355,47 @@ class FactoryTests(unittest.TestCase):
         bad=copy.deepcopy(self.scope)
         next(s for s in bad['stages'] if s['kind']=='lift')['commands'][0]['durationMs']=600
         with self.assertRaises(factory.FactoryPreflightError):factory._stage_contracts(self.asset_root,bad,self.assets)
+
+
+class EffectiveWarmupTests(unittest.TestCase):
+    def observer(self,*,effective=True,progress=True):
+        from learning.m4_effective_policy import SCHEMA
+        clock=Clock();observer=object.__new__(factory._ReadyObserver)
+        observer.clock=clock;observer.scope=dict(schemaVersion=SCHEMA if effective else factory.CURRENT_SHORT_TASK_SCHEMA)
+        observer.resource_check=Mock();observer.gripper=SimpleNamespace(capture=Mock())
+        first=dict(sourceEarliest=9.8,sourceLatest=9.9)
+        recorder=SimpleNamespace(lock=threading.Lock(),frames=[copy.deepcopy(first)],started=9.5,wait_ready=Mock())
+        def check():
+            if progress:recorder.frames.append(dict(sourceEarliest=clock.now-.1,sourceLatest=clock.now-.09))
+        recorder.check=Mock(side_effect=check);observer.recorder=recorder
+        return observer,first
+
+    def test_effective_waits_two_seconds_of_source_progress_without_retiming_or_capture(self):
+        observer,first=self.observer()
+        with patch.object(factory.M4DualCameraObserver,'start') as start:
+            observer.start(deadline=15.)
+        start.assert_called_once();self.assertGreaterEqual(observer.recorder.frames[-1]['sourceEarliest'],first['sourceLatest']+2.)
+        self.assertEqual(observer.recorder.frames[0],first);self.assertEqual(observer.recorder.started,9.5)
+        observer.gripper.capture.assert_not_called();observer.recorder.wait_ready.assert_called_once()
+
+    def test_old_short_start_does_not_wait_or_add_source_checks(self):
+        observer,_=self.observer(effective=False)
+        with patch.object(factory.M4DualCameraObserver,'start'):observer.start(deadline=15.)
+        self.assertEqual(observer.clock.now,10.);observer.recorder.check.assert_not_called()
+        observer.gripper.capture.assert_not_called()
+
+    def test_stalled_source_cannot_pass_by_host_sleep_and_deadline_remains_finite(self):
+        observer,first=self.observer(progress=False)
+        with patch.object(factory.M4DualCameraObserver,'start'),self.assertRaisesRegex(ValueError,'warmup_deadline'):
+            observer.start(deadline=10.2)
+        self.assertLessEqual(observer.clock.now,10.2);self.assertEqual(observer.recorder.frames,[first])
+        observer.gripper.capture.assert_not_called()
+
+    def test_source_check_crossing_deadline_cannot_pass_warmup(self):
+        observer,_=self.observer()
+        observer.resource_check.side_effect=lambda:setattr(observer.clock,'now',15.1)
+        with self.assertRaisesRegex(ValueError,'warmup_deadline'):
+            observer._wait_effective_native_warmup(15.)
 
 
 if __name__=='__main__':unittest.main()

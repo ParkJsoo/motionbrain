@@ -56,6 +56,15 @@ class EffectiveActorTests(unittest.TestCase):
  def test_wrong_ARM_cursor_aborts_without_RUN(self):
   self.observer.on_before=lambda record:self.trial.read_armed_off_epoch(self.trial.port.last_sequence+1)
   r=self.run_trial();self.assertFalse(r['mayHaveRun']);self.assertTrue(r['finalIdleOffVerified'])
+ def test_static_stationary_review_error_is_recorded_without_RUN_or_retake(self):
+  def rejected(record):raise ValueError('M4_stationary_picture_changed')
+  self.observer.on_before=rejected
+  result=self.run_trial()
+  self.assertEqual(result['commandOutcome'],'not_started')
+  self.assertFalse(result['mayHaveRun']);self.assertTrue(result['finalIdleOffVerified'])
+  self.assertEqual(self.observer.index,1)
+  self.assertFalse(any(payload=={'action':'run'} for _,payload in self.posts()))
+  self.assertIn(dict(phase='pulse',type='ValueError',code='M4_stationary_picture_changed'),result['errors'])
  def test_fresh_cached_external_before_ARM_is_rejected_without_retake(self):
   original=self.observer.start
   def start(**kwargs):original(**kwargs);self.clock.sleep(.5)

@@ -95,6 +95,7 @@ PUBLIC_FAILURE_CODES = frozenset({
     'm4_target_up_global_excursion','m4_target_up_already_at_goal',
     'm4_current_short_global_excursion','m4_current_short_upper_headroom_insufficient','m4_current_short_already_at_goal',
     'm4_effective_source_before_ARM','m4_effective_ARM_response_changed',
+    'M4_stationary_picture_changed',
     'm4_effective_armed_epoch_required','m4_effective_armed_epoch_changed',
     'm4_recovery_corridor_exceeded','m4_recovery_already_at_goal','m4_recovery_current_OFF_source_expired','m4_target_up_headroom_unverified',
     'm4_output_cursor_invalid','m4_output_cursor_regressed','m4_output_cursor_baseline_changed'})

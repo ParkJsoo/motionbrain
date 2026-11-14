@@ -6,6 +6,7 @@ CurrentCycleRuntime 소유다. 주소·인증·모델·helper 기본값이나 �
 from __future__ import annotations
 
 import copy
+import math
 from hashlib import sha256
 from pathlib import Path
 import time
@@ -193,6 +194,29 @@ class _ReadyObserver(M4DualCameraObserver):
         self.resource_check();super().start(deadline=deadline)
         remaining=deadline-self.clock.monotonic();require(remaining>0,'factory_native_start_deadline')
         self.recorder.wait_ready(timeout=min(15.,remaining))
+        if self.scope['schemaVersion']==EFFECTIVE_SCHEMA:
+            self._wait_effective_native_warmup(deadline)
+
+    def _wait_effective_native_warmup(self,deadline):
+        # Wait for source-time progress on this same recording, not another
+        # capture or relabelled frame. Gripper capture still happens after ARM.
+        with self.recorder.lock:
+            require(bool(self.recorder.frames),'factory_effective_native_first_frame_required')
+            first_latest=self.recorder.frames[0]['sourceLatest']
+        require(type(first_latest) in (int,float) and math.isfinite(first_latest),
+                'factory_effective_native_source_time_required')
+        threshold=first_latest+2.
+        while True:
+            now=self.clock.monotonic()
+            require(now<deadline,'factory_effective_native_warmup_deadline')
+            self.resource_check();self.recorder.check()
+            with self.recorder.lock:
+                latest=self.recorder.frames[-1]['sourceEarliest']
+            require(type(latest) in (int,float) and math.isfinite(latest),
+                    'factory_effective_native_source_time_required')
+            require(self.clock.monotonic()<deadline,'factory_effective_native_warmup_deadline')
+            if latest>=threshold:return
+            self.clock.sleep(min(.05,deadline-self.clock.monotonic()))
 
     def check(self):
         self.resource_check();return super().check()
