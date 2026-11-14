@@ -4,6 +4,12 @@ from learning.current_m4_short import current_short_policy,validate_current_shor
 
 
 class CurrentShortPolicyTests(unittest.TestCase):
+    def test_down300_is_distinct_and_defaults_unchanged(self):
+        policy=current_short_policy(600,300)
+        self.assertEqual(validate_current_short_policy(policy),policy)
+        self.assertEqual(short_task_pulse('down',policy)['durationMs'],300)
+        self.assertNotEqual(policy,current_short_policy(600,250))
+        self.assertEqual(current_short_policy()['downDurationCapMs'],200)
     def test600_is_distinct_from550_and_defaults_unchanged(self):
         policy=current_short_policy(600,250)
         self.assertEqual(validate_current_short_policy(policy),policy)
@@ -17,7 +23,7 @@ class CurrentShortPolicyTests(unittest.TestCase):
         self.assertEqual(short_task_pulse('down',policy)['durationMs'],250)
         self.assertNotEqual(policy,current_short_policy(550))
         self.assertEqual(current_short_policy()['downDurationCapMs'],200)
-        with self.assertRaises(ValueError):current_short_policy(550,300)
+        with self.assertRaises(ValueError):current_short_policy(550,350)
         with self.assertRaises(ValueError):current_short_policy(550,True)
     def test_explicit550_policy_is_distinct_from450(self):
         policy=current_short_policy(550)

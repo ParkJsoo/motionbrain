@@ -274,6 +274,48 @@ class ShortActor600Tests(ShortActorTests):
     up_cap=600
     down_cap=250
 
+class ShortActorDown300Tests(ShortActorTests):
+    up_cap=600
+    down_cap=300
+
+class ShortRawDataDown300Tests(ShortRawDataTests):
+    up_cap=600
+    down_cap=300
+    def test250_registration_cannot_relabel300_source(self):
+        reg,ann=self.o.annotations();reg['context']['executionPolicy']=short.current_short_policy(600,250)
+        ann['registrationSha256']=digest(reg)
+        with self.assertRaisesRegex(ValueError,'execution_policy_changed'):
+            self.data.build_manual_m4_row(self.o.root,reg,ann)
+
+class ShortModelBindingDown300Tests(ShortModelBindingTests):
+    def setUp(self):
+        super().setUp();self.policy=short.current_short_policy(600,300)
+
+class ShortMonitorDown300Tests(ShortMonitorTests):
+    def test_down300_deadline_profile_and_late_first_read_OFF(self):
+        self.pulse=short.short_task_pulse('down',short.current_short_policy(600,300));self.policy=short.DOWN_MONITOR_POLICY300
+        with self.assertRaises(ValueError):transport.validate_monitor_policy(self.pulse,short.DOWN_MONITOR_POLICY250)
+        original=self.device.open;seen=[]
+        def slow(request,timeout):
+            if self.device.running and request.data is None and not seen:
+                seen.append(True);self.clock.sleep(.301)
+            return original(request,timeout)
+        self.device.open=slow
+        with self.assertRaisesRegex(TimeoutError,'request_deadline'):self.execute()
+        self.assertEqual(len(self.RUNs()),1);self.assertEqual(len(self.STOPs()),1);self.assertTrue(self.port.off_verified)
+
+class Recorded600CompatibilityTests(unittest.TestCase):
+    def test_only_exact600_250_original_is_readable(self):
+        policy=short.current_short_policy(600,250)
+        original=dict(fixtures.scope(),schemaVersion=core.CURRENT_SHORT_TASK_SCHEMA,
+            pulse=short.short_task_pulse('up',policy),expectedStartAngleDeg=197.22,
+            startAngleToleranceDeg=.1,maxObservedDeltaDeg=.9,maxObservationAgeSeconds=3.,
+            goalAngleDeg=197.85,shortTaskPolicy=policy,implementationSha256=core.CURRENT_SHORT_600_DOWN250_RECORDED_DIGEST)
+        self.assertEqual(core.validate_recorded_scope(original),original)
+        with self.assertRaisesRegex(ValueError,'implementation_changed'):core.validate_scope(original)
+        other=dict(original,shortTaskPolicy=short.current_short_policy(600,300))
+        with self.assertRaisesRegex(ValueError,'recorded_implementation_unknown'):core.validate_recorded_scope(other)
+
 class ShortRawData600Tests(ShortRawDataTests):
     up_cap=600
     down_cap=250
