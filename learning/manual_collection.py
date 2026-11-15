@@ -302,6 +302,13 @@ class ManualCollection:
         boot = _boot_identity({'bootId': controller_boot_id})
         return self._recover_no_motion_readonly(session_id, source_sha256, observed_boot=boot)
 
+    def recover_command_preparation_readonly(self, session_id, source_sha256, controller_boot_id,
+                                              *, original_controller_url):
+        """명령 의도 저장 후 HTTP 쓰기 전 실패의 현재 OFF만 별도 근거로 해소한다."""
+        from learning.command_preparation_recovery import recover_command_preparation_readonly
+        return recover_command_preparation_readonly(self, session_id, source_sha256,
+            controller_boot_id, original_controller_url=original_controller_url)
+
     def _recover_no_motion_readonly(self, session_id, source_sha256, *, observed_boot=None):
         observed = observed_boot is not None
         prefix = 'observed_no_run_recovery' if observed else 'failed_start_recovery'
