@@ -22,7 +22,7 @@ class M4GoalServiceNativeTests(unittest.TestCase):
             sdk = ['-isysroot', subprocess.check_output(['xcrun', '--sdk', 'macosx', '--show-sdk-path'], text=True).strip()]
         for enabled in (1,):
             binary = Path(cls.tmp.name) / str(enabled)
-            subprocess.run([compiler, '-std=c++11', '-Wall', '-Wextra', '-Werror', *sdk,
+            compiled = subprocess.run([compiler, '-std=c++11', '-Wall', '-Wextra', '-Werror', *sdk,
                 f'-DMOTIONBRAIN_ENABLE_M4_GOAL_GUARD={enabled}', '-I', str(ROOT / 'tests/native/m4_goal_stubs'),
                 '-I', str(ROOT / 'tests/native/service_stubs'),
                 '-I', str(ROOT / 'tests/native/stubs'), '-I', str(ROOT / 'src'),
@@ -30,7 +30,11 @@ class M4GoalServiceNativeTests(unittest.TestCase):
                 str(ROOT / 'src/control/m4_goal_service.cpp'),
                 str(ROOT / 'src/motor/motor_driver.cpp'),
                 str(ROOT / 'tests/native/test_m4_goal_service.cpp'), '-o', str(binary)],
-                check=True, capture_output=True, text=True, timeout=60)
+                check=False, capture_output=True, text=True, timeout=60)
+            if compiled.returncode != 0:
+                raise AssertionError(
+                    f'Native M4 goal service compilation failed (exit {compiled.returncode}).\n'
+                    f'{compiled.stdout}\n{compiled.stderr}')
             cls.binaries[enabled] = binary
 
     def test_service_driver_goal_fault_stop_deadline_and_no_replay(self):

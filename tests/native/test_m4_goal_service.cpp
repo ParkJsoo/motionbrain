@@ -41,7 +41,10 @@ int main(int argc,char** argv){
  assert(!motorControl.hasPendingOutput()); // HTTP RUN acceptance never starts output
  if(test==8){Serial.input="!";M4GoalService::pollStop();assert(!M4GoalService::pending());return 0;}
  step();assert(motorControl.m4GoalOwned());assert(!motorControl.setSpeed(1,20));
- for(int i=0;i<6;++i)step();assert(r.up?motorControl.getSpeed(4)>0:motorControl.getSpeed(4)<0);
+ for(int i=0;i<6;++i) {
+   step();
+ }
+ assert(r.up?motorControl.getSpeed(4)>0:motorControl.getSpeed(4)<0);
  if(test==1)shoulderAngleSensor.angle=197.20f;
  if(test>=20)shoulderAngleSensor.angle=r.goalDeg;
  if(test==2)shoulderAngleSensor.ready=false;
