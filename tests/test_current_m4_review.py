@@ -156,3 +156,48 @@ class StationaryM4ReviewTests(unittest.TestCase):
         self.anchor['sources']['external']['metadata']=self.json('old-actor-meta.json',self.extmeta)
         self.binding=self.json('repackaged-anchor.json',self.anchor)
         with self.assertRaisesRegex(ValueError,'independent_anchor_session'):self.reviewer()
+
+
+class StationaryPhotometricTests(unittest.TestCase):
+    def setUp(self):
+        rng=np.random.default_rng(923)
+        self.gray=rng.integers(40,191,(240,320),np.uint8)
+        self.anchor=self.image(self.gray)
+    @staticmethod
+    def image(gray):return encode(cv2.cvtColor(gray,cv2.COLOR_GRAY2BGR))
+    def compare(self,current):return same_picture(self.anchor,self.image(current),'gripper')
+    def offset(self,amount=5):return (self.gray.astype(np.int16)+amount).astype(np.uint8)
+    def test_global_brightness_offset_preserves_raw_difference_and_geometry(self):
+        for offset in (5,-5):
+            result=self.compare(self.offset(offset))
+            self.assertEqual(result['offsetGray'],offset)
+            self.assertEqual(result['meanAbsoluteGrayDifference'],abs(offset))
+            self.assertEqual(result['normalizedMeanAbsoluteGrayDifference'],0.)
+            self.assertEqual(result['photometricCorrection'],'global_additive_offset')
+            self.assertFalse(result['gainCorrected']);self.assertFalse(result['geometryAligned'])
+    def test_old_small_difference_path_remains_uncorrected(self):
+        result=self.compare(self.offset(2));self.assertEqual(result['photometricCorrection'],'none')
+        self.assertEqual(result['normalizedMeanAbsoluteGrayDifference'],2.)
+    def test_one_pixel_translation_with_brightness_is_not_aligned(self):
+        image=self.offset();image[65:165,65:255]=np.roll(image[65:165,65:255],1,axis=1)
+        with self.assertRaisesRegex(ValueError,'picture_changed'):self.compare(image)
+    def test_object_only_and_jaw_only_one_pixel_changes_are_rejected(self):
+        for y,x,h,w in ((95,140,30,20),(100,95,35,12)):
+            image=self.offset();image[y:y+h,x:x+w]=np.roll(image[y:y+h,x:x+w],1,axis=1)
+            with self.subTest(region=(y,x)),self.assertRaisesRegex(ValueError,'picture_changed'):self.compare(image)
+    def test_local_shadow_not_removed_as_global_offset(self):
+        image=self.offset();image[65:90,65:112]+=8
+        # This local change is small enough that the unchanged global NCC passes.
+        a=self.gray[65:165,65:255];b=image[65:165,65:255]
+        self.assertGreaterEqual(float(cv2.matchTemplate(b,a,cv2.TM_CCOEFF_NORMED)[0,0]),.995)
+        with self.assertRaisesRegex(ValueError,'picture_changed'):self.compare(image)
+    def test_gain_and_contrast_loss_not_corrected(self):
+        for gain in (1.15,.85):
+            image=np.rint(self.gray.astype(float)*gain+5).astype(np.uint8)
+            with self.subTest(gain=gain),self.assertRaisesRegex(ValueError,'picture_changed'):self.compare(image)
+    def test_clipping_is_not_recovered_by_subtraction(self):
+        image=self.offset();image[100:103,150:153]=255
+        with self.assertRaisesRegex(ValueError,'picture_changed'):self.compare(image)
+    def test_flat_image_cannot_identify_geometry_under_brightness_change(self):
+        anchor=self.image(np.full((240,320),100,np.uint8));current=self.image(np.full((240,320),105,np.uint8))
+        with self.assertRaisesRegex(ValueError,'roi_texture'):same_picture(anchor,current,'gripper')

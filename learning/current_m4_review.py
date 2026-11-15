@@ -46,9 +46,32 @@ def same_picture(anchor,current,camera):
     a,b=_gray(a)[y0:y1,x0:x1],_gray(b)[y0:y1,x0:x1]
     require(float(a.std())>=3. and float(b.std())>=3.,'M4_stationary_roi_texture')
     ncc=float(cv2.matchTemplate(b,a,cv2.TM_CCOEFF_NORMED)[0,0])
-    mean=float(np.abs(a.astype(np.float32)-b.astype(np.float32)).mean())
-    require(math.isfinite(ncc) and ncc>=.995 and mean<=3.,'M4_stationary_picture_changed')
-    return dict(ncc=ncc,meanAbsoluteGrayDifference=mean,roi=list(ROIS[camera]))
+    difference=b.astype(np.float32)-a.astype(np.float32)
+    mean=float(np.abs(difference).mean())
+    require(math.isfinite(ncc) and ncc>=.995,'M4_stationary_picture_changed')
+    offset=0.;corrected=False
+    if mean>3.:
+        # 전역 밝기 이동만 제거한다. gain/기하 정렬/구역별 보정은 하지 않는다.
+        # 포화로 잃은 대비를 추정 복구하거나 보정값을 clip하여 통과시키지 않는다.
+        require(not np.any((a==0)|(a==255)|(b==0)|(b==255)), 'M4_stationary_picture_changed')
+        offset=float(np.median(difference))
+        require(float(b.max())-255.<=offset<=float(b.min()),'M4_stationary_picture_changed')
+        residual=difference-offset
+        absolute=np.abs(residual)
+        tiles=[float(tile.mean()) for row in np.array_split(absolute,4,axis=0)
+               for tile in np.array_split(row,4,axis=1)]
+        require(float(absolute.mean())<=3. and float(residual.std())<=3.
+                and max(tiles)<=3.,'M4_stationary_picture_changed')
+        corrected=True
+    residual=difference-offset
+    return dict(ncc=ncc,meanAbsoluteGrayDifference=mean,roi=list(ROIS[camera]),
+                photometricCorrection='global_additive_offset' if corrected else 'none',
+                offsetGray=offset,normalizedMeanAbsoluteGrayDifference=float(np.abs(residual).mean()),
+                residualStandardDeviation=float(residual.std()),
+                maximumTileMeanAbsoluteGrayDifference=max(float(tile.mean())
+                    for row in np.array_split(np.abs(residual),4,axis=0)
+                    for tile in np.array_split(row,4,axis=1)),
+                gainCorrected=False,geometryAligned=False)
 
 
 class StationaryM4BeforeReviewer:
