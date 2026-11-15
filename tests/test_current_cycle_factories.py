@@ -152,7 +152,7 @@ class FactoryTests(unittest.TestCase):
         self.owner.close();self.assertEqual(self.owner.token,'')
         with self.assertRaisesRegex(ValueError,'contract_changed'):self.owner.preflight(self.scope,self.owner.assets)
 
-    def seed_m4(self):
+    def seed_m4(self,table=197.22):
         from tests.test_m4_up_commissioning import Observer,scope as actor_scope
         stage=self.stage('lift');raw_scope=actor_scope()
         raw_scope.update(hostClockId='M4-stationary-anchor-factory-test',context=self.assets['sourceStages']['lift']['sourceContext'])
@@ -165,7 +165,7 @@ class FactoryTests(unittest.TestCase):
         raw['gripper']['metadataSha256']=sha256(path.read_bytes()).hexdigest()
         labels=dict(operatorPresent=True,clearance=True,bilateralContact=True,tableSupported=True)
         record=dict(context=stage['context'],hostClockId=self.scope['hostClockId'],controllerBootId=self.scope['controllerBootId'],
-            state=dict(objectRisePx=0.,toolRisePx=0.,slipDyPx=0.,startAngleDeg=197.22),m4AngleDeg=197.22,
+            state=dict(objectRisePx=0.,toolRisePx=0.,slipDyPx=0.,startAngleDeg=table),m4AngleDeg=table,
             frames=[dict(frameId='e',sourceEarliest=self.clock.now-.1),dict(frameId='g',sourceEarliest=self.clock.now-.1)],
             outputSequence=5,auditedAt=self.clock.now,sourceRoute='idle')
         self.source.evidence['synthetic-idle']=dict(stage=stage,route='idle',record=record)
@@ -380,6 +380,45 @@ class FactoryTests(unittest.TestCase):
                 actor.observer.reviewer.read_epoch();epoch.assert_called_once_with(5)
             with patch.object(actor.observer.reviewer,'check_before_run') as memory:
                 actor._before_run();original.assert_called_once();memory.assert_called_once()
+        bad=copy.deepcopy(self.scope)
+        next(s for s in bad['stages'] if s['kind']=='lift')['commands'][0]['durationMs']=600
+        with self.assertRaises(factory.FactoryPreflightError):factory._stage_contracts(self.asset_root,bad,self.assets)
+
+    def test_explicit_current_table_guard_binds_fresh_factory_reference(self):
+        from learning import task_action_models as actions,m4_up_commissioning as core
+        from learning.m4_device_guard_policy import current_table_device_guard_policy as effective_policy,device_guard_task_pulse as effective_task_pulse,SCHEMA
+        from learning.task_cycle_workflow import FrozenCycleModelBank
+        policy=effective_policy(194.32);context=copy.deepcopy(self.bank.models['lift']['context']);context['executionPolicy']=policy
+        rows=fixtures.m4_rows()
+        for row in rows:
+            up=row['command']['direction']=='up';pulse=effective_task_pulse('up' if up else 'down',policy)
+            row.update(context=context,command={k:pulse[k] for k in ('joint','direction','percent','durationMs')})
+            row['before']['startAngleDeg']=194.32 if up else 194.95
+            row['after']['startAngleDeg']=194.95 if up else 194.32
+        ref=self.bind('device-guard-model.json',actions.fit_m4(rows,context));bindings=copy.deepcopy(self.bank.bindings)
+        bindings['lift']=bindings['lower']=dict(path=str(self.asset_root/ref['path']),sha256=ref['sha256'])
+        # Fresh explicit references are required; old table references cannot
+        # be silently reused even though the command percentage is identical.
+        for kind in ('approach','close','release'):
+            self.assets['sourceStages'][kind]['guardConfig']=self.bind(kind+'-fresh-table.json',
+                dict(static='synthetic fresh contract',referenceM4Deg=194.32))
+        self.stage('release')['target']['expectedM4AngleDeg']=194.32
+        self.stage('lift')['target']['startAngleDeg']=194.95
+        self.stage('lower')['target']['startAngleDeg']=194.32
+        self.rebind_bank(FrozenCycleModelBank(bindings,allow_development_approach=True))
+        stage,command,hooks,native=self.seed_m4(194.32)
+        with patch.object(core,'REPO',self.repo),patch('learning.lossless_frame.decode',side_effect=native.decode),\
+             patch('learning.current_m4_review.measure',return_value={}),patch.object(core.M4UpCommissioning,'_before_run') as original:
+            actor,_=self.owner.m4(stage,command,hooks)
+            self.assertEqual(actor.scope['schemaVersion'],SCHEMA);self.assertEqual(actor.scope['deviceGuardPolicy'],policy)
+            self.assertNotIn('shortTaskPolicy',actor.scope);self.assertEqual(actor.scope['pulse']['durationMs'],1200)
+            with patch.object(actor,'read_armed_off_epoch',return_value={}) as epoch:
+                actor.observer.reviewer.read_epoch();epoch.assert_called_once_with(5)
+            with patch.object(actor.observer.reviewer,'check_before_run') as memory:
+                actor._before_run();original.assert_called_once();memory.assert_called_once()
+        bad_assets=copy.deepcopy(self.assets)
+        bad_assets['sourceStages']['close']['guardConfig']=self.bind('old-table.json',dict(referenceM4Deg=197.22))
+        with self.assertRaises(factory.FactoryPreflightError):factory._stage_contracts(self.asset_root,self.scope,bad_assets)
         bad=copy.deepcopy(self.scope)
         next(s for s in bad['stages'] if s['kind']=='lift')['commands'][0]['durationMs']=600
         with self.assertRaises(factory.FactoryPreflightError):factory._stage_contracts(self.asset_root,bad,self.assets)

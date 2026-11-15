@@ -1745,6 +1745,11 @@ void MotionBrainWebServer::handleSequence() {
          !NumericValidation::real(server_.arg("goalDeg").c_str(),192.29f,198.29f,r.goalDeg)) {
         sendErrorJson(400,"Invalid guard request");return;
       }
+      const bool currentPolicy=strcmp(r.policySha256,m4_goal::CURRENT_POLICY_SHA)==0;
+      if(currentPolicy ? !NumericValidation::real(server_.arg("tableReferenceDeg").c_str(),192.29f,197.39f,r.tableReferenceDeg)
+                       : server_.hasArg("tableReferenceDeg")) {
+        sendErrorJson(400,"Invalid guard table reference");return;
+      }
       r.up=direction=="up";r.percent=speed;r.durationMs=duration;
       accepted=M4GoalService::queue(r);
     } else accepted=M4GoalService::run(r.nonce,r.bootId,r.scopeSha256,r.policySha256);

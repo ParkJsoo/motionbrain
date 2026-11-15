@@ -48,3 +48,21 @@ class M4GoalServiceNativeTests(unittest.TestCase):
                        policySha256=POLICY_SHA256, expectedStartDeg=197.75, goalDeg=197.22)
         record = capability(response, request, state='terminal', pulse=device_guard_task_pulse('down'))
         self.assertEqual(record['reason'], 'goal')
+
+    def test_current_table_float32_terminal_matches_python_at_all_boundaries(self):
+        import json
+        from learning.m4_device_guard_transport import capability, CURRENT_POLICY_SHA256, validate_request
+        from learning.m4_device_guard_policy import device_guard_task_pulse, current_table_device_guard_policy
+        for i,table in enumerate((194.32,192.29,197.39,194.32005,194)):
+            for j,direction in enumerate(('up','down')):
+                with self.subTest(table=table,direction=direction):
+                    raw=subprocess.check_output([str(self.binaries[1]),str(20+2*i+j)],text=True,timeout=5)
+                    response=json.loads('{'+raw.strip()+'}')
+                    policy=current_table_device_guard_policy(table)
+                    pulse=device_guard_task_pulse(direction,policy)
+                    request=dict(nonce='b'*32,bootId='a'*32,scopeSha256='c'*64,policySha256=CURRENT_POLICY_SHA256,
+                        tableReferenceDeg=table,expectedStartDeg=table if direction=='up' else round(table+.63,5),
+                        goalDeg=policy['upGoalAngleDeg' if direction=='up' else 'downGoalAngleDeg'])
+                    validate_request(request,pulse)
+                    record=capability(response,request,state='terminal',pulse=pulse)
+                    self.assertEqual(record['reason'],'goal')

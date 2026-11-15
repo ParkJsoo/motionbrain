@@ -39,7 +39,7 @@ class ScopedCycleExecutor:
         from learning.m4_up_commissioning import M4UpCommissioning, CONTACT_MANUAL650_SCHEMA, SCHEMA, RETURN_SCHEMA, TARGET_UP_SCHEMA, target_up_policy, validate_target_up_policy
         from learning.current_m4_short import SCHEMA as SHORT_SCHEMA, POLICY_SCHEMA as SHORT_POLICY_SCHEMA, validate_current_short_policy, short_task_pulse
         from learning.m4_effective_policy import SCHEMA as EFFECTIVE_SCHEMA,POLICY_SCHEMA as EFFECTIVE_POLICY_SCHEMA,validate_effective_policy,effective_task_pulse
-        from learning.m4_device_guard_policy import SCHEMA as DEVICE_SCHEMA,POLICY_SCHEMA as DEVICE_POLICY_SCHEMA,validate_device_guard_policy,device_guard_task_pulse
+        from learning.m4_device_guard_policy import SCHEMA as DEVICE_SCHEMA,POLICY_SCHEMA as DEVICE_POLICY_SCHEMA,POLICY_SCHEMAS as DEVICE_POLICY_SCHEMAS,validate_device_guard_policy,device_guard_task_pulse
         from learning.supervised_transport import SequencePort
         require(safety['maximumM4ExcursionDeg']==3.,'cycle_M4_excursion_policy')
         def monitor(status):
@@ -51,7 +51,7 @@ class ScopedCycleExecutor:
                     'cycle_active_M4_total_excursion')
         hooks=dict(prepare=prepare,before_run=before_run,status_guard=monitor,decisionSha256=digest(decision))
         policy=stage.get('context',{}).get('executionPolicy')
-        device_policy=isinstance(policy,dict) and policy.get('schemaVersion')==DEVICE_POLICY_SCHEMA
+        device_policy=isinstance(policy,dict) and policy.get('schemaVersion') in DEVICE_POLICY_SCHEMAS
         effective_policy=isinstance(policy,dict) and policy.get('schemaVersion')==EFFECTIVE_POLICY_SCHEMA
         short_policy=isinstance(policy,dict) and policy.get('schemaVersion')==SHORT_POLICY_SCHEMA
         if policy is not None:

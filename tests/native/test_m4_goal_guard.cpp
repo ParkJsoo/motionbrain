@@ -26,5 +26,23 @@ int main(int argc,char** argv){
  if(n==10){Guard g;auto r=request();assert(begin(g,r,snapshot(0xfffffff0U)));assert(!g.tick(snapshot(4)));assert(g.tick(snapshot(24,197.22f)));assert(g.current()->firstTickDelayMs==20);assert(g.current()->maxTickGapMs==20);}
  if(n==11){Guard g;assert(begin(g,request()));assert(g.cancel("owner_override",1010));assert(!g.cancel("clear",1020));assert(!strcmp(g.current()->reason,"owner_override"));g.confirmOff(1011,false);assert(!g.current()->offVerified);}
  if(n==12){for(int mode=0;mode<3;++mode){Guard g;auto r=request();assert(begin(g,r));assert(g.cancel("fault",1010));if(mode==1)g.confirmOff(1011,false);if(mode==2)g.confirmOff(1016,true);if(mode)g.confirmOff(1011,true);assert(!g.queue(request(2),r.bootId,1020));assert(!g.cancel("clear",1020));assert(!g.begin(r.nonce,r.bootId,r.scopeSha256,r.policySha256,snapshot(1020)));assert(!strcmp(g.find(r.nonce)->reason,"fault"));}}
+ if(n==13){
+  auto r=request(1,true);strcpy(r.policySha256,CURRENT_POLICY_SHA);r.tableReferenceDeg=194.32f;r.expectedStartDeg=194.32f;r.goalDeg=194.95f;
+  assert(Guard::valid(r));Guard g;assert(g.queue(r,r.bootId,100));
+  assert(!g.begin(r.nonce,r.bootId,r.scopeSha256,POLICY_SHA,snapshot(100,r.expectedStartDeg)));
+  assert(g.begin(r.nonce,r.bootId,r.scopeSha256,CURRENT_POLICY_SHA,snapshot(100,r.expectedStartDeg)));
+  auto bad=r;bad.tableReferenceDeg=197.4f;assert(!Guard::valid(bad));
+  bad=r;bad.goalDeg+=.01f;assert(!Guard::valid(bad));
+  bad=r;strcpy(bad.policySha256,POLICY_SHA);assert(!Guard::valid(bad));
+  bad=r;bad.tableReferenceDeg=NAN;assert(!Guard::valid(bad));
+  bad=r;bad.up=false;bad.percent=35;bad.expectedStartDeg=195.23f;bad.goalDeg=194.32f;assert(!Guard::valid(bad));
+  bad.expectedStartDeg=194.95f;assert(Guard::valid(bad));
+ }
+ if(n==14){
+  auto r=request();strcpy(r.policySha256,CURRENT_POLICY_SHA);r.tableReferenceDeg=194.32f;r.expectedStartDeg=195.22f;r.goalDeg=194.32f;
+  assert(Guard::valid(r));Guard g;assert(!begin(g,r,snapshot(1000,195.30f)));assert(!g.current()->outputMayHaveOccurred);
+  assert(!strcmp(g.current()->reason,"start_context_changed"));
+  Guard h;r.expectedStartDeg=194.44f;assert(!begin(h,r,snapshot(1000,194.39f)));assert(!h.current()->outputMayHaveOccurred);
+ }
  return 0;
 }

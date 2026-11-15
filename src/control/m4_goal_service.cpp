@@ -94,7 +94,8 @@ void appendJson(String& json){
  json+="\"m4GoalGuard\":{\"schemaVersion\":\"motionbrain.m4_goal_guard.v1\",\"enabled\":";
  json+=MOTIONBRAIN_ENABLE_M4_GOAL_GUARD?"true":"false";
  json+=",\"policySha256\":\"";json+=m4_goal::POLICY_SHA;
- json+="\",\"bootId\":\"";json+=BoundedActions::outputBootId();
+ json+="\",\"supportedPolicySha256\":[\"";json+=m4_goal::POLICY_SHA;
+ json+="\",\"";json+=m4_goal::CURRENT_POLICY_SHA;json+="\"],\"bootId\":\"";json+=BoundedActions::outputBootId();
  json+="\",\"execution\":\"main_loop_http_deferred\",\"stopChannel\":\"serial_bang_or_teleop_safety\",\"nonceCapacity\":32,\"nonceCount\":";json+=guard.count();
  const auto* r=guard.current();
  if(r){json+=",\"record\":{";
@@ -103,6 +104,7 @@ void appendJson(String& json){
  #define GF(k,v) json+="\"" k "\":";json+=String(v,5);json+=",";
  S("nonce",r->request.nonce) S("bootId",r->request.bootId) S("scopeSha256",r->request.scopeSha256) S("policySha256",r->request.policySha256)
  S("state",r->state) S("reason",r->reason)
+ if(strcmp(r->request.policySha256,m4_goal::CURRENT_POLICY_SHA)==0){GF("tableReferenceDeg",r->request.tableReferenceDeg)}
  GF("expectedStartDeg",r->request.expectedStartDeg) GF("goalDeg",r->request.goalDeg) GF("startAngleDeg",r->startAngleDeg) GF("lastAngleDeg",r->lastAngleDeg)
  N("percent",r->request.percent) N("durationMs",r->request.durationMs)
  N("queuedAtMs",r->queuedAtMs) N("runAtMs",r->runAtMs) N("decisionAtMs",r->decisionAtMs) N("offAtMs",r->offAtMs)

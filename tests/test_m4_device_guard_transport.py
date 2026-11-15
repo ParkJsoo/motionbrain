@@ -9,7 +9,7 @@ class GuardController(Controller):
   super().__init__(clock);self.boot='a'*32;self.angle=197.22;self.record=None;self.enabled=True;self.bad=None;self.lost_run=False
  def envelope(self):
   return dict(schemaVersion=g.CAPABILITY_SCHEMA,enabled=self.enabled,bootId=self.boot,policySha256=g.POLICY_SHA256,
-   execution='main_loop_http_deferred',nonceCapacity=32,nonceCount=int(self.record is not None),record=self.record)
+   supportedPolicySha256=[g.POLICY_SHA256,g.CURRENT_POLICY_SHA256],execution='main_loop_http_deferred',nonceCapacity=32,nonceCount=int(self.record is not None),record=self.record)
  def open(self,request,timeout):
   import urllib.parse
   path=urllib.parse.urlsplit(request.full_url).path
@@ -28,6 +28,7 @@ class GuardController(Controller):
     policySha256=data['guardPolicySha256'],up=data['direction']=='up',percent=int(data['speed']),durationMs=int(data['duration']),
     expectedStartDeg=float(data['expectedStartDeg']),goalDeg=float(data['goalDeg']),state='queued',queuedAtMs=10000,
     runAtMs=10020,startAngleDeg=self.angle)
+   if 'tableReferenceDeg' in data:self.record['tableReferenceDeg']=float(data['tableReferenceDeg'])
    return Response(dict(success=True))
   if path=='/sequence' and data and data['action']=='run_m4_guarded':
    self.requests.append((path,data));self.running=True;self.end=self.clock.now+1.2;self.append(4,127 if self.record['up'] else -89)

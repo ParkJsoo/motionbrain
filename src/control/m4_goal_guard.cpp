@@ -13,14 +13,23 @@ bool same(const char* a,const char* b) { return a && b && strcmp(a,b)==0; }
 bool activeWindow(){return window;}
 void setActiveWindow(bool x){window=x;}
 #endif
-Request::Request():nonce{},bootId{},scopeSha256{},policySha256{},up(false),percent(0),durationMs(0),expectedStartDeg(0),goalDeg(0){}
+Request::Request():nonce{},bootId{},scopeSha256{},policySha256{},up(false),percent(0),durationMs(0),expectedStartDeg(0),goalDeg(0),tableReferenceDeg(NAN){}
 Record::Record():request(),state("empty"),reason("none"),queuedAtMs(0),runAtMs(0),decisionAtMs(0),offAtMs(0),sampleAtMs(0),sampleAgeMs(0),maxTickGapMs(0),firstTickDelayMs(0),startAngleDeg(0),lastAngleDeg(0),offVerified(false),outputMayHaveOccurred(false),offConfirmationRecorded(false){}
 Guard::Guard():records_{},count_(0),current_(-1),previousTick_(0),ticked_(false){}
 bool Guard::valid(const Request& r){
- return hex(r.nonce,32)&&hex(r.bootId,32)&&hex(r.scopeSha256,64)&&hex(r.policySha256,64)&&same(r.policySha256,POLICY_SHA)
+ if(!(hex(r.nonce,32)&&hex(r.bootId,32)&&hex(r.scopeSha256,64)&&hex(r.policySha256,64)
   &&r.durationMs==DURATION_MS&&r.percent==(r.up?50:35)&&isfinite(r.expectedStartDeg)&&isfinite(r.goalDeg)
+  &&r.expectedStartDeg>=192.29f&&r.expectedStartDeg<=198.29f))return false;
+ if(same(r.policySha256,CURRENT_POLICY_SHA)){
+   // Float32 arithmetic around 194 degrees has ~0.000015 degree resolution.
+   const float table=r.tableReferenceDeg;
+   return isfinite(table)&&table>=192.29f&&table<=197.39f
+     &&fabsf(r.goalDeg-(r.up?table+.63f:table))<=.00005f
+     &&(r.up?fabsf(r.expectedStartDeg-table)<=.00005f:
+        r.expectedStartDeg>table+.1f&&r.expectedStartDeg<=table+.9f);
+ }
+ return same(r.policySha256,POLICY_SHA)&&isnan(r.tableReferenceDeg)
   &&fabsf(r.goalDeg-(r.up?197.85f:197.22f))<.00001f
-  &&r.expectedStartDeg>=192.29f&&r.expectedStartDeg<=198.29f
   &&(r.up?fabsf(r.expectedStartDeg-197.22f)<.00001f:r.expectedStartDeg>197.32f);
 }
 const Record* Guard::current()const{return current_>=0?&records_[current_]:nullptr;}
@@ -35,7 +44,7 @@ bool Guard::queue(const Request& r,const char* boot,uint32_t now){
 bool Guard::terminal(const char* reason,uint32_t now){if(!owns())return false;Record& r=records_[current_];r.state="terminal";r.reason=reason;r.decisionAtMs=now;return true;}
 bool Guard::begin(const char* nonce,const char* boot,const char* scope,const char* policy,const Snapshot& s){
  if(!current()||!same(current()->state,"queued")||!same(current()->request.nonce,nonce)||!same(current()->request.bootId,boot)
-  ||!same(current()->request.scopeSha256,scope)||!same(policy,POLICY_SHA))return false;
+  ||!same(current()->request.scopeSha256,scope)||!same(policy,current()->request.policySha256))return false;
  Record& r=records_[current_];r.startAngleDeg=s.angle;r.lastAngleDeg=s.angle;r.sampleAtMs=s.sampleAt;r.sampleAgeMs=s.now-s.sampleAt;
  const char* bad=nullptr;
  if(!s.ready||r.sampleAgeMs>SENSOR_AGE_MS||!isfinite(s.angle))bad="sensor_fault";
@@ -43,6 +52,8 @@ bool Guard::begin(const char* nonce,const char* boot,const char* scope,const cha
  else if(!s.safetyClear)bad="safety_fault";
  else if(!s.allOff||!s.outputAllowed)bad="other_output";
  else if(fabsf(s.angle-r.request.expectedStartDeg)>.1f)bad="start_context_changed";
+ else if(same(r.request.policySha256,CURRENT_POLICY_SHA)&&!r.request.up
+         &&(s.angle<=r.request.tableReferenceDeg+.1f||s.angle>r.request.tableReferenceDeg+.9f))bad="start_context_changed";
  else if(s.angle<192.29f||s.angle>198.29f||(r.request.up&&s.angle+.9f>198.29f))bad="global_limit";
  else if(r.request.up?s.angle>=r.request.goalDeg:s.angle<=r.request.goalDeg)bad="already_at_goal";
  if(bad){terminal(bad,s.now);return false;}

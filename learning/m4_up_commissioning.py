@@ -100,6 +100,7 @@ PUBLIC_FAILURE_CODES = frozenset({
     'm4_start_context_changed', 'm4_observed_excursion', 'm4_camera_wait_expired',
     'm4_target_up_global_excursion','m4_target_up_already_at_goal',
     'm4_current_short_global_excursion','m4_current_short_upper_headroom_insufficient','m4_current_short_already_at_goal',
+    'm4_device_guard_current_down_goal_unreachable',
     'm4_effective_source_before_ARM','m4_effective_ARM_response_changed',
     'M4_stationary_picture_changed',
     'm4_effective_armed_epoch_required','m4_effective_armed_epoch_changed',
@@ -220,6 +221,8 @@ def validate_scope(scope):
                 and ((up and scope['expectedStartAngleDeg']==policy['tableReferenceDeg'])
                      or (not up and scope['expectedStartAngleDeg']>scope['goalAngleDeg']+.1)),
                 'm4_current_short_goal_or_start_invalid')
+        if is_device:
+            device_policy.guard_request(scope) # Includes v2 table and DOWN local reach, before any I/O.
     ctx = scope['context']
     require(isinstance(ctx, dict) and set(ctx) == {
         'physicalView', 'poseRegime', 'object', 'supportMode', 'externalDeviceId',
@@ -632,7 +635,12 @@ class _CommissioningPort(transport.SequencePort):
                     require(angle+scope['maxObservedDeltaDeg']<=policy['originalGlobalUpperDeg'],
                             'm4_current_short_upper_headroom_insufficient')
                     require(angle<scope['goalAngleDeg'],'m4_current_short_already_at_goal')
-                else:require(angle>scope['goalAngleDeg'],'m4_current_short_already_at_goal')
+                else:
+                    require(angle>scope['goalAngleDeg'],'m4_current_short_already_at_goal')
+                    if (scope['schemaVersion']==DEVICE_GUARD_TASK_SCHEMA
+                            and policy['schemaVersion']==device_policy.CURRENT_POLICY_SCHEMA):
+                        require(policy['tableReferenceDeg']+.1 < angle <= policy['tableReferenceDeg']+.9,
+                                'm4_device_guard_current_down_goal_unreachable')
             if scope['schemaVersion']==TARGET_UP_SCHEMA:
                 require(angle<scope['goalAngleDeg']-.1,'m4_target_up_already_at_goal')
                 # 목표각과 상한 사이 .25도만으로 정지 여유를 추정하지 않는다.

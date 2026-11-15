@@ -25,14 +25,23 @@ void step(uint32_t dt=20){now+=dt;shoulderAngleSensor.sample=now;M4GoalService::
 int main(int argc,char** argv){
  assert(argc==2);int test=atoi(argv[1]);assert(motorControl.init());
  m4_goal::Request r;memset(r.nonce,'b',32);memset(r.bootId,'a',32);memset(r.scopeSha256,'c',64);strcpy(r.policySha256,m4_goal::POLICY_SHA);r.up=false;r.percent=35;r.durationMs=1200;r.expectedStartDeg=197.75f;r.goalDeg=197.22f;
+ if(test>=20){
+   const float refs[]={194.32f,192.29f,197.39f,194.32005f,194.f};
+   r.tableReferenceDeg=refs[(test-20)/2];r.up=((test-20)%2)==0;
+   r.percent=r.up?50:35;strcpy(r.policySha256,m4_goal::CURRENT_POLICY_SHA);
+   r.expectedStartDeg=r.tableReferenceDeg+(r.up?0:.63f);
+   r.goalDeg=r.tableReferenceDeg+(r.up?.63f:0);
+   shoulderAngleSensor.angle=r.expectedStartDeg;
+ }
  assert(M4GoalService::queue(r));assert(!motorControl.setSpeed(1,20));
  assert(M4GoalService::beforeLegacy(CommandType::ARM,true));systemState.state=SystemState::ARMED;
  assert(M4GoalService::run(r.nonce,r.bootId,r.scopeSha256,r.policySha256));
  assert(!motorControl.hasPendingOutput()); // HTTP RUN acceptance never starts output
  if(test==8){Serial.input="!";M4GoalService::pollStop();assert(!M4GoalService::pending());return 0;}
  step();assert(motorControl.m4GoalOwned());assert(!motorControl.setSpeed(1,20));
- for(int i=0;i<6;++i)step();assert(motorControl.getSpeed(4)<0);
+ for(int i=0;i<6;++i)step();assert(r.up?motorControl.getSpeed(4)>0:motorControl.getSpeed(4)<0);
  if(test==1)shoulderAngleSensor.angle=197.20f;
+ if(test>=20)shoulderAngleSensor.angle=r.goalDeg;
  if(test==2)shoulderAngleSensor.ready=false;
  if(test==3)safetyMonitor.blocked=true;
  if(test==4)systemState.state=SystemState::IDLE;
@@ -57,5 +66,5 @@ int main(int argc,char** argv){
  assert(!M4GoalService::beforeLegacy(CommandType::ARM));
  M4GoalService::pollStop();
  assert(M4GoalService::beforeLegacy(CommandType::ARM,true));
- if(test==1)printf("%s\n",j.value.c_str());
+ if(test==1||test>=20)printf("%s\n",j.value.c_str());
 }

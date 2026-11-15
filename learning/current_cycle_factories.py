@@ -48,10 +48,10 @@ def _bound(root,ref):
     return raw
 
 
-from learning.m4_device_guard_policy import SCHEMA as DEVICE_SCHEMA,POLICY_SCHEMA as DEVICE_POLICY_SCHEMA,validate_device_guard_policy,device_guard_task_pulse
+from learning.m4_device_guard_policy import SCHEMA as DEVICE_SCHEMA,POLICY_SCHEMA as DEVICE_POLICY_SCHEMA,POLICY_SCHEMAS as DEVICE_POLICY_SCHEMAS,validate_device_guard_policy,device_guard_task_pulse
 
 def _execution_policy(value):
-    if isinstance(value,dict) and value.get("schemaVersion")==DEVICE_POLICY_SCHEMA:
+    if isinstance(value,dict) and value.get("schemaVersion") in DEVICE_POLICY_SCHEMAS:
         return validate_device_guard_policy(value)
     if isinstance(value,dict) and value.get('schemaVersion')==EFFECTIVE_POLICY_SCHEMA:
         return validate_effective_policy(value)
@@ -59,7 +59,7 @@ def _execution_policy(value):
 
 
 def _execution_pulse(direction,policy):
-    return (device_guard_task_pulse(direction,policy) if policy["schemaVersion"]==DEVICE_POLICY_SCHEMA
+    return (device_guard_task_pulse(direction,policy) if policy["schemaVersion"] in DEVICE_POLICY_SCHEMAS
             else effective_task_pulse(direction,policy) if policy['schemaVersion']==EFFECTIVE_POLICY_SCHEMA
             else short_task_pulse(direction,policy))
 
@@ -474,8 +474,8 @@ class CurrentRuntimeFactory:
         require(all(m.current is None or m.current['phase']=='completed' for m in self.managers)
                 and all(not m.busy for m in self.managers),'factory_general_session_pending')
         policy=_execution_policy(stage['context'].get('executionPolicy'))
-        device=policy['schemaVersion']==DEVICE_POLICY_SCHEMA
-        effective=policy['schemaVersion'] in (EFFECTIVE_POLICY_SCHEMA,DEVICE_POLICY_SCHEMA)
+        device=policy['schemaVersion'] in DEVICE_POLICY_SCHEMAS
+        effective=policy['schemaVersion'] in (EFFECTIVE_POLICY_SCHEMA,)+DEVICE_POLICY_SCHEMAS
         direction='up' if stage['kind']=='lift' else 'down';pulse=_execution_pulse(direction,policy)
         require(command=={k:pulse[k] for k in ('joint','direction','percent','durationMs')},'factory_current_short_command_required')
         record=self._entry(stage,command,hooks);ctx=self._spec(stage)['sourceContext']

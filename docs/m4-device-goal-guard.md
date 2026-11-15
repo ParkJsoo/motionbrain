@@ -12,6 +12,14 @@
 - 각도는 기존 상태 API와 같은 AS5600 장착 보정 좌표다. 센서 원시각이나 다른 촬영·자세 계약으로 바꿔 끼우지 않는다.
 - 정책은 UP 50%·DOWN 35%, 요청 기한 1,200ms, 관측 변화 한도 0.9°를 고정한다. 시작·목표·전역 범위도 기존 명시 정책을 유지한다. 임의 현재 자세에 적용하는 범용 복귀 명령이 아니다.
 
+## 현재 자세에 결합하는 정책
+
+기존 v1은 탁상 기준 197.22°·UP 목표 197.85°를 그대로 유지한다. 별도 v2 정책은 `current_table_device_guard_policy(table_reference_deg)`로 현재 확인한 탁상 기준각을 명시한다. 기준각은 192.29~197.39°이고, UP은 그 기준각에서 +0.63°를 목표로 한다. DOWN은 기준각보다 0.1° 초과·0.9° 이하인 상태에서 기준각을 목표로 한다. 시작 직전 실제 센서 상태도 검사하므로 시작 오차 허용치를 이용해 이 범위를 넘길 수 없다.
+
+예를 들어 새로 확인한 기준각이 194.32°이면 UP 목표는 194.95°다. 과거 계약에 맞추기 위해 먼저 197.22°로 이동할 필요는 없다. 이 숫자는 승인된 움직임이나 현재 등록을 뜻하지 않으며, 매 실행의 현재 영상·부팅·출력 cursor·시작각·현장 여유 확인에 결합해야 한다.
+
+v2는 별도 정책 해시와 `tableReferenceDeg`를 요청·장치 레코드에 포함한다. 지원 정책 목록에 v2가 없는 펌웨어에는 RUN을 보내지 않는다. 원본 감사·모델·factory에서도 동일 정책과 장면 계약을 요구하므로 v1 자료나 다른 카메라 boot·자세의 자료를 재표시하여 섞을 수 없다. 기존 FSM과 0.9° 국소 한도·전역 범위·출력·기한은 유지한다.
+
 ## 통신과 정지
 
 가드 운전 중 일반 HTTP 처리를 지연해 호스트 조회가 장치 제어 검사를 막지 않도록 한다. 따라서 **HTTP STOP 응답을 즉시 정지 채널로 간주하면 안 된다.** 운전 중에는 별도 직렬 `!` 취소와 기존 안전 입력을 처리하며, 상태·센서·출력 소유권 이상도 종료 조건으로 검사한다. 종료 후에는 남은 직렬 입력을 폐기하고 출력 차단을 유지한다. 입력 정리 뒤 새 명시적 웹 ARM에서만 일반 출력 차단을 해제한다. STOP·큐 정리·무출력 기본 속도 복구는 허용하지만, 이전 직렬·대기 명령으로 재출력하지 않는다.
@@ -35,7 +43,7 @@
 ## 빌드와 배포 경계
 
 ```sh
-python3 -m unittest tests.test_m4_goal_guard_native tests.test_m4_goal_service_native tests.test_m4_device_guard_transport tests.test_m4_device_guard_integration
+python3 -m unittest tests.test_m4_goal_guard_native tests.test_m4_goal_service_native tests.test_m4_device_guard_transport tests.test_m4_device_guard_integration tests.test_m4_current_table_guard
 pio run -e esp32dev
 pio run -e esp32dev_m4_goal_guard
 ```

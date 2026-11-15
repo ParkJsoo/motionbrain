@@ -33,6 +33,6 @@ class M4GoalGuardNativeTests(unittest.TestCase):
         subprocess.run([str(self.binaries[0]), '0'], check=True, timeout=5)
 
     def test_enabled_goal_fault_deadline_nonce_and_off_proof_cases(self):
-        for case in range(1, 13):
+        for case in range(1, 15):
             with self.subTest(case=case):
                 subprocess.run([str(self.binaries[1]), str(case)], check=True, timeout=5)

@@ -32,8 +32,8 @@ def bounded_command(stage, command, execution_policy=None):
             'cycle_command_fields')
     joint, direction = command['joint'], command['direction']
     from learning.m4_effective_policy import POLICY_SCHEMA,validate_effective_policy,effective_task_pulse
-    from learning.m4_device_guard_policy import POLICY_SCHEMA as DEVICE_SCHEMA,validate_device_guard_policy,device_guard_task_pulse
-    if isinstance(execution_policy,dict) and execution_policy.get('schemaVersion')==DEVICE_SCHEMA:
+    from learning.m4_device_guard_policy import POLICY_SCHEMAS as DEVICE_SCHEMAS,validate_device_guard_policy,device_guard_task_pulse
+    if isinstance(execution_policy,dict) and execution_policy.get('schemaVersion') in DEVICE_SCHEMAS:
         policy=validate_device_guard_policy(execution_policy);pulse=device_guard_task_pulse('up' if stage=='lift' else 'down',policy)
         require(stage in ('lift','lower') and command=={k:pulse[k] for k in command} and all(type(command[k]) is type(pulse[k]) for k in command),'device_guard_exact_command_required')
         return pulse
