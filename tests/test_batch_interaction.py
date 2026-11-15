@@ -299,7 +299,10 @@ class BatchConfirmedContactTests(unittest.TestCase):
 
     def test_retention_requires_original_held_review_plus_two_camera_span(self):
         self.held_envelope()
+        original_scope=copy.deepcopy(self.envelope['scope'])
         token=interaction.verify_review(self.checked(purpose='label'),now=16.,output_sequence=100,after_off=10.)
+        self.assertEqual(self.envelope['scope'],original_scope)
+        self.assertNotIn('schemaVersion',self.envelope['scope'])
         self.assertTrue(token.report['retainedLift'])
         self.assertTrue(token.report['graspVerified'])
         self.assertTrue(token.report['liftVerified'])

@@ -240,6 +240,10 @@ def verify_review(checked, *, now, output_sequence, after_off=None):
             record = observation['record']
             checker = _RecordChecker(); checker.scope = copy.deepcopy(scope)
             checker.root = location; checker.clock = clock; checker.started = 0.
+            # Interaction scope is not a motor execution scope. Select the
+            # existing contact observation contract explicitly for this view;
+            # never mutate the source envelope or infer a motion policy.
+            checker.scope['schemaVersion'] = m4.SCHEMA
             if envelope['interaction'] in ('contact_probe', 'noncontact'):
                 checker.scope['schemaVersion'] = m4.CONTACT_PROBE_SCHEMA
             pair = checker._observe(record, after_off=after_off)
