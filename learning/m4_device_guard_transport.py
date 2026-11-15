@@ -15,6 +15,8 @@ CAPABILITY_SCHEMA = 'motionbrain.m4_goal_guard.v1'
 POLICY_SHA256 = 'ee16b5b5f8cbc1df7d4927dd4139b7f8b767927eb39c72de5fb843d6494d09f9'
 CURRENT_POLICY_CONTRACT = 'motionbrain.m4_goal_guard.current_table.v2|global=192.29:198.29|local=.9|up=50:1200:table+.63|down=35:1200:table|table_headroom=.9|down_span=.1:.9|sensor_age=60|tick_gap=40|start_tolerance=.1'
 CURRENT_POLICY_SHA256 = '77d5ce74eacb65cb37ee2875a611e32489894b981c0aaf0b41442cf617b8f87a'
+FINITE_POLICY_CONTRACT = 'motionbrain.m4_goal_guard.finite_up.v3|global=192.29:198.29|local=3|up=50:1200|goal=192.79:197.79|span=.1:2.5|sensor_age=60|tick_gap=40|start_tolerance=.1'
+FINITE_POLICY_SHA256 = 'd54d71591da2e6d3843d98c345476ce4652a4b31f4111d1386b44fe099f9c085'
 TERMINAL_TIMEOUT_SECONDS = 2.
 
 
@@ -33,12 +35,15 @@ def validate_request(request, pulse):
         'nonce', 'bootId', 'scopeSha256', 'policySha256', 'expectedStartDeg', 'goalDeg'} | ({'tableReferenceDeg'} if current else set()), 'request_fields')
     for key, size in (('nonce',32), ('bootId',32), ('scopeSha256',64)):
         _require(isinstance(request[key],str) and re.fullmatch('[0-9a-f]{'+str(size)+'}',request[key]), 'request_identity')
-    _require(request['policySha256'] in (POLICY_SHA256,CURRENT_POLICY_SHA256), 'policy_changed')
+    _require(request['policySha256'] in (POLICY_SHA256,CURRENT_POLICY_SHA256,FINITE_POLICY_SHA256), 'policy_changed')
     up = pulse.get('direction') == 'up'
     _require(pulse == dict(joint='shoulder', motor=4, direction='up' if up else 'down',
         percent=50 if up else 35, durationMs=1200, expectedPwm=127 if up else -89), 'pulse')
     start,goal=request['expectedStartDeg'],request['goalDeg']
-    if current:
+    if request['policySha256']==FINITE_POLICY_SHA256:
+        _require(up and _number(start) and _number(goal) and 192.29<=start<=198.29
+            and 192.79<=goal<=197.79 and .1<goal-start<=2.5, 'angles')
+    elif current:
         table=request['tableReferenceDeg']
         _require(_number(table) and 192.29 <= table <= 197.39
             and _number(start) and _number(goal) and 192.29 <= start <= 198.29
@@ -59,15 +64,16 @@ def capability(response, request, *, state=None, pulse=None):
         and value.get('nonceCapacity') == 32 and type(value.get('nonceCount')) is int
         and 0 <= value['nonceCount'] <= 32, 'capability_required')
     _require(request['policySha256'] == POLICY_SHA256 or
-        (request['policySha256'] == CURRENT_POLICY_SHA256
+        (request['policySha256'] in (CURRENT_POLICY_SHA256,FINITE_POLICY_SHA256)
          and isinstance(value.get('supportedPolicySha256'),list)
-         and CURRENT_POLICY_SHA256 in value['supportedPolicySha256']), 'policy_capability_required')
+         and request['policySha256'] in value['supportedPolicySha256']), 'policy_capability_required')
     if state is None:
         _require(value['nonceCount'] < 32, 'nonce_capacity')
         return copy.deepcopy(value)
     r=value.get('record')
     _require(isinstance(r,dict), 'record_required')
     current=request['policySha256']==CURRENT_POLICY_SHA256
+    finite=request['policySha256']==FINITE_POLICY_SHA256
     exact=dict(nonce=request['nonce'],bootId=request['bootId'],scopeSha256=request['scopeSha256'],
         policySha256=request['policySha256'],expectedStartDeg=request['expectedStartDeg'],
         goalDeg=request['goalDeg'],up=pulse['direction']=='up',percent=pulse['percent'],durationMs=1200,state=state)
@@ -86,14 +92,14 @@ def capability(response, request, *, state=None, pulse=None):
             and elapsed('decisionAtMs','sampleAtMs')==r['sampleAgeMs']
             and r['sampleAgeMs']<=60 and r['maxTickGapMs']<=40 and r['firstTickDelayMs']<=200, 'terminal_timing')
         start,last=r.get('startAngleDeg'),r.get('lastAngleDeg')
-        boundary_epsilon=.00005 if current else 0.
+        boundary_epsilon=.00005 if current or finite else 0.
         _require(_number(start) and _number(last) and abs(start-request['expectedStartDeg'])<=.1001
-            and 192.29-boundary_epsilon<=last<=198.29+boundary_epsilon and abs(last-start)<=.9001
+            and 192.29-boundary_epsilon<=last<=198.29+boundary_epsilon and abs(last-start)<=(3.0001 if finite else .9001)
             and (last>=start-.1001 if r['up'] else last<=start+.1001), 'terminal_angle')
         _require(r['reason']!='deadline' or elapsed('decisionAtMs','runAtMs')>=1200, 'terminal_deadline')
         # The device compares float32 values, and serializes five decimal places.
         # Its goal is already bound to the requested goal within 0.0001 degree.
-        goal=r['goalDeg'] if current else request['goalDeg']
+        goal=r['goalDeg'] if current or finite else request['goalDeg']
         _require(r['reason']!='goal' or (last>=goal if r['up'] else last<=goal), 'terminal_goal')
     return copy.deepcopy(r)
 

@@ -11,6 +11,7 @@
 namespace m4_goal {
 static constexpr const char* POLICY_SHA = "ee16b5b5f8cbc1df7d4927dd4139b7f8b767927eb39c72de5fb843d6494d09f9";
 static constexpr const char* CURRENT_POLICY_SHA = "77d5ce74eacb65cb37ee2875a611e32489894b981c0aaf0b41442cf617b8f87a";
+static constexpr const char* FINITE_POLICY_SHA = "d54d71591da2e6d3843d98c345476ce4652a4b31f4111d1386b44fe099f9c085";
 static constexpr uint32_t DURATION_MS=1200, SENSOR_AGE_MS=60, TICK_GAP_MS=40;
 static constexpr size_t CAPACITY=32;
 struct Request {

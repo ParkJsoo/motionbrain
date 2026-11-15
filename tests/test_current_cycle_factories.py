@@ -24,6 +24,19 @@ from tests.test_supervised_transport import Clock
 
 
 class FactoryTests(unittest.TestCase):
+    def test_finite_goal_v3_rejected_explicitly_by_paired_cycle_factory(self):
+        from learning.m4_device_guard_policy import finite_goal_device_guard_policy
+        policy=finite_goal_device_guard_policy(197.5)
+        with self.assertRaisesRegex(ValueError,'finite_goal_standalone_UP_only'):
+            factory._execution_policy(policy)
+        scope=copy.deepcopy(self.scope)
+        for stage in scope['stages']:
+            if stage['kind'] in ('lift','lower'):stage['context']['executionPolicy']=copy.deepcopy(policy)
+        with self.assertRaises(factory.FactoryPreflightError) as caught:
+            factory._stage_contracts(self.asset_root,scope,self.assets)
+        for kind in ('lift','lower'):
+            self.assertIn('factory_finite_goal_standalone_UP_only',caught.exception.missing[kind])
+
     def setUp(self):
         fixture=fixtures.CycleWorkflowTests();fixture.setUp();self.addCleanup(fixture.doCleanups)
         for row in fixture.m4:

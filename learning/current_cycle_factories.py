@@ -52,6 +52,9 @@ def _bound(root,ref):
 from learning.m4_device_guard_policy import SCHEMA as DEVICE_SCHEMA,POLICY_SCHEMA as DEVICE_POLICY_SCHEMA,POLICY_SCHEMAS as DEVICE_POLICY_SCHEMAS,validate_device_guard_policy,device_guard_task_pulse
 
 def _execution_policy(value):
+    from learning.m4_device_guard_policy import FINITE_POLICY_SCHEMA
+    require(not isinstance(value,dict) or value.get('schemaVersion')!=FINITE_POLICY_SCHEMA,
+            'factory_finite_goal_standalone_UP_only')
     if isinstance(value,dict) and value.get("schemaVersion") in DEVICE_POLICY_SCHEMAS:
         return validate_device_guard_policy(value)
     if isinstance(value,dict) and value.get('schemaVersion')==EFFECTIVE_POLICY_SCHEMA:

@@ -18,7 +18,7 @@
 
 실물 실행은 각 수집기의 범위·저널·중단 절차를 따른다. [유한 출력 프로파일](docs/finite-output-profile.md)은 별도 `esp32dev_m2_finite_trial` 빌드의 기능이며 기본 빌드에서 비활성이다. [무명령 반복성](docs/stationary-repeatability.md)과 실측 조건을 함께 확인한다. 소프트웨어 검사·출력 완료·학습 자료 적격은 각각 별도 결과다.
 
-[M4 장치 목표 가드](docs/m4-device-goal-guard.md)는 기본 비활성이며, 전용 `esp32dev_m4_goal_guard` 빌드에서 HTTP·센서·main loop·드라이버 hard OFF와 별도 호스트 실행 정책을 연결한다. 운전 중 HTTP는 지연되므로 즉시 STOP 채널로 간주하지 않는다. 업로드·물리 정지거리·모델 기반 전체 완주는 미검증이다.
+[M4 장치 목표 가드](docs/m4-device-goal-guard.md)는 기본 비활성이며, 전용 `esp32dev_m4_goal_guard` 빌드에서 HTTP·센서·main loop·드라이버 hard OFF와 별도 호스트 실행 정책을 연결한다. 운전 중 HTTP는 지연되므로 즉시 STOP 채널로 간주하지 않는다. v3는 목표각을 명시하는 UP 전용 개발 정책을 추가하며, 기존 v1/v2와 구분한다. 소프트웨어 검증은 실제 배포·물리 정지거리·모델 기반 전체 완주의 검증과 다르다.
 
 ## 빌드
 

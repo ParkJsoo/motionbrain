@@ -28,6 +28,11 @@ bool Guard::valid(const Request& r){
      &&(r.up?fabsf(r.expectedStartDeg-table)<=.00005f:
         r.expectedStartDeg>table+.1f&&r.expectedStartDeg<=table+.9f);
  }
+ if(same(r.policySha256,FINITE_POLICY_SHA)){
+   const float span=r.goalDeg-r.expectedStartDeg;
+   return r.up&&isnan(r.tableReferenceDeg)&&r.goalDeg>=192.79f&&r.goalDeg<=197.79f
+     &&span>.1f&&span<=2.5f;
+ }
  return same(r.policySha256,POLICY_SHA)&&isnan(r.tableReferenceDeg)
   &&fabsf(r.goalDeg-(r.up?197.85f:197.22f))<.00001f
   &&(r.up?fabsf(r.expectedStartDeg-197.22f)<.00001f:r.expectedStartDeg>197.32f);
@@ -54,7 +59,9 @@ bool Guard::begin(const char* nonce,const char* boot,const char* scope,const cha
  else if(fabsf(s.angle-r.request.expectedStartDeg)>.1f)bad="start_context_changed";
  else if(same(r.request.policySha256,CURRENT_POLICY_SHA)&&!r.request.up
          &&(s.angle<=r.request.tableReferenceDeg+.1f||s.angle>r.request.tableReferenceDeg+.9f))bad="start_context_changed";
- else if(s.angle<192.29f||s.angle>198.29f||(r.request.up&&s.angle+.9f>198.29f))bad="global_limit";
+ else if(same(r.request.policySha256,FINITE_POLICY_SHA)
+         &&(r.request.goalDeg-s.angle<=.1f||r.request.goalDeg-s.angle>2.5f))bad="start_context_changed";
+ else if(s.angle<192.29f||s.angle>198.29f||(!same(r.request.policySha256,FINITE_POLICY_SHA)&&r.request.up&&s.angle+.9f>198.29f))bad="global_limit";
  else if(r.request.up?s.angle>=r.request.goalDeg:s.angle<=r.request.goalDeg)bad="already_at_goal";
  if(bad){terminal(bad,s.now);return false;}
  r.runAtMs=s.now;r.state="running";previousTick_=s.now;ticked_=false;return true;
@@ -73,7 +80,7 @@ bool Guard::tick(const Snapshot& s){
  else if(!ticked_&&gap>200)reason="start_deadline";
  else if(ticked_&&gap>TICK_GAP_MS)reason="tick_gap";
  else if(s.angle<192.29f||s.angle>198.29f)reason="global_limit";
- else if(fabsf(s.angle-r.startAngleDeg)>.9f||(r.request.up?s.angle<r.startAngleDeg-.1f:s.angle>r.startAngleDeg+.1f))reason="local_limit";
+ else if(fabsf(s.angle-r.startAngleDeg)>(same(r.request.policySha256,FINITE_POLICY_SHA)?3.f:.9f)||(r.request.up?s.angle<r.startAngleDeg-.1f:s.angle>r.startAngleDeg+.1f))reason="local_limit";
  else if(s.now-r.runAtMs>=r.request.durationMs)reason="deadline";
  else if(r.request.up?s.angle>=r.request.goalDeg:s.angle<=r.request.goalDeg)reason="goal";
  ticked_=true;return reason?terminal(reason,s.now):false;

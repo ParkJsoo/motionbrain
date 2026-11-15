@@ -66,3 +66,16 @@ class M4GoalServiceNativeTests(unittest.TestCase):
                     validate_request(request,pulse)
                     record=capability(response,request,state='terminal',pulse=pulse)
                     self.assertEqual(record['reason'],'goal')
+
+    def test_finite_goal_actual_driver_off_json_matches_python(self):
+        import json
+        from learning.m4_device_guard_transport import capability,FINITE_POLICY_SHA256,validate_request
+        from learning.m4_device_guard_policy import finite_goal_device_guard_policy,device_guard_task_pulse
+        raw=subprocess.check_output([str(self.binaries[1]),'30'],text=True,timeout=5)
+        response=json.loads('{'+raw.strip()+'}')
+        pulse=device_guard_task_pulse('up',finite_goal_device_guard_policy(197.5))
+        request=dict(nonce='b'*32,bootId='a'*32,scopeSha256='c'*64,policySha256=FINITE_POLICY_SHA256,
+            expectedStartDeg=195.38,goalDeg=197.5)
+        validate_request(request,pulse)
+        record=capability(response,request,state='terminal',pulse=pulse)
+        self.assertTrue(record['offVerified']);self.assertEqual(record['reason'],'goal')

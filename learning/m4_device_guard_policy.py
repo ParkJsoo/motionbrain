@@ -1,11 +1,12 @@
 """장치 내부 장착 보정 AS5600 각도 목표/OFF용 새 코호트. 실물 검증 전 기본 비활성."""
 import copy
 from learning.manual_collection_dataset import require
-from learning.m4_device_guard_transport import POLICY_SHA256,CURRENT_POLICY_SHA256
+from learning.m4_device_guard_transport import POLICY_SHA256,CURRENT_POLICY_SHA256,FINITE_POLICY_SHA256
 SCHEMA='motionbrain.m4_current_device_guard_task.v1'
 POLICY_SCHEMA='motionbrain.m4_current_device_guard_paired_policy.v1'
 CURRENT_POLICY_SCHEMA='motionbrain.m4_explicit_table_device_guard_paired_policy.v2'
-POLICY_SCHEMAS=(POLICY_SCHEMA,CURRENT_POLICY_SCHEMA)
+FINITE_POLICY_SCHEMA='motionbrain.m4_explicit_finite_up_device_guard_policy.v3'
+POLICY_SCHEMAS=(POLICY_SCHEMA,CURRENT_POLICY_SCHEMA,FINITE_POLICY_SCHEMA)
 def device_guard_policy():
  from learning.m4_effective_policy import effective_policy
  p=effective_policy();p.update(schemaVersion=POLICY_SCHEMA,
@@ -25,15 +26,33 @@ def current_table_device_guard_policy(table_reference_deg):
   deviceGuardPolicySha256=CURRENT_POLICY_SHA256)
  return p
 
+def finite_goal_device_guard_policy(goal_angle_deg):
+ """명시 UP 목표. .5도 경계 여유는 물리 정지거리 보증이 아니다."""
+ import math
+ require(type(goal_angle_deg) in (int,float) and math.isfinite(goal_angle_deg)
+         and 192.79<=goal_angle_deg<=197.79,'device_guard_finite_goal_invalid')
+ p=dict(schemaVersion=FINITE_POLICY_SCHEMA,
+  upGoalAngleDeg=float(goal_angle_deg),maxObservedDeltaDeg=3.,downSupported=False,
+  originalGlobalReferenceDeg=195.29,originalGlobalUpperDeg=198.29,
+  goalBoundaryReserveDeg=.5,maximumGoalSpanDeg=2.5,
+  upPercent=50,upDurationCapMs=1200,
+  observationAcquisition='after_ARMED_all_OFF_before_RUN_v1',
+  upMonitorTimingPolicy='m4-finite-device-goal-terminal-up-v3',
+  deviceGuardPolicySha256=FINITE_POLICY_SHA256)
+ return p
+
 def validate_device_guard_policy(policy):
- expected=(current_table_device_guard_policy(policy.get('tableReferenceDeg'))
+ expected=(finite_goal_device_guard_policy(policy.get('upGoalAngleDeg'))
+           if isinstance(policy,dict) and policy.get('schemaVersion')==FINITE_POLICY_SCHEMA else
+           current_table_device_guard_policy(policy.get('tableReferenceDeg'))
            if isinstance(policy,dict) and policy.get('schemaVersion')==CURRENT_POLICY_SCHEMA else device_guard_policy())
  require(isinstance(policy,dict) and set(policy)==set(expected) and all(
   type(policy[k]) is type(v) and policy[k]==v for k,v in expected.items()),'device_guard_exact_policy_required')
  return copy.deepcopy(policy)
 def device_guard_task_pulse(direction,policy=None):
- validate_device_guard_policy(device_guard_policy() if policy is None else policy)
+ p=validate_device_guard_policy(device_guard_policy() if policy is None else policy)
  require(direction in ('up','down'),'device_guard_direction_required')
+ require(p['schemaVersion']!=FINITE_POLICY_SCHEMA or direction=='up','device_guard_finite_up_only')
  return dict(joint='shoulder',motor=4,direction=direction,percent=50 if direction=='up' else 35,
   durationMs=1200,expectedPwm=127 if direction=='up' else -89)
 

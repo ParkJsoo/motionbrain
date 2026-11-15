@@ -44,5 +44,23 @@ int main(int argc,char** argv){
   assert(!strcmp(g.current()->reason,"start_context_changed"));
   Guard h;r.expectedStartDeg=194.44f;assert(!begin(h,r,snapshot(1000,194.39f)));assert(!h.current()->outputMayHaveOccurred);
  }
+ if(n==15){
+  auto r=request(1,true);strcpy(r.policySha256,FINITE_POLICY_SHA);r.expectedStartDeg=195.38f;r.goalDeg=197.5f;
+  assert(Guard::valid(r));Guard g;assert(begin(g,r,snapshot(1000,195.38f)));
+  assert(!g.tick(snapshot(1020,196.5f)));assert(g.tick(snapshot(1040,197.5f)));
+  assert(!strcmp(g.current()->reason,"goal"));
+  auto bad=r;bad.up=false;bad.percent=35;assert(!Guard::valid(bad));
+  bad=r;bad.goalDeg=197.80f;assert(!Guard::valid(bad));
+  bad=r;bad.expectedStartDeg=194.9f;assert(!Guard::valid(bad));
+  bad=r;bad.tableReferenceDeg=194.32f;assert(!Guard::valid(bad));
+ }
+ if(n==16){
+  auto r=request(1,true);strcpy(r.policySha256,FINITE_POLICY_SHA);r.expectedStartDeg=195.f;r.goalDeg=197.5f;
+  Guard g;assert(!begin(g,r,snapshot(1000,194.95f)));assert(!g.current()->outputMayHaveOccurred);
+  r.expectedStartDeg=195.38f;Guard h;assert(begin(h,r,snapshot(1000,195.38f)));
+  assert(h.tick(snapshot(1020,198.3f)));assert(!strcmp(h.current()->reason,"global_limit"));
+  r.expectedStartDeg=192.3f;r.goalDeg=194.8f;Guard j;assert(begin(j,r,snapshot(1000,192.3f)));
+  assert(j.tick(snapshot(1020,195.31f)));assert(!strcmp(j.current()->reason,"local_limit"));
+ }
  return 0;
 }

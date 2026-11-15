@@ -95,7 +95,8 @@ void appendJson(String& json){
  json+=MOTIONBRAIN_ENABLE_M4_GOAL_GUARD?"true":"false";
  json+=",\"policySha256\":\"";json+=m4_goal::POLICY_SHA;
  json+="\",\"supportedPolicySha256\":[\"";json+=m4_goal::POLICY_SHA;
- json+="\",\"";json+=m4_goal::CURRENT_POLICY_SHA;json+="\"],\"bootId\":\"";json+=BoundedActions::outputBootId();
+ json+="\",\"";json+=m4_goal::CURRENT_POLICY_SHA;
+ json+="\",\"";json+=m4_goal::FINITE_POLICY_SHA;json+="\"],\"bootId\":\"";json+=BoundedActions::outputBootId();
  json+="\",\"execution\":\"main_loop_http_deferred\",\"stopChannel\":\"serial_bang_or_teleop_safety\",\"nonceCapacity\":32,\"nonceCount\":";json+=guard.count();
  const auto* r=guard.current();
  if(r){json+=",\"record\":{";

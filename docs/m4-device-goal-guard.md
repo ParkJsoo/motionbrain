@@ -10,7 +10,7 @@
 - 요청에는 부팅 ID·nonce·scope·정책 해시·시작각·목표각을 묶는다. nonce는 부팅 내 고정 용량으로 보존한다. 사용한 nonce나 OFF가 확인되지 않은 종료 상태에서는 새 실행을 허용하지 않는다. 최초 OFF 확인은 뒤의 확인으로 덮어쓰지 않는다.
 - RUN 수락 응답 이후 main loop에서 현재 센서·안전 상태를 확인하고 실행한다. 출력에는 기존 램프를 사용하며, 정지 결정에는 직접 hard OFF를 사용한다. 일반 출력 경로가 가드 실행을 덮어쓰지 못하도록 드라이버 소유권을 검사한다.
 - 각도는 기존 상태 API와 같은 AS5600 장착 보정 좌표다. 센서 원시각이나 다른 촬영·자세 계약으로 바꿔 끼우지 않는다.
-- 정책은 UP 50%·DOWN 35%, 요청 기한 1,200ms, 관측 변화 한도 0.9°를 고정한다. 시작·목표·전역 범위도 기존 명시 정책을 유지한다. 임의 현재 자세에 적용하는 범용 복귀 명령이 아니다.
+- 기존 v1/v2 정책은 UP 50%·DOWN 35%, 요청 기한 1,200ms, 관측 변화 한도 0.9°를 고정한다. 시작·목표·전역 범위도 기존 명시 정책을 유지한다. 임의 현재 자세에 적용하는 범용 복귀 명령이 아니다.
 
 ## 현재 자세에 결합하는 정책
 
@@ -19,6 +19,26 @@
 예를 들어 새로 확인한 기준각이 194.32°이면 UP 목표는 194.95°다. 과거 계약에 맞추기 위해 먼저 197.22°로 이동할 필요는 없다. 이 숫자는 승인된 움직임이나 현재 등록을 뜻하지 않으며, 매 실행의 현재 영상·부팅·출력 cursor·시작각·현장 여유 확인에 결합해야 한다.
 
 v2는 별도 정책 해시와 `tableReferenceDeg`를 요청·장치 레코드에 포함한다. 지원 정책 목록에 v2가 없는 펌웨어에는 RUN을 보내지 않는다. 원본 감사·모델·factory에서도 동일 정책과 장면 계약을 요구하므로 v1 자료나 다른 카메라 boot·자세의 자료를 재표시하여 섞을 수 없다. 기존 FSM과 0.9° 국소 한도·전역 범위·출력·기한은 유지한다.
+
+## 명시한 목표를 선택하는 v3 UP 정책
+
+`finite_goal_device_guard_policy(goal_angle_deg)`는 시작 기준 +0.63°를 강제하지
+않는 별도 UP 전용 정책이다. 모델이 비교한 목표각을 실행 scope와 정책 해시에
+고정한다. UP 50%·최대 1,200ms는 유지하며 DOWN은 지원하지 않는다. v1/v2의
+탁상 기준이나 DOWN 목표를 상속하지 않고, 기존 paired-cycle factory에서도 이
+정책을 명시적으로 거절한다. 별도 개발 목표 실행기를 통해서만 연결한다.
+
+요청·실제 시작각에서 목표까지의 차이는 0.1~2.5°이며, 목표는 기존 전역 범위
+192.29~198.29°의 양 끝에서 0.5° 안쪽이어야 한다. 시작각 기준 관측 변화 한도는
+3°다. 이 수치는 개발 실행 범위이며 실측 기구 끝점이나 물리 정지거리 보장이
+아니다. 센서 지연·OFF 이후 이동은 별도로 관측한다. 기존 상태기계·nonce·센서
+이상·기한·STOP·드라이버 hard OFF 경로를 재사용한다.
+
+v3 capability가 없는 펌웨어에는 해당 RUN을 보내지 않는다. 기본·전용 빌드와
+모의 장치 검증은 실제 배포·관측·구동 검증과 구분한다. 여러 목표를 순차 비교하는
+개발 실행에서도 각 목표는 한 번만 소비하며, 실패·unknown 뒤 새 ID로 대체하거나
+자동 재전송하지 않는다. 정상 종료 후의 새 영상에 따른 다른 목표 선택은 별도로
+기록한다. 센서 목표 도달과 영상의 물체 이탈·보유 성공은 같은 판정이 아니다.
 
 ## 통신과 정지
 
@@ -43,7 +63,7 @@ v2는 별도 정책 해시와 `tableReferenceDeg`를 요청·장치 레코드에
 ## 빌드와 배포 경계
 
 ```sh
-python3 -m unittest tests.test_m4_goal_guard_native tests.test_m4_goal_service_native tests.test_m4_device_guard_transport tests.test_m4_device_guard_integration tests.test_m4_current_table_guard
+python3 -m unittest tests.test_m4_goal_guard_native tests.test_m4_goal_service_native tests.test_m4_device_guard_transport tests.test_m4_device_guard_integration tests.test_m4_current_table_guard tests.test_m4_finite_goal_guard
 pio run -e esp32dev
 pio run -e esp32dev_m4_goal_guard
 ```
