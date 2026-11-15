@@ -41,7 +41,7 @@ class RecoveryTests(unittest.TestCase):
         self.original = {p.relative_to(self.root).as_posix(): p.read_bytes()
                          for p in self.root.rglob('*') if p.is_file()}
         owner.manager.close()
-        owner.manager = ManualCollection(owner.root/'sessions', owner.helper, 'http://192.168.219.122',
+        owner.manager = ManualCollection(owner.root/'sessions', owner.helper, 'http://10.0.0.10',
             'secret', 'cam', journal_path=owner.root/'journal.sqlite', clock=owner.clock)
         self.manager = owner.manager
         self.manager.journal = BoundedActionJournal(str(self.manager.journal_path), 10000)
@@ -91,7 +91,7 @@ class RecoveryTests(unittest.TestCase):
             (self.sid,)).fetchone(), (recovery.PHASE, self.row[1]))
         self.assertTrue(all((self.root/name).read_bytes() == raw for name, raw in self.original.items()))
         self.assertTrue(self.requests)
-        self.assertTrue(all(method == 'GET' and url.startswith('http://192.168.219.122/') for method, url, _ in self.requests))
+        self.assertTrue(all(method == 'GET' and url.startswith('http://10.0.0.10/') for method, url, _ in self.requests))
         self.assertTrue(self.ports[0].full_output_snapshot)
         self.assertEqual(self.ports[0].timeout, 2.)
         self.assertEqual(self.ports[0].token, '')

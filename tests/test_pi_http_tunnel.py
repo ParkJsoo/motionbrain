@@ -12,8 +12,8 @@ from unittest.mock import patch
 from learning.pi_http_tunnel import PiHttpTunnel, PiHttpTunnelError
 
 REAL_POPEN = subprocess.Popen
-FORWARDS = [dict(localPort=18321, targetHost='192.168.219.179'),
-            dict(localPort=18322, targetHost='192.168.219.168')]
+FORWARDS = [dict(localPort=18321, targetHost='10.0.0.20'),
+            dict(localPort=18322, targetHost='10.0.0.21')]
 
 
 class Store:
@@ -93,8 +93,8 @@ class PiHttpTunnelTests(unittest.TestCase):
                              '-oControlMaster=no', '-oControlPath=none']:
                     self.assertIn(flag, command)
                 forwards = [command[i+1] for i,v in enumerate(command) if v == '-L']
-                self.assertEqual(forwards, ['127.0.0.1:18321:192.168.219.179:80',
-                                            '127.0.0.1:18322:192.168.219.168:80'])
+                self.assertEqual(forwards, ['127.0.0.1:18321:10.0.0.20:80',
+                                            '127.0.0.1:18322:10.0.0.21:80'])
                 self.assertEqual(command[-2], 'motionbrain-pi')
                 remote = shlex.split(command[-1])
                 self.assertEqual(remote[:3], ['python3', '-u', '-c'])
