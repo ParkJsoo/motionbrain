@@ -220,6 +220,9 @@ class StationaryM4BeforeReviewer:
         registration=_decode_json(self._bound(a['metrologyRegistration']))
         measure(self._bound(a['sources']['external']['image']),self._bound(a['sources']['gripper']['image']),registration)
 
+    def _compare_pictures(self,anchor,current,registration,before,fresh):
+        return {camera:same_picture(anchor[camera],current[camera],camera) for camera in current}
+
     def _epoch_matches(self):
         current=self.read_epoch()
         require(isinstance(current,dict) and set(current)==set(self.anchor['epoch'])
@@ -255,10 +258,10 @@ class StationaryM4BeforeReviewer:
         require(all(0<=now-f['sourceEarliest']<=age_limit
                     for f in frames.values()),'M4_stationary_fresh_frames_expired')
         anchor={camera:self._bound(self.anchor['sources'][camera]['image']) for camera in current}
-        picture={camera:same_picture(anchor[camera],current[camera],camera) for camera in current}
         registration=_decode_json(self._bound(self.anchor['metrologyRegistration']))
         before=measure(anchor['external'],anchor['gripper'],registration)
         fresh=measure(current['external'],current['gripper'],registration)
+        picture=self._compare_pictures(anchor,current,registration,before,fresh)
         limits=dict(objectRisePx=1.,toolRisePx=1.,slipDyPx=.5)
         differences={key:abs(fresh['state'][key]-before['state'][key]) for key in limits}
         require(all(differences[key]<=limits[key] for key in limits),'M4_stationary_metrology_changed')
