@@ -173,7 +173,8 @@ class SequencePort:
     bounded cleanup once and caches its result, including a failed result.
     """
     def __init__(self, url, token, boot_id, store, *, clock=time, timeout=.8, compact_reads=False,
-                 initial_full_output_snapshot=False, full_output_snapshot=False):
+                 initial_full_output_snapshot=False, full_output_snapshot=False,
+                 preparation_read_timeout=None):
         self.url = validate_target(url)
         if (not isinstance(token, str) or not token
                 or not all(33 <= ord(c) <= 126 for c in token)):
@@ -191,6 +192,11 @@ class SequencePort:
         if type(full_output_snapshot) is not bool or (full_output_snapshot and not compact_reads):
             raise ValueError('full_output_snapshot_requires_compact_reads')
         self.full_output_snapshot = full_output_snapshot
+        if preparation_read_timeout is not None and (type(preparation_read_timeout) not in (int, float)
+                                                     or preparation_read_timeout != 2.):
+            raise ValueError('preparation_read_timeout_must_be_two_seconds')
+        self.preparation_read_timeout = preparation_read_timeout
+        self._preparing_execution = False
         self._last_output_time = None
         self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
         self._default_opener = self.opener
@@ -262,7 +268,8 @@ class SequencePort:
                 and path == '/sequence' and payload is None and self.may_have_run
                 and not emergency and not run and request_timeout == 2.):
             raise ValueError('device_guard_terminal_scope')
-        maximum = 2. if device_guard_terminal else max(self.timeout, 1.5) if quiet_monitor_timeout or initial_output_read else self.timeout
+        base_timeout = self._read_timeout(endpoint, payload=payload, emergency=emergency, run=run)
+        maximum = 2. if device_guard_terminal else max(base_timeout, 1.5) if quiet_monitor_timeout or initial_output_read else base_timeout
         budget = maximum if request_timeout is None else min(maximum, request_timeout)
         if read_deadline is not None:
             budget = min(budget, read_deadline-self.clock.monotonic())
@@ -514,6 +521,15 @@ class SequencePort:
             raise ValueError('collection_status_schema_invalid')
         return status
 
+    def _read_timeout(self, endpoint, *, payload=None, emergency=False, run=False):
+        # Explicit attended preparation only: these GETs cannot start motion.
+        # The flag is cleared before RUN intent and before failure cleanup.
+        if (self._preparing_execution and self.preparation_read_timeout is not None
+                and not self.may_have_run and not emergency and not run and payload is None
+                and endpoint in ('/actions', '/status', '/collection_status', '/sequence', '/action_outputs')):
+            return self.preparation_read_timeout
+        return self.timeout
+
     def _outputs(self, *, quiet=False, deadline=None, **kwargs):
         if not self.compact_reads:
             payload = self._call('/action_outputs', request_timeout=None if deadline is None else deadline-self.clock.monotonic(), **kwargs)
@@ -522,7 +538,8 @@ class SequencePort:
             # Explicit batching changes only the number of HTTP round trips.
             # The same active/quiet deadline and full retained-ring audits hold.
             started = self.clock.monotonic()
-            budget = max(self.timeout, 1.5) if kwargs.get('quiet_monitor_timeout') is True else self.timeout
+            base_timeout = self._read_timeout('/action_outputs', emergency=kwargs.get('emergency', False))
+            budget = max(base_timeout, 1.5) if kwargs.get('quiet_monitor_timeout') is True else base_timeout
             if deadline is not None:
                 budget = min(budget, deadline-started)
             payload = self._call('/action_outputs', request_timeout=budget, **kwargs)
@@ -544,14 +561,15 @@ class SequencePort:
             # returns the same retained 128-entry ring, avoiding sixteen HTTP
             # round trips through SSH. The normal 64KiB response cap applies.
             # No status-only OFF inference or active-monitor change is made.
-            budget = max(self.timeout, 1.5)
+            budget = max(self._read_timeout('/action_outputs'), 1.5)
             if deadline is not None:
                 budget = min(budget, deadline-self.clock.monotonic())
             payload = self._call('/action_outputs', request_timeout=budget,
                                  initial_output_read=True, **kwargs)
             return self._consume_full_output_snapshot(payload, quiet=False)
         extended_quiet = kwargs.get('quiet_monitor_timeout') is True
-        drain_budget = 8. if bootstrap_budget else (max(self.timeout, 1.5) if extended_quiet else self.timeout)
+        base_timeout = self._read_timeout('/action_outputs', emergency=kwargs.get('emergency', False))
+        drain_budget = 8. if bootstrap_budget else (max(base_timeout, 1.5) if extended_quiet else base_timeout)
         if deadline is not None:
             drain_budget = min(drain_budget, deadline-self.clock.monotonic())
         new = []
@@ -876,6 +894,7 @@ class SequencePort:
         self._device_goal_guard = device_goal_guard
         terminal_record = None
         try:
+            self._preparing_execution = True
             tick()
             snapshot = self.preflight()
             baseline_angle = self._shoulder_angle(snapshot['status']) if pulse['motor'] == 4 else None
@@ -904,6 +923,7 @@ class SequencePort:
             if after_armed_before_run is not None:
                 after_armed_before_run()
                 tick()
+            self._preparing_execution = False
             self._call('/sequence', device_guard.run_payload(device_goal_guard) if device_goal_guard is not None
                        else {'action': 'run'}, run=True)
             before = self.last_dispatch_before
@@ -970,6 +990,7 @@ class SequencePort:
             return receipt
         except BaseException:
             failure_in_flight = True
+            self._preparing_execution = False
             self.finish()
             if target_monitor and self._target_monitor_diagnostic is not None:
                 # Persist failure diagnostics only after existing STOP/OFF cleanup.
@@ -980,6 +1001,7 @@ class SequencePort:
                            copy.deepcopy(self._target_monitor_diagnostic), emergency=True)
             raise
         finally:
+            self._preparing_execution = False
             self._device_goal_guard = None
             self._before_run = None
             self._target_stop_priority = False
