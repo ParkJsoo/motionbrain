@@ -172,7 +172,8 @@ class SequencePort:
     its response. An exception never authorizes a resend. ``finish`` performs
     bounded cleanup once and caches its result, including a failed result.
     """
-    def __init__(self, url, token, boot_id, store, *, clock=time, timeout=.8, compact_reads=False):
+    def __init__(self, url, token, boot_id, store, *, clock=time, timeout=.8, compact_reads=False,
+                 initial_full_output_snapshot=False, full_output_snapshot=False):
         self.url = validate_target(url)
         if (not isinstance(token, str) or not token
                 or not all(33 <= ord(c) <= 126 for c in token)):
@@ -184,6 +185,12 @@ class SequencePort:
         self.token, self.boot_id, self.store = token, boot_id, store
         self.clock, self.timeout = clock, timeout
         self.compact_reads = compact_reads
+        if type(initial_full_output_snapshot) is not bool or (initial_full_output_snapshot and not compact_reads):
+            raise ValueError('initial_full_output_snapshot_requires_compact_reads')
+        self.initial_full_output_snapshot = initial_full_output_snapshot
+        if type(full_output_snapshot) is not bool or (full_output_snapshot and not compact_reads):
+            raise ValueError('full_output_snapshot_requires_compact_reads')
+        self.full_output_snapshot = full_output_snapshot
         self._last_output_time = None
         self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
         self._default_opener = self.opener
@@ -511,6 +518,17 @@ class SequencePort:
         if not self.compact_reads:
             payload = self._call('/action_outputs', request_timeout=None if deadline is None else deadline-self.clock.monotonic(), **kwargs)
             return payload, self._consume(payload, quiet=quiet)
+        if self.full_output_snapshot:
+            # Explicit batching changes only the number of HTTP round trips.
+            # The same active/quiet deadline and full retained-ring audits hold.
+            started = self.clock.monotonic()
+            budget = max(self.timeout, 1.5) if kwargs.get('quiet_monitor_timeout') is True else self.timeout
+            if deadline is not None:
+                budget = min(budget, deadline-started)
+            payload = self._call('/action_outputs', request_timeout=budget, **kwargs)
+            if self.clock.monotonic()-started >= budget:
+                raise TimeoutError('request_deadline')
+            return self._consume_full_output_snapshot(payload, quiet=quiet)
         started = self.clock.monotonic()
         bootstrap = self.last_sequence is None
         # Initial retained-ring loading occurs before any collector write. It
@@ -521,6 +539,17 @@ class SequencePort:
                             and not self.may_have_run and not self.writes_possible
                             and not kwargs.get('emergency') and not self.evidence_failed
                             and not self.off_verified and self.last_snapshot is None)
+        if bootstrap_budget and self.initial_full_output_snapshot:
+            # Explicit startup-only alternative: one existing unpaged endpoint
+            # returns the same retained 128-entry ring, avoiding sixteen HTTP
+            # round trips through SSH. The normal 64KiB response cap applies.
+            # No status-only OFF inference or active-monitor change is made.
+            budget = max(self.timeout, 1.5)
+            if deadline is not None:
+                budget = min(budget, deadline-self.clock.monotonic())
+            payload = self._call('/action_outputs', request_timeout=budget,
+                                 initial_output_read=True, **kwargs)
+            return self._consume_full_output_snapshot(payload, quiet=False)
         extended_quiet = kwargs.get('quiet_monitor_timeout') is True
         drain_budget = 8. if bootstrap_budget else (max(self.timeout, 1.5) if extended_quiet else self.timeout)
         if deadline is not None:
@@ -561,6 +590,19 @@ class SequencePort:
             if not payload['hasMore']:
                 return {**payload, 'entries': [e for page in pages for e in page['entries']]}, new
         raise ValueError('output_page_budget_exceeded')
+
+    def _consume_full_output_snapshot(self, payload, *, quiet):
+        entries = payload.get('entries')
+        dropped = payload.get('dropped')
+        if (not isinstance(entries, list) or not 1 <= len(entries) <= 128
+                or type(dropped) is not int or dropped < 0
+                or not all(isinstance(entry, dict) for entry in entries)
+                or type(entries[0].get('sequence')) is not int
+                or entries[0]['sequence'] != dropped+1):
+            raise ValueError('full_output_ring_invalid')
+        new = self._consume(payload, quiet=quiet)
+        return dict(payload, oldestSequence=entries[0]['sequence'],
+                    latestSequence=entries[-1]['sequence'], gap=False, hasMore=False), new
 
     def _check_snapshot_status(self, status, *, emergency=False):
         self._check_status(status, 'IDLE')
