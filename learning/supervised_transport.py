@@ -247,7 +247,12 @@ class SequencePort:
             if policy not in BOUNDED_M4_MONITOR_POLICIES:
                 raise ValueError('bounded_m4_read_policy_required')
             validate_monitor_policy(self._active_pulse or {}, policy)
-        if endpoint not in ('/status', '/collection_status', '/sequence', '/actions', '/action_outputs', '/command', '/motor'):
+        if endpoint == '/shoulder':
+            if (not run or emergency or payload is None
+                    or payload != getattr(self, '_finite_shoulder_request', None)
+                    or self.may_have_run):
+                raise ValueError('finite_shoulder_exact_run_required')
+        elif endpoint not in ('/status', '/collection_status', '/sequence', '/actions', '/action_outputs', '/command', '/motor'):
             raise ValueError('unsupported_endpoint')
         if '?' in path and (endpoint != '/action_outputs' or payload is not None):
             raise ValueError('unsupported_endpoint')
