@@ -12,6 +12,8 @@ An ESP32-controlled five-axis DC arm connects an external camera, a gripper-moun
 
 Under registered conditions, finite single-joint jobs connect **collection → automatic observation → training → model freeze → evaluation on new actions**. Per-sample manual coordinates are unnecessary, but observation rejection or communication failure stops the job. Unattended whole-arm operation remains unvalidated. **Continuous model-selected autonomous grasping and lifting remain incomplete.** A separate manual contact-and-rise experiment also failed to lift and retain the object.
 
+A development path connects relative observations under bounded translation and isotropic scale changes to candidate comparison and the existing finite execution path. Approach/closing features remain distinct from external height measurements used for lifting. A supported prefix is reported separately from a full cycle. See [view adaptation and stage-specific models (Korean)](docs/visual-action-learning.md#구도가-달라진-영상에서-후보-비교로-이어지는-경로); software checks do not establish physical grasp success.
+
 ## From collection to bounded execution
 
 | Stage | Implemented path | Decision criteria |

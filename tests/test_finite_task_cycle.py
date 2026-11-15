@@ -2,7 +2,7 @@
 import copy
 import unittest
 
-from learning.finite_task_cycle import FiniteTaskCycle, SCHEMA, STAGES, bounded_command
+from learning.finite_task_cycle import FiniteTaskCycle, SCHEMA, PREFIX_SCHEMA, STAGES, bounded_command
 from learning.supervised_collection import plan_digest
 
 
@@ -83,6 +83,30 @@ class Ports:
 
 
 class FiniteCycleTests(unittest.TestCase):
+    def test_explicit_prefix_executes_model_steps_without_fabricating_future_models(self):
+        s=scope();s['schemaVersion']=PREFIX_SCHEMA;s['stages']=s['stages'][:2]
+        p=Ports(s);r=p.cycle().run()
+        self.assertEqual(r['status'],'prefix_completed')
+        self.assertEqual(r['confirmedCommands'],2)
+        self.assertFalse(r['fullyModelSelectedCycle'])
+        self.assertEqual(r['remainingStages'],['lift','lower','release'])
+        self.assertEqual([c['joint'] for c in p.sent],['elbow','gripper'])
+        self.assertTrue(r['finalOffVerified'])
+
+    def test_prefix_does_not_skip_stages_or_relax_full_contract(self):
+        for indices,schema in [([1],PREFIX_SCHEMA),([0,2],PREFIX_SCHEMA),([0],SCHEMA),
+                               (list(range(5)),PREFIX_SCHEMA)]:
+            s=scope();s['schemaVersion']=schema;s['stages']=[s['stages'][i] for i in indices]
+            with self.subTest(indices=indices,schema=schema),self.assertRaises(ValueError):Ports(s).cycle()
+
+    def test_prefix_failure_never_retries_or_reports_completed(self):
+        s=scope();s['schemaVersion']=PREFIX_SCHEMA;s['stages']=s['stages'][:3]
+        p=Ports(s);p.fail=TimeoutError('unknown run');r=p.cycle().run()
+        self.assertEqual(len(p.sent),1)
+        self.assertEqual(r['status'],'failed')
+        self.assertFalse(r['fullyModelSelectedCycle'])
+        self.assertTrue(r['finalOffVerified'])
+
     def run_ports(self, configure=None):
         p=Ports(scope())
         if configure: configure(p)

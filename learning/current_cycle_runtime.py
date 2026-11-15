@@ -18,7 +18,8 @@ from learning.m4_up_commissioning import M4UpCommissioning
 from learning.model_grasp_trial import ModelGraspTrial
 from learning.supervised_transport import SequencePort
 from learning.supervised_collection import plan_digest
-from learning.task_cycle_workflow import FrozenCycleModelBank, ScopedCycleExecutor
+from learning.task_cycle_workflow import FrozenCycleModelBank, MixedCycleModelBank, ScopedCycleExecutor
+from learning.scene_relative_models import SceneRelativeModelBank
 
 SCHEMA='motionbrain.current_cycle_runtime.v1'
 
@@ -76,11 +77,32 @@ class CurrentCycleRuntime:
     def __init__(self,scope,bank,*,assets,authorization,source,phase,manager_factory,
                  m4_factory,read_only,store,clock=time):
         self.scope=validate_scope(scope)
-        require(isinstance(bank,FrozenCycleModelBank),'runtime_frozen_bank_required')
+        require(isinstance(bank,(FrozenCycleModelBank,SceneRelativeModelBank)),'runtime_frozen_bank_required')
         bank.verify_cached()
-        require(all(s['context']==bank.models[s['kind']]['context']
-                    and s['modelSha256']==bank.hashes[s['kind']] for s in self.scope['stages']),
-                'runtime_model_scope_mismatch')
+        self.scene_stages={stage['kind'] for stage in self.scope['stages']
+                           if isinstance(bank,SceneRelativeModelBank)
+                           or isinstance(bank,MixedCycleModelBank) and bank.is_scene_stage(stage['kind'])}
+        self.scene_bank=bool(self.scene_stages)
+        self.scene_hashes={kind:bank.hashes[kind] for kind in self.scene_stages}
+        require(self.scene_stages.issubset({'approach','close','release'}),'runtime_scene_stage_semantics')
+        for stage in self.scope['stages']:
+            kind=stage['kind'];require(kind in bank.models,'runtime_model_stage_missing')
+            model=bank.models[kind]
+            require(stage['modelSha256']==bank.hashes[kind],'runtime_model_scope_mismatch')
+            if kind in self.scene_stages:
+                from learning.supervised_transport import ELBOW_DEADLINE_POLICY,validate_monitor_policy
+                expected_policy=ELBOW_DEADLINE_POLICY if kind=='approach' else None
+                require(model['physicalContext'].get('executionTimingPolicy')==expected_policy,
+                        'runtime_scene_execution_timing_policy_changed')
+                for command in stage['commands']:validate_monitor_policy(command,expected_policy)
+                require(stage['context'].get('object')==model['physicalContext']['object']
+                        and stage['context'].get('sceneObservationContract')==model['observationContract']
+                        and isinstance(stage['context'].get('poseRegime'),str) and stage['context']['poseRegime'],
+                        'runtime_scene_model_scope_mismatch')
+            else:require(stage['context']==model['context'],'runtime_model_scope_mismatch')
+        if self.scene_bank:
+            require(assets.get('sceneModelAdmission')==dict(mode='development_scoped_attempt',modelSha256=self.scene_hashes),
+                    'runtime_scene_development_admission_required')
         require(isinstance(assets,dict) and isinstance(assets.get('journalPath'),str)
                 and Path(assets['journalPath']).is_absolute(),'runtime_shared_journal_asset')
         require(isinstance(authorization,dict) and set(authorization)=={
@@ -93,6 +115,7 @@ class CurrentCycleRuntime:
                     'observe_general_after','verify_observation','validate_general_memory',
                     'verify_clock_bridge','close_idle','close_general','close_m4','close'),'runtime_actual_source_port_required')
         _methods(phase,('preflight','goal','verify_goal'),'runtime_raw_phase_port_required')
+        if self.scene_bank:_methods(phase,('entry',),'runtime_scene_raw_entry_port_required')
         _methods(read_only,('check_idle','acknowledge_execution','stop'),'runtime_readonly_and_cleanup_port_required')
         require(callable(manager_factory) and callable(m4_factory),'runtime_actual_factories_required')
         _methods(m4_factory,('preflight',),'runtime_M4_factory_preflight_required')
@@ -111,7 +134,7 @@ class CurrentCycleRuntime:
         require(plan_digest(dict(scope=self.scope,assets=self.assets,authorization=self.authorization))==self.memory_sha,
                 'runtime_memory_contract_changed')
         self.bank.verify_cached()
-        require(self.bank.m1_observation_policies==self.assets.get('m1ObservationPolicies',{}),
+        require(getattr(self.bank,'m1_observation_policies',{})==self.assets.get('m1ObservationPolicies',{}),
                 'runtime_M1_admission_policy_changed')
 
     def preflight(self):
@@ -119,19 +142,44 @@ class CurrentCycleRuntime:
         self._memory()
         require(self.manager is None and self.actor is None,'runtime_owner_not_idle')
         proofs={}
-        for name,port in [('source',self.source),('phase',self.phase),('M4',self.m4_factory)]:
+        kinds={s['kind'] for s in self.scope['stages']}
+        ports=[('source',self.source),('phase',self.phase)]
+        if kinds.intersection(('lift','lower')):ports.append(('M4',self.m4_factory))
+        for name,port in ports:
             proof=port.preflight(copy.deepcopy(self.scope),copy.deepcopy(self.assets))
             require(isinstance(proof,dict) and proof.get('scopeSha256')==plan_digest(self.scope)
                     and proof.get('assetsSha256')==plan_digest(self.assets),
                     'runtime_'+name+'_preflight_audit_required')
+            if self.scene_bank and name=='source':
+                require(proof.get('sceneModelSha256')==self.scene_hashes
+                        and proof.get('sceneDevelopmentOnly') is True, 'runtime_scene_source_admission_required')
             supported=proof.get('supportedStages')
-            expected=set(('lift','lower')) if name=='M4' else set(STAGES)
+            expected=kinds.intersection(('lift','lower')) if name=='M4' else kinds
             require(isinstance(supported,list) and len(supported)==len(expected)
                     and set(supported)==expected,'runtime_'+name+'_stage_unsupported')
             proofs[name]=copy.deepcopy(proof)
         self._memory()
         return dict(schemaVersion=SCHEMA,scopeSha256=plan_digest(self.scope),proofs=proofs,
                     hardwareCommands=0,sourceAndFactoryBindingsRequired=True)
+
+    def _scene_record(self,stage,record):
+        if stage['kind'] not in self.scene_stages:return
+        from learning.scene_relative_models import vector
+        model=self.bank.models[stage['kind']]
+        entry=self.phase.entry(copy.deepcopy(stage),copy.deepcopy(record))
+        require(entry==record.get('entry'),'runtime_scene_entry_audit_changed')
+        table=entry.get('tableSupported');air=entry.get('airborne');contact=entry.get('bilateralContact')
+        require(type(table) is bool and type(air) is bool and not (table and air),
+                'runtime_scene_support_ambiguous')
+        if table and not air:support='table_supported'
+        elif air and not table and contact is True:support='gripper_supported'
+        else:raise ValueError('runtime_scene_support_ambiguous')
+        require(support==model['physicalContext'].get('supportMode'),'runtime_scene_physical_support_changed')
+        state=vector(record.get('state'))
+        require(state[3]==record.get('m4AngleDeg')
+                and record.get('physicalContext')==model['physicalContext']
+                and record.get('observationContract')==model['observationContract'],
+                'runtime_scene_observation_binding_changed')
 
     def _fresh_source_ids(self,record):
         require(isinstance(record,dict) and isinstance(record.get('frames'),list)
@@ -171,6 +219,7 @@ class CurrentCycleRuntime:
         require(self.source.verify_clock_bridge(copy.deepcopy(stage),copy.deepcopy(record),route,
                     self.manager if self.manager is not None else self.actor) is True,
                 'runtime_host_monotonic_bridge_rejected')
+        self._scene_record(stage,record)
         self._fresh_source_ids(record)
         self.events.append(dict(kind='observation_route',stage=stage['kind'],route=route))
         return record
@@ -212,6 +261,7 @@ class CurrentCycleRuntime:
             post=self.source.observe_general_after(stage,manager,copy.deepcopy(receipt),deadline=self.cycle.deadline)
             require(self.source.verify_clock_bridge(stage,copy.deepcopy(post),'general_after',manager) is True,
                     'runtime_host_monotonic_bridge_rejected')
+            self._scene_record(stage,post)
             self._fresh_source_ids(post)
             require(self.source.verify_observation(stage,copy.deepcopy(post)) is True,
                     'runtime_general_after_source_rejected')

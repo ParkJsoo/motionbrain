@@ -81,6 +81,7 @@ class Phase:
         if self.t.fail_retention and stage['kind']=='lift' and result['reached']:
             result['retained']=False
         return result
+    def entry(self,stage,record):return copy.deepcopy(record['entry'])
     def verify_goal(self,stage,record,result):return True
 
 
@@ -130,6 +131,115 @@ class Factory:
 
 
 class RuntimeTests(unittest.TestCase):
+    def test_prefix_uses_real_general_ports_without_future_M4_preflight(self):
+        from learning.finite_task_cycle import PREFIX_SCHEMA
+        from learning.task_cycle_workflow import PrefixCycleModelBank
+        self.bank=PrefixCycleModelBank({k:v for k,v in self.bank.bindings.items()
+                                       if k in ('approach','close')})
+        self.scope['schemaVersion']=PREFIX_SCHEMA
+        self.scope['stages']=self.scope['stages'][:2]
+        def proof(scope,assets):
+            return dict(scopeSha256=plan_digest(scope),assetsSha256=plan_digest(assets),
+                        supportedStages=['approach','close'])
+        self.source.preflight=proof;self.phase.preflight=proof
+        self.factory.preflight=lambda *args:(_ for _ in ()).throw(AssertionError('future M4 preflight'))
+        self.runtime=self.make();result=self.run_cycle()
+        self.assertEqual(result['status'],'prefix_completed',result)
+        self.assertEqual(result['cycleResult']['confirmedCommands'],2)
+        self.assertFalse(result['cycleResult']['fullyModelSelectedCycle'])
+        self.assertEqual(len(self.managers),2)
+        self.assertEqual(self.actors,[])
+        self.assertTrue(result['cycleResult']['finalOffVerified'])
+
+    def test_scene_derived_bank_selects_and_executes_existing_general_transport(self):
+        from learning.scene_relative_models import fit,SceneRelativeModelBank
+        from tests.test_scene_relative_models import row
+        from learning.pipeline_learning import digest
+        from learning.finite_task_cycle import PREFIX_SCHEMA
+        rows=[row(0,-4,-8),row(1,4,0)]
+        for item in rows:
+            for side in ('before','after'):
+                item[side][3]=196.;item['source'][side]['m4AngleDeg']=196.
+            item['sourceSha256']=digest(item['source'])
+        model=fit(rows);self.bank=SceneRelativeModelBank({'approach':model})
+        self.scope['schemaVersion']=PREFIX_SCHEMA
+        self.scope['stages']=self.bank.scope_stages([dict(kind='approach',maxCommands=2,
+            context=dict(object='block',poseRegime='current-synthetic'),commands=[models.APPROACH],target=[-2.,0.,10.,196.])])
+        self.assets['sceneModelAdmission']=dict(mode='development_scoped_attempt',modelSha256=self.bank.hashes)
+        def proof(scope,assets):
+            return dict(scopeSha256=plan_digest(scope),assetsSha256=plan_digest(assets),supportedStages=['approach'],
+                        sceneModelSha256=self.bank.hashes,sceneDevelopmentOnly=True)
+        self.source.preflight=proof;self.phase.preflight=proof
+        original=self.source._record
+        def observed(stage,after_off,deadline):
+            record=original(stage,after_off,deadline)
+            record['entry']['airborne']=False
+            record.update(state=[-2. if self.ports.count['approach'] else 2.,0.,10.,196.],
+                physicalContext=copy.deepcopy(model['physicalContext']),observationContract=copy.deepcopy(model['observationContract']))
+            return record
+        self.source._record=observed
+        admission=self.assets.pop('sceneModelAdmission')
+        with self.assertRaisesRegex(ValueError,'development_admission_required'):self.make()
+        self.assertEqual(self.device.requests,[])
+        self.assets['sceneModelAdmission']=admission
+        wrong=copy.deepcopy(model);wrong['physicalContext']['executionTimingPolicy']='different_dispatch_policy'
+        good_hash=self.scope['stages'][0]['modelSha256'];wrong_hash=digest(wrong)
+        self.scope['stages'][0]['modelSha256']=wrong_hash
+        with patch.object(self.bank,'models',{'approach':wrong}),patch.object(self.bank,'hashes',{'approach':wrong_hash}):
+            with self.assertRaisesRegex(ValueError,'execution_timing_policy_changed'):self.make()
+        self.scope['stages'][0]['modelSha256']=good_hash
+        self.runtime=self.make()
+        stage=self.scope['stages'][0];probe=observed(stage,None,100.)
+        unsupported=copy.deepcopy(probe);unsupported['entry'].update(tableSupported=False,airborne=True,bilateralContact=True)
+        with self.assertRaisesRegex(ValueError,'physical_support_changed'):self.runtime._scene_record(stage,unsupported)
+        ambiguous=copy.deepcopy(probe);ambiguous['entry']['airborne']=True
+        with self.assertRaisesRegex(ValueError,'support_ambiguous'):self.runtime._scene_record(stage,ambiguous)
+        original_entry=self.phase.entry;self.phase.entry=lambda *args:copy.deepcopy(probe['entry'])
+        with self.assertRaisesRegex(ValueError,'entry_audit_changed'):self.runtime._scene_record(stage,unsupported)
+        self.phase.entry=original_entry
+        result=self.run_cycle()
+        self.assertEqual(result['status'],'prefix_completed',result)
+        self.assertEqual(result['cycleResult']['confirmedCommands'],1)
+        self.assertEqual(result['runtimeCounts']['generalSessionsFinished'],1)
+        self.assertFalse(result['cycleResult']['fullyModelSelectedCycle'])
+        self.assertFalse(model['controlEligible'])
+        self.assertEqual(sum(p=={'action':'run'} for _,p in self.posts()),1)
+
+    def test_mixed_scene_approach_and_original_M4_models_complete_separate_paths(self):
+        from learning.scene_relative_models import fit,freeze_model
+        from learning.task_cycle_workflow import MixedCycleModelBank
+        from tests.test_scene_relative_models import row
+        from learning.pipeline_learning import digest
+        rows=[row(0,-4,-8),row(1,4,0)]
+        for item in rows:
+            for side in ('before','after'):
+                item[side][3]=196.;item['source'][side]['m4AngleDeg']=196.
+            item['sourceSha256']=digest(item['source'])
+        model=fit(rows);binding=freeze_model(self.repo/'scene.json',model)
+        self.bank=MixedCycleModelBank(scene_bindings={'approach':binding},
+            legacy_bindings={k:v for k,v in self.bank.bindings.items() if k!='approach'})
+        self.scope['stages'][0]['target']=[-2.,0.,10.,196.]
+        self.scope['stages']=self.bank.scope_stages(self.scope['stages'])
+        scene_hashes={'approach':self.bank.hashes['approach']}
+        self.assets['sceneModelAdmission']=dict(mode='development_scoped_attempt',modelSha256=scene_hashes)
+        original_proof=self.source.preflight
+        self.source.preflight=lambda scope,assets:dict(original_proof(scope,assets),sceneModelSha256=scene_hashes,sceneDevelopmentOnly=True)
+        original_record=self.source._record
+        def observed(stage,after_off,deadline):
+            record=original_record(stage,after_off,deadline)
+            if stage['kind']=='approach':
+                record['entry']['airborne']=False
+                record.update(state=[-2. if self.ports.count['approach'] else 2.,0.,10.,196.],
+                    physicalContext=copy.deepcopy(model['physicalContext']),observationContract=copy.deepcopy(model['observationContract']))
+            return record
+        self.source._record=observed;self.runtime=self.make();result=self.run_cycle()
+        self.assertEqual(result['status'],'completed',result)
+        self.assertEqual(result['cycleResult']['confirmedCommands'],5)
+        self.assertEqual(result['runtimeCounts']['M4ActorCalls'],2)
+        self.assertEqual(result['runtimeCounts']['generalSessionsFinished'],3)
+        self.assertTrue(self.bank.is_scene_stage('approach'));self.assertFalse(self.bank.is_scene_stage('lift'))
+        self.assertNotEqual(self.bank.models['approach']['schemaVersion'],self.bank.models['lift']['schemaVersion'])
+
     def setUp(self):
         fixture=models.CycleWorkflowTests();fixture.setUp();self.addCleanup(fixture.doCleanups)
         self.bank=fixture.freeze();self.ports=models.ModelPorts(self.bank)

@@ -24,7 +24,7 @@ from learning.m4_effective_policy import (POLICY_SCHEMA as EFFECTIVE_POLICY_SCHE
     validate_effective_policy,effective_task_pulse,SCHEMA as EFFECTIVE_SCHEMA)
 from learning.development_gripper_source import scene_context
 from learning.m1_shaft_scene import scene_context as shaft_scene
-from learning.finite_task_cycle import STAGES,validate_scope,bounded_command
+from learning.finite_task_cycle import STAGES,PREFIX_SCHEMA,validate_scope,bounded_command
 from learning.grasp_observation import GripperObservationSource
 from learning.manual_collection import ManualCollection
 from learning.manual_collection_dataset import require
@@ -32,7 +32,8 @@ from learning.m4_up_commissioning import M4UpCommissioning,CURRENT_SHORT_TASK_SC
 from learning.m4_up_observer import M4DualCameraObserver
 from learning.supervised_transport import SequencePort,validate_target
 from learning.supervised_collection import plan_digest
-from learning.task_cycle_workflow import FrozenCycleModelBank
+from learning.task_cycle_workflow import FrozenCycleModelBank,MixedCycleModelBank
+from learning.scene_relative_models import SceneRelativeModelBank
 from learning.pipeline_learning import digest as decision_digest
 
 
@@ -64,12 +65,48 @@ def _execution_pulse(direction,policy):
             else short_task_pulse(direction,policy))
 
 
+def _is_scene_stage(bank,kind):
+    return isinstance(bank,SceneRelativeModelBank) or (isinstance(bank,MixedCycleModelBank) and bank.is_scene_stage(kind))
+
+
+def _has_scene(bank):
+    return isinstance(bank,(SceneRelativeModelBank,MixedCycleModelBank))
+
+
+def _scene_hashes(bank):
+    return bank.scene_hashes if isinstance(bank,MixedCycleModelBank) else bank.hashes
+
+
+def _source_class(bank):
+    if _has_scene(bank):
+        from learning.scene_relative_cycle_source import SceneRelativeCycleSource
+        return SceneRelativeCycleSource
+    return FullCycleSource
+
+
+def _scene_admission(bank,scope,assets):
+    bank.verify_cached()
+    if not _has_scene(bank):
+        require('sceneModelAdmission' not in assets,'factory_scene_admission_without_scene_model')
+        return
+    require(assets.get('sceneModelAdmission')==dict(mode='development_scoped_attempt',modelSha256=_scene_hashes(bank)),
+            'factory_scene_development_admission_required')
+    for stage in scope['stages']:
+        if not _is_scene_stage(bank,stage['kind']):continue
+        require(stage['kind'] in ('approach','close','release'),'factory_scene_stage_semantics')
+        model=bank.models[stage['kind']]
+        require(stage['context'].get('object')==model['physicalContext']['object']
+                and assets['sourceStages'][stage['kind']]['physicalContext']==model['physicalContext'],
+                'factory_scene_physical_context_changed')
+
+
 def _model_stage_support(bank,scope):
     missing={};owned={}
     for stage in scope['stages']:
         kind=stage['kind']
         if kind not in ('lift','lower'):continue
         support='table_supported' if kind=='lift' else 'gripper_supported'
+        require(not _is_scene_stage(bank,kind),'factory_scene_stage_semantics')
         entries=bank.models[kind]['models'];rows=bank.models[kind]['trainingRows']
         for command in stage['commands']:
             matches=[e for e in entries if e['command']==command and e['supportMode']==support and e['count']>=2]
@@ -100,10 +137,10 @@ def _stage_contracts(root,scope,assets):
                 require(bool(stage['commands']) and all(c in allowed for c in stage['commands']),
                         'factory_general_exact_candidates_required')
         except (ValueError,KeyError) as exc:missing.setdefault(kind,[]).append(str(exc))
-    if set(policies)=={'lift','lower'}:
-        if policies['lift']!=policies['lower']:
+    if policies:
+        if len(policies)==2 and policies['lift']!=policies['lower']:
             for kind in ('lift','lower'):missing.setdefault(kind,[]).append('factory_paired_short_policy_mismatch')
-        policy=policies['lift']
+        policy=next(iter(policies.values()))
         for stage in scope['stages']:
             kind=stage['kind']
             if kind in ('approach','close','release'):
@@ -115,7 +152,8 @@ def _stage_contracts(root,scope,assets):
                             and config['referenceM4Deg']==policy['tableReferenceDeg'],
                             'factory_guard_table_reference_mismatch')
                     if kind=='release':
-                        require(stage['target'].get('expectedM4AngleDeg')==policy['downGoalAngleDeg'],
+                        require((stage['target'].get('expectedM4AngleDeg') if isinstance(stage['target'],dict)
+                                else stage['context'].get('expectedM4AngleDeg'))==policy['downGoalAngleDeg'],
                                 'factory_release_table_goal_mismatch')
                 except (ValueError,KeyError,OSError,RuntimeError) as exc:missing.setdefault(kind,[]).append(str(exc))
     if missing:raise FactoryPreflightError(missing)
@@ -125,7 +163,7 @@ def _audit_source_assets(root,bank,scope,assets):
     class Probe:
         def bind_source(self,source):pass
     def forbidden(*args,**kwargs):raise ValueError('offline_preflight_factory_forbidden')
-    source=FullCycleSource(root,bank=bank,idle_factory=forbidden,general_factory=forbidden,phase=Probe())
+    source=_source_class(bank)(root,bank=bank,idle_factory=forbidden,general_factory=forbidden,phase=Probe())
     missing={}
     try:source.preflight(scope,assets)
     except SourcePreflightError as exc:missing=copy.deepcopy(exc.missing)
@@ -135,14 +173,14 @@ def _audit_source_assets(root,bank,scope,assets):
         try:
             spec=assets['sourceStages'][kind];actual=spec['sourceContext']
             identities.add((actual['gripperCameraBootId'],actual['externalDeviceId'],actual['externalViewId']))
-            if kind in ('approach','close','release'):
+            if kind in ('approach','close','release') and not _is_scene_stage(bank,kind):
                 config=_decode_json(_bound(root,spec['guardConfig']))
                 require(stage['context']['cameraIdentity']['cameraBootId']==actual['gripperCameraBootId']
                     and all(config.get(k)==actual[k] for k in ('gripperCameraBootId','externalDeviceId','externalViewId')),
                     'factory_current_camera_guard_model_mismatch')
         except (ValueError,KeyError,OSError,RuntimeError) as exc:missing.setdefault(kind,[]).append(str(exc))
     if len(identities)!=1:
-        for kind in STAGES:missing.setdefault(kind,[]).append('factory_mixed_camera_identity')
+        for stage in scope['stages']:missing.setdefault(stage['kind'],[]).append('factory_mixed_camera_identity')
     try:_stage_contracts(root,scope,assets)
     except FactoryPreflightError as exc:
         for kind,errors in exc.missing.items():missing.setdefault(kind,[]).extend(errors)
@@ -152,7 +190,7 @@ def _audit_source_assets(root,bank,scope,assets):
     if missing:raise FactoryPreflightError(missing)
 
 
-def build_cycle_assets(root,scope,*,model_bindings,source_stages,journal_path,helper_binding,m1_observation_policies=None):
+def build_cycle_assets(root,scope,*,model_bindings,source_stages,journal_path,helper_binding,m1_observation_policies=None,scene_model_admission=None):
     """실제 source preflight를 재사용한다. 부족 자산을 ready로 대신하지 않는다.
 
 model_bindings는 FrozenCycleModelBank의 절대 경로/SHA 계약, 나머지 binding은
@@ -160,7 +198,8 @@ root 아래 안전한 상대 경로/SHA다. 상태 등록과 픽셀 계측 등�
 각각 modelStateRegistration/registration에 넣는다.
     """
     root=Path(root);missing={}
-    for kind in STAGES:
+    scope=validate_scope(scope)
+    for kind in [s['kind'] for s in scope['stages']]:
         errors=[];binding=model_bindings.get(kind)
         if not isinstance(binding,dict):errors.append('frozen_model_missing')
         else:
@@ -171,20 +210,34 @@ root 아래 안전한 상대 경로/SHA다. 상태 등록과 픽셀 계측 등�
         if not isinstance(source_stages.get(kind),dict):errors.append('source_registration_missing')
         if errors:missing[kind]=errors
     if missing:raise FactoryPreflightError(missing)
-    bank=FrozenCycleModelBank(model_bindings,allow_development_approach=True,
-                             m1_observation_policies=m1_observation_policies)
+    from learning.task_cycle_workflow import PrefixCycleModelBank
+    bank_cls=PrefixCycleModelBank if scope['schemaVersion']==PREFIX_SCHEMA else FrozenCycleModelBank
+    if scene_model_admission is not None:
+        require(not m1_observation_policies,'factory_scene_legacy_admission_mixed')
+        from learning.scene_relative_models import SCHEMA as SCENE_SCHEMA
+        scene_bindings={k:v for k,v in model_bindings.items()
+                        if _decode_json(Path(v['path']).read_bytes()).get('schemaVersion')==SCENE_SCHEMA}
+        legacy_bindings={k:v for k,v in model_bindings.items() if k not in scene_bindings}
+        bank=MixedCycleModelBank(scene_bindings=scene_bindings,legacy_bindings=legacy_bindings,
+                                allow_development_approach=True)
+    else:
+        bank=bank_cls(model_bindings,allow_development_approach=True,
+                     m1_observation_policies=m1_observation_policies)
     scope=validate_scope(scope)
     _bound(root,helper_binding)
     require(Path(journal_path).is_absolute(),'factory_absolute_journal_required')
     assets=dict(journalPath=str(journal_path),sourceStages=copy.deepcopy(source_stages),
         helper=copy.deepcopy(helper_binding),m4ImplementationSha256=implementation_digest(),
         phaseMode='source_bound_human',phaseProtocol='nonce_seed_anchor_fresh_once_v1')
+    if scene_model_admission is not None:
+        assets['sceneModelAdmission']=copy.deepcopy(scene_model_admission)
+        _scene_admission(bank,scope,assets)
     if m1_observation_policies:
         assets['m1ObservationPolicies']=copy.deepcopy(m1_observation_policies)
     # No factory, recorder, phase request, or device is created by this audit.
     _audit_source_assets(root,bank,scope,assets)
-    for kind in ('lift','lower'):
-        try:_execution_policy(bank.models[kind]['context'].get('executionPolicy'))
+    for kind in (s['kind'] for s in scope['stages'] if s['kind'] in ('lift','lower')):
+        try:_execution_policy(next(s for s in scope['stages'] if s['kind']==kind)['context'].get('executionPolicy'))
         except ValueError as exc:missing[kind]=[str(exc)]
     if missing:raise FactoryPreflightError(missing)
     return assets,bank
@@ -269,7 +322,7 @@ class _M4Factory:
     def __init__(self,owner):self.owner=owner
     def preflight(self,scope,assets):
         self.owner.preflight(scope,assets)
-        return dict(scopeSha256=plan_digest(scope),assetsSha256=plan_digest(assets),supportedStages=['lift','lower'])
+        return dict(scopeSha256=plan_digest(scope),assetsSha256=plan_digest(assets),supportedStages=[s['kind'] for s in scope['stages'] if s['kind'] in ('lift','lower')])
     def __call__(self,stage,command,hooks):return self.owner._m4(stage,command,hooks)
 
 
@@ -293,11 +346,11 @@ class CurrentRuntimeFactory:
         self.resource_check,self.after_reviewer_factory,self.clock=resource_check,after_reviewer_factory,clock
         self.source=None;self.managers=[];self.actors=[];self.readers=[];self.serial=0;self.closed=False
         self._verified=False;self._manifest_sha=plan_digest(dict(scope=self.scope,assets=self.assets))
-        self._model_bindings=copy.deepcopy(bank.bindings) if isinstance(bank,FrozenCycleModelBank) else None
+        self._model_bindings=copy.deepcopy(bank.bindings) if isinstance(bank,(FrozenCycleModelBank,SceneRelativeModelBank)) else None
         self.m4=_M4Factory(self);self.preflight(self.scope,self.assets)
 
     def bind_source(self,source):
-        require(isinstance(source,FullCycleSource) and source.root.resolve()==self.asset_root
+        require(type(source) is _source_class(self.bank) and source.root.resolve()==self.asset_root
                 and source.clock is self.clock and source.bank is self.bank,
                 'factory_actual_source_required')
         require(self.source is None or self.source is source,'factory_source_owner_changed')
@@ -310,7 +363,7 @@ class CurrentRuntimeFactory:
         from learning.current_cycle_runtime import CurrentCycleRuntime,CycleReadOnlyPort
         phase=CurrentCyclePhase(review_root,audit_observation=lambda stage,record:source.verify_observation(stage,record),
                                 clock=self.clock,request_store=phase_request_store)
-        source=FullCycleSource(self.asset_root,bank=self.bank,idle_factory=self.idle,
+        source=_source_class(self.bank)(self.asset_root,bank=self.bank,idle_factory=self.idle,
                                general_factory=self.general_source,phase=phase,clock=self.clock)
         self.bind_source(source)
         # This separate reader owns the explicitly authorized runtime STOP/OFF
@@ -325,7 +378,8 @@ class CurrentRuntimeFactory:
     def preflight(self,scope,assets):
         require(scope==self.scope and assets==self.assets and not self.closed,'factory_contract_changed')
         require(plan_digest(dict(scope=self.scope,assets=self.assets))==self._manifest_sha,'factory_manifest_memory_changed')
-        require(isinstance(self.bank,FrozenCycleModelBank),'factory_frozen_bank_required');self.bank.verify_cached()
+        require(isinstance(self.bank,(FrozenCycleModelBank,SceneRelativeModelBank)),'factory_frozen_bank_required');self.bank.verify_cached()
+        _scene_admission(self.bank,scope,assets)
         require(self.bank.bindings==self._model_bindings,'factory_model_bindings_changed')
         require(assets['journalPath']==str(self.repo/'.local/visual-actions/controller-commands.sqlite'),
                 'factory_actor_shared_journal_required')
@@ -333,20 +387,23 @@ class CurrentRuntimeFactory:
         _bound(self.asset_root,assets['helper'])
         _stage_contracts(self.asset_root,scope,assets)
         _model_stage_support(self.bank,scope)
-        for kind in STAGES:
-            stage=next(s for s in scope['stages'] if s['kind']==kind)
+        for stage in scope['stages']:
+            kind=stage['kind']
             binding=self._model_bindings[kind]
             require(sha256(Path(binding['path']).read_bytes()).hexdigest()==binding['sha256'],
                     'factory_frozen_model_file_changed')
-            require(stage['modelSha256']==self.bank.hashes[kind] and stage['context']==self.bank.models[kind]['context'],
+            require(stage['modelSha256']==self.bank.hashes[kind] and (stage['context'].get('sceneObservationContract')==self.bank.models[kind]['observationContract']
+                if _is_scene_stage(self.bank,kind) else stage['context']==self.bank.models[kind]['context']),
                     'factory_model_stage_changed')
             spec=assets['sourceStages'][kind]
             require(spec['context']==stage['context'],'factory_source_context_changed')
             for name in ('registration','stationaryRegistration','stationaryExternalReference','stationaryGripperReference'):
                 _bound(self.asset_root,spec[name])
+            if _is_scene_stage(self.bank,kind):
+                for name in ('sceneRegistration','sceneReference'):_bound(self.asset_root,spec[name])
             if kind in ('lift','lower'):
                 policy=_execution_policy(stage['context'].get('executionPolicy'))
-                _bound(self.asset_root,spec['modelStateRegistration'])
+                if not _is_scene_stage(self.bank,kind):_bound(self.asset_root,spec['modelStateRegistration'])
                 pulse=_execution_pulse('up' if kind=='lift' else 'down',policy)
                 require(stage['commands']==[{k:pulse[k] for k in ('joint','direction','percent','durationMs')}],
                         'factory_current_short_candidates_required')
@@ -354,7 +411,7 @@ class CurrentRuntimeFactory:
         if not self._verified:
             _audit_source_assets(self.asset_root,self.bank,self.scope,self.assets)
             self._verified=True
-        return dict(scopeSha256=plan_digest(scope),assetsSha256=plan_digest(assets),supportedStages=list(STAGES))
+        return dict(scopeSha256=plan_digest(scope),assetsSha256=plan_digest(assets),supportedStages=[s['kind'] for s in scope['stages']])
 
     def _start_factory(self):
         self.preflight(self.scope,self.assets)

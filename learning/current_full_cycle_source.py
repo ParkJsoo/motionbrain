@@ -72,6 +72,21 @@ class FullCycleSource:
         require(sha256(raw).hexdigest()==ref['sha256'],'full_source_asset_changed')
         return raw
 
+    def _preflight_model(self,stage):
+        kind=stage['kind']
+        require(isinstance(self.bank,FrozenCycleModelBank), 'frozen_model_missing')
+        self.bank.verify_cached()
+        model=self.bank.models[kind]
+        binding=self.bank.bindings[kind]
+        require(sha256(Path(binding['path']).read_bytes()).hexdigest()==binding['sha256'],
+                'frozen_model_file_changed')
+        require(self.bank.hashes[kind]==stage['modelSha256'] and model['context']==stage['context'],
+                'frozen_model_stage_context')
+        return model
+
+    def _record_context(self,stage):
+        return {}
+
     def preflight(self, scope, assets):
         self.scope=None;self.registrations={}
         require(getattr(self.bank,'m1_observation_policies',{})==assets.get('m1ObservationPolicies',{}),
@@ -80,14 +95,7 @@ class FullCycleSource:
         for stage in scope['stages']:
             kind=stage['kind']; errors=[]
             try:
-                require(isinstance(self.bank,FrozenCycleModelBank), 'frozen_model_missing')
-                self.bank.verify_cached()
-                model=self.bank.models[kind]
-                binding=self.bank.bindings[kind]
-                require(sha256(Path(binding['path']).read_bytes()).hexdigest()==binding['sha256'],
-                        'frozen_model_file_changed')
-                require(self.bank.hashes[kind]==stage['modelSha256'] and model['context']==stage['context'],
-                        'frozen_model_stage_context')
+                model=self._preflight_model(stage)
             except (ValueError,KeyError,OSError) as exc: errors.append(str(exc))
             try:
                 spec=assets.get('sourceStages',{}).get(kind)
@@ -151,7 +159,7 @@ class FullCycleSource:
         if missing: raise SourcePreflightError(missing)
         self.scope=copy.deepcopy(scope);self.assets=copy.deepcopy(assets);self.registrations=registrations
         self.stationary=stationary
-        return dict(scopeSha256=plan_digest(scope),assetsSha256=plan_digest(assets),supportedStages=list(STAGES))
+        return dict(scopeSha256=plan_digest(scope),assetsSha256=plan_digest(assets),supportedStages=[s['kind'] for s in scope['stages']])
 
     def _ready(self):
         require(self.scope is not None and not self.closed and not self.failed, 'full_source_preflight_or_failed')
@@ -198,6 +206,18 @@ class FullCycleSource:
         require(all(record['context'].get(k)==actual[k] for k in ('physicalView','object','poseRegime')),
                 'full_source_producer_scene_changed')
 
+    def _validate_safety_state(self,stage,measured,grip,observer,spec):
+        if stage['kind']=='approach':
+            require(stage['context'].get('landmarks')==measured['observationContract']
+                    and stage['context'].get('stateFields')==measured['stateFields']
+                    and stage['context'].get('cameraIdentity',{}).get('cameraBootId')==measured['cameraBootId']
+                    and stage['context'].get('imageShape')==[grip['height'],grip['width']]
+                    and all(scene_context(observer)[k]==spec['sourceContext'][k]
+                            for k in ('physicalView','object','poseRegime')),
+                    'full_source_relative_model_registration_changed')
+        else:
+            require(measured['context']==stage['context'],'full_source_shaft_model_context_changed')
+
     def _audit(self,stage,root,external,gripper,producer_id,angle,*,audit_at=None):
         spec,observer=self.registrations[stage['kind']]
         rawscope=dict(hostClockId=producer_id,context=spec['sourceContext'])
@@ -211,20 +231,14 @@ class FullCycleSource:
                 camera_boot_id=spec['sourceContext']['gripperCameraBootId'],actual_scene=scene_context(observer),
                 now=self.clock.monotonic() if audit_at is None else audit_at,max_age_seconds=3.)
             require(measured.get('state') is not None,'full_source_relative_measurement_rejected')
-            require(stage['context'].get('landmarks')==measured['observationContract']
-                    and stage['context'].get('stateFields')==measured['stateFields']
-                    and stage['context'].get('cameraIdentity',{}).get('cameraBootId')==measured['cameraBootId']
-                    and stage['context'].get('imageShape')==[grip['height'],grip['width']]
-                    and all(scene_context(observer)[k]==spec['sourceContext'][k]
-                            for k in ('physicalView','object','poseRegime')),
-                    'full_source_relative_model_registration_changed')
+            self._validate_safety_state(stage,measured,grip,observer,spec)
             state=measured['state']
         elif kind in ('close','release'):
             measured=observe_bound_shaft_frame(observer,location,gripper['label'],session_id=producer_id,
                 camera_boot_id=spec['sourceContext']['gripperCameraBootId'],actual_scene=shaft_scene(observer),
                 now=self.clock.monotonic() if audit_at is None else audit_at)
             state=dict(shaftSeparationPx=measured['shaftSeparationPx'])
-            require(measured['context']==stage['context'],'full_source_shaft_model_context_changed')
+            self._validate_safety_state(stage,measured,grip,observer,spec)
         else:
             model_registration=_decode_json(self._bound(spec['modelStateRegistration']))
             camera_binding=dict(external={k:ext[k] for k in
@@ -264,6 +278,7 @@ class FullCycleSource:
                     producerHostClockId=producer_id,controllerBootId=self.scope['controllerBootId'],
                     frames=frames,state=state,m4AngleDeg=epoch['angle'],stable=True,
                     outputSequence=epoch['sequence'],sourceRoute=route,auditedAt=now)
+        record.update(self._record_context(stage))
         policy=getattr(self.bank,'m1_observation_policies',{}).get(stage['kind'])
         if policy is not None:
             from learning.pipeline_learning import digest

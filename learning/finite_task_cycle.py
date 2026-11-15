@@ -15,6 +15,7 @@ from learning.model_grasp_trial import ModelGraspTrial
 from learning.supervised_collection import plan_digest, identifier
 
 SCHEMA = 'motionbrain.finite_task_cycle.v1'
+PREFIX_SCHEMA = 'motionbrain.finite_task_prefix.v1'
 STAGES = ('approach', 'close', 'lift', 'lower', 'release')
 
 
@@ -63,7 +64,7 @@ def validate_scope(scope):
         'schemaVersion', 'trialId', 'hostClockId', 'controllerBootId', 'stages',
         'maxCommands', 'maxRequestedMs', 'maxSeconds', 'maxObservationAgeSeconds',
         'maxDecisionAgeSeconds', 'postOffSeconds', 'retentionSeconds'}, 'cycle_scope_fields')
-    require(scope['schemaVersion'] == SCHEMA and identifier(scope['trialId'])
+    require(scope['schemaVersion'] in (SCHEMA, PREFIX_SCHEMA) and identifier(scope['trialId'])
             and isinstance(scope['hostClockId'], str) and bool(scope['hostClockId'])
             and isinstance(scope['controllerBootId'], str) and len(scope['controllerBootId']) == 32
             and all(c in '0123456789abcdef' for c in scope['controllerBootId']), 'cycle_scope_identity')
@@ -74,7 +75,9 @@ def validate_scope(scope):
                         ('maxDecisionAgeSeconds', .01, .25), ('retentionSeconds', 1, 10)]:
         require(finite(scope[key]) and lo <= scope[key] <= hi, 'cycle_timing_limit')
     require(scope['postOffSeconds'] == 3., 'cycle_post_off_window')
-    require(isinstance(scope['stages'], list) and len(scope['stages']) == len(STAGES), 'cycle_all_stages_required')
+    require(isinstance(scope['stages'], list) and
+            (len(scope['stages']) == len(STAGES) if scope['schemaVersion'] == SCHEMA
+             else 1 <= len(scope['stages']) < len(STAGES)), 'cycle_all_stages_required')
     for kind, stage in zip(STAGES, scope['stages']):
         require(isinstance(stage, dict) and set(stage) == {
             'kind', 'context', 'modelSha256', 'maxCommands', 'commands', 'target'}, 'cycle_stage_fields')
@@ -237,7 +240,7 @@ class FiniteTaskCycle:
         self.used = True
         self.started = self.clock.monotonic()
         self.deadline = self.started+self.scope['maxSeconds']
-        report = dict(schemaVersion=SCHEMA, trialId=self.scope['trialId'], scopeSha256=self.scope_sha,
+        report = dict(schemaVersion=self.scope['schemaVersion'], trialId=self.scope['trialId'], scopeSha256=self.scope_sha,
                       status='failed', commandAttempts=0, confirmedCommands=0, requestedMs=0,
                       fullyModelSelectedCycle=False, humanAssisted=False, stages=[], errors=[])
         off_at = None
@@ -322,8 +325,12 @@ class FiniteTaskCycle:
                         active = False
                         self.store.write_json(f"cycle-step-{step['index']:03d}-result.json", step)
             # 이미 사람이 닫거나 들어 둔 상태로 시작한 단계는 모델 완료로 세지 않는다.
-            report.update(status='completed', fullyModelSelectedCycle=all(
-                bool(s['steps']) for s in report['stages'] if s['kind'] != 'approach'))
+            partial = self.scope['schemaVersion'] == PREFIX_SCHEMA
+            report.update(status='prefix_completed' if partial else 'completed',
+                          fullyModelSelectedCycle=not partial and all(
+                              bool(s['steps']) for s in report['stages'] if s['kind'] != 'approach'))
+            if partial:
+                report['remainingStages'] = list(STAGES[len(self.scope['stages']):])
         except (Exception, KeyboardInterrupt) as exc:
             report['errors'].append(dict(type=type(exc).__name__, reason=str(exc) if isinstance(exc, ValueError)
                                          else 'cycle_interrupted_or_failed'))

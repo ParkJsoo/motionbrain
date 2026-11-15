@@ -64,6 +64,55 @@ class FactoryTests(unittest.TestCase):
         self.source.registrations={k:(s,{}) for k,s in self.assets['sourceStages'].items()}
         self.owner.bind_source(self.source)
 
+    def scene_prefix(self):
+        from learning.scene_relative_models import fit,freeze_model
+        from learning.task_cycle_workflow import MixedCycleModelBank
+        from learning.finite_task_cycle import PREFIX_SCHEMA
+        from tests.test_scene_relative_models import row
+        model=fit([row(0,0,1),row(1,2,3)])
+        binding=freeze_model(self.asset_root/'scene-model.json',model)
+        bank=MixedCycleModelBank(scene_bindings={'approach':binding},legacy_bindings={})
+        scope=copy.deepcopy(self.scope);scope['schemaVersion']=PREFIX_SCHEMA
+        stage=scope['stages'][0];stage['context']['object']='block'
+        stage['target']=[3.,0.,10.,197.22]
+        scope['stages']=bank.scope_stages([stage])
+        assets=copy.deepcopy(self.assets)
+        spec=assets['sourceStages']['approach'];spec['context']=copy.deepcopy(scope['stages'][0]['context'])
+        spec['physicalContext']=copy.deepcopy(model['physicalContext'])
+        spec['sceneRegistration']=spec['registration'];spec['sceneReference']=spec['registration']
+        assets['sourceStages']={'approach':spec}
+        assets['sceneModelAdmission']=dict(mode='development_scoped_attempt',modelSha256=copy.deepcopy(bank.scene_hashes))
+        return bank,scope,assets
+
+    def test_scene_factory_admission_and_source_type_without_hardware(self):
+        from learning.scene_relative_cycle_source import SceneRelativeCycleSource
+        bank,scope,assets=self.scene_prefix()
+        with patch('subprocess.Popen') as spawn,patch.object(factory.SequencePort,'_call') as http:
+            owner=factory.CurrentRuntimeFactory(scope,assets,bank,repo_root=self.repo,
+                asset_root=self.asset_root,run_root=self.repo/'.local/scene-run',
+                controller_url='http://controller.invalid',camera_url='http://camera.invalid',token='private-token',
+                authorization=dict(approved=True,scopeSha256=plan_digest(scope),automaticRetry=False,onsiteConfirmed=True),
+                resource_check=self.check,after_reviewer_factory=self.after,clock=self.clock)
+            proof=owner.preflight(scope,assets)
+        self.assertEqual(proof['supportedStages'],['approach'])
+        self.assertIs(factory._source_class(bank),SceneRelativeCycleSource)
+        spawn.assert_not_called();http.assert_not_called()
+        assets['sceneModelAdmission']['modelSha256']['approach']='0'*64
+        with self.assertRaisesRegex(ValueError,'admission_required'):factory._scene_admission(bank,scope,assets)
+
+    def test_scene_builder_does_not_accept_placeholder_current_registrations(self):
+        bank,scope,assets=self.scene_prefix();self.audit_patch.stop()
+        with self.assertRaises(factory.FactoryPreflightError):
+            factory.build_cycle_assets(self.asset_root,scope,model_bindings=bank.bindings,
+                source_stages=assets['sourceStages'],journal_path=assets['journalPath'],helper_binding=assets['helper'],
+                scene_model_admission=assets['sceneModelAdmission'])
+
+    def test_scene_physical_support_and_raw_asset_are_not_model_aliases(self):
+        bank,scope,assets=self.scene_prefix()
+        factory._scene_admission(bank,scope,assets)
+        assets['sourceStages']['approach']['physicalContext']['load']='different-load'
+        with self.assertRaisesRegex(ValueError,'physical_context_changed'):factory._scene_admission(bank,scope,assets)
+
     def bind(self,name,value):
         raw=value if isinstance(value,bytes) else json.dumps(value).encode()
         (self.asset_root/name).write_bytes(raw)

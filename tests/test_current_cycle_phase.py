@@ -21,9 +21,9 @@ class PhaseTests(unittest.TestCase):
         self.requests=ArtifactStore(Path(self.tmp.name)/'requests')
         self.phase=CurrentCyclePhase(self.root,audit_observation=audit,clock=self.clock,request_store=self.requests)
         self.source=SimpleNamespace(describe_source=Mock(return_value=dict(original=True)),
-            scope=dict(retentionSeconds=1.),stationary={k:{} for k in ('approach','close','lift','lower','release')})
+            scope=dict(retentionSeconds=1.,stages=[dict(kind=k) for k in ('approach','close','lift','lower','release')]),stationary={k:{} for k in ('approach','close','lift','lower','release')})
         self.phase.bind_source(self.source)
-        self.phase.preflight(dict(retentionSeconds=1.),dict(phaseMode='source_bound_human',
+        self.phase.preflight(dict(retentionSeconds=1.,stages=[dict(kind=k) for k in ('approach','close','lift','lower','release')]),dict(phaseMode='source_bound_human',
             phaseProtocol='nonce_seed_anchor_fresh_once_v1'))
         self.stage=dict(kind='close')
         self.record=dict(frames=[dict(camera='external',frameId='e',pixelSha256='a'*64,sourceEarliest=9.,sourceLatest=9.05,persistedAt=9.06),

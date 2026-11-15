@@ -103,6 +103,10 @@ class FrozenCycleModelBank:
     """파일 SHA와 메모리 모델 SHA를 구분한다. 동작 중 재학습하지 않는다."""
     def __init__(self, bindings, *, allow_development_approach=False, m1_observation_policies=None):
         require(isinstance(bindings, dict) and set(bindings) == set(STAGES), 'cycle_model_bank_stages')
+        self._load(bindings, allow_development_approach=allow_development_approach,
+                   m1_observation_policies=m1_observation_policies)
+
+    def _load(self, bindings, *, allow_development_approach, m1_observation_policies):
         require(type(allow_development_approach) is bool, 'cycle_development_flag_required')
         self.bindings = copy.deepcopy(bindings)
         self.models = {}
@@ -122,13 +126,17 @@ class FrozenCycleModelBank:
         require(len({m['context']['object'] for m in self.models.values()}) == 1, 'cycle_object_changed')
         self.hashes = {k:digest(v) for k,v in self.models.items()}
         self.m1_observation_policies=copy.deepcopy(m1_observation_policies or {})
-        require(set(self.m1_observation_policies).issubset({'close','release'}),'cycle_M1_admission_stages')
+        require(set(self.m1_observation_policies).issubset({'close','release'} & set(self.models)),'cycle_M1_admission_stages')
         from learning.current_m1_uncertainty import validate_policy
         for kind,policy in self.m1_observation_policies.items():
             validate_policy(policy,self.models[kind])
             require(policy['command']['direction']==('close' if kind=='close' else 'open'),
                     'cycle_M1_admission_direction')
         self._m1_policies_sha=digest(self.m1_observation_policies)
+
+    def is_scene_stage(self,kind):return False
+
+    def model_for_kind(self,kind):return self.models[kind]
 
     def verify_cached(self):
         require({k:digest(v) for k,v in self.models.items()} == self.hashes, 'cycle_cached_model_changed')
@@ -165,6 +173,35 @@ class FrozenCycleModelBank:
             model = self.models[stage['kind']]
             stage.update(context=copy.deepcopy(model['context']), modelSha256=self.hashes[stage['kind']])
         return result
+
+
+class PrefixCycleModelBank(FrozenCycleModelBank):
+    """명시한 연속 초기 단계만 지원한다. 미래 단계 모델을 만들어 채우지 않는다.
+
+    파일·관측 계약과 후보 선택은 전체 bank와 동일하다. 이 클래스 자체는
+    관측 좌표 변환이나 개발 모델의 실물 적격 승격을 하지 않는다.
+    """
+    def __init__(self, bindings, *, allow_development_approach=False, m1_observation_policies=None):
+        require(isinstance(bindings, dict) and bool(bindings)
+                and set(bindings) == set(STAGES[:len(bindings)]), 'cycle_prefix_model_bank_stages')
+        self.supported_stages = tuple(STAGES[:len(bindings)])
+        self._load(bindings, allow_development_approach=allow_development_approach,
+                   m1_observation_policies=m1_observation_policies)
+
+    def scope_stages(self, stages):
+        require(isinstance(stages, list) and [s['kind'] for s in stages] == list(self.supported_stages),
+                'cycle_prefix_stages_required')
+        result = copy.deepcopy(stages)
+        for stage in result:
+            kind = stage['kind']
+            stage.update(context=copy.deepcopy(self.models[kind]['context']), modelSha256=self.hashes[kind])
+        return result
+
+    def choose(self, stage, record):
+        require(stage.get('kind') in self.supported_stages, 'cycle_stage_model_unavailable')
+        result = super().choose(stage, record)
+        return dict(result, supportedStages=list(self.supported_stages),
+                    fullCycleSupported=len(self.supported_stages) == len(STAGES))
 
 
 def train_cycle_bundle(root, *, m4_rows, open_rows, approach_binding, close_binding, audit_rows,
@@ -251,3 +288,69 @@ class CollectionToCycle:
                                          else 'cycle_workflow_failed'))
         self.store.write_json('workflow-result.json',report)
         return report
+
+
+class MixedCycleModelBank(FrozenCycleModelBank):
+    """상대 영상 모델과 기존 M4 계측 모델을 단계별로 결합한다.
+
+    상대 턱 좌표를 들기 높이로 바꾸지 않는다. 지원되는 연속 prefix만 선언하며
+    각 단계 선택기는 원래 모델 schema와 계약을 유지한다.
+    """
+    def __init__(self, *, scene_bindings, legacy_bindings, allow_development_approach=False,
+                 m1_observation_policies=None):
+        from learning.scene_relative_models import SceneRelativeModelBank
+        require(isinstance(scene_bindings,dict) and bool(scene_bindings)
+                and set(scene_bindings).issubset({'approach','close','release'}), 'cycle_scene_stage_semantics')
+        require(isinstance(legacy_bindings,dict) and not set(scene_bindings).intersection(legacy_bindings),
+                'cycle_mixed_stage_duplicate')
+        kinds=set(scene_bindings)|set(legacy_bindings)
+        require(kinds==set(STAGES[:len(kinds)]), 'cycle_mixed_prefix_required')
+        self.scene=SceneRelativeModelBank.from_bindings(scene_bindings)
+        self.legacy=None
+        if legacy_bindings:
+            self.legacy=FrozenCycleModelBank.__new__(FrozenCycleModelBank)
+            self.legacy._load(legacy_bindings,allow_development_approach=allow_development_approach,
+                              m1_observation_policies=m1_observation_policies)
+        else:
+            require(not m1_observation_policies,'cycle_M1_admission_stages')
+        self.supported_stages=tuple(STAGES[:len(kinds)])
+        self.models={kind:(self.scene if kind in scene_bindings else self.legacy).models[kind] for kind in self.supported_stages}
+        self.hashes={kind:digest(model) for kind,model in self.models.items()}
+        self.bindings={**copy.deepcopy(scene_bindings),**copy.deepcopy(legacy_bindings)}
+        self.m1_observation_policies=copy.deepcopy(self.legacy.m1_observation_policies if self.legacy else {})
+        objects={m['physicalContext']['object'] if self.is_scene_stage(k) else m['context']['object'] for k,m in self.models.items()}
+        require(len(objects)==1,'cycle_object_changed')
+        self._policy_sha=digest(self.m1_observation_policies)
+
+    def is_scene_stage(self,kind):return kind in self.scene.models
+
+    def model_for_kind(self,kind):return self.models[kind]
+
+    @property
+    def scene_hashes(self):return copy.deepcopy(self.scene.hashes)
+
+    def verify_cached(self):
+        self.scene.verify_cached()
+        if self.legacy:self.legacy.verify_cached()
+        require(self.hashes=={k:digest(m) for k,m in self.models.items()}
+                and digest(self.m1_observation_policies)==self._policy_sha,'cycle_mixed_cached_model_changed')
+
+    def choose(self,stage,record):
+        self.verify_cached();kind=stage['kind']
+        require(kind in self.models,'cycle_stage_model_unavailable')
+        return (self.scene if self.is_scene_stage(kind) else self.legacy).choose(stage,record)
+
+    def scope_stages(self,stages):
+        require(isinstance(stages,list) and [s['kind'] for s in stages]==list(self.supported_stages),
+                'cycle_mixed_prefix_required')
+        result=copy.deepcopy(stages)
+        for stage in result:
+            kind=stage['kind'];model=self.models[kind]
+            if self.is_scene_stage(kind):
+                require(isinstance(stage.get('context'),dict)
+                        and stage['context'].get('object')==model['physicalContext']['object']
+                        and bool(stage['context'].get('poseRegime')),'scene_current_source_context_required')
+                stage['context']['sceneObservationContract']=copy.deepcopy(model['observationContract'])
+            else:stage['context']=copy.deepcopy(model['context'])
+            stage['modelSha256']=self.hashes[kind]
+        return result

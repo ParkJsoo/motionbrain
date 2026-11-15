@@ -48,11 +48,11 @@ class CurrentCyclePhase:
         require(callable(getattr(self.requests,'write_json',None)) and self.source is not None
                 and assets.get('phaseProtocol')=='nonce_seed_anchor_fresh_once_v1',
                 'phase_actual_request_and_stationary_source_required')
-        require(self.source.scope==scope and set(self.source.stationary)==set(STAGES),
+        require(self.source.scope==scope and set(self.source.stationary)=={s['kind'] for s in scope['stages']},
                 'phase_verified_source_stages_required')
         self.scope=copy.deepcopy(scope)
         return dict(scopeSha256=plan_digest(scope), assetsSha256=plan_digest(assets),
-                    supportedStages=list(STAGES), humanAssisted=True)
+                    supportedStages=[s['kind'] for s in scope['stages']], humanAssisted=True)
 
     def _review(self, stage, record):
         require(self.scope is not None, 'phase_preflight_required')
