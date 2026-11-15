@@ -980,7 +980,15 @@ class M4UpCommissioning:
                 db.execute('INSERT INTO supervised_blocks VALUES (?,?,?,?,NULL)', (self.scope['trialId'],self.digest,str(self.store.root),'pending'))
             claimed = True
             self.store.write_json('scope.json', self.scope)
-            phase = 'preflight'; snapshot = self.port.preflight()
+            phase = 'preflight'
+            initial_timeout = self.port.timeout
+            try:
+                # Initial GET-only admission may traverse the Pi SSH bridge.
+                # Restore the active-output deadline before any ARM/write.
+                self.port.timeout = 2.
+                snapshot = self.port.preflight()
+            finally:
+                self.port.timeout = initial_timeout
             self.baseline_angle = self.port._shoulder_angle(snapshot['status'])
             phase = 'before_observation'; observer_started = True
             self.observer.start(deadline=self.deadline)

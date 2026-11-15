@@ -194,6 +194,33 @@ class CommissioningTests(unittest.TestCase):
         self.assertFalse(self.device.requests)
         self.assertFalse((self.repo/'.local/visual-actions').exists())
 
+    def test_initial_read_timeout_extended_but_execution_keeps_active_deadline(self):
+        result=self.run_trial()
+        self.assertEqual(result['status'],'completed',result)
+        intents=[json.loads(p.read_text()) for p in sorted(self.store.root.glob('http-*-intent.json'))]
+        self.assertEqual(intents[0]['path'],'/actions')
+        self.assertEqual(intents[0]['timeoutSeconds'],2.)
+        writes=[row for row in intents if row['method']=='POST']
+        self.assertTrue(writes)
+        active=[row for row in writes if row['path']=='/command' or row['payload'].get('action') in ('add','run')]
+        self.assertTrue(active)
+        self.assertTrue(all(row['timeoutSeconds']<=.8 for row in active))
+        self.assertEqual(self.trial.port.timeout,.8)
+
+    def test_initial_read_failure_restores_active_timeout_without_writes(self):
+        seen=[]
+        def fail():
+            seen.append(self.trial.port.timeout)
+            raise TimeoutError('initial_read')
+        self.trial.port.preflight=fail
+        result=self.run_trial()
+        self.assertEqual(seen,[2.])
+        self.assertEqual(self.trial.port.timeout,.8)
+        self.assertEqual(result['status'],'failed')
+        self.assertEqual(result['commandOutcome'],'not_started')
+        self.assertFalse(result['mayHaveRun'])
+        self.assertEqual(self.posts(),[])
+
     def test_same_cursor_reattests_full_zero_history_at_status_request_start(self):
         self.install_cursor();self.delayed_arm_proof()
         result=self.run_trial();self.assertEqual(result['status'],'completed',result)
