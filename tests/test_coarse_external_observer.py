@@ -1,10 +1,12 @@
 from pathlib import Path
+import copy
 import unittest
+from unittest.mock import patch
 
 import cv2
 import numpy as np
 
-from learning.coarse_external_observer import register, CoarseExternalObserver, MEANING
+from learning.coarse_external_observer import register, CoarseExternalObserver, CoarseExternalBank, MEANING
 
 
 class ObserverTests(unittest.TestCase):
@@ -107,6 +109,63 @@ class ObserverTests(unittest.TestCase):
         self.assertLess(b['quality']['medianResidualPx'], 2.)
         self.assertGreater(b['quality']['toolNcc'], .5)
         self.assertEqual(b['state'][2], 1.)
+
+    def test_bank_fixed_correspondences_and_missing_observation(self):
+        second = copy.deepcopy(self.registration)
+        second['toolPoint'] = self.observer.observe(self.raw)['toolProxyPx']
+        second['featureRoi'] = [916, 140, 1160, 280]
+        bank = CoarseExternalBank([self.registration, second], [self.raw, self.raw])
+        result = bank.observe(self.raw)
+        self.assertEqual(len(result['acceptedReferences']), 2)
+        self.assertEqual(result['registrationSha256'], bank.binding)
+        self.assertEqual(result['landmarkContract'], bank.landmark_contract)
+        self.assertEqual(len(result['referenceSha256s']), 2)
+        missing = self.image.copy(); missing[620:810, 780:855] = 180
+        with self.assertRaisesRegex(ValueError, 'no_supported_reference'): bank.observe(self.encode(missing))
+        second['toolPoint'][0] += 5.
+        with self.assertRaisesRegex(ValueError, 'unbound_proxy_correspondence'):
+            CoarseExternalBank([self.registration, second], [self.raw, self.raw])
+
+    def test_bank_disagreement_rejects_instead_of_choosing_better_score(self):
+        second = copy.deepcopy(self.registration)
+        second['toolPoint'] = self.observer.observe(self.raw)['toolProxyPx']
+        second['featureRoi'] = [916, 140, 1160, 280]
+        bank = CoarseExternalBank([self.registration, second], [self.raw, self.raw])
+        discrepant = bank.observers[1].observe(self.raw)
+        discrepant['toolProxyPx'][0] += 11.
+        with patch.object(bank.observers[1], 'observe', return_value=discrepant):
+            with self.assertRaisesRegex(ValueError, 'proxy_disagreement'): bank.observe(self.raw)
+
+    def test_bank_mutated_reference_and_contract_rejected(self):
+        bank = CoarseExternalBank([self.registration], [self.raw])
+        bank.references = (self.raw+b' ',)
+        with self.assertRaisesRegex(ValueError, 'reference_changed'): bank.observe(self.raw)
+        bank = CoarseExternalBank([self.registration], [self.raw])
+        bank.registration['maximumDisagreementPx'] = 11.
+        with self.assertRaisesRegex(ValueError, 'registration_changed'): bank.observe(self.raw)
+
+    def test_real_fixed_bank_supports_current_three_states_when_available(self):
+        root = Path(__file__).resolve().parents[1]/'.local/current-entry-20261114'
+        paths = [root/'L-pose-current-20261115-05-after-failed-M3/external.png',
+                 root/'L-pose-M3-down70-1000-direct-01/external-after.png',
+                 root/'L-pose-M3-down70-1000-direct-03/external-after.png']
+        if not all(p.exists() for p in paths): self.skipTest('private current frames unavailable')
+        raws = [p.read_bytes() for p in paths]
+        first = register(raws[0], tool_point=[938, 375], feature_roi=[920, 300, 1170, 430],
+            tool_patch_roi=[930, 350, 990, 400],
+            marker_rois={'purple': [1066, 370, 1100, 404], 'teal': [1098, 361, 1129, 400]})
+        correspondence = CoarseExternalObserver(first, raws[0]).observe(raws[1])['toolProxyPx']
+        second = register(raws[1], tool_point=correspondence, feature_roi=[950, 400, 1210, 530],
+            tool_patch_roi=[958, 475, 1018, 525],
+            marker_rois={'purple': [1100, 470, 1136, 507], 'teal': [1130, 457, 1167, 494]})
+        bank = CoarseExternalBank([first, second], raws[:2])
+        results = [bank.observe(raw) for raw in raws]
+        self.assertTrue(all(r['registrationSha256'] == bank.binding for r in results))
+        self.assertTrue(all(r['maximumProxyDisagreementPx'] <= 10. for r in results))
+        self.assertEqual(len(results[0]['acceptedReferences']), 2)
+        self.assertEqual(len(results[2]['acceptedReferences']), 1)
+        self.assertLess(results[2]['state'][1], 65.)
+        self.assertGreater(results[2]['state'][1], 45.)
 
 
 if __name__ == '__main__': unittest.main()

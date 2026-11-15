@@ -161,3 +161,68 @@ class CoarseExternalObserver:
                 inlierSpanPx=spans.tolist(), scale=scale, rotationDeg=rotation, markers=marker_quality,
                 toolNcc=float(ncc), toolCorrectionPx=correction.tolist()),
             contactVerified=False, graspVerified=False, depthVerified=False)
+
+
+class CoarseExternalBank:
+    """같은 대리점을 연결한 고정 기준 묶음. 관측 실패는 기록하고 합의 불일치는 거절한다.
+
+    뒤 기준의 대리점은 앞 기준 중 하나가 해당 원본에서 측정한 점과 일치해야 한다.
+    실행 중 기준 추가·학습·임계값 변경은 없고, 새 묶음은 새 landmark 계약이다.
+    """
+    def __init__(self, registrations, reference_bytes):
+        _require(isinstance(registrations, list) and isinstance(reference_bytes, list)
+                 and 1 <= len(registrations) == len(reference_bytes) <= 8, 'coarse_bank_references')
+        self.references = tuple(reference_bytes)
+        self.observers = []
+        links = []
+        seen = set()
+        for registration, raw in zip(registrations, self.references):
+            observer = CoarseExternalObserver(registration, raw)
+            _require(observer.binding not in seen, 'coarse_bank_duplicate_reference')
+            seen.add(observer.binding)
+            _require(registration['thresholds'] == registrations[0]['thresholds'], 'coarse_bank_thresholds_changed')
+            if self.observers:
+                correspondences = []
+                for previous in self.observers:
+                    try: result = previous.observe(raw)
+                    except ValueError: continue
+                    distance = float(np.linalg.norm(np.array(result['toolProxyPx'])-registration['toolPoint']))
+                    if distance <= .1:
+                        correspondences.append(dict(registrationSha256=previous.binding,
+                            imageSha256=result['imageSha256'], toolProxyPx=result['toolProxyPx'], residualPx=distance))
+                _require(bool(correspondences), 'coarse_bank_unbound_proxy_correspondence')
+                links.append(dict(childRegistrationSha256=observer.binding, parentCorrespondences=correspondences))
+            self.observers.append(observer)
+        self.registration = dict(schemaVersion='motionbrain.coarse_external_tool_proxy_bank.v1',
+            registrations=copy.deepcopy(registrations), proxyCorrespondences=links,
+            maximumDisagreementPx=10., selection='highest_tool_ncc_after_all_accepted_proxies_agree',
+            stateMeaning=MEANING)
+        self.binding = digest(self.registration)
+        self.landmark_contract = PREFIX+self.binding
+
+    def observe(self, raw):
+        _require(digest(self.registration) == self.binding, 'coarse_bank_registration_changed')
+        accepted, rejected = [], []
+        for index, (observer, reference) in enumerate(zip(self.observers, self.references)):
+            _require(hashlib.sha256(reference).hexdigest() == observer.registration['referenceSha256']
+                     and observer.registration == self.registration['registrations'][index], 'coarse_bank_reference_changed')
+            try:
+                result = observer.observe(raw)
+                accepted.append(result)
+            except ValueError as exc:
+                rejected.append(dict(registrationSha256=observer.binding, reason=str(exc)))
+        _require(bool(accepted), 'coarse_bank_no_supported_reference')
+        disagreements = [float(np.linalg.norm(np.array(a['toolProxyPx'])-b['toolProxyPx']))
+                         for i, a in enumerate(accepted) for b in accepted[i+1:]]
+        _require(not disagreements or max(disagreements) <= self.registration['maximumDisagreementPx'],
+                 'coarse_bank_proxy_disagreement')
+        selected = max(accepted, key=lambda row: row['quality']['toolNcc'])
+        result = copy.deepcopy(selected)
+        result.update(registrationSha256=self.binding, landmarkContract=self.landmark_contract,
+            bankSchemaVersion=self.registration['schemaVersion'],
+            selectedReferenceRegistrationSha256=selected['registrationSha256'],
+            referenceSha256s=[observer.registration['referenceSha256'] for observer in self.observers],
+            acceptedReferences=[dict(registrationSha256=row['registrationSha256'], toolProxyPx=row['toolProxyPx'],
+                toolNcc=row['quality']['toolNcc']) for row in accepted],
+            rejectedReferences=rejected, maximumProxyDisagreementPx=max(disagreements, default=0.))
+        return result
