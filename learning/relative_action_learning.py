@@ -63,9 +63,16 @@ def vector(value):
     return np.asarray(value, dtype=float)
 
 
-def command_key(command):
+def command_key(command, *, collection_profile=None):
     require(isinstance(command, dict) and set(command) == {'joint', 'direction', 'percent', 'durationMs'},
             'single_command_fields')
+    if collection_profile is not None:
+        from learning.attended_collection_profile import collection_profile as known_profile, validate_command
+        require(isinstance(collection_profile, dict)
+                and collection_profile == known_profile(collection_profile.get('name')),
+                'attended_collection_profile_provenance')
+        validate_command(collection_profile['name'], command)
+        return tuple(command[k] for k in ('joint', 'direction', 'percent', 'durationMs'))
     limits = PROFILES.get(command['joint'], {}).get('directions', {}).get(command['direction'])
     require(limits is not None, 'joint_direction_not_enabled')
     require(type(command['percent']) is int and 1 <= command['percent'] <= limits[1]
@@ -119,15 +126,19 @@ def annotated_transition(row, annotation):
                 'registered_context_requires_registered_annotation')
     before = point_state(annotation['before'], row['inputs']['image'])
     after = point_state(annotation['after'], row['targets']['image'])
-    command_key(row['inputs']['command'])
+    profile = row['evidence'].get('collectionProfile')
+    command_key(row['inputs']['command'], collection_profile=profile)
     validate_motion_scope(context, row['inputs']['command'])
-    return dict(sessionId=row['sessionId'], captureGroup=annotation['captureGroup'],
+    result = dict(sessionId=row['sessionId'], captureGroup=annotation['captureGroup'],
                 context=dict(context, cameraIdentity=copy.deepcopy(row['evidence']['cameraIdentity']),
                              imageShape=[row['inputs']['image']['height'], row['inputs']['image']['width']],
                              stateFields=state_fields(context)),
                 command=copy.deepcopy(row['inputs']['command']), before=before, after=after,
                 episode=[row['evidence']['controllerBootId'], row['evidence']['commandId']],
                 frameIds=[row['inputs']['image']['frameId'], row['targets']['image']['frameId']])
+    if profile is not None:
+        result['context']['collectionProfile'] = copy.deepcopy(profile)
+    return result
 
 
 def validate_rows(rows, *, allow_development_observations=False):
@@ -147,7 +158,7 @@ def validate_rows(rows, *, allow_development_observations=False):
         refs = row['frameIds']
         require(len(refs) == 2 and refs[0] != refs[1] and not frames.intersection(refs), 'reused_frame')
         ids.add(row['sessionId']); episodes.add(episode); frames.update(refs)
-        vector(row['before']); vector(row['after']); command_key(row['command'])
+        vector(row['before']); vector(row['after']); command_key(row['command'], collection_profile=context.get('collectionProfile'))
         validate_motion_scope(context, row['command'],
                               allow_development_observations=allow_development_observations)
         if development_observation(context):
@@ -160,8 +171,8 @@ def validate_rows(rows, *, allow_development_observations=False):
 def fit(rows, *, allow_development_observations=False):
     context = validate_rows(rows, allow_development_observations=allow_development_observations)
     models = []
-    for key in sorted({command_key(r['command']) for r in rows}):
-        selected = [r for r in rows if command_key(r['command']) == key]
+    for key in sorted({command_key(r['command'], collection_profile=context.get('collectionProfile')) for r in rows}):
+        selected = [r for r in rows if command_key(r['command'], collection_profile=context.get('collectionProfile')) == key]
         # One observation is retained as a deficit, never promoted to support.
         if len(selected) < 2:
             continue
@@ -201,8 +212,8 @@ def predict(model, state, command, context, *, baseline=False):
                 'development_model_marker_mismatch')
     validate_motion_scope(context, command,
                           allow_development_observations=model.get('developmentObservationOnly') is True)
-    key = command_key(command); x = vector(state)
-    candidates = [m for m in model['models'] if command_key(m['command']) == key]
+    key = command_key(command, collection_profile=context.get('collectionProfile')); x = vector(state)
+    candidates = [m for m in model['models'] if command_key(m['command'], collection_profile=context.get('collectionProfile')) == key]
     require(len(candidates) == 1, 'command_without_two_training_transitions')
     m = candidates[0]
     require(np.all(x >= np.asarray(m['minimum'])) and np.all(x <= np.asarray(m['maximum'])),
@@ -224,7 +235,7 @@ def select(model, state, target, commands, context, *, predictor='stateRidge', m
             'finite_nonnegative_improvement_margin_required')
     require(context == model['context'], 'observation_context_changed')
     require(isinstance(commands, list) and bool(commands), 'candidates_required')
-    keys = [command_key(c) for c in commands]
+    keys = [command_key(c, collection_profile=context.get('collectionProfile')) for c in commands]
     require(len(keys) == len(set(keys)), 'duplicate_candidate')
     ranked = [dict(kind='stop', command=None, predictedState=x.tolist(), errorPx=float(np.linalg.norm(x-goal)))]
     rejected = []

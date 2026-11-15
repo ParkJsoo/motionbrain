@@ -33,7 +33,16 @@ def collect_once(manager, request_id, command, pose_context, *, onsite_confirmed
     if after_capture is not None and not callable(after_capture):
         raise ValueError('after_capture_callback_required')
     command = copy.deepcopy(command)
-    command_key(command)
+    profile_name = getattr(manager, 'collection_profile', None)
+    profile = None
+    if profile_name is None:
+        command_key(command)
+    else:
+        from learning.attended_collection_profile import collection_profile, validate_command
+        profile = collection_profile(profile_name)
+        if not isinstance(command, dict) or set(command) != {'joint', 'direction', 'percent', 'durationMs'}:
+            raise ValueError('single_command_fields')
+        validate_command(profile_name, command)
     if not isinstance(pose_context, str) or not 1 <= len(pose_context.strip()) <= 500:
         raise ValueError('explicit_pose_context_required')
     if onsite_confirmed is not True:
@@ -49,6 +58,8 @@ def collect_once(manager, request_id, command, pose_context, *, onsite_confirmed
                'preSeconds': pre_seconds, 'postSeconds': post_seconds,
                'deviceId': manager.device_id, 'viewId': manager.view_id,
                'controllerUrl': manager.controller_url}
+    if profile is not None:
+        request['collectionProfile'] = profile
     if before_command is not None:
         request['beforeCommandReview'] = True
     if after_capture is not None:

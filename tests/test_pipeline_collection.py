@@ -31,6 +31,22 @@ class PipelineCollectionTests(unittest.TestCase):
     def runs(self):
         return [r for r in self.requests if r[0] == 'POST' and r[1].endswith('/sequence')]
 
+    def test_explicit_attended_profile_collects_and_reuses_request_without_RUN(self):
+        from learning.attended_collection_profile import ATTENDED_60_1000, collection_profile
+        self.manager.collection_profile = ATTENDED_60_1000
+        command = dict(joint='gripper', direction='close', percent=70, durationMs=1000)
+        result = self.collect(command=command)
+        self.assertEqual(result['status'], 'recorded', result)
+        self.assertEqual(result['request']['collectionProfile'], collection_profile(ATTENDED_60_1000))
+        self.assertEqual(self.collect(command=command), result)
+        run_count = len(self.runs())
+        self.assertGreater(run_count, 0)
+        self.collect(command=command)
+        self.assertEqual(len(self.runs()), run_count)
+        self.manager.collection_profile = None
+        with self.assertRaisesRegex(ValueError, 'joint_output_limit'):
+            self.collect(request='default', command=command)
+
     def test_after_capture_runs_before_external_close_and_duplicate_never_repeats(self):
         seen=[]
         def after(manager,pair,source):

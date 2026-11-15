@@ -86,8 +86,8 @@ def _metrics(pairs):
 
 
 def _command_entry(model, command):
-    key = relative.command_key(command)
-    entries = [m for m in model['models'] if relative.command_key(m['command']) == key]
+    key = relative.command_key(command, collection_profile=model['context'].get('collectionProfile'))
+    entries = [m for m in model['models'] if relative.command_key(m['command'], collection_profile=model['context'].get('collectionProfile')) == key]
     return entries[0] if entries else None
 
 
@@ -255,15 +255,15 @@ def run_learning(transitions, split_manifest, previous_models=None):
             relative.validate_rows(training, allow_development_observations=allow_development)
         if evaluation:
             relative.validate_rows(evaluation, allow_development_observations=allow_development)
-        counts = Counter(relative.command_key(r['command']) for r in training)
-        observed_commands = set(counts) | {relative.command_key(r['command']) for r in evaluation}
+        counts = Counter(relative.command_key(r['command'], collection_profile=context.get('collectionProfile')) for r in training)
+        observed_commands = set(counts) | {relative.command_key(r['command'], collection_profile=context.get('collectionProfile')) for r in evaluation}
         deficits = [dict(kind='command_training_support', command=dict(zip(
             ('joint', 'direction', 'percent', 'durationMs'), command)), count=count,
             minimum=2, missing=max(0, 2-count)) for command in sorted(observed_commands)
                     for count in [counts[command]] if count < 2]
         coverage = []
         for command in sorted(observed_commands):
-            selected = [r for r in training if relative.command_key(r['command']) == command]
+            selected = [r for r in training if relative.command_key(r['command'], collection_profile=context.get('collectionProfile')) == command]
             states = np.asarray([r['before'] for r in selected], dtype=float)
             coverage.append(dict(command=dict(zip(('joint', 'direction', 'percent', 'durationMs'), command)),
                 rows=len(selected), captureGroups=sorted({r['captureGroup'] for r in selected}),

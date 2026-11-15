@@ -337,8 +337,13 @@ def _visual_session(root, expected_hash):
     require(len(list(ev.root.glob('command-*')))==2,'command_artifact_count')
     pulse=validate_pulse(command['pulse']);receipt=result['receipt']
     require(pulse['joint']==s['joint'], 'session_command_joint_mismatch')
-    sign,cap,duration=PROFILES[pulse['joint']]['directions'][pulse['direction']]
-    require(pulse['percent']<=cap and pulse['durationMs']<=duration and pulse['expectedPwm']*sign>0,'profile_limit')
+    collection_profile = None
+    if 'collectionProfile' in plan or 'collectionProfile' in s:
+        from learning.attended_collection_profile import audit_profile
+        collection_profile = audit_profile(plan, s, pulse)
+    else:
+        sign,cap,duration=PROFILES[pulse['joint']]['directions'][pulse['direction']]
+        require(pulse['percent']<=cap and pulse['durationMs']<=duration and pulse['expectedPwm']*sign>0,'profile_limit')
     require(receipt.get('offVerified') is True,'receipt_off_required')
     validate_execution(dict(receipt,pulse=pulse),pulse)
     times=[command['at'],receipt['dispatchBefore'],receipt['dispatchAfter'],receipt['offAt'],result['at'],s['endedAt']]
@@ -357,6 +362,8 @@ def _visual_session(root, expected_hash):
             preFrameIds=[f['frameIndex'] for f in before_frames],postFrameIds=[f['frameIndex'] for f in after_frames],
             auditedFrames=len(frames),cameraIdentity=identity,sourceHashes=ev.hashes),
         originalDatasetEligible=False,trainingPerformed=False,controlEligible=False)
+    if collection_profile is not None:
+        row['evidence']['collectionProfile'] = collection_profile
     return row, statuses, pre, post, [frames[0]['sourceEarliest'], s['endedAt']]
 
 

@@ -153,6 +153,8 @@ def observe_transition(source_root, audited_row, observer_spec, *, artifact_root
                     developmentObservationOnly=True, recoveryDevelopmentOnly=True)
                 if row['evidence'].get('executionTimingPolicy') is not None:
                     transition['context']['executionTimingPolicy'] = row['evidence']['executionTimingPolicy']
+                if row['evidence'].get('collectionProfile') is not None:
+                    transition['context']['collectionProfile'] = copy.deepcopy(row['evidence']['collectionProfile'])
                 validate_rows([transition], allow_development_observations=True)
                 result.update(status='eligible', transition=transition, trainingEligible=True,
                     developmentObservationOnly=True,

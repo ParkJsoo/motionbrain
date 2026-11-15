@@ -77,7 +77,12 @@ class RecordingPort(SequencePort):
 class ManualCollection:
     def __init__(self, root, helper, controller_url, token, device_id, view_id='manual', *,
                  journal_path=None, clock=time, camera_factory=ActionRecorder,
-                 port_factory=RecordingPort, sample_fps=8, recording_seconds=60):
+                 port_factory=RecordingPort, sample_fps=8, recording_seconds=60,
+                 collection_profile=None):
+        if collection_profile is not None:
+            from learning.attended_collection_profile import collection_profile as validate_profile
+            validate_profile(collection_profile)
+        self.collection_profile = collection_profile
         if type(sample_fps) is not int or sample_fps not in (4, 8):
             raise ValueError('collection_sample_fps')
         if type(recording_seconds) is not int or recording_seconds not in (60, 120):
@@ -146,6 +151,11 @@ class ManualCollection:
         plan = dict(**payload, sessionId=sid, helperSha256=helper_hash, controllerUrl=self.controller_url,
                     camera=dict(deviceId=self.device_id, sessionId=sid, viewId=self.view_id,
                                 width=1920, height=1080, maxFrames=maximum_frames, seconds=self.recording_seconds, sampleFps=self.sample_fps, maxBytes=budget))
+        if self.collection_profile is not None:
+            from learning.attended_collection_profile import collection_profile
+            profile = collection_profile(self.collection_profile)
+            self.current['collectionProfile'] = copy.deepcopy(profile)
+            plan['collectionProfile'] = copy.deepcopy(profile)
         try:
             self.store.write_json('plan.json', plan)
             with db:
@@ -467,6 +477,14 @@ class ManualCollection:
             raise ValueError('pulse_fields_invalid')
         if payload['joint'] != self.current['joint']:
             raise ValueError('session_joint_is_fixed')
+        profile = self.current.get('collectionProfile')
+        if self.collection_profile is not None or profile is not None:
+            from learning.attended_collection_profile import collection_profile, validate_command
+            if profile != collection_profile(self.collection_profile):
+                raise ValueError('attended_collection_profile_changed')
+            if self.command_count >= profile['maximumCommands']:
+                raise ValueError('session_command_budget_reached')
+            return validate_command(self.collection_profile, payload)
         profile = PROFILES[payload['joint']]
         limits = profile['directions'].get(payload['direction'])
         if limits is None:

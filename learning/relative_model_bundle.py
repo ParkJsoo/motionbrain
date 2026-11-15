@@ -37,7 +37,8 @@ def validate_model(model, *, allow_development_observations=False):
             'offline_relative_model_required')
     context = model.get('context')
     fields = {'physicalView', 'object', 'poseRegime', 'landmarks', 'cameraIdentity', 'imageShape', 'stateFields'}
-    require(isinstance(context, dict) and set(context) in (fields, fields | {'executionTimingPolicy'}),
+    require(isinstance(context, dict) and set(context) in (fields, fields | {'executionTimingPolicy'},
+            fields | {'collectionProfile'}, fields | {'executionTimingPolicy', 'collectionProfile'}),
         'complete_observation_context_required')
     if 'executionTimingPolicy' in context:
         from learning.supervised_transport import (WRIST_DEADLINE_POLICY, ELBOW_DEADLINE_POLICY,
@@ -72,7 +73,7 @@ def validate_model(model, *, allow_development_observations=False):
     keys, total = set(), 0
     for entry in model['models']:
         require(isinstance(entry, dict), 'model_command_parameters_required')
-        key = command_key(entry.get('command'))
+        key = command_key(entry.get('command'), collection_profile=context.get('collectionProfile'))
         validate_motion_scope(context, entry['command'],
                               allow_development_observations=allow_development_observations)
         require(key not in keys, 'duplicate_model_command')
