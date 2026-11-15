@@ -46,6 +46,9 @@ class ObserverTests(unittest.TestCase):
         self.assertFalse(result['contactVerified'])
         self.assertFalse(result['graspVerified'])
         self.assertEqual(result['registrationSha256'], self.observer.binding)
+        original_axis = self.observer.observe(self.raw)['toolAxisImageAngleDeg']
+        change = (result['toolAxisImageAngleDeg']-original_axis+180.) % 360.-180.
+        self.assertAlmostEqual(change, -15., delta=1.)
 
     def test_missing_either_marker_is_rejected(self):
         for kind, roi in self.registration['markerRois'].items():
@@ -120,6 +123,8 @@ class ObserverTests(unittest.TestCase):
         self.assertEqual(result['registrationSha256'], bank.binding)
         self.assertEqual(result['landmarkContract'], bank.landmark_contract)
         self.assertEqual(len(result['referenceSha256s']), 2)
+        self.assertTrue(all('toolAxisImageAngleDeg' in ref for ref in result['acceptedReferences']))
+        self.assertLess(result['maximumAxisDisagreementDeg'], 1.)
         missing = self.image.copy(); missing[620:810, 780:855] = 180
         with self.assertRaisesRegex(ValueError, 'no_supported_reference'): bank.observe(self.encode(missing))
         second['toolPoint'][0] += 5.

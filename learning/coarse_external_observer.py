@@ -151,11 +151,17 @@ class CoarseExternalObserver:
         _require(np.isfinite(ncc) and ncc >= limits['minimumToolNcc']
                  and np.linalg.norm(correction) <= limits['maximumToolCorrectionPx'], 'coarse_tool_not_visible')
         tip = cv2.transform(np.float32([[np.array(cfg['toolPoint'])+correction]]), affine)[0, 0].tolist()
+        marker_axis = np.array(cfg['markerReference']['teal']['center'])-cfg['markerReference']['purple']['center']
+        current_axis = affine[:, :2] @ marker_axis
+        _require(float(np.linalg.norm(current_axis)) > 1., 'coarse_marker_axis_missing')
+        tool_axis_deg = float(np.degrees(np.arctan2(current_axis[1], current_axis[0])))
         _require(0 <= tip[0] < 1920 and 0 <= tip[1] < 1080, 'coarse_tool_outside_image')
         state = [object_result['center'][0]-tip[0], object_result['center'][1]-tip[1], 1.]
         return dict(schemaVersion=SCHEMA, registrationSha256=self.binding,
             imageSha256=hashlib.sha256(raw).hexdigest(), referenceSha256=cfg['referenceSha256'],
             state=state, toolProxyPx=tip, object=object_result, stateMeaning=MEANING,
+            toolAxisImageAngleDeg=tool_axis_deg,
+            toolAxisMeaning='projected_purple_to_teal_marker_axis_not_physical_joint_angle',
             stateFields=STATE_FIELDS.copy(), landmarkContract=self.landmark_contract,
             quality=dict(matches=len(matches), inliers=inliers, medianResidualPx=residual,
                 inlierSpanPx=spans.tolist(), scale=scale, rotationDeg=rotation, markers=marker_quality,
@@ -223,6 +229,8 @@ class CoarseExternalBank:
             selectedReferenceRegistrationSha256=selected['registrationSha256'],
             referenceSha256s=[observer.registration['referenceSha256'] for observer in self.observers],
             acceptedReferences=[dict(registrationSha256=row['registrationSha256'], toolProxyPx=row['toolProxyPx'],
-                toolNcc=row['quality']['toolNcc']) for row in accepted],
+                toolNcc=row['quality']['toolNcc'], toolAxisImageAngleDeg=row['toolAxisImageAngleDeg']) for row in accepted],
             rejectedReferences=rejected, maximumProxyDisagreementPx=max(disagreements, default=0.))
+        result['maximumAxisDisagreementDeg'] = max((abs((a['toolAxisImageAngleDeg']-b['toolAxisImageAngleDeg']+180.) % 360.-180.)
+            for i, a in enumerate(accepted) for b in accepted[i+1:]), default=0.)
         return result
