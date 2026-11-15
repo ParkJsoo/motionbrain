@@ -318,7 +318,8 @@ class ManualCollection:
                 ('/command', {'cmd': 'stop'}), ('/sequence', {'action': 'clear'}),
                 ('/motor', {'action': 'default', 'speed': 100}))
         if (original.get('schemaVersion') != SCHEMA or original.get('sessionId') != session_id
-                or original.get('phase') != 'failed' or original.get('error') != ('output_off_unverified' if observed else 'session_start_failed')
+                or original.get('phase') != 'failed' or original.get('error') not in (
+                    ('output_off_unverified', 'final_controller_check_failed') if observed else ('session_start_failed',))
                 or original.get('finalIdleOffVerified') is not False
                 or (not isinstance(original.get('frames'), list) or not isinstance(original.get('recording'), dict)
                     if observed else original.get('frames') != [] or original.get('recording') is not None)

@@ -18,7 +18,7 @@ class ObservedNoRunRecoveryTests(unittest.TestCase):
         self.root=owner.manager.store.root
         owner.transport_failed=True
         report=owner.manager.finish()
-        self.assertEqual(report['error'],'output_off_unverified')
+        self.assertEqual(report['error'],'final_controller_check_failed')
         self.assertEqual(report['phase'],'failed')
         self.assertGreater(len(report['frames']),0)
         self.assertFalse(any(e['kind'] in ('command','result') for e in report['events']))
@@ -65,6 +65,19 @@ class ObservedNoRunRecoveryTests(unittest.TestCase):
         count=len(self.requests)
         with self.assertRaises(ValueError):self.recover()
         self.assertEqual(len(self.requests),count)
+    def test_legacy_off_error_still_recovers_without_rewriting_original(self):
+        self.update_original(lambda value:value.update(error='output_off_unverified'))
+        result=self.recover()
+        self.assertTrue(result['currentOffVerified'])
+        self.assertEqual((self.root/'session.json').read_bytes(),self.raw)
+        self.assertTrue(all(method=='GET' for method,_,_ in self.requests))
+    def test_other_final_errors_are_not_admitted_by_error_compatibility(self):
+        self.update_original(lambda value:value.update(error='evidence_persistence_failed'))
+        with self.assertRaisesRegex(ValueError,'owned_source_required'):self.recover()
+        self.assertEqual(self.requests,[])
+        self.assertEqual((self.root/'session.json').read_bytes(),self.raw)
+        self.assertEqual(self.db.execute('SELECT phase,result_json FROM supervised_blocks WHERE session_id=?',
+            (self.sid,)).fetchone(),('off_unverified',self.result_json))
     def test_original_safe_cleanup_intents_are_allowed_but_no_cleanup_is_retransmitted(self):
         original=json.loads(self.raw)
         for i,(path,payload) in enumerate([('/command',{'cmd':'stop'}),('/sequence',{'action':'clear'}),
