@@ -60,10 +60,23 @@ STOP으로 바꿔 적지 않는다. 들기·탁상 복귀·해제도 각각 새 
 독립 검증하지 않는다. 이 판정의 통과는 영상 기반 단계 전환 조건이며 실제 거리 단위의 깊이·접촉력·실제
 파지 성공의 증명이 아니다. 모델 예측, 영상 판정, 별도 실물 결과 평가를 구분해 보존한다.
 
+`NearGripperTipObserver(policy_version=3)`는 폐합 중 손가락에 가려 분리된 분홍 영역을
+별도 관측 계약으로 다룬다. 관측 ROI 안의 색 성분이 정확히 두 개이고 작은 성분의 면적이
+큰 성분의 35% 이하, 중심 X 차이가 5px 이하, 수평 겹침이 작은 폭의 절반 이상,
+세로 간격이 0~10px일 때만 관측된 픽셀의 면적·가중 중심·외곽 상자를 합친다.
+각 성분의 채움 비율 0.5와 기존 ROI·손가락 검출·최소 끝점 간격은 유지한다.
+합친 상자의 빈 부분에는 가림도 포함되므로 그 상자 전체의 채움 비율은 측정값으로 남긴다.
+숨은 픽셀이나 접촉·깊이를 복원한 결과는 아니다. 기존 v1·v2 정책과 계약은 유지한다.
+
+v3 자료를 사용할 때는 원본을 새 계약으로 다시 관측·감사하고 모델을 다시 학습해야 한다.
+현재 관측뿐 아니라 들기·내리기·보유 판정에도 같은 계약을 연결해야 한다.
+관측기의 소프트웨어 검증과 새 계약 모델의 실물 검증은 별도다.
+
 장치 없이 API·예산·실패 무재송·단계 전환·정체 규칙과 영상 반례를 검증하는 명령:
 
 ```sh
-python3 -m unittest tests.test_integrated_visual_cycle tests.test_limited_scene_cycle_assessment
+python3 -m unittest tests.test_integrated_visual_cycle tests.test_limited_scene_cycle_assessment \
+  tests.test_near_gripper_tip_observer tests.test_near_gripper_fragment_observer
 ```
 
 위 검증은 합성 관측과 모의 콜백의 소프트웨어 검사다. 실제 카메라·모델·actor 연결의 실행 결과나
