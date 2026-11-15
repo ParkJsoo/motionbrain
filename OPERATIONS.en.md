@@ -166,6 +166,8 @@ Recovery requires **a reachable controller address or working Pi hostname resolu
 
 Run software verification with `python3 -m unittest discover -s tests`. Browser recovery tests require Node.js and use mocked HTTP and virtual timers. They are separate from physical DHCP changes, device reboots, image collection, and motor tests. The existing systemd installer also installs `publish_vision_endpoint.py`, using the existing authentication and timer configuration.
 
+The [separate development-model observation on 2026-11-15 (Korean)](docs/evidence/2026-11-15-prepared-scene-model-grasp-lift-release.md) connects grasping through release after manual preparation, with an upper experiment agent starting and assessing each stage. It does not validate fully autonomous operation through the general CLI or existing integrated core. Reproducing public model and guard tests is distinct from reproducing the physical observation, which used private captures and local orchestration scripts.
+
 ## Supervised collection
 
 The [manual joint data collection console (Korean)](docs/manual-data-collection.md) runs on the Mac and records/replays video, commands, actual outputs, and sensors for one selected joint among M1–M5. M4 permits downward motion only, and starting the server does not start capture or motion. This UI's automated sensor-label conversion and delta learning target M4. Selecting every joint does not imply completed measurement or learning for every joint.

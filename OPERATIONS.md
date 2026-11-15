@@ -166,6 +166,8 @@ systemctl list-timers motionbrain-dashboard-reconcile.timer --all
 
 소프트웨어 검증은 `python3 -m unittest discover -s tests`로 실행한다. 브라우저 복구 테스트에는 Node.js가 필요하며 모의 HTTP·가상 타이머를 사용한다. 실제 DHCP 변경·장치 재부팅·영상 수집·모터 구동 검증과 구분한다. 설치 시 기존 systemd 설치 스크립트가 `publish_vision_endpoint.py`도 설치하며, 기존 인증·타이머 설정을 사용한다.
 
+[2026-11-15 별도 개발 모델 실측](docs/evidence/2026-11-15-prepared-scene-model-grasp-lift-release.md)은 수동 준비와 상위 실험 진행 에이전트의 단계 시작·판독 아래 집기부터 해제까지 관측한 사례다. 일반 CLI나 기존 통합 코어의 완전 자율 실행을 검증한 것은 아니다. 공개 소스의 모델·가드 테스트 재현과 비공개 현장 원본·진행 스크립트에 의존한 실측 재현을 구분한다.
+
 ## 현장 감독 수집
 
 [관절별 수동 데이터 수집 화면](docs/manual-data-collection.md)은 Mac에서 M1~M5 중 한 관절을 선택해 영상·명령·실제 출력·센서를 저장·재생한다. M4는 아래 방향만 허용하며 서버 실행만으로 촬영·구동하지 않는다. 이 화면의 자동 센서 라벨 변환·변화량 학습 대상은 M4다. 전체 관절 선택 지원을 모든 관절의 계측·학습 완료로 해석하지 않는다.

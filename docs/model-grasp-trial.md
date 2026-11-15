@@ -2,6 +2,8 @@
 
 [상대 상태 모델](relative-action-selection.md) · [수집 방법](manual-data-collection.md)
 
+2026-11-15에는 별도 개발 모델과 상위 에이전트의 단계별 진행으로 수동 준비 후 집기부터 해제까지 관측했다. [해당 실측과 한계](evidence/2026-11-15-prepared-scene-model-grasp-lift-release.md)는 아래 코어 자체의 통합 실물 성공이나 자동 단계 전환을 검증한 결과가 아니다.
+
 ## 재관측 기반 전체 과업의 오프라인 연결
 
 `learning/finite_task_cycle.py`는 접근→닫기→들기·보유→내려놓기→해제를 유한 예산으로 연결한다. `learning/task_cycle_workflow.py`는 필요한 수동 수집, 원본 감사, 학습·모델 고정, 전체 시도 한 번을 같은 호출 경로로 잇는다. 기본 장치 포트·주소·인증·자동 실물 진입점은 없다. 합성 전이와 가짜 장치로 확인한 소프트웨어 연결이며 실제 전체 모델 제어 성공이나 현재 장치 실행 허용을 뜻하지 않는다.
