@@ -23,6 +23,9 @@ REGISTERED_METHODS = {
 
 def state_fields(context):
     """Keep shaft cross-section measurements distinct from jaw-tip opening."""
+    if str(context.get('landmarks', '')).startswith('coarse-external-tool-proxy-v1:'):
+        from learning.coarse_external_observer import STATE_FIELDS
+        return STATE_FIELDS.copy()
     if str(context.get('landmarks', '')).startswith('development-gripper-visible-v1:'):
         from learning.development_gripper_observer import STATE_FIELDS
         return STATE_FIELDS.copy()
@@ -41,6 +44,8 @@ def development_observation(context):
 
 
 def validate_motion_scope(context, command, *, allow_development_observations=False):
+    if str(context.get('landmarks', '')).startswith('coarse-external-tool-proxy-v1:'):
+        require(command.get('joint') == 'elbow', 'coarse_external_elbow_only')
     if 'executionTimingPolicy' in context:
         from learning.supervised_transport import validate_monitor_policy
         require(context['executionTimingPolicy'] is not None, 'execution_timing_policy_required')
@@ -159,6 +164,8 @@ def validate_rows(rows, *, allow_development_observations=False):
         require(len(refs) == 2 and refs[0] != refs[1] and not frames.intersection(refs), 'reused_frame')
         ids.add(row['sessionId']); episodes.add(episode); frames.update(refs)
         vector(row['before']); vector(row['after']); command_key(row['command'], collection_profile=context.get('collectionProfile'))
+        if str(context.get('landmarks', '')).startswith('coarse-external-tool-proxy-v1:'):
+            require(row['before'][2] == row['after'][2] == 1., 'coarse_compatibility_constant_changed')
         validate_motion_scope(context, row['command'],
                               allow_development_observations=allow_development_observations)
         if development_observation(context):
@@ -213,6 +220,8 @@ def predict(model, state, command, context, *, baseline=False):
     validate_motion_scope(context, command,
                           allow_development_observations=model.get('developmentObservationOnly') is True)
     key = command_key(command, collection_profile=context.get('collectionProfile')); x = vector(state)
+    if str(context.get('landmarks', '')).startswith('coarse-external-tool-proxy-v1:'):
+        require(x[2] == 1., 'coarse_compatibility_constant_changed')
     candidates = [m for m in model['models'] if command_key(m['command'], collection_profile=context.get('collectionProfile')) == key]
     require(len(candidates) == 1, 'command_without_two_training_transitions')
     m = candidates[0]
@@ -229,6 +238,8 @@ def predict(model, state, command, context, *, baseline=False):
 def select(model, state, target, commands, context, *, predictor='stateRidge', minimum_improvement_px=0.):
     """Compare learned next states with stop; unsupported actions remain visible."""
     x, goal = vector(state), vector(target)
+    if str(context.get('landmarks', '')).startswith('coarse-external-tool-proxy-v1:'):
+        require(x[2] == goal[2] == 1., 'coarse_compatibility_constant_changed')
     require(predictor in ('stateRidge', 'commandMean'), 'unsupported_selection_predictor')
     require(type(minimum_improvement_px) in (int, float)
             and math.isfinite(minimum_improvement_px) and minimum_improvement_px >= 0,
