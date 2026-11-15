@@ -1,3 +1,4 @@
+#include "control/m4_goal_service.h"
 #include "input/m4_stage_service.h"
 #include <memory>
 #include <new>
@@ -1720,6 +1721,38 @@ void MotionBrainWebServer::handleSequence() {
     return;
   }
 
+  if (action == "add_m4_guarded" || action == "run_m4_guarded") {
+    m4_goal::Request r;
+    auto identity = [this](const char* key, char* out, size_t size) {
+      const String value=server_.arg(key);
+      if(value.length()!=size-1) return false;
+      memcpy(out,value.c_str(),size);return true;
+    };
+    if(!identity("guardNonce",r.nonce,sizeof(r.nonce)) ||
+       !identity("guardBootId",r.bootId,sizeof(r.bootId)) ||
+       !identity("guardScopeSha256",r.scopeSha256,sizeof(r.scopeSha256)) ||
+       !identity("guardPolicySha256",r.policySha256,sizeof(r.policySha256))) {
+      sendErrorJson(400,"Invalid guard identity");return;
+    }
+    bool accepted=false;
+    if(action=="add_m4_guarded") {
+      long speed=0,duration=0;
+      String direction=server_.arg("direction");
+      if(server_.arg("joint")!="shoulder" || (direction!="up" && direction!="down") ||
+         !NumericValidation::integer(server_.arg("speed").c_str(),1,100,speed) ||
+         !NumericValidation::integer(server_.arg("duration").c_str(),1200,1200,duration) ||
+         !NumericValidation::real(server_.arg("expectedStartDeg").c_str(),192.29f,198.29f,r.expectedStartDeg) ||
+         !NumericValidation::real(server_.arg("goalDeg").c_str(),192.29f,198.29f,r.goalDeg)) {
+        sendErrorJson(400,"Invalid guard request");return;
+      }
+      r.up=direction=="up";r.percent=speed;r.durationMs=duration;
+      accepted=M4GoalService::queue(r);
+    } else accepted=M4GoalService::run(r.nonce,r.bootId,r.scopeSha256,r.policySha256);
+    if(!accepted){sendErrorJson(409,"Guard request rejected");return;}
+    String json="{\"success\":true,";M4GoalService::appendJson(json);json+="}";
+    server_.send(200,"application/json",json);return;
+  }
+
   Command command;
   command.source = CommandSource::WEB_INPUT;
 
@@ -1830,6 +1863,8 @@ void MotionBrainWebServer::handleSequenceStatus() {
   json += ",\"full\":";
   json += motionSequence_->isFull() ? "true" : "false";
   json += "}";
+  json += ",";
+  M4GoalService::appendJson(json);
   json += "}";
 
   server_.send(200, "application/json", json);

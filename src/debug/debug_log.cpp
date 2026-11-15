@@ -1,3 +1,4 @@
+#include "control/m4_goal_guard.h"
 #include "debug_log.h"
 #include <stdarg.h>
 #include "control/finite_profile_runtime.h"
@@ -7,6 +8,7 @@
 bool DebugLog::initialized_ = false;
 uint32_t DebugLog::finiteSuppressed_ = 0;
 bool DebugLog::suppressFiniteOutput() {
+  if (m4_goal::activeWindow()) return true;
 #if MOTIONBRAIN_ENABLE_FINITE_PROFILE_RUNTIME
   if (finite_profile::runtime::motionPending()) {
     if (finiteSuppressed_ != UINT32_MAX) ++finiteSuppressed_;

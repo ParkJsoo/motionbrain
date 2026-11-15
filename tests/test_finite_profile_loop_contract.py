@@ -13,13 +13,16 @@ class FiniteLoopContractTest(unittest.TestCase):
         tick = "finite_profile::runtime::update();"
         self.assertEqual(loop.count(tick), 1)
         order = [loop.index(s) for s in (
-            "stm32Bridge.update(finiteWindow ? 128 : 0)",
-            "teleopAdapter.processInput(finiteWindow ? 128 : 0)",
+            "stm32Bridge.update((finiteWindow || goalWindow) ? 128 : 0)",
+            "teleopAdapter.processInput((finiteWindow || goalWindow) ? 128 : 0)",
             "safetyMonitor.update(safetySnapshot)", tick, "webServer.update()")]
         self.assertEqual(order, sorted(order))
         for call in ("serialCommand.update()", "wifiAP.update()", "webServer.update()"):
-            self.assertIn("if (!finite_profile::runtime::motionPending()) " + call, loop)
+            line = next(line for line in loop.splitlines() if call in line)
+            self.assertIn("if (!finite_profile::runtime::motionPending() && ", line)
+            self.assertIn("!M4GoalService::", line)
         self.assertIn("if (!finiteWindow) shoulderAngleSensor.update", loop)
+        self.assertLess(loop.index("M4GoalService::update()"), loop.index("motorControl.update()"))
 
     def test_real_debug_log_does_not_write_uart_during_output(self):
         compiler = shutil.which("clang++") or shutil.which("g++")
@@ -50,6 +53,7 @@ namespace finite_profile { namespace runtime { bool motionPending(); } }
             (folder / "test.cpp").write_text(r'''
 #include <cassert>
 #include "debug/debug_log.h"
+#include "control/m4_goal_guard.h"
 FakeSerial Serial;
 bool pending = false;
 namespace finite_profile { namespace runtime { bool motionPending() { return pending; } } }
@@ -68,6 +72,13 @@ int main() {
   pending = false;
   DebugLog::warn("logging restored");
   assert(Serial.writes == before + 1);
+  m4_goal::setActiveWindow(true);
+  DebugLog::safety("stop", "goal");
+  DebugLog::motor("stop", "goal");
+  assert(Serial.writes == before + 1);
+  m4_goal::setActiveWindow(false);
+  DebugLog::warn("goal logging restored");
+  assert(Serial.writes == before + 2);
 }
 ''')
             sdk = []
@@ -75,7 +86,9 @@ int main() {
                 path = subprocess.check_output(["xcrun", "--sdk", "macosx", "--show-sdk-path"], text=True).strip()
                 sdk = ["-isysroot", path]
             result = subprocess.run([compiler, "-std=c++11", "-Wall", "-Wextra", "-Werror", *sdk,
+                "-DMOTIONBRAIN_ENABLE_M4_GOAL_GUARD=1",
                 "-I", str(folder), "-I", str(ROOT / "src"), str(folder / "test.cpp"),
+                str(ROOT / "src/control/m4_goal_guard.cpp"),
                 str(ROOT / "src/debug/debug_log.cpp"), "-o", str(folder / "test")],
                 capture_output=True, text=True, timeout=60)
             self.assertEqual(result.returncode, 0, result.stderr)

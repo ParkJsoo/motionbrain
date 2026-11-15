@@ -5,9 +5,9 @@
 #ifndef MOTIONBRAIN_ENABLE_M4_GOAL_GUARD
 #define MOTIONBRAIN_ENABLE_M4_GOAL_GUARD 0
 #endif
-// Pure state machine only: not connected to HTTP, MotionSequence, sensor or driver.
+// Pure state machine; m4_goal_service supplies HTTP/sensor/driver integration.
 // A true tick/cancel result requests adapter hardOFF; it does not perform OFF.
-// No production build exposes or executes this proposed guard yet.
+// Default build disabled; explicit commissioning environment only.
 namespace m4_goal {
 static constexpr const char* POLICY_SHA = "ee16b5b5f8cbc1df7d4927dd4139b7f8b767927eb39c72de5fb843d6494d09f9";
 static constexpr uint32_t DURATION_MS=1200, SENSOR_AGE_MS=60, TICK_GAP_MS=40;
@@ -44,7 +44,12 @@ class Guard {
   Record records_[CAPACITY]; size_t count_; int current_; uint32_t previousTick_; bool ticked_;
   bool terminal(const char* reason,uint32_t now);
 };
+#if MOTIONBRAIN_ENABLE_M4_GOAL_GUARD
 bool activeWindow();
 void setActiveWindow(bool);
+#else
+inline bool activeWindow(){return false;}
+inline void setActiveWindow(bool){}
+#endif
 }
 #endif

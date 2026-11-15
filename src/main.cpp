@@ -1,3 +1,4 @@
+#include "control/m4_goal_service.h"
 #include <Arduino.h>
 #include <esp_system.h>
 #include "control/finite_profile_runtime.h"
@@ -219,12 +220,17 @@ void loop() {
 
   // The finite runtime and all safety/driver calls share this one loop task.
   const bool finiteWindow = finite_profile::runtime::motionPending();
+  const bool goalWindow = M4GoalService::pending();
+  if (M4GoalService::serialHeld()) {
+    serialCommand.clearCommand();
+    M4GoalService::pollStop();
+  }
 
   // Bound UART work during the short finite execution window.
-  stm32Bridge.update(finiteWindow ? 128 : 0);
+  stm32Bridge.update((finiteWindow || goalWindow) ? 128 : 0);
 
   // 유선 handheld teleop 입력 수신. 출력 적용은 safety 평가 이후에 수행한다.
-  teleopAdapter.processInput(finiteWindow ? 128 : 0);
+  teleopAdapter.processInput((finiteWindow || goalWindow) ? 128 : 0);
 
   // 센서 기반 safety 평가
   const SensorSnapshot& safetySnapshot = getActiveSafetySnapshot();
@@ -237,6 +243,7 @@ void loop() {
   // M4 I2C diagnostics can block; the finite catalog owns M2 only.
   if (!finiteWindow) shoulderAngleSensor.update(motorControl.getSpeed(MotorControl::MOTOR_4));
   BoundedActions::tick();
+  M4GoalService::update();
   shoulderAngleController.update();
 
   // base 상대각 폐루프 업데이트
@@ -254,6 +261,7 @@ void loop() {
   
   // 모터 제어 업데이트 (점진적 속도 변경 처리)
   BoundedActions::tick();
+  M4GoalService::update();
   motorControl.update();
 
   // 모션 시퀀스 업데이트 (Phase 2-B)
@@ -264,15 +272,15 @@ void loop() {
   GuardedRoutineExecutor::update();
   
   // 시리얼 명령 처리
-  if (!finite_profile::runtime::motionPending()) serialCommand.update();
+  if (!finite_profile::runtime::motionPending() && !M4GoalService::serialHeld() && !goalWindow) serialCommand.update();
   
   // Wi-Fi AP 업데이트 (클라이언트 접속 상태 확인)
-  if (!finite_profile::runtime::motionPending()) wifiAP.update();
+  if (!finite_profile::runtime::motionPending() && !M4GoalService::pending()) wifiAP.update();
   
   // 웹 서버 업데이트 (HTTP 요청 처리)
   // Never deliver an output after potentially blocking HTTP handling.
   // The next loop refreshes UART input and safety before the sole runtime tick.
-  if (!finite_profile::runtime::motionPending()) webServer.update();
+  if (!finite_profile::runtime::motionPending() && !M4GoalService::pending()) webServer.update();
   BoundedActions::tick();
   
   // 최소 딜레이 (CPU 부하 완화 + 웹 서버 응답성 개선)

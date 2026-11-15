@@ -1,3 +1,4 @@
+#include "control/m4_goal_guard.h"
 #include "motor_driver.h"
 #include "debug/debug_log.h"
 #include "safety/safety_monitor.h"
@@ -126,6 +127,7 @@ bool MotorControl::init() {
  * 기본 속도 설정
  */
 bool MotorControl::setDefaultSpeed(uint8_t speed) {
+  if (m4GoalOwned_) return false;
   // 속도 범위 검증 (1-255만 유효, 0은 모터가 움직이지 않으므로 기본 속도로는 무의미)
   if (speed == 0) {
     DebugLog::error("Default speed cannot be 0 - motors will not move. Valid range: 1-255");
@@ -156,6 +158,7 @@ bool MotorControl::forward(uint8_t motorId) {
  * 모터 정방향 구동 (속도 비율 지정)
  */
 bool MotorControl::forward(uint8_t motorId, uint8_t percent) {
+  if (m4GoalOwned_ || m4_goal::activeWindow()) return false;
 #if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
   if (finiteLease_ != 0) return false;
 #endif
@@ -204,6 +207,7 @@ bool MotorControl::reverse(uint8_t motorId) {
  * 모터 역방향 구동 (속도 비율 지정)
  */
 bool MotorControl::reverse(uint8_t motorId, uint8_t percent) {
+  if (m4GoalOwned_ || m4_goal::activeWindow()) return false;
 #if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
   if (finiteLease_ != 0) return false;
 #endif
@@ -249,6 +253,7 @@ bool MotorControl::reverse(uint8_t motorId, uint8_t percent) {
  * 개별 모터 속도 설정
  */
 bool MotorControl::setSpeed(uint8_t motorId, int16_t speed) {
+  if (m4GoalOwned_ || m4_goal::activeWindow()) return false;
 #if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
   if (finiteLease_ != 0) {
     if (speed != 0 || !isValidMotorId(motorId)) return false;
@@ -292,6 +297,7 @@ bool MotorControl::setSpeed(uint8_t motorId, int16_t speed) {
  * 모든 모터 속도 설정 (동일한 속도)
  */
 bool MotorControl::setSpeedAll(int16_t speed) {
+  if (m4GoalOwned_ || m4_goal::activeWindow()) return false;
 #if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
   if (finiteLease_ != 0) {
     if (speed != 0) return false;
@@ -328,6 +334,7 @@ bool MotorControl::setSpeedAll(int16_t speed) {
  * 개별 모터 정지 (점진적 정지)
  */
 bool MotorControl::stop(uint8_t motorId) {
+  if (m4GoalOwned_) { endM4Goal(); return true; }
   // 모터 ID 유효성 검사
   if (!isValidMotorId(motorId)) {
     DebugLog::error("Invalid motor ID: %d (valid range: 1-%d for M1~M5)", motorId, NUM_MOTORS);
@@ -354,6 +361,7 @@ bool MotorControl::stop(uint8_t motorId) {
  * 모든 모터 정지 (점진적 정지)
  */
 bool MotorControl::stopAll() {
+  if (m4GoalOwned_) { endM4Goal(); return true; }
 #if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
   if (finiteLease_ != 0) {
     sealFiniteProfileAndStop();
@@ -374,6 +382,7 @@ bool MotorControl::stopAll() {
  * 개별 모터 즉시 정지
  */
 bool MotorControl::hardStop(uint8_t motorId) {
+  if (m4GoalOwned_) { endM4Goal(); return true; }
   if (!isValidMotorId(motorId)) {
     DebugLog::error("Invalid motor ID: %d (valid range: 1-%d for M1~M5)", motorId, NUM_MOTORS);
     return false;
@@ -395,6 +404,7 @@ bool MotorControl::hardStop(uint8_t motorId) {
  * 모든 모터 즉시 정지
  */
 void MotorControl::hardStopAll() {
+  m4GoalOwned_ = false;
 #if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
   if (finiteLease_ != 0) finiteLeaseSealed_ = true;
 #endif
@@ -493,6 +503,7 @@ void MotorControl::invalidateFiniteProfileLease() {
 }
 
 bool MotorControl::finiteProfileReady() const {
+  if (m4GoalOwned_ || m4_goal::activeWindow()) return false;
   if (!finiteInitialized_ || finiteLease_ != 0 || finiteLeaseCounter_ == UINT32_MAX ||
       hasPendingOutput() || getCurrentState() != SystemState::ARMED ||
       safetyMonitor.isMotionBlocked()) return false;
@@ -911,4 +922,21 @@ uint8_t MotorControl::percentToSpeed(uint8_t percent) const {
   if (speed > 255) speed = 255;
   
   return (uint8_t)speed;
+}
+
+bool MotorControl::beginM4Goal(int16_t pwm) {
+  if (m4GoalOwned_ || hasPendingOutput() || isEnabled() || (pwm != 127 && pwm != -89)) return false;
+#if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
+  if (finiteProfileOwned()) return false;
+#endif
+  if (!MOTIONBRAIN_ENABLE_M4_GOAL_GUARD || !checkSafety("M4 goal")) return false;
+  targetSpeed_[3]=pwm; enabled_[3]=true;
+  lastUpdateTime_[3]=millis();
+  systemState.resetTimeout();
+  m4GoalOwned_ = true;
+  return true;
+}
+void MotorControl::endM4Goal() {
+  m4GoalOwned_ = false;
+  hardStopAll();
 }

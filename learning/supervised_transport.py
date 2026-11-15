@@ -844,7 +844,7 @@ class SequencePort:
             self._call('/sequence', device_guard.add_payload(device_goal_guard, pulse) if device_goal_guard is not None else
                 {'action': 'add', 'joint': pulse['joint'], 'direction': pulse['direction'],
                  'speed': pulse['percent'], 'duration': pulse['durationMs']})
-            queued = self._queue(1)
+            queued = self._queue(0 if device_goal_guard is not None else 1)
             if device_goal_guard is not None:
                 device_guard.capability(queued, device_goal_guard, state='queued', pulse=pulse)
             tick()

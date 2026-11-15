@@ -21,7 +21,7 @@ SCHEMA = 'motionbrain.manual_m4_transition_audit.v1'
 REGISTRATION_SCHEMA = 'motionbrain.task_visual_state_registration.v1'
 ANNOTATION_SCHEMA = 'motionbrain.task_transition_annotation.v1'
 STATE = ('objectRisePx', 'toolRisePx', 'slipDyPx', 'startAngleDeg')
-MANUAL_SCHEMAS = (core.SCHEMA, core.CONTACT_MANUAL650_SCHEMA, core.RETURN_SCHEMA,core.TARGET_UP_SCHEMA,core.CURRENT_SHORT_TASK_SCHEMA,core.EFFECTIVE_TASK_SCHEMA)
+MANUAL_SCHEMAS = (core.SCHEMA, core.CONTACT_MANUAL650_SCHEMA, core.RETURN_SCHEMA,core.TARGET_UP_SCHEMA,core.CURRENT_SHORT_TASK_SCHEMA,core.EFFECTIVE_TASK_SCHEMA,core.DEVICE_GUARD_TASK_SCHEMA)
 
 
 def _hash(value):
@@ -160,6 +160,14 @@ def audit_manual_m4(root):
                         and (SequencePort._shoulder_angle(e['response']) >= scope['goalAngleDeg'] if direction=='up'
                              else SequencePort._shoulder_angle(e['response']) <= scope['goalAngleDeg'])
                         for e in statuses),'task_current_short_stop_angle_missing')
+    if scope['schemaVersion']==core.DEVICE_GUARD_TASK_SCHEMA:
+        execution_policy=core.device_policy.validate_device_guard_policy(scope['deviceGuardPolicy'])
+        request=core.device_policy.guard_request(scope)
+        require(receipt.get('plannedDeviceGoalGuard')==request and receipt.get('plannedDeviceGuardPolicy')==execution_policy
+                and receipt.get('monitorTimingPolicy')==execution_policy[scope['pulse']['direction']+'MonitorTimingPolicy']
+                and type(receipt.get('stoppedEarly')) is bool
+                and receipt.get('stoppedEarly')==(receipt['deviceGoalGuard']['reason']=='goal')
+                and receipt.get('stopReason')=='device_'+receipt['deviceGoalGuard']['reason'],'task_device_guard_receipt_changed')
     if scope['schemaVersion']==core.TARGET_UP_SCHEMA:
         execution_policy=core.target_up_policy(scope)
         require(receipt.get('plannedTargetUp')==execution_policy
@@ -178,7 +186,7 @@ def audit_manual_m4(root):
     frames, bridge = _native(ev, scope, result['observerClose'])
     pairs = {label:_pair(ev, label, scope, receipt, frames, bridge) for label in ('before','after')}
     before, after = pairs['before'], pairs['after']
-    if scope['schemaVersion']==core.EFFECTIVE_TASK_SCHEMA:
+    if scope['schemaVersion'] in (core.EFFECTIVE_TASK_SCHEMA,core.DEVICE_GUARD_TASK_SCHEMA):
         arm=[]
         for path in sorted(ev.root.glob('http-*-intent.json')):
             intent=ev.json(path.name)
@@ -202,8 +210,8 @@ def audit_manual_m4(root):
             require(abs(angle-reference)<=3.,'task_target_up_global_excursion')
         delta = angle-angles['before']
         require(abs(delta) <= scope['maxObservedDeltaDeg']
-                and (delta <= (.10 if scope['schemaVersion'] in (core.CURRENT_SHORT_TASK_SCHEMA,core.EFFECTIVE_TASK_SCHEMA) else .25)
-                     if scope['pulse']['direction'] == 'down' else delta >= (-.10 if scope['schemaVersion'] in (core.CURRENT_SHORT_TASK_SCHEMA,core.EFFECTIVE_TASK_SCHEMA) else -.25)),
+                and (delta <= (.10 if scope['schemaVersion'] in (core.CURRENT_SHORT_TASK_SCHEMA,core.EFFECTIVE_TASK_SCHEMA,core.DEVICE_GUARD_TASK_SCHEMA) else .25)
+                     if scope['pulse']['direction'] == 'down' else delta >= (-.10 if scope['schemaVersion'] in (core.CURRENT_SHORT_TASK_SCHEMA,core.EFFECTIVE_TASK_SCHEMA,core.DEVICE_GUARD_TASK_SCHEMA) else -.25)),
                 'task_observed_angle_excursion')
     require(all(digest((ev.root/name).read_bytes()) == sha for name,sha in ev.hashes.items()),
             'task_source_changed_during_audit')

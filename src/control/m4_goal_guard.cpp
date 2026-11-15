@@ -3,12 +3,16 @@
 #include <math.h>
 namespace m4_goal {
 namespace {
+#if MOTIONBRAIN_ENABLE_M4_GOAL_GUARD
 bool window=false;
+#endif
 bool hex(const char* s,size_t n) { if (!s) return false; for(size_t i=0;i<n;++i) if(!((s[i]>='0'&&s[i]<='9')||(s[i]>='a'&&s[i]<='f')))return false; return s[n]=='\0'; }
 bool same(const char* a,const char* b) { return a && b && strcmp(a,b)==0; }
 }
+#if MOTIONBRAIN_ENABLE_M4_GOAL_GUARD
 bool activeWindow(){return window;}
 void setActiveWindow(bool x){window=x;}
+#endif
 Request::Request():nonce{},bootId{},scopeSha256{},policySha256{},up(false),percent(0),durationMs(0),expectedStartDeg(0),goalDeg(0){}
 Record::Record():request(),state("empty"),reason("none"),queuedAtMs(0),runAtMs(0),decisionAtMs(0),offAtMs(0),sampleAtMs(0),sampleAgeMs(0),maxTickGapMs(0),firstTickDelayMs(0),startAngleDeg(0),lastAngleDeg(0),offVerified(false),outputMayHaveOccurred(false),offConfirmationRecorded(false){}
 Guard::Guard():records_{},count_(0),current_(-1),previousTick_(0),ticked_(false){}

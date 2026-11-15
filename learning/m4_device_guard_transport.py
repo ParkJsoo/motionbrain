@@ -2,9 +2,9 @@
 
 이 모듈은 장치 발견/실행을 하지 않는다. 새 guarded scope에서만 호출하며,
 단 한 번의 RUN 이후 HTTP가 정지된 동안 메모리 tick만 수행한다.
-현재 펌웨어 HTTP/mainloop 어댑터는 미구현이다. 아래 capability는 설계된
-계약이며 실제 지원이 없으면 첫 검사에서 거절한다. actor/raw/모델 연결과
-장치 실측을 완료한 실행 경로로 사용해서는 안 된다.
+전용 펌웨어의 HTTP/mainloop 어댑터와 같은 capability 계약을 검사하며
+실제 지원이 없으면 첫 검사에서 거절한다. actor/raw/모델 연결의 소프트웨어
+검증과 펌웨어 배포·장치 실측은 별개다. 기본 펌웨어는 비활성이다.
 """
 from __future__ import annotations
 import copy

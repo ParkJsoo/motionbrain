@@ -1,3 +1,4 @@
+#include "control/m4_goal_service.h"
 #include "control/finite_profile_legacy_guard.h"
 #include "control/dispatcher.h"
 #include "control/bounded_action_service.h"
@@ -244,6 +245,12 @@ bool Dispatcher::commandExtendsTimeout(CommandType type) const {
 }
 
 bool Dispatcher::execute(const Command& command, CommandResult& result) {
+#if MOTIONBRAIN_ENABLE_M4_GOAL_GUARD
+  if (!M4GoalService::beforeLegacy(command.type, command.source == CommandSource::WEB_INPUT)) {
+    setResult(result, command.id, false, "M4 goal owner holds control");
+    recordCommandResult(command, result);return false;
+  }
+#endif
   if (!FiniteProfileLegacy::allowed(command.type)) {
     setResult(result, command.id, false, "Finite-profile output owner holds control");
     recordCommandResult(command, result);

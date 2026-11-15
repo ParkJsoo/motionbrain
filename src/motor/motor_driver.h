@@ -199,6 +199,9 @@ public:
   }
   const bounded::AppliedOutputLog& outputLog() const { return outputLog_; }
   bool hasPendingOutput() const;
+  bool beginM4Goal(int16_t pwm);
+  void endM4Goal();
+  bool m4GoalOwned() const { return m4GoalOwned_; }
 
 #if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
   // Offline adapter boundary only. All calls (including legacy calls) must be
@@ -225,6 +228,7 @@ public:
 #endif
 
 private:
+  bool m4GoalOwned_ = false;
 #if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
   bool finiteInitialized_ = false;
   uint32_t finiteLease_ = 0;

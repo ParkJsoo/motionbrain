@@ -192,6 +192,11 @@ def _audit_quiet_recovery(records, recovery, command, receipt, session, boot):
 
 def audit_http(ev, session, command, receipt):
     records, recovery = _http_records(ev, session)
+    from learning import m4_device_guard_transport as guard
+    request=receipt.get('plannedDeviceGoalGuard')
+    if request is not None:guard.validate_request(request,command['pulse'])
+    guard_run=guard.run_payload(request) if request is not None else None
+    terminal_records=[];queued_records=[];guard_added=False
     boot = None; output = {}; baseline = session['outputBaselineSequence']
     require(type(baseline) is int and baseline > 0, 'output_baseline')
     posts = []; statuses = []; last_queue = None; run_bounds = None
@@ -215,7 +220,7 @@ def audit_http(ev, session, command, receipt):
             first_clear_bounds=(previous_event['responseReceivedAt'],event['requestStartedAt'])
             off_latest=max(output)
         if payload is not None: posts.append((path,payload))
-        if path == '/sequence' and payload == {'action':'run'}:
+        if path == '/sequence' and (payload == {'action':'run'} or guard_run is not None and payload==guard_run):
             run_bounds=(intent['startedAt'],response['receivedAt'])
         if path == '/actions':
             if boot is None: boot=parsed.get('bootId')
@@ -232,7 +237,16 @@ def audit_http(ev, session, command, receipt):
                 n = entry['sequence']
                 require(n not in output or output[n] == entry, 'output_history_changed')
                 output[n] = entry
-        if path == '/sequence': last_queue=parsed.get('sequence')
+        if request is not None and path=='/sequence' and payload==guard.add_payload(request,command['pulse']):
+            guard_added=True
+        if path == '/sequence':
+            last_queue=parsed.get('sequence')
+            if request is not None and guard_added and payload is None:
+                record=parsed.get('m4GoalGuard',{}).get('record')
+                require(isinstance(record,dict) and record.get('nonce')==request['nonce'],'task_guard_record_replaced')
+                if isinstance(record,dict) and record.get('state') in ('queued','terminal'):
+                    checked=guard.capability(parsed,request,state=record['state'],pulse=command['pulse'])
+                    (terminal_records if record['state']=='terminal' else queued_records).append((checked,times[0],times[-1]))
         previous_event=event
     require(boot is not None and len(boot)==32 and statuses, 'controller_evidence_missing')
     require(run_bounds is not None and run_bounds[0] <= receipt['dispatchBefore']
@@ -243,6 +257,11 @@ def audit_http(ev, session, command, receipt):
     expected=[('/motor',{'action':'default','speed':255}),('/sequence',{'action':'add','joint':pulse['joint'],
         'direction':pulse['direction'],'speed':pulse['percent'],'duration':pulse['durationMs']}),
         ('/command',{'cmd':'arm'}),('/sequence',{'action':'run'})]
+    if request is not None:
+        require(request['bootId']==boot and queued_records and terminal_records,'task_guard_raw_records_missing')
+        require(all(t[0]==receipt.get('deviceGoalGuard') for t in terminal_records),'task_guard_terminal_changed')
+        require(any(t[2]<=run_bounds[0] for t in queued_records) and all(t[1]>=run_bounds[1] for t in terminal_records),'task_guard_record_order')
+        expected[1]=('/sequence',guard.add_payload(request,pulse));expected[3]=('/sequence',guard_run)
     cleanup=[('/command',{'cmd':'stop'}),('/sequence',{'action':'clear'}),('/motor',{'action':'default','speed':100})]
     require(posts == expected+cleanup+cleanup, 'unexpected_command_sequence')
     require(last_queue and last_queue.get('state') == 'IDLE' and last_queue.get('totalCount') == 0, 'final_queue_not_empty')

@@ -1,3 +1,4 @@
+#include "control/m4_goal_guard.h"
 #include "input/m4_stage_service.h"
 #include "peripheral/shoulder_angle_sensor.h"
 
@@ -72,7 +73,7 @@ void ShoulderAngleSensor::update(int16_t shoulderMotorSpeed) {
   const bool watchLogDue = watchEnabled_ &&
     (lastLogMs_ == 0 || (now - lastLogMs_) >= MOVING_LOG_INTERVAL_MS);
 
-  if (movementChanged || movingLogDue || watchLogDue) {
+  if (!m4_goal::activeWindow() && (movementChanged || movingLogDue || watchLogDue)) {
     const char* phase = moving ? "MOVING" : (watchEnabled_ ? "WATCH" : "STOPPED");
     logSample(phase, shoulderMotorSpeed);
     lastLogMs_ = now;

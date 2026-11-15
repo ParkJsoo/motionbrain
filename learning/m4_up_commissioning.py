@@ -25,6 +25,8 @@ from learning.supervised_collection import identifier, plan_digest
 from learning import supervised_transport as transport
 from learning import current_m4_short as current_short
 from learning import m4_effective_policy as effective
+from learning import m4_device_guard_policy as device_policy
+from learning import m4_device_guard_transport as device_transport
 
 REPO = Path(__file__).resolve().parents[1]
 SCHEMA = 'motionbrain.m4_up_commissioning.v1'
@@ -37,6 +39,10 @@ RETURN_SCHEMA = 'motionbrain.m4_manual_table_return.v1'
 BAND_RETURN_RECOVERY_SCHEMA = 'motionbrain.m4_out_of_band_down_recovery.v1'
 CURRENT_SHORT_TASK_SCHEMA = current_short.SCHEMA
 EFFECTIVE_TASK_SCHEMA = effective.SCHEMA
+DEVICE_GUARD_TASK_SCHEMA = device_policy.SCHEMA
+
+def _paired_policy(scope):
+    return scope["deviceGuardPolicy"] if scope["schemaVersion"] == DEVICE_GUARD_TASK_SCHEMA else scope["effectivePolicy"]
 TARGET_UP_SCHEMA = 'motionbrain.m4_current_target_up_angle_stop.v1'
 TARGET_UP_GLOBAL_REFERENCE = 195.29
 TARGET_UP_GLOBAL_UPPER = 198.29
@@ -109,7 +115,7 @@ def implementation_digest():
     return sha(b'\0'.join(p.read_bytes() for p in (
         Path(__file__),Path(transport.__file__),Path(__file__).with_name('m4_up_observer.py'),
         Path(__file__).with_name('m4_lift_learning.py'),Path(__file__).with_name('m4_band_recovery.py'),
-        Path(__file__).with_name('current_m4_short.py'),Path(__file__).with_name('m4_effective_policy.py'))))
+        Path(__file__).with_name('current_m4_short.py'),Path(__file__).with_name('m4_effective_policy.py'),Path(__file__).with_name('m4_device_guard_policy.py'),Path(__file__).with_name('m4_device_guard_transport.py'))))
 
 
 def _hash(value):
@@ -125,9 +131,11 @@ def validate_scope(scope):
     is_return = isinstance(scope, dict) and scope.get('schemaVersion') == RETURN_SCHEMA
     is_target_up = isinstance(scope,dict) and scope.get('schemaVersion') == TARGET_UP_SCHEMA
     is_band_recovery = isinstance(scope,dict) and scope.get('schemaVersion') == BAND_RETURN_RECOVERY_SCHEMA
-    is_effective = isinstance(scope,dict) and scope.get('schemaVersion') == EFFECTIVE_TASK_SCHEMA
+    is_device = isinstance(scope,dict) and scope.get('schemaVersion') == DEVICE_GUARD_TASK_SCHEMA
+    is_effective = isinstance(scope,dict) and scope.get('schemaVersion') in (EFFECTIVE_TASK_SCHEMA,DEVICE_GUARD_TASK_SCHEMA)
     is_current_short = isinstance(scope,dict) and scope.get('schemaVersion') == CURRENT_SHORT_TASK_SCHEMA
     extra = ({'phase','observationContractSha256','modelPath','modelSha256'} if is_learning
+             else {'goalAngleDeg','deviceGuardPolicy'} if is_device
              else {'goalAngleDeg','effectivePolicy'} if is_effective
              else {'goalAngleDeg','shortTaskPolicy'} if is_current_short
              else {'goalAngleDeg','originalGlobalReferenceDeg','originalGlobalUpperDeg',
@@ -140,13 +148,14 @@ def validate_scope(scope):
         'implementationSha256', 'context', 'pulse', 'defaultSpeed', 'maxCommands',
         'expectedStartAngleDeg', 'startAngleToleranceDeg', 'maxObservedDeltaDeg',
         'maxSeconds', 'maxObservationAgeSeconds', 'postOffSeconds'}, 'm4_scope_fields')
-    require(scope['schemaVersion'] in (SCHEMA,LIFT_SCHEMA,CONTACT_PROBE_SCHEMA,NONCONTACT_SCHEMA,CONTACT_SHORT_SCHEMA,CONTACT_MANUAL650_SCHEMA,RETURN_SCHEMA,TARGET_UP_SCHEMA,BAND_RETURN_RECOVERY_SCHEMA,CURRENT_SHORT_TASK_SCHEMA,EFFECTIVE_TASK_SCHEMA)+LEARNING_SCHEMAS and identifier(scope['trialId'])
+    require(scope['schemaVersion'] in (SCHEMA,LIFT_SCHEMA,CONTACT_PROBE_SCHEMA,NONCONTACT_SCHEMA,CONTACT_SHORT_SCHEMA,CONTACT_MANUAL650_SCHEMA,RETURN_SCHEMA,TARGET_UP_SCHEMA,BAND_RETURN_RECOVERY_SCHEMA,CURRENT_SHORT_TASK_SCHEMA,EFFECTIVE_TASK_SCHEMA,DEVICE_GUARD_TASK_SCHEMA)+LEARNING_SCHEMAS and identifier(scope['trialId'])
             and identifier(scope['hostClockId']) and isinstance(scope['controllerBootId'], str)
             and re.fullmatch('[0-9a-f]{32}', scope['controllerBootId']) is not None,
             'm4_scope_identity')
     transport.validate_target(scope['controllerUrl'])
     require(scope['implementationSha256'] == implementation_digest(), 'm4_implementation_changed')
-    profile = (next((effective.effective_task_pulse(d,scope['effectivePolicy']) for d in ('up','down') if effective.effective_task_pulse(d,scope['effectivePolicy'])==scope['pulse']),{}) if is_effective
+    profile = (device_policy.device_guard_task_pulse(scope['pulse']['direction'],scope['deviceGuardPolicy']) if is_device
+               else next((effective.effective_task_pulse(d,scope['effectivePolicy']) for d in ('up','down') if effective.effective_task_pulse(d,scope['effectivePolicy'])==scope['pulse']),{}) if is_effective
                else next((current_short.short_task_pulse(d,scope['shortTaskPolicy']) for d in ('up','down') if current_short.short_task_pulse(d,scope['shortTaskPolicy'])==scope['pulse']),{}) if is_current_short
                else next((p for p in candidates if p==scope['pulse']),{}) if is_learning
                else next((p for p in CONTACT_PROBE_PULSES if p==scope['pulse']),{}) if is_probe
@@ -203,7 +212,7 @@ def validate_scope(scope):
                         and isinstance(ref['path'],str) and bool(ref['path'])
                         for ref in scope['recoveryEvidence'].values()),'m4_band_recovery_exact_contract')
     if is_current_short or is_effective:
-        policy=(effective.validate_effective_policy(scope['effectivePolicy']) if is_effective else current_short.validate_current_short_policy(scope['shortTaskPolicy']))
+        policy=(device_policy.validate_device_guard_policy(scope['deviceGuardPolicy']) if is_device else effective.validate_effective_policy(scope['effectivePolicy']) if is_effective else current_short.validate_current_short_policy(scope['shortTaskPolicy']))
         up=scope['pulse']['direction']=='up'
         require(transport.finite_number(scope['goalAngleDeg'])
                 and scope['goalAngleDeg']==policy['upGoalAngleDeg' if up else 'downGoalAngleDeg']
@@ -278,6 +287,10 @@ RECORDED_IMPLEMENTATION_DIGESTS = frozenset({
 def validate_recorded_scope(scope):
     """알려진 이전 원본만 현재의 동일 안전 계약으로 검사하고 원본을 반환한다."""
     require(isinstance(scope, dict), 'm4_scope_fields')
+    if (scope.get('schemaVersion') == EFFECTIVE_TASK_SCHEMA and scope.get('implementationSha256') == '7770a6c09aee8cffd3d496368bb5253b730a8a49fc2d5a7edb1d7ca2fbb07551'):
+        candidate=copy.deepcopy(scope);candidate['implementationSha256']=implementation_digest()
+        validate_scope(candidate)
+        return copy.deepcopy(scope)
     if scope.get('implementationSha256') == implementation_digest():
         return validate_scope(scope)
     if (scope.get('schemaVersion')==CURRENT_SHORT_TASK_SCHEMA
@@ -321,6 +334,7 @@ def validate_recorded_scope(scope):
             scope.get('schemaVersion') != BAND_RETURN_RECOVERY_SCHEMA and
             scope.get('schemaVersion') != CURRENT_SHORT_TASK_SCHEMA and
             scope.get('schemaVersion') != EFFECTIVE_TASK_SCHEMA and
+            scope.get('schemaVersion') != DEVICE_GUARD_TASK_SCHEMA and
             (scope.get('schemaVersion') != CONTACT_MANUAL650_SCHEMA or
              scope.get('implementationSha256') == KNOWN_CONTACT650_RECORDED_DIGEST) and
             (scope.get('schemaVersion') != CONTACT_SHORT_SCHEMA or
@@ -454,6 +468,8 @@ class _CommissioningPort(transport.SequencePort):
             up=pulse['direction']=='up'
             kwargs['stop_when']=(lambda status:self._shoulder_angle(status)>=self.owner.scope['goalAngleDeg']) if up else (lambda status:self._shoulder_angle(status)<=self.owner.scope['goalAngleDeg'])
             kwargs['monitor_policy']=self.owner.scope['effectivePolicy'][pulse['direction']+'MonitorTimingPolicy']
+        if self.owner.scope['schemaVersion']==DEVICE_GUARD_TASK_SCHEMA:
+            kwargs['device_goal_guard']=device_policy.guard_request(self.owner.scope)
         receipt=super()._execute_validated(pulse, tick, before_run=before_run,**kwargs)
         if self.owner.scope['schemaVersion']==TARGET_UP_SCHEMA:
             receipt['stopReason']='observed_target_up_goal' if receipt['stoppedEarly'] else 'requested_period_complete'
@@ -467,13 +483,17 @@ class _CommissioningPort(transport.SequencePort):
         if self.owner.scope['schemaVersion']==EFFECTIVE_TASK_SCHEMA:
             receipt['stopReason']=('observed_effective_'+pulse['direction']+'_goal' if receipt['stoppedEarly'] else 'requested_period_complete')
             receipt['plannedEffectivePolicy']=copy.deepcopy(self.owner.scope['effectivePolicy'])
+        if self.owner.scope['schemaVersion']==DEVICE_GUARD_TASK_SCHEMA:
+            receipt['plannedDeviceGuardPolicy']=copy.deepcopy(self.owner.scope['deviceGuardPolicy'])
+            receipt['monitorTimingPolicy']=self.owner.scope['deviceGuardPolicy'][pulse['direction']+'MonitorTimingPolicy']
         return receipt
 
     def _call(self, path, payload=None, **kwargs):
         if not kwargs.get('emergency'):
             self.owner._guard()
             if kwargs.get('run'):
-                require(path == '/sequence' and payload == {'action': 'run'}
+                require(path == '/sequence' and payload == (device_transport.run_payload(device_policy.guard_request(self.owner.scope))
+                        if self.owner.scope['schemaVersion']==DEVICE_GUARD_TASK_SCHEMA else {'action': 'run'})
                         and self.owner.in_pulse and not self.may_have_run,
                         'm4_refresh_run_scope')
                 self.owner._prepare_dispatch_inputs()
@@ -481,7 +501,7 @@ class _CommissioningPort(transport.SequencePort):
             remaining = self.owner.deadline-self.clock.monotonic()
             kwargs['request_timeout'] = min(kwargs.get('request_timeout', remaining), remaining)
         result=super()._call(path, payload, **kwargs)
-        if (self.owner.scope['schemaVersion']==EFFECTIVE_TASK_SCHEMA and path=='/command'
+        if (self.owner.scope['schemaVersion'] in (EFFECTIVE_TASK_SCHEMA,DEVICE_GUARD_TASK_SCHEMA) and path=='/command'
                 and payload=={'cmd':'arm'}):
             name=f'http-{self.serial:06d}-response.json';raw=_read(self.store.root,name)
             response=_decode_json(raw)
@@ -591,9 +611,9 @@ class _CommissioningPort(transport.SequencePort):
         if getattr(self.owner,'task_hooks',None) is not None:
             self.owner.task_hooks['status_guard'](copy.deepcopy(status))
         scope = self.owner.scope
-        short=scope['schemaVersion'] in (CURRENT_SHORT_TASK_SCHEMA,EFFECTIVE_TASK_SCHEMA)
+        short=scope['schemaVersion'] in (CURRENT_SHORT_TASK_SCHEMA,EFFECTIVE_TASK_SCHEMA,DEVICE_GUARD_TASK_SCHEMA)
         if short:
-            policy=scope['effectivePolicy'] if scope['schemaVersion']==EFFECTIVE_TASK_SCHEMA else scope['shortTaskPolicy']
+            policy=_paired_policy(scope) if scope['schemaVersion'] in (EFFECTIVE_TASK_SCHEMA,DEVICE_GUARD_TASK_SCHEMA) else scope['shortTaskPolicy']
             require(policy['originalGlobalReferenceDeg']-3. <= angle <= policy['originalGlobalUpperDeg'],
                     'm4_current_short_global_excursion')
         if scope['schemaVersion']==BAND_RETURN_RECOVERY_SCHEMA:
@@ -652,7 +672,7 @@ class M4UpCommissioning:
                 {'prepare','before_run','status_guard','decisionSha256'}
                 and all(callable(task_hooks[k]) for k in ('prepare','before_run','status_guard'))
                 and _hash(task_hooks['decisionSha256'])
-                and self.scope['schemaVersion'] in (SCHEMA,CONTACT_MANUAL650_SCHEMA,RETURN_SCHEMA,TARGET_UP_SCHEMA,CURRENT_SHORT_TASK_SCHEMA,EFFECTIVE_TASK_SCHEMA)),
+                and self.scope['schemaVersion'] in (SCHEMA,CONTACT_MANUAL650_SCHEMA,RETURN_SCHEMA,TARGET_UP_SCHEMA,CURRENT_SHORT_TASK_SCHEMA,EFFECTIVE_TASK_SCHEMA,DEVICE_GUARD_TASK_SCHEMA)),
                 'm4_task_hooks_require_scoped_fixed_actor')
         self.task_hooks = task_hooks
         self.selection_kind = ('manual_lift_fixed_profile' if self.scope['schemaVersion']==LIFT_SCHEMA
@@ -661,8 +681,8 @@ class M4UpCommissioning:
             self.selection_kind = 'manual_table_return_angle_stop'
         if self.scope['schemaVersion']==BAND_RETURN_RECOVERY_SCHEMA:
             self.selection_kind = 'manual_out_of_band_down_recovery'
-        if self.scope['schemaVersion']==EFFECTIVE_TASK_SCHEMA:
-            self.selection_kind='manual_effective_'+self.scope['pulse']['direction']
+        if self.scope['schemaVersion'] in (EFFECTIVE_TASK_SCHEMA,DEVICE_GUARD_TASK_SCHEMA):
+            self.selection_kind=('manual_device_guard_' if self.scope['schemaVersion']==DEVICE_GUARD_TASK_SCHEMA else 'manual_effective_')+self.scope['pulse']['direction']
         if self.scope['schemaVersion']==CURRENT_SHORT_TASK_SCHEMA:
             self.selection_kind = 'manual_current_short_paired_'+self.scope['pulse']['direction']
         if self.scope['schemaVersion'] == TARGET_UP_SCHEMA:
@@ -753,7 +773,7 @@ class M4UpCommissioning:
             require(not onsite['jawContactVerified'] and not onsite['tableSupportVerified'],
                     'm4_noncontact_review_required')
         elif self.scope['schemaVersion'] in (RETURN_SCHEMA,BAND_RETURN_RECOVERY_SCHEMA) or (
-                self.scope['schemaVersion'] in (CURRENT_SHORT_TASK_SCHEMA,EFFECTIVE_TASK_SCHEMA) and self.scope['pulse']['direction']=='down'):
+                self.scope['schemaVersion'] in (CURRENT_SHORT_TASK_SCHEMA,EFFECTIVE_TASK_SCHEMA,DEVICE_GUARD_TASK_SCHEMA) and self.scope['pulse']['direction']=='down'):
             require(onsite['jawContactVerified'] and (after_off is not None or onsite['tableSupportVerified'] is False),
                     'm4_return_support_review_required')
         elif after_off is None:
@@ -764,7 +784,7 @@ class M4UpCommissioning:
                 require(onsite['jawContactVerified'] and onsite['tableSupportVerified'], 'm4_initial_contact_required')
         frames = {'external': _external_frame(self.root, record['external'], self.scope),
                   'gripper': _gripper_frame(self.root, record['gripper'], self.scope, 'before' if after_off is None else 'after')}
-        if self.scope['schemaVersion']==EFFECTIVE_TASK_SCHEMA and after_off is None:
+        if self.scope['schemaVersion'] in (EFFECTIVE_TASK_SCHEMA,DEVICE_GUARD_TASK_SCHEMA) and after_off is None:
             require(transport.finite_number(getattr(self,'armed_at',None))
                     and all(frame['sourceEarliest']>=self.armed_at for frame in frames.values()),
                     'm4_effective_source_before_ARM')
@@ -813,7 +833,7 @@ class M4UpCommissioning:
         self._require_fresh_controller_proof(now)
         if self.task_hooks is not None:
             self.task_hooks['before_run']()
-        if self.scope['schemaVersion'] in (CURRENT_SHORT_TASK_SCHEMA,EFFECTIVE_TASK_SCHEMA):
+        if self.scope['schemaVersion'] in (CURRENT_SHORT_TASK_SCHEMA,EFFECTIVE_TASK_SCHEMA,DEVICE_GUARD_TASK_SCHEMA):
             now=self.clock.monotonic()
             require(now-started <= .1 and now < self.deadline
                     and all(now-frame['sourceEarliest'] <= 3. for frame in frames.values()),
@@ -837,7 +857,7 @@ class M4UpCommissioning:
 
     def _prepare_dispatch_inputs(self):
         if not self.learning:
-            if self.task_hooks is not None or self.scope['schemaVersion']==EFFECTIVE_TASK_SCHEMA:
+            if self.task_hooks is not None or self.scope['schemaVersion'] in (EFFECTIVE_TASK_SCHEMA,DEVICE_GUARD_TASK_SCHEMA):
                 # Fresh native sources and parent selection are acquired after
                 # ARM, before RUN intent, outside the RUN request deadline.
                 self.before = self.observer.observe(after_off=None, deadline=self.deadline, tick=self._tick)
@@ -888,10 +908,10 @@ class M4UpCommissioning:
         return source,features
 
     def read_armed_off_epoch(self, expected_sequence):
-        require(self.scope['schemaVersion']==EFFECTIVE_TASK_SCHEMA and type(expected_sequence) is int and expected_sequence>0,
+        require(self.scope['schemaVersion'] in (EFFECTIVE_TASK_SCHEMA,DEVICE_GUARD_TASK_SCHEMA) and type(expected_sequence) is int and expected_sequence>0,
                 'm4_effective_armed_epoch_required')
         status=self.port._status();self.port._check_status(status,'ARMED')
-        self.port._queue(1);self.port._outputs(quiet=True)
+        self.port._queue(0 if self.scope['schemaVersion']==DEVICE_GUARD_TASK_SCHEMA else 1);self.port._outputs(quiet=True)
         require(self.port.boot_id==self.scope['controllerBootId'] and self.port.last_sequence==expected_sequence
                 and self.port.last_outputs=={i:0 for i in range(1,6)},'m4_effective_armed_epoch_changed')
         return dict(controllerBootId=self.port.boot_id,cameraBootId=self.scope['context']['gripperCameraBootId'],
@@ -946,7 +966,7 @@ class M4UpCommissioning:
             self.observer.start(deadline=self.deadline)
             if self.learning:self.observer.wait_pre_window(deadline=self.deadline,tick=lambda:self._tick(True))
             before_frames = None
-            if self.task_hooks is None and self.scope['schemaVersion']!=EFFECTIVE_TASK_SCHEMA:
+            if self.task_hooks is None and self.scope['schemaVersion'] not in (EFFECTIVE_TASK_SCHEMA,DEVICE_GUARD_TASK_SCHEMA):
                 self.before = self.observer.observe(after_off=None, deadline=self.deadline, tick=lambda: self._tick(True))
                 before_frames = self._observe(self.before); self._guard()
                 self.before_frames = copy.deepcopy(before_frames)
@@ -972,7 +992,7 @@ class M4UpCommissioning:
             phase = 'pulse'; self.in_pulse = True
             try: receipt = self.port._execute_validated(copy.deepcopy(self.selected_pulse), self._tick, before_run=self._before_run)
             finally: self.in_pulse = False
-            if self.task_hooks is not None or self.scope['schemaVersion']==EFFECTIVE_TASK_SCHEMA:
+            if self.task_hooks is not None or self.scope['schemaVersion'] in (EFFECTIVE_TASK_SCHEMA,DEVICE_GUARD_TASK_SCHEMA):
                 before_frames = self.before_frames
             report['receipt'] = receipt
             report['modelSelectedCommandExecuted']=bool(self.learning and self.model_selection and self.port.may_have_run)

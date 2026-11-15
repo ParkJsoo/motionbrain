@@ -18,7 +18,7 @@ These are general repository reproduction steps. Device addresses, credentials a
 
 Physical execution follows each collector's scope, journal and stop procedure. [Finite output profiles (Korean)](docs/finite-output-profile.md) belong to the separate `esp32dev_m2_finite_trial` build and remain disabled in default builds. Read the measurement conditions alongside [stationary repeatability (Korean)](docs/stationary-repeatability.md). Software checks, completed outputs and training-data eligibility are separate results.
 
-The [M4 device goal guard preparation core (Korean)](docs/m4-device-goal-guard.md) currently validates only a default-disabled pure state machine and host wire contract. Firmware API, sensor, driver and model execution integration remain unimplemented. It is not a separate deployment environment or a usable physical execution path.
+The [M4 device goal guard (Korean)](docs/m4-device-goal-guard.md) is disabled by default. The opt-in `esp32dev_m4_goal_guard` build connects HTTP, sensor, main-loop and driver hard-OFF handling to a distinct host execution policy. HTTP is deferred during motion and must not be treated as an immediate STOP channel. Firmware deployment, physical stopping distance and a fully model-selected task cycle remain unverified.
 
 ## Builds
 

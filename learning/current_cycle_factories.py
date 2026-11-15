@@ -48,14 +48,19 @@ def _bound(root,ref):
     return raw
 
 
+from learning.m4_device_guard_policy import SCHEMA as DEVICE_SCHEMA,POLICY_SCHEMA as DEVICE_POLICY_SCHEMA,validate_device_guard_policy,device_guard_task_pulse
+
 def _execution_policy(value):
+    if isinstance(value,dict) and value.get("schemaVersion")==DEVICE_POLICY_SCHEMA:
+        return validate_device_guard_policy(value)
     if isinstance(value,dict) and value.get('schemaVersion')==EFFECTIVE_POLICY_SCHEMA:
         return validate_effective_policy(value)
     return validate_current_short_policy(value)
 
 
 def _execution_pulse(direction,policy):
-    return (effective_task_pulse(direction,policy) if policy['schemaVersion']==EFFECTIVE_POLICY_SCHEMA
+    return (device_guard_task_pulse(direction,policy) if policy["schemaVersion"]==DEVICE_POLICY_SCHEMA
+            else effective_task_pulse(direction,policy) if policy['schemaVersion']==EFFECTIVE_POLICY_SCHEMA
             else short_task_pulse(direction,policy))
 
 
@@ -194,7 +199,7 @@ class _ReadyObserver(M4DualCameraObserver):
         self.resource_check();super().start(deadline=deadline)
         remaining=deadline-self.clock.monotonic();require(remaining>0,'factory_native_start_deadline')
         self.recorder.wait_ready(timeout=min(15.,remaining))
-        if self.scope['schemaVersion']==EFFECTIVE_SCHEMA:
+        if self.scope['schemaVersion'] in (EFFECTIVE_SCHEMA,DEVICE_SCHEMA):
             self._wait_effective_native_warmup(deadline)
 
     def _wait_effective_native_warmup(self,deadline):
@@ -222,12 +227,12 @@ class _ReadyObserver(M4DualCameraObserver):
         self.resource_check();return super().check()
 
     def observe(self,*,after_off,deadline,tick):
-        if after_off is None and self.scope['schemaVersion']==EFFECTIVE_SCHEMA:
+        if after_off is None and self.scope['schemaVersion'] in (EFFECTIVE_SCHEMA,DEVICE_SCHEMA):
             self._armed_source_not_before=self.clock.monotonic()
         return super().observe(after_off=after_off,deadline=deadline,tick=tick)
 
     def _external(self,not_before,deadline,tick):
-        if self.scope['schemaVersion']==EFFECTIVE_SCHEMA:
+        if self.scope['schemaVersion'] in (EFFECTIVE_SCHEMA,DEVICE_SCHEMA):
             not_before=max(not_before,getattr(self,'_armed_source_not_before',not_before))
         return super()._external(not_before,deadline,tick)
 
@@ -469,7 +474,8 @@ class CurrentRuntimeFactory:
         require(all(m.current is None or m.current['phase']=='completed' for m in self.managers)
                 and all(not m.busy for m in self.managers),'factory_general_session_pending')
         policy=_execution_policy(stage['context'].get('executionPolicy'))
-        effective=policy['schemaVersion']==EFFECTIVE_POLICY_SCHEMA
+        device=policy['schemaVersion']==DEVICE_POLICY_SCHEMA
+        effective=policy['schemaVersion'] in (EFFECTIVE_POLICY_SCHEMA,DEVICE_POLICY_SCHEMA)
         direction='up' if stage['kind']=='lift' else 'down';pulse=_execution_pulse(direction,policy)
         require(command=={k:pulse[k] for k in ('joint','direction','percent','durationMs')},'factory_current_short_command_required')
         record=self._entry(stage,command,hooks);ctx=self._spec(stage)['sourceContext']
@@ -479,14 +485,14 @@ class CurrentRuntimeFactory:
                  and record['m4AngleDeg']+policy['maxObservedDeltaDeg']<=policy['originalGlobalUpperDeg'])
                 or (direction=='down' and policy['downGoalAngleDeg']+.1<record['m4AngleDeg']<=policy['originalGlobalUpperDeg']),
                 'factory_current_short_entry_angle_unsupported')
-        trial=('cycle-effective-' if effective else 'cycle-short-')+uuid.uuid4().hex
-        scope=dict(schemaVersion=EFFECTIVE_SCHEMA if effective else CURRENT_SHORT_TASK_SCHEMA,trialId=trial,hostClockId=trial,
+        trial=('cycle-device-' if device else 'cycle-effective-' if effective else 'cycle-short-')+uuid.uuid4().hex
+        scope=dict(schemaVersion=DEVICE_SCHEMA if device else EFFECTIVE_SCHEMA if effective else CURRENT_SHORT_TASK_SCHEMA,trialId=trial,hostClockId=trial,
             controllerUrl=self.controller_url,controllerBootId=self.scope['controllerBootId'],
             implementationSha256=implementation_digest(),context=copy.deepcopy(ctx),pulse=pulse,defaultSpeed=255,
             maxCommands=1,expectedStartAngleDeg=policy['tableReferenceDeg'] if direction=='up' else record['m4AngleDeg'],
             startAngleToleranceDeg=.1,maxObservedDeltaDeg=policy['maxObservedDeltaDeg'],maxSeconds=60.,maxObservationAgeSeconds=3.,postOffSeconds=3.,
             goalAngleDeg=policy['upGoalAngleDeg' if direction=='up' else 'downGoalAngleDeg'])
-        scope['effectivePolicy' if effective else 'shortTaskPolicy']=policy
+        scope['deviceGuardPolicy' if device else 'effectivePolicy' if effective else 'shortTaskPolicy']=policy
         # Validate before creating an output directory. Parent authorization binds
         # this policy and the exact FrozenBank decision, not an arbitrary pulse.
         from learning.m4_up_commissioning import validate_scope as validate_actor_scope

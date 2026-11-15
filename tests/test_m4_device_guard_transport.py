@@ -23,7 +23,7 @@ class GuardController(Controller):
   if path=='/sequence' and data is None:
    self.requests.append((path,None));return Response(dict(sequence=dict(state='IDLE',totalCount=len(self.queue)),m4GoalGuard=self.envelope()))
   if path=='/sequence' and data and data['action']=='add_m4_guarded':
-   self.requests.append((path,data));self.queue.append(data)
+   self.requests.append((path,data))
    self.record=dict(nonce=data['guardNonce'],scopeSha256=data['guardScopeSha256'],bootId=data['guardBootId'],
     policySha256=data['guardPolicySha256'],up=data['direction']=='up',percent=int(data['speed']),durationMs=int(data['duration']),
     expectedStartDeg=float(data['expectedStartDeg']),goalDeg=float(data['goalDeg']),state='queued',queuedAtMs=10000,

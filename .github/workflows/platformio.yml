@@ -45,6 +45,9 @@ jobs:
       - name: Build ESP32 controller
         run: pio run
 
+      - name: Build opt-in M4 device goal guard
+        run: pio run -e esp32dev_m4_goal_guard
+
       - name: Build ESP32-CAM firmware
         run: pio run -d firmware/esp32cam
 
