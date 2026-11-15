@@ -4,6 +4,63 @@
 
 2026-11-15에는 별도 개발 모델과 상위 에이전트의 단계별 진행으로 수동 준비 후 집기부터 해제까지 관측했다. [해당 실측과 한계](evidence/2026-11-15-prepared-scene-model-grasp-lift-release.md)는 아래 코어 자체의 통합 실물 성공이나 자동 단계 전환을 검증한 결과가 아니다.
 
+## 별도 ㄱ자 70%·1000ms 유한 상위 실행기
+
+`learning/integrated_visual_cycle.py`의 `IntegratedVisualCycle`은 별도 스키마
+`motionbrain.integrated_visual_cycle.L_pose70_1000.v2`로 접근→폐합→들기·보유→내리기→해제를
+한 시도 안에서 진행한다. 이 경로의 후보는 70%·1000ms 고정이며 접근은 M3 UP/DOWN,
+폐합·해제는 M1 CLOSE/OPEN, 들기·내리기는 M3 UP/DOWN이다. 기존
+`FiniteTaskCycle`·`CurrentCycleRuntime`의 기본 후보 제한과 M4 전용 경로는 바꾸지 않는다.
+생성자에는 장치 포트나 자동 실행 기본값이 없으며 실제 연결은 명시적으로 주입한 콜백이 담당한다.
+
+콜백은 `observe`, `choose_approach`, `execute_approach`, `grasp_ready`, `close`, `lift`,
+`retained_lift`, `lower`, `table_supported`, `release`, `released`, `cleanup`이다.
+`observe(phase)`는 재사용하지 않은 `observationId`와 현재 `observedAt`를 반환한다.
+동작 콜백은 실제 RUN 전에 `permit(command)`로 예산을 소모하고, 확인된 OFF 뒤
+`permit.complete(token, receipt)`를 호출한다. 영수증의 명령·완료 상태·OFF와
+반환한 `commandReceipts`·`modelSelectedCommands`가 일치해야 한다. 기본 예산은
+전체 12명령·900초이며 단계별 상한은 접근 4, 폐합 6, 들기·내리기·해제 각 1회다.
+콜백은 같은 전역 기한과 기존 actor의 원장·부팅·출력·정지 검사를 유지하고,
+고정 모델의 현재 지원 검사 및 ARMED 뒤 새 관측·동일 후보 재선택을 직접 수행해야 한다.
+상위 실행기는 동기 콜백을 강제로 중단하거나 원본 증거를 독립 감사하지 않는다.
+
+접근의 STOP은 `current_near_gripper_phase` 또는 `goal_reached` 사유와 별도
+`grasp_ready` 영상 판정을 함께 통과해야 폐합으로 전환한다. 미지원·예산 소진으로
+선택된 STOP은 접근 완료가 아니다. 폐합 종료에는 원본 `afterDecision`을 보존한다.
+모델 STOP과 `closeReady` 영상 판정을 함께 사용하거나, 확인된 CLOSE가 두 번 이상이고
+서로 다른 두 최신 관측의 gap 변화가 2px 이내이며 `closeReady`가 통과한 경우에만
+`image_candidate_with_observed_plateau` 규칙으로 전환한다. 후자는
+`owner=upper_image_plateau_rule`, `modelSelectedStop=false`로 기록하여 모델의 ACTION을
+STOP으로 바꿔 적지 않는다. 들기·탁상 복귀·해제도 각각 새 관측의 판정을 통과해야
+다음 단계로 진행한다. 실패·불명확 명령은 자동 재송하지 않으며 항상 `cleanup`을 호출한다.
+
+`learning/limited_scene_cycle_assessment.py`는 다음 순수 함수로 고정 외부 구도·분홍 물체의
+영상 판정만 제공한다. 각 함수는 `accepted`와 `evidence`를 반환하며 장치·파일에 접근하지 않는다.
+`external`은 표식 기반 가상점 관측, `near`는 보이는 양턱 관측이고 다중 시점 인수는
+`{external, near}` 기록이다. 관측 누락·잘못된 수치·계약 불일치는 거절한다.
+
+| API | 고정된 영상 조건 |
+| --- | --- |
+| `grasp_candidate(external, near)` | 근접 가시성 통과, 외부 물체 높이가 폭의 2배 이상 |
+| `close_candidate(external, near, initial_near)` | 물체 중심이 양턱 사이, 초기보다 작은 gap, 현재 보이는 물체 폭+20px 이내 |
+| `retained_lift(before, early, late, min_span_seconds)` | 두 사후 시점의 물체 하단이 초기보다 각각 20px 이상 상승, 사후 중심 변화 8px 이내, 초기 대비 그리퍼 상대점 변화 25px·gap 변화 15px 이내 |
+| `table_return(before_lift, early, late, min_span_seconds)` | 저장한 들기 전 하단±6px·중심 X±12px, 세로 자세, 두 사후 중심 변화 8px 이내 |
+| `released(before_open, after, table_baseline)` | gap 20px 이상 증가, 각 턱과 물체 경계의 수평 여유 3px 이상, 저장 탁상 위치·세로 자세 유지 |
+
+들기·복귀에는 최소 3초의 원본 간격도 필요하다. `min_span_seconds`는 호출자가 실제 두 카메라의
+원본 시각에서 계산하고 검증한 값을 제공해야 한다. 함수는 그 시각·신선도·고정 구도·부팅을
+독립 검증하지 않는다. 이 판정의 통과는 영상 기반 단계 전환 조건이며 실제 거리 단위의 깊이·접촉력·실제
+파지 성공의 증명이 아니다. 모델 예측, 영상 판정, 별도 실물 결과 평가를 구분해 보존한다.
+
+장치 없이 API·예산·실패 무재송·단계 전환·정체 규칙과 영상 반례를 검증하는 명령:
+
+```sh
+python3 -m unittest tests.test_integrated_visual_cycle tests.test_limited_scene_cycle_assessment
+```
+
+위 검증은 합성 관측과 모의 콜백의 소프트웨어 검사다. 실제 카메라·모델·actor 연결의 실행 결과나
+반복 성공률은 해당 시도의 원본 근거로 별도 평가한다.
+
 ## 재관측 기반 전체 과업의 오프라인 연결
 
 `learning/finite_task_cycle.py`는 접근→닫기→들기·보유→내려놓기→해제를 유한 예산으로 연결한다. `learning/task_cycle_workflow.py`는 필요한 수동 수집, 원본 감사, 학습·모델 고정, 전체 시도 한 번을 같은 호출 경로로 잇는다. 기본 장치 포트·주소·인증·자동 실물 진입점은 없다. 합성 전이와 가짜 장치로 확인한 소프트웨어 연결이며 실제 전체 모델 제어 성공이나 현재 장치 실행 허용을 뜻하지 않는다.
