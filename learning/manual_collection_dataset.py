@@ -277,6 +277,9 @@ def audit_http(ev, session, command, receipt):
     require(bool(before_statuses),'pre_command_status_missing')
     port._check_status(before_statuses[-1]['response'],'IDLE')
     port._check_status(statuses[-1]['response'], 'IDLE')
+    if receipt.get('attendedShoulderDownWindow') is not None:
+        from learning.attended_collection_profile import audit_shoulder_down_observations
+        audit_shoulder_down_observations(statuses, pulse, receipt)
     trace=receipt['outputTrace']
     require(all(output.get(e['sequence']) == e for e in trace), 'receipt_trace_changed')
     require(baseline == initial_latest and trace[0]['sequence'] == baseline+1, 'receipt_baseline_gap')
@@ -340,7 +343,7 @@ def _visual_session(root, expected_hash):
     collection_profile = None
     if 'collectionProfile' in plan or 'collectionProfile' in s:
         from learning.attended_collection_profile import audit_profile
-        collection_profile = audit_profile(plan, s, pulse)
+        collection_profile = audit_profile(plan, s, pulse, receipt)
     else:
         sign,cap,duration=PROFILES[pulse['joint']]['directions'][pulse['direction']]
         require(pulse['percent']<=cap and pulse['durationMs']<=duration and pulse['expectedPwm']*sign>0,'profile_limit')

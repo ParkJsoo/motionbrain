@@ -78,7 +78,17 @@ class ManualCollection:
     def __init__(self, root, helper, controller_url, token, device_id, view_id='manual', *,
                  journal_path=None, clock=time, camera_factory=ActionRecorder,
                  port_factory=RecordingPort, sample_fps=8, recording_seconds=60,
-                 collection_profile=None):
+                 collection_profile=None, attended_shoulder_down_window=False):
+        from learning.attended_collection_profile import ATTENDED_60_1000, ATTENDED_SHOULDER_DOWN_12
+        if type(attended_shoulder_down_window) is not bool:
+            raise ValueError('attended_shoulder_down_window_boolean_required')
+        if attended_shoulder_down_window:
+            if collection_profile not in (None, ATTENDED_60_1000, ATTENDED_SHOULDER_DOWN_12):
+                raise ValueError('attended_shoulder_down_window_profile_required')
+            collection_profile = ATTENDED_SHOULDER_DOWN_12
+        elif collection_profile == ATTENDED_SHOULDER_DOWN_12:
+            raise ValueError('attended_shoulder_down_window_optin_required')
+        self.attended_shoulder_down_window = attended_shoulder_down_window
         if collection_profile is not None:
             from learning.attended_collection_profile import collection_profile as validate_profile
             validate_profile(collection_profile)
@@ -131,6 +141,8 @@ class ManualCollection:
             raise ValueError('attended_joint_pose_required')
         if not self.device_id or not identifier(self.view_id):
             raise ValueError('camera_identity_required')
+        if self.attended_shoulder_down_window and payload['joint'] != 'shoulder':
+            raise ValueError('attended_shoulder_down_window_shoulder_only')
         helper_hash = hashlib.sha256(self.helper.read_bytes()).hexdigest()
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
         maximum_frames = self.sample_fps*self.recording_seconds+20
@@ -156,6 +168,10 @@ class ManualCollection:
             profile = collection_profile(self.collection_profile)
             self.current['collectionProfile'] = copy.deepcopy(profile)
             plan['collectionProfile'] = copy.deepcopy(profile)
+            if self.attended_shoulder_down_window:
+                window = copy.deepcopy(profile['attendedShoulderDownWindow'])
+                self.current['attendedShoulderDownWindow'] = window
+                plan['attendedShoulderDownWindow'] = copy.deepcopy(window)
         try:
             self.store.write_json('plan.json', plan)
             with db:
@@ -169,7 +185,8 @@ class ManualCollection:
         self.camera = self.port = None
         try:
             self.port = self.port_factory(self.controller_url, self.token, 'discovering', self.store,
-                                          observer=self._event, clock=self.clock, compact_reads=True, timeout=2)
+                                          observer=self._event, clock=self.clock, compact_reads=True, timeout=2,
+                                          **({'attended_shoulder_down_window': True} if self.attended_shoulder_down_window else {}))
             try:
                 self.port.boot_id = _boot_identity(self.port._call('/actions'))
                 self.port.preflight()
@@ -489,6 +506,11 @@ class ManualCollection:
             from learning.attended_collection_profile import collection_profile, validate_command
             if profile != collection_profile(self.collection_profile):
                 raise ValueError('attended_collection_profile_changed')
+            window = profile.get('attendedShoulderDownWindow')
+            if window is not None and (self.attended_shoulder_down_window is not True
+                    or self.current.get('attendedShoulderDownWindow') != window
+                    or getattr(self.port, 'attended_shoulder_down_window', None) is not True):
+                raise ValueError('attended_shoulder_down_window_changed')
             if self.command_count >= profile['maximumCommands']:
                 raise ValueError('session_command_budget_reached')
             return validate_command(self.collection_profile, payload)

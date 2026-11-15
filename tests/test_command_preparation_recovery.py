@@ -6,24 +6,28 @@ from unittest.mock import patch
 
 from learning import command_preparation_recovery as recovery
 from learning.action_journal import BoundedActionJournal
-from learning.attended_collection_profile import ATTENDED_60_1000
+from learning.attended_collection_profile import ATTENDED_60_1000, ATTENDED_SHOULDER_DOWN_12, audit_profile
 from learning.manual_collection import ManualCollection
 from tests import test_manual_collection as fixtures
 
 
 class RecoveryTests(unittest.TestCase):
+    strong_shoulder_window = False
+
     def setUp(self):
         owner = fixtures.ManualCollectionTests()
         owner.setUp()
         self.addCleanup(owner.tearDown)
         self.owner = owner
-        owner.manager.collection_profile = ATTENDED_60_1000
+        owner.manager.collection_profile = ATTENDED_SHOULDER_DOWN_12 if self.strong_shoulder_window else ATTENDED_60_1000
+        owner.manager.attended_shoulder_down_window = self.strong_shoulder_window
         self.device, self.requests, self.factory = owner.transport()
-        owner.start('elbow')
+        joint = 'shoulder' if self.strong_shoulder_window else 'elbow'
+        owner.start(joint)
         self.root = owner.manager.store.root
         owner.transport_failed = True
         with self.assertRaises(TimeoutError):
-            owner.manager.pulse(dict(joint='elbow', direction='down', percent=70, durationMs=1000))
+            owner.manager.pulse(dict(joint=joint, direction='down', percent=70, durationMs=1000))
         session = owner.manager.current
         self.assertEqual(session['error'], 'command_failed_no_retry')
         self.assertFalse(session['finalIdleOffVerified'])
@@ -179,6 +183,31 @@ class RecoveryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'owned_block'):
             self.recover()
         self.assertEqual(self.requests, [])
+
+
+class StrongShoulderWindowRecoveryTests(RecoveryTests):
+    strong_shoulder_window = True
+
+    def test_no_receipt_exception_is_not_available_to_training_audit(self):
+        plan=json.loads((self.root/'plan.json').read_text())
+        original=json.loads(self.raw)
+        pulse=json.loads((self.root/'command-001-intent.json').read_text())['pulse']
+        with self.assertRaisesRegex(ValueError,'window_provenance'):
+            audit_profile(plan,original,pulse)
+        audit_profile(plan,original,pulse,motion_not_started=True)
+        original['events'].append(dict(kind='result',receipt={}))
+        with self.assertRaisesRegex(ValueError,'not_started_evidence'):
+            audit_profile(plan,original,pulse,motion_not_started=True)
+
+    def test_not_started_still_requires_same_explicit_window(self):
+        path=self.root/'plan.json'
+        plan=json.loads(path.read_text())
+        plan['attendedShoulderDownWindow']['maximumDecreaseDeg']=13.
+        path.write_text(json.dumps(plan))
+        with self.assertRaisesRegex(ValueError,'window_provenance'):
+            self.recover()
+        self.assertEqual(self.requests,[])
+        self.assert_blocked()
 
 
 if __name__ == '__main__':

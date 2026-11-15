@@ -174,7 +174,7 @@ class SequencePort:
     """
     def __init__(self, url, token, boot_id, store, *, clock=time, timeout=.8, compact_reads=False,
                  initial_full_output_snapshot=False, full_output_snapshot=False,
-                 preparation_read_timeout=None):
+                 preparation_read_timeout=None, attended_shoulder_down_window=False):
         self.url = validate_target(url)
         if (not isinstance(token, str) or not token
                 or not all(33 <= ord(c) <= 126 for c in token)):
@@ -197,6 +197,10 @@ class SequencePort:
             raise ValueError('preparation_read_timeout_must_be_two_seconds')
         self.preparation_read_timeout = preparation_read_timeout
         self._preparing_execution = False
+        if type(attended_shoulder_down_window) is not bool:
+            raise ValueError('attended_shoulder_down_window_boolean_required')
+        self.attended_shoulder_down_window = attended_shoulder_down_window
+        self._attended_shoulder_down_window_policy = None
         self._last_output_time = None
         self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
         self._default_opener = self.opener
@@ -453,7 +457,13 @@ class SequencePort:
             raise ValueError('outputs_not_off')
         if pulse is not None and pulse['motor'] == 4:
             angle = self._shoulder_angle(status)
-            if baseline_angle is None or abs(angle - baseline_angle) > 3:
+            window = getattr(self, '_attended_shoulder_down_window_policy', None)
+            if window is not None:
+                valid = (baseline_angle is not None and pulse['direction'] == 'down'
+                         and -window['maximumDecreaseDeg'] <= angle-baseline_angle <= window['maximumIncreaseDeg'])
+            else:
+                valid = baseline_angle is not None and abs(angle-baseline_angle) <= 3
+            if not valid:
                 raise ValueError('m4_observed_change_exceeded')
 
     @staticmethod
@@ -866,6 +876,17 @@ class SequencePort:
         if stop_when is not None and not callable(stop_when):
             raise ValueError('stop_when_callback_required')
         from learning import m4_device_guard_transport as device_guard
+        attended_window = None
+        if self.attended_shoulder_down_window:
+            from learning.attended_collection_profile import (ATTENDED_SHOULDER_DOWN_12,
+                                                              validate_command, shoulder_down_window)
+            validate_pulse(pulse)
+            command = {k: pulse[k] for k in ('joint', 'direction', 'percent', 'durationMs')}
+            if validate_command(ATTENDED_SHOULDER_DOWN_12, command) != pulse:
+                raise ValueError('attended_shoulder_down_window_exact_pulse')
+            if device_goal_guard is not None or monitor_policy is not None or stop_when is not None:
+                raise ValueError('attended_shoulder_down_window_finite_down_only')
+            attended_window = shoulder_down_window()
         if device_goal_guard is not None:
             device_goal_guard = device_guard.validate_request(device_goal_guard, pulse)
             if monitor_policy is not None or stop_when is not None:
@@ -894,6 +915,7 @@ class SequencePort:
         self._device_goal_guard = device_goal_guard
         terminal_record = None
         try:
+            self._attended_shoulder_down_window_policy = attended_window
             self._preparing_execution = True
             tick()
             snapshot = self.preflight()
@@ -973,6 +995,8 @@ class SequencePort:
             receipt = {'dispatchBefore': before, 'dispatchAfter': after, 'offAt': off,
                     'outputTrace': trace, 'offVerified': True, 'motor': pulse['motor'],
                     'requestedPulse': pulse}
+            if attended_window is not None:
+                receipt['attendedShoulderDownWindow'] = copy.deepcopy(attended_window)
             if terminal_record is not None:
                 receipt.update(deviceGoalGuard=terminal_record, plannedDeviceGoalGuard=device_goal_guard,
                     stoppedEarly=stopped_early, stopReason='device_'+terminal_record['reason'])
@@ -1001,6 +1025,7 @@ class SequencePort:
                            copy.deepcopy(self._target_monitor_diagnostic), emergency=True)
             raise
         finally:
+            self._attended_shoulder_down_window_policy = None
             self._preparing_execution = False
             self._device_goal_guard = None
             self._before_run = None

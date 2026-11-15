@@ -66,8 +66,6 @@ def audit_command_preparation(root, source_sha256, *, session_id, controller_boo
             and set(command) == {'at', 'commandId', 'kind', 'pulse'}
             and command['commandId'] == session_id + '-001' and command['pulse']['joint'] == original.get('joint')
             and plan.get('joint') == original.get('joint'), 'command_preparation_recovery_command_binding')
-    audit_profile(plan, original, command['pulse'])
-
     def allowed(path):
         return isinstance(path, str) and (path in ('/actions', '/status', '/collection_status', '/sequence', '/action_outputs')
             or re.fullmatch(r'/action_outputs\?after=[0-9]+(?:&limit=[1-9][0-9]*)?', path) is not None)
@@ -103,6 +101,9 @@ def audit_command_preparation(root, source_sha256, *, session_id, controller_boo
             'command_preparation_recovery_timeout_required')
     require(all(any(e['kind'] == 'http' and e['path'] == path and e.get('response') == parsed for e in http_events)
                 for path, parsed in responses), 'command_preparation_recovery_HTTP_event_binding')
+    # No receipt exists before any controller write. Only after auditing all
+    # raw GET intents may recovery compare the plan/session policy without one.
+    audit_profile(plan, original, command['pulse'], motion_not_started=True)
     require(not any(p.name.startswith('readonly-') for p in root.iterdir()),
             'command_preparation_recovery_attempt_consumed')
     return dict(original=original, plan=plan, sourceHashes=_source_hashes(root),
