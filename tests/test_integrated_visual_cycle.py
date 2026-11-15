@@ -102,6 +102,86 @@ class IntegratedVisualCycleTests(unittest.TestCase):
         self.assertIn('integrated_command_budget', report['errors'][0]['reason'])
         self.assertNotIn('close', self.h.calls)
 
+    def test_model_selected_M1_OPEN_is_one_approach_action_with_fresh_reobservation(self):
+        decisions=[]
+        def choose(obs):
+            decisions.append(obs['observationId'])
+            return (dict(selected=dict(kind='action',command=command('release'))) if len(decisions)==1
+                    else dict(selected=dict(kind='stop'),stopReason='current_near_gripper_phase'))
+        self.cb['choose_approach']=choose
+        self.cb['execute_approach']=lambda decision,permit:self.h.action('release',permit)
+        report=self.run_cycle()
+        self.assertEqual(report['status'],'completed')
+        self.assertTrue(report['schemaVersion'].endswith('.v3'))
+        self.assertEqual(report['commands'][0]['phase'],'approach')
+        self.assertEqual(report['commands'][0]['command'],command('release'))
+        self.assertEqual(len(decisions),2)
+        self.assertNotEqual(decisions[0],decisions[1])
+        self.assertEqual(report['modelSelectedCommands'],7)
+
+    def test_approach_does_not_allow_M1_CLOSE(self):
+        self.cb['choose_approach']=lambda obs:dict(selected=dict(kind='action',command=command('close')))
+        report=self.run_cycle()
+        self.assertEqual(report['commandAttempts'],0)
+        self.assertEqual(report['status'],'failed')
+
+    def test_release_connects_up_to_three_single_action_transactions(self):
+        self.cb['release']=lambda obs,permit:self.h.action('release',permit,3)
+        report=self.run_cycle()
+        self.assertEqual(report['status'],'completed')
+        self.assertEqual(report['modelSelectedCommands'],8)
+        self.assertEqual(sum(row['phase']=='release' for row in report['commands']),3)
+        policy=report['releaseMicrotransactionPolicy']
+        self.assertEqual(policy['maximumMicrotransactions'],3)
+        self.assertEqual(policy['commandsPerMicrotransaction'],1)
+        self.assertFalse(policy['originalSingleActionModelPolicyChanged'])
+        self.assertFalse(policy['microtransactionBudgetStopIsReleaseSuccess'])
+        self.assertTrue(policy['finalReleasedImageAssessmentRequired'])
+
+    def test_fourth_release_is_denied_before_RUN_and_not_success(self):
+        self.cb['release']=lambda obs,permit:self.h.action('release',permit,4)
+        report=self.run_cycle()
+        self.assertEqual(report['status'],'failed')
+        self.assertEqual(report['modelSelectedCommands'],8)
+        self.assertEqual(report['unconfirmedCommands'],0)
+        self.assertFalse(report['releaseImageAssessmentPassed'])
+        self.assertNotIn('released',self.h.calls)
+
+    def test_global_budget_still_stops_release_inside_three_transaction_allowance(self):
+        self.cb['release']=lambda obs,permit:self.h.action('release',permit,3)
+        report=self.run_cycle(max_commands=7)
+        self.assertEqual(report['status'],'failed')
+        self.assertEqual(report['commandAttempts'],7)
+        self.assertEqual(report['modelSelectedCommands'],7)
+        self.assertFalse(report['releaseImageAssessmentPassed'])
+
+    def test_release_callback_failure_after_one_transaction_preserves_actual_count(self):
+        def release(obs,permit):
+            self.h.action('release',permit)
+            raise ValueError('fresh_table_assessment_rejected')
+        self.cb['release']=release
+        report=self.run_cycle()
+        self.assertEqual(report['status'],'failed')
+        self.assertEqual(report['modelSelectedCommands'],6)
+        self.assertFalse(report['releaseImageAssessmentPassed'])
+        self.assertNotIn('released',self.h.calls)
+
+    def test_three_release_transactions_do_not_replace_final_released_gate(self):
+        self.cb['release']=lambda obs,permit:self.h.action('release',permit,3)
+        self.cb['released']=lambda *args:dict(accepted=False,evidence={'stillBetweenJaws':True})
+        report=self.run_cycle()
+        self.assertEqual(report['modelSelectedCommands'],8)
+        self.assertEqual(report['status'],'failed')
+        self.assertFalse(report['releaseImageAssessmentPassed'])
+
+    def test_lift_still_only_one_command_and_global_cap_is_twelve(self):
+        self.cb['lift']=lambda obs,permit:self.h.action('lift',permit,2)
+        report=self.run_cycle()
+        self.assertEqual(report['modelSelectedCommands'],4)
+        self.assertEqual(report['status'],'failed')
+        self.assertNotIn('lower',self.h.calls)
+        with self.assertRaises(ValueError):IntegratedVisualCycle(self.cb,max_commands=13)
+
     def test_global_budget_rejects_before_next_run_and_keeps_completed_count(self):
         report = self.run_cycle(max_commands=3)
         self.assertEqual(report['phase'], 'lift')

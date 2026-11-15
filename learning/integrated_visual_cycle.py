@@ -14,9 +14,9 @@ import time
 
 from learning.manual_collection_dataset import require
 
-SCHEMA = 'motionbrain.integrated_visual_cycle.L_pose70_1000.v2'
+SCHEMA = 'motionbrain.integrated_visual_cycle.L_pose70_1000.v3'
 PHASES = ('approach', 'close', 'lift', 'lower', 'release')
-DEFAULT_STAGE_LIMITS = dict(approach=4, close=6, lift=1, lower=1, release=1)
+DEFAULT_STAGE_LIMITS = dict(approach=4, close=6, lift=1, lower=1, release=3)
 
 
 def _finite(value):
@@ -26,10 +26,10 @@ def _finite(value):
 def _command(phase, command):
     require(isinstance(command, dict) and set(command) ==
             {'joint', 'direction', 'percent', 'durationMs'}, 'integrated_command_fields')
-    expected = {'approach': ('elbow', ('up', 'down')), 'close': ('gripper', ('close',)),
-                'lift': ('elbow', ('up',)), 'lower': ('elbow', ('down',)),
-                'release': ('gripper', ('open',))}[phase]
-    require(command['joint'] == expected[0] and command['direction'] in expected[1]
+    expected = {'approach': (('elbow', 'up'), ('elbow', 'down'), ('gripper', 'open')),
+                'close': (('gripper', 'close'),), 'lift': (('elbow', 'up'),),
+                'lower': (('elbow', 'down'),), 'release': (('gripper', 'open'),)}[phase]
+    require((command['joint'], command['direction']) in expected
             and type(command['percent']) is int and command['percent'] == 70
             and type(command['durationMs']) is int and command['durationMs'] == 1000,
             'integrated_exact_cohort_command_required')
@@ -93,6 +93,10 @@ class IntegratedVisualCycle:
     close에는 원본 afterDecision 및 별도 closeReady 판독이 필요하다. 모델
     STOP 또는 두 번 이상 폐합한 뒤의 명시적 영상 정체 규칙으로만 종료한다.
     후자는 모델 ACTION 판단을 유지하며 모델이 STOP을 선택했다고 기록하지 않는다.
+    접근은 M3 UP/DOWN 또는 M1 OPEN 단발을 비교할 수 있다. release 콜백은
+    최대 세 개의 기존 1OPEN 실행 단위를 연결한다. 매 단위의 새 탁상 판정·
+    모델 OPEN/STOP 비교·ARM 재선택은 콜백 책임이며 단발 모델의 예산 STOP을
+    전체 해제 성공으로 취급하지 않는다. 최종 released 영상 판정은 별도다.
     grasp_ready(observation), retained_lift/table_supported/released(observation,
     stage_result)는 accepted와 비어 있지 않은 evidence를 반환한다.
     cleanup()은 실패·정상 모두 호출되며 기존 actor의 OFF 책임은 유지된다.
@@ -106,7 +110,7 @@ class IntegratedVisualCycle:
                  'lift', 'retained_lift', 'lower', 'table_supported', 'release', 'released', 'cleanup')
         require(isinstance(callbacks, dict) and all(callable(callbacks.get(n)) for n in names),
                 'integrated_callbacks_required')
-        require(type(max_commands) is int and 1 <= max_commands <= 13 and
+        require(type(max_commands) is int and 1 <= max_commands <= 12 and
                 _finite(max_seconds) and 1 <= max_seconds <= 900 and
                 _finite(max_observation_age) and 0 < max_observation_age <= 30,
                 'integrated_finite_budget_required')
@@ -215,7 +219,7 @@ class IntegratedVisualCycle:
                     'integrated_stage_command_accounting')
             require(len(permit.receipts) >= (0 if phase == 'close' else 1),
                     'integrated_stage_no_model_action')
-            if phase != 'close':
+            if phase not in ('close', 'release'):
                 require(len(permit.receipts) == 1, 'integrated_stage_single_action')
             return result
         finally:
@@ -233,7 +237,13 @@ class IntegratedVisualCycle:
             assessments=[], stageResults=[], phaseTransitions=[], errors=[],
             attemptCount=1, completedAttempts=0, failedAttempts=0, automaticRetry=False,
             callbackEvidenceIndependentlyAudited=False, graspImageAssessmentPassed=False, retainedLiftImageAssessmentPassed=False,
-            tableReturnImageAssessmentPassed=False, releaseImageAssessmentPassed=False)
+            tableReturnImageAssessmentPassed=False, releaseImageAssessmentPassed=False,
+            releaseMicrotransactionPolicy=dict(commandsPerMicrotransaction=1,
+                maximumMicrotransactions=self.stage_limits['release'],
+                freshTableAssessmentAndModelReselectionOwner='release_callback',
+                originalSingleActionModelPolicyChanged=False,
+                microtransactionBudgetStopIsReleaseSuccess=False,
+                finalReleasedImageAssessmentRequired=True))
         try:
             self._event('cycle_started')
             while True:

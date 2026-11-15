@@ -7,8 +7,9 @@
 ## 별도 ㄱ자 70%·1000ms 유한 상위 실행기
 
 `learning/integrated_visual_cycle.py`의 `IntegratedVisualCycle`은 별도 스키마
-`motionbrain.integrated_visual_cycle.L_pose70_1000.v2`로 접근→폐합→들기·보유→내리기→해제를
-한 시도 안에서 진행한다. 이 경로의 후보는 70%·1000ms 고정이며 접근은 M3 UP/DOWN,
+`motionbrain.integrated_visual_cycle.L_pose70_1000.v3`로 접근→폐합→들기·보유→내리기→해제를
+한 시도 안에서 진행한다. 이 경로의 후보는 70%·1000ms 고정이며 접근은 M3 UP/DOWN 또는
+모델이 선택한 M1 OPEN 단발로 영상 입력을 준비할 수 있고,
 폐합·해제는 M1 CLOSE/OPEN, 들기·내리기는 M3 UP/DOWN이다. 기존
 `FiniteTaskCycle`·`CurrentCycleRuntime`의 기본 후보 제한과 M4 전용 경로는 바꾸지 않는다.
 생성자에는 장치 포트나 자동 실행 기본값이 없으며 실제 연결은 명시적으로 주입한 콜백이 담당한다.
@@ -19,10 +20,17 @@
 동작 콜백은 실제 RUN 전에 `permit(command)`로 예산을 소모하고, 확인된 OFF 뒤
 `permit.complete(token, receipt)`를 호출한다. 영수증의 명령·완료 상태·OFF와
 반환한 `commandReceipts`·`modelSelectedCommands`가 일치해야 한다. 기본 예산은
-전체 12명령·900초이며 단계별 상한은 접근 4, 폐합 6, 들기·내리기·해제 각 1회다.
+전체 12명령·900초이며 단계별 상한은 접근 4, 폐합 6, 들기·내리기 각 1회, 해제 3회다.
 콜백은 같은 전역 기한과 기존 actor의 원장·부팅·출력·정지 검사를 유지하고,
 고정 모델의 현재 지원 검사 및 ARMED 뒤 새 관측·동일 후보 재선택을 직접 수행해야 한다.
 상위 실행기는 동기 콜백을 강제로 중단하거나 원본 증거를 독립 감사하지 않는다.
+
+해제의 최대 3회는 기존 모델의 1OPEN 실행 단위를 상위 단계에서 연결하는 별도 계약이다.
+각 단위는 새 두 영상의 탁상 지지 판정, 고정 모델의 OPEN과 STOP 비교, ARMED 뒤
+재관측·재선택, 완료와 OFF 확인을 다시 수행해야 한다. 이 처리는 `release` 콜백이
+소유하며 기존 단발 모델의 1회 한도·영상 지원·열림 상한을 바꾸지 않는다.
+단발 실행의 예산 STOP은 전체 해제 성공이 아니며, 상위 `released` 영상 판정이
+통과해야 완료한다. 보고서의 `releaseMicrotransactionPolicy`에 이 역할과 상한을 남긴다.
 
 접근의 STOP은 `current_near_gripper_phase` 또는 `goal_reached` 사유와 별도
 `grasp_ready` 영상 판정을 함께 통과해야 폐합으로 전환한다. 미지원·예산 소진으로
