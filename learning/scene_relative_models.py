@@ -16,6 +16,9 @@ from learning.scene_relative_observation import FIELDS
 
 SCHEMA = 'motionbrain.scene_relative_action_ridge.v1'
 STATE_FIELDS = [*FIELDS, 'm4AngleDeg']
+from learning.scene_object_relative_observation import FIELDS as OBJECT_FIELDS
+OBJECT_STATE_FIELDS=[*OBJECT_FIELDS,'m4AngleDeg']
+OBJECT_SCHEMA='motionbrain.scene_object_relative_action_ridge.v1'
 
 def vector(value):
     require(isinstance(value, list) and len(value) == 4
@@ -46,14 +49,15 @@ def derive_transition(source, observer, before_bytes, after_bytes, *, audit_sour
         require(hashlib.sha256(raw).hexdigest() == frame['imageSha256'], 'scene_source_image_changed')
         observed.append(observer.observe(raw, frame['frameId'], frame['sourceContext']))
     require(observed[0]['frameId'] != observed[1]['frameId'], 'scene_transition_distinct_frames')
-    require(all(o['stateFields'] == list(FIELDS) for o in observed)
+    require(observed[0]['stateFields'] in (list(FIELDS),list(OBJECT_FIELDS))
+            and all(o['stateFields'] == observed[0]['stateFields'] for o in observed)
             and observed[0]['canonicalFrameSha256'] == observed[1]['canonicalFrameSha256'],
             'scene_transition_canonical_frame_changed')
     require(observed[0]['registrationSha256'] == observed[1]['registrationSha256'],
             'scene_transition_registration_changed')
     return dict(sourceSha256=digest(source), source=copy.deepcopy(source),
                 command=copy.deepcopy(source['command']), physicalContext=copy.deepcopy(source['physicalContext']),
-                observationContract=dict(canonicalFrameSha256=observed[0]['canonicalFrameSha256'], stateFields=list(STATE_FIELDS)),
+                observationContract=dict(canonicalFrameSha256=observed[0]['canonicalFrameSha256'], stateFields=[*observed[0]['stateFields'],'m4AngleDeg']),
                 before=[*observed[0]['state'], source['before']['m4AngleDeg']],
                 after=[*observed[1]['state'], source['after']['m4AngleDeg']], observations=observed,
                 developmentOnly=True, controlEligible=False)
@@ -96,7 +100,7 @@ def fit(rows):
         models.append(dict(command=copy.deepcopy(group[0]['command']),count=len(group),mean=mean.tolist(),
             scale=scale.tolist(),deltaMean=delta.tolist(),coefficient=coef.tolist(),
             minimum=x.min(axis=0).tolist(),maximum=x.max(axis=0).tolist()))
-    return dict(schemaVersion=SCHEMA, physicalContext=copy.deepcopy(first['physicalContext']),
+    return dict(schemaVersion=(SCHEMA if first['observationContract']['stateFields']==STATE_FIELDS else OBJECT_SCHEMA), physicalContext=copy.deepcopy(first['physicalContext']),
         observationContract=copy.deepcopy(first['observationContract']), models=models, deficits=deficits,
         trainingSourceSha256=sorted(seen), controlEligible=False, developmentOnly=True, independentTest=False)
 
@@ -115,9 +119,9 @@ class SceneRelativeModelBank:
     def __init__(self, models):
         require(isinstance(models,dict) and bool(models) and set(models).issubset({'approach','close','release'}), 'scene_models_required')
         for model in models.values():
-            require(model.get('schemaVersion') == SCHEMA and model.get('controlEligible') is False
+            require(model.get('schemaVersion') in (SCHEMA,OBJECT_SCHEMA) and model.get('controlEligible') is False
                     and model.get('developmentOnly') is True, 'scene_model_schema')
-            require(model['observationContract'].get('stateFields') == STATE_FIELDS, 'scene_model_state_fields')
+            require(model['observationContract'].get('stateFields') == (STATE_FIELDS if model['schemaVersion']==SCHEMA else OBJECT_STATE_FIELDS), 'scene_model_state_fields')
             for entry in model['models']:
                 command_key(entry['command'])
                 require(type(entry['count']) is int and entry['count'] >= 2, 'scene_model_support_count')
@@ -190,6 +194,7 @@ class SceneRelativeModelBank:
                 errorPx=float(np.linalg.norm(prediction[:3]-goal[:3]))))
         ranked.sort(key=lambda r:r['errorPx'])
         return dict(selected=copy.deepcopy(ranked[0]),candidates=ranked,rejected=rejected,
+            objectiveUnit=('canonical_pixels' if model['schemaVersion']==SCHEMA else 'object_widths'),
             predictor='stateRidge', status='ranked' if len(ranked)>1 else 'abstained',modelSha256=self.hashes[kind],
             physicalContext=copy.deepcopy(model['physicalContext']),observationContract=copy.deepcopy(model['observationContract']),
             controlEligible=False,developmentOnly=True,counterfactualOutcomesObserved=False,graspVerified=False)

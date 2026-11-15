@@ -154,6 +154,38 @@ class CommissioningTests(unittest.TestCase):
         import sqlite3
         with sqlite3.connect(self.repo/'.local/visual-actions/controller-commands.sqlite') as db:
             return db.execute('SELECT phase FROM supervised_blocks WHERE session_id=?',(self.scope['trialId'],)).fetchone()[0]
+    def test_failed_after_collects_separate_raw_only_after_OFF_without_replay(self):
+        original=self.observer.observe;calls=[]
+        def observe(**kwargs):
+            if kwargs['after_off'] is not None:
+                self.trial.port.off_verified=False
+                raise ValueError('m4_observed_excursion')
+            return original(**kwargs)
+        self.observer.observe=observe
+        def capture(**kwargs):
+            self.assertFalse(any(self.device.speeds.values()))
+            before=len(self.device.requests);kwargs['tick']()
+            self.assertTrue(all(payload is None for _,payload in self.device.requests[before:]))
+            calls.append(kwargs);return dict(status='captured',trainingEligible=False)
+        self.observer.capture_failure_evidence=capture
+        result=self.run_trial()
+        self.assertEqual(result['status'],'failed');self.assertEqual(result['errors'][0]['code'],'m4_observed_excursion')
+        self.assertEqual(result['failureEvidence']['status'],'captured');self.assertEqual(len(calls),1)
+        self.assertEqual(sum(payload=={'action':'run'} for _,payload in self.posts()),1)
+        self.assertFalse(result['trainingEligible']);self.assertFalse((self.store.root/'after-observation.json').exists())
+
+    def test_failure_capture_error_does_not_replace_original_error(self):
+        original=self.observer.observe
+        def observe(**kwargs):
+            if kwargs['after_off'] is not None:raise ValueError('m4_observed_excursion')
+            return original(**kwargs)
+        self.observer.observe=observe
+        self.observer.capture_failure_evidence=lambda **kwargs:(_ for _ in ()).throw(TimeoutError())
+        result=self.run_trial()
+        self.assertEqual(result['errors'][0]['code'],'m4_observed_excursion')
+        self.assertEqual(result['failureEvidence']['status'],'failed')
+        self.assertTrue(result['finalIdleOffVerified']);self.assertEqual(sum(p=={'action':'run'} for _,p in self.posts()),1)
+
     def test_construct_validate_and_general_rejection_make_no_requests(self):
         self.assertFalse(self.device.requests)
         self.assertEqual(PROFILES['shoulder']['directions'],{'down':(-1,35,650)})

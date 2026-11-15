@@ -6,7 +6,7 @@ from learning.current_full_cycle_source import FullCycleSource,SourcePreflightEr
 from learning.artifacts import _decode_json,_read
 from learning.manual_collection_dataset import require
 from learning.scene_relative_observation import SceneRelativeObserver
-from learning.scene_relative_models import STATE_FIELDS
+from learning.scene_object_relative_observation import SceneObjectRelativeObserver,SCHEMA as OBJECT_SCHEMA
 from learning.gripper_camera_dataset import read_frame
 from learning.development_gripper_source import scene_context
 from learning.m1_shaft_scene import scene_context as shaft_scene
@@ -42,13 +42,14 @@ class SceneRelativeCycleSource(FullCycleSource):
             if not self._is_scene(kind):continue
             try:
                 spec=self.registrations[kind][0];model=self.bank.models[kind]
-                observer=SceneRelativeObserver(_decode_json(self._bound(spec['sceneRegistration'])),
-                                               self._bound(spec['sceneReference']))
+                registration=_decode_json(self._bound(spec['sceneRegistration']))
+                observer_class=SceneObjectRelativeObserver if registration.get('schemaVersion')==OBJECT_SCHEMA else SceneRelativeObserver
+                observer=observer_class(registration,self._bound(spec['sceneReference']))
                 context={k:spec['sourceContext'][k] for k in ('physicalView','object','poseRegime')}
                 context['cameraBootId']=spec['sourceContext']['gripperCameraBootId']
                 require(observer.registration['sourceContext']==context,'scene_source_registration_context')
                 require(model['observationContract']==dict(canonicalFrameSha256=observer.registration['canonicalFrameSha256'],
-                    stateFields=list(STATE_FIELDS)) and spec['physicalContext']==model['physicalContext'],
+                    stateFields=[*observer.registration['stateFields'],'m4AngleDeg']) and spec['physicalContext']==model['physicalContext'],
                     'scene_source_model_contract')
                 # Safety has its own source registration. It is never relabelled as the model observer.
                 safety=self.registrations[kind][1]

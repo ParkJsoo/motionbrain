@@ -22,6 +22,7 @@ from learning.supervised_collection import plan_digest
 from learning.task_visual_measurement import measure
 
 SCHEMA='motionbrain.current_M4_stationary_anchor_review.v1'
+AFTER_SCHEMA='motionbrain.current_M4_verified_after_anchor_review.v2'
 ROIS={'external':[650,200,1500,870],'gripper':[65,65,255,165]}
 LABELS={'operatorPresent','clearanceVerified','jawContactVerified','tableSupportVerified'}
 
@@ -74,6 +75,80 @@ def same_picture(anchor,current,camera):
                 gainCorrected=False,geometryAligned=False)
 
 
+def _after_origin(root,anchor):
+    from learning.manual_collection_dataset import Evidence
+    from learning.task_transition_data import _http
+    from learning.m4_up_commissioning import validate_recorded_scope
+    from learning.supervised_transport import response_json
+    origin=anchor.get('origin')
+    require(isinstance(origin,dict) and set(origin)=={'actorRoot','scope','result','afterObservation'},
+            'M4_after_anchor_origin_required')
+    actor=(root/origin['actorRoot']).resolve(strict=True)
+    require(actor.is_relative_to(root) and actor!=root,'M4_after_anchor_private_actor_required')
+    def bound(ref,name):
+        require(isinstance(ref,dict) and set(ref)=={'path','sha256'}
+                and (root/ref['path']).resolve()==actor/name,'M4_after_anchor_origin_path')
+        raw=_read(root,ref['path']);require(_sha(raw)==ref['sha256'],'M4_after_anchor_origin_changed')
+        return _decode_json(raw)
+    scope=bound(origin['scope'],'scope.json');result=bound(origin['result'],'result.json')
+    after=bound(origin['afterObservation'],'after-observation.json');validate_recorded_scope(scope)
+    require(result.get('scopeSha256')==plan_digest(scope) and result.get('schemaVersion')==scope['schemaVersion']
+            and result.get('status')=='completed' and result.get('errors')==[]
+            and result.get('mayHaveRun') is True and result.get('finalIdleOffVerified') is True
+            and result.get('commandOutcome')=='receipt_recorded','M4_after_anchor_completed_actor_required')
+    receipt=result['receipt'];ev=Evidence(actor);_,boot,_,_=_http(ev,receipt,scope['pulse'])
+    require(receipt.get('offVerified') is True and scope['postOffSeconds']==3.,'M4_after_anchor_OFF_required')
+    review_raw=_read(actor,after['evidenceFile'])
+    require(_sha(review_raw)==after['evidenceSha256']
+            and _decode_json(review_raw)=={k:v for k,v in after.items() if k not in ('evidenceFile','evidenceSha256')},
+            'M4_after_anchor_review_changed')
+    frames=dict(external=_external_frame(actor,after['external'],scope),gripper=_gripper_frame(actor,after['gripper'],scope,'after'))
+    require(after.get('hostClockId')==scope['hostClockId'] and after.get('context')==scope['context']
+            and after.get('stable') is True and all(f['sourceEarliest']>=receipt['offAt']+3. for f in frames.values()),
+            'M4_after_anchor_post_OFF_raw_required')
+    require(anchor['labels']==after['onsite'] and set(anchor['labels'])==LABELS
+            and all(type(v) is bool for v in anchor['labels'].values()),'M4_after_anchor_labels_changed')
+    require({k:v for k,v in anchor['context'].items() if k!='supportMode'}
+            =={k:v for k,v in scope['context'].items() if k!='supportMode'}
+            and anchor['context']['supportMode']==('table_supported' if after['onsite']['tableSupportVerified'] else 'gripper_supported'),
+            'M4_after_anchor_context_changed')
+    latest=[]
+    for path in actor.glob('http-*-intent.json'):
+        intent=_decode_json(_read(actor,path.name))
+        if intent['path'].split('?')[0]=='/action_outputs' and intent['payload'] is None:
+            response=_decode_json(_read(actor,path.name.replace('-intent.json','-response.json')))
+            parsed=response_json(response['rawUtf8'],intent['path']);latest.append(parsed['latestSequence'])
+    require(bool(latest) and anchor['epoch']==dict(controllerBootId=boot,cameraBootId=scope['context']['gripperCameraBootId'],
+            outputSequence=max(latest),allFiveOff=True),'M4_after_anchor_epoch_changed')
+    source=anchor['sources']
+    ingress=_decode_json(_read(actor,after['external']['root']+'/'+after['external']['ingressFile']))
+    expected_external=actor/after['external']['root']/ingress['metadataFile']
+    expected_gripper=actor/after['gripper']['root']/'esp32-after.json'
+    require((root/source['external']['metadata']['path']).resolve()==expected_external.resolve()
+            and (root/source['gripper']['metadata']['path']).resolve()==expected_gripper.resolve(),
+            'M4_after_anchor_original_metadata_required')
+    return scope['hostClockId']
+
+
+def verified_after_anchor(actor_root,asset_root,epoch,metrology_binding):
+    """완료 actor의 실제 after 원본을 새 정지 기준으로 결합한다. 파일을 다시 촬영하거나 재표기하지 않는다."""
+    root=Path(asset_root).resolve(strict=True);actor=Path(actor_root).resolve(strict=True)
+    require(actor.is_relative_to(root),'M4_after_anchor_private_actor_required')
+    after=_decode_json(_read(actor,'after-observation.json'));scope=_decode_json(_read(actor,'scope.json'))
+    def ref(path):
+        path=Path(path).resolve(strict=True);relative=path.relative_to(root).as_posix()
+        return dict(path=relative,sha256=_sha(_read(root,relative)))
+    ingress=_decode_json(_read(actor,after['external']['root']+'/'+after['external']['ingressFile']))
+    context=copy.deepcopy(scope['context'])
+    context['supportMode']='table_supported' if after['onsite']['tableSupportVerified'] else 'gripper_supported'
+    anchor=dict(schemaVersion=AFTER_SCHEMA,context=context,epoch=copy.deepcopy(epoch),labels=copy.deepcopy(after['onsite']),
+        sources=dict(external=dict(image=ref(actor/'after-external.png'),metadata=ref(actor/after['external']['root']/ingress['metadataFile'])),
+                     gripper=dict(image=ref(actor/after['gripper']['root']/'esp32-after.jpg'),metadata=ref(actor/after['gripper']['root']/'esp32-after.json'))),
+        metrologyRegistration=copy.deepcopy(metrology_binding),reviewBasis='root_visual_completed_actor_after_review',humanAssisted=True,
+        origin=dict(actorRoot=actor.relative_to(root).as_posix(),scope=ref(actor/'scope.json'),result=ref(actor/'result.json'),afterObservation=ref(actor/'after-observation.json')))
+    _after_origin(root,anchor);return anchor
+
+
 class StationaryM4BeforeReviewer:
     """before에서만 새 anchor를 검증하고 after는 기존 reviewer로 전달한다.
 
@@ -100,10 +175,13 @@ class StationaryM4BeforeReviewer:
 
     def _validate_anchor(self):
         a=self.anchor
-        require(isinstance(a,dict) and set(a)=={'schemaVersion','context','epoch','labels','sources',
-            'metrologyRegistration','reviewBasis','humanAssisted'} and a['schemaVersion']==SCHEMA
-            and a['reviewBasis']=='root_visual_stationary_anchor_review' and a['humanAssisted'] is True,
-            'M4_new_stationary_anchor_review_required')
+        fields={'schemaVersion','context','epoch','labels','sources','metrologyRegistration','reviewBasis','humanAssisted'}
+        is_after=isinstance(a,dict) and a.get('schemaVersion')==AFTER_SCHEMA
+        require(isinstance(a,dict) and set(a)==(fields|{'origin'} if is_after else fields)
+            and a['schemaVersion'] in (SCHEMA,AFTER_SCHEMA)
+            and a['reviewBasis']==('root_visual_completed_actor_after_review' if is_after else 'root_visual_stationary_anchor_review')
+            and a['humanAssisted'] is True,'M4_new_stationary_anchor_review_required')
+        origin_session=_after_origin(self.root,a) if is_after else None
         require(a['context']==self.scope['context'],'M4_stationary_context_changed')
         epoch=a['epoch']
         require(isinstance(epoch,dict) and set(epoch)=={'controllerBootId','cameraBootId','outputSequence','allFiveOff'}
@@ -121,7 +199,7 @@ class StationaryM4BeforeReviewer:
             meta=_decode_json(self._bound(source['metadata']))
             require(isinstance(meta,dict),'M4_stationary_metadata_required')
             session=meta.get('sessionId')
-            require(isinstance(session,str) and session.startswith('M4-stationary-anchor-')
+            require(isinstance(session,str) and (session==origin_session if is_after else session.startswith('M4-stationary-anchor-'))
                     and session!=self.scope['hostClockId'],'M4_stationary_independent_anchor_session')
             anchor_sessions.append(session)
             image=self._bound(source['image'])

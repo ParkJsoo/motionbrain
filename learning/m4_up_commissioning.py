@@ -133,6 +133,7 @@ def validate_scope(scope):
     is_target_up = isinstance(scope,dict) and scope.get('schemaVersion') == TARGET_UP_SCHEMA
     is_band_recovery = isinstance(scope,dict) and scope.get('schemaVersion') == BAND_RETURN_RECOVERY_SCHEMA
     is_device = isinstance(scope,dict) and scope.get('schemaVersion') == DEVICE_GUARD_TASK_SCHEMA
+    is_finite_device = is_device and scope.get('deviceGuardPolicy',{}).get('schemaVersion')==device_policy.FINITE_POLICY_SCHEMA
     is_effective = isinstance(scope,dict) and scope.get('schemaVersion') in (EFFECTIVE_TASK_SCHEMA,DEVICE_GUARD_TASK_SCHEMA)
     is_current_short = isinstance(scope,dict) and scope.get('schemaVersion') == CURRENT_SHORT_TASK_SCHEMA
     extra = ({'phase','observationContractSha256','modelPath','modelSha256'} if is_learning
@@ -180,7 +181,7 @@ def validate_scope(scope):
             and type(scope['defaultSpeed']) is int and scope['defaultSpeed'] == 255
             and type(scope['maxCommands']) is int and scope['maxCommands'] == 1,
             'm4_exact_single_pulse_required')
-    for k, value in [('startAngleToleranceDeg', .10 if is_band_recovery or is_current_short or is_effective else .25 if is_target_up else .5), ('maxObservedDeltaDeg', .9 if is_current_short or is_effective else 3. if is_learning or scope['schemaVersion'] in (CONTACT_SHORT_SCHEMA,CONTACT_MANUAL650_SCHEMA,RETURN_SCHEMA,TARGET_UP_SCHEMA) else 1.),
+    for k, value in [('startAngleToleranceDeg', .10 if is_band_recovery or is_current_short or is_effective else .25 if is_target_up else .5), ('maxObservedDeltaDeg', 3. if is_finite_device else .9 if is_current_short or is_effective else 3. if is_learning or scope['schemaVersion'] in (CONTACT_SHORT_SCHEMA,CONTACT_MANUAL650_SCHEMA,RETURN_SCHEMA,TARGET_UP_SCHEMA) else 1.),
                      ('maxSeconds', 60.), ('maxObservationAgeSeconds', 3. if is_current_short or is_effective else 10.), ('postOffSeconds', 3.)]:
         require(transport.finite_number(scope[k]) and scope[k] == value, 'm4_fixed_limits_required')
     require(transport.finite_number(scope['expectedStartAngleDeg'])
@@ -218,7 +219,8 @@ def validate_scope(scope):
         require(transport.finite_number(scope['goalAngleDeg'])
                 and scope['goalAngleDeg']==policy['upGoalAngleDeg' if up else 'downGoalAngleDeg']
                 and policy['originalGlobalReferenceDeg']-3. <= scope['expectedStartAngleDeg'] <= policy['originalGlobalUpperDeg']
-                and ((up and scope['expectedStartAngleDeg']==policy['tableReferenceDeg'])
+                and ((is_finite_device and up and .1 < scope['goalAngleDeg']-scope['expectedStartAngleDeg'] <= 2.5)
+                     or (up and not is_finite_device and scope['expectedStartAngleDeg']==policy['tableReferenceDeg'])
                      or (not up and scope['expectedStartAngleDeg']>scope['goalAngleDeg']+.1)),
                 'm4_current_short_goal_or_start_invalid')
         if is_device:
@@ -227,8 +229,9 @@ def validate_scope(scope):
     require(isinstance(ctx, dict) and set(ctx) == {
         'physicalView', 'poseRegime', 'object', 'supportMode', 'externalDeviceId',
         'externalViewId', 'gripperCameraBootId'} and
-        ctx['supportMode'] == ('empty_no_object' if is_noncontact else 'gripper_supported' if scope['schemaVersion'] in (RETURN_SCHEMA,BAND_RETURN_RECOVERY_SCHEMA)
-                              or (is_current_short or is_effective) and scope['pulse']['direction']=='down' else 'table_supported')
+        ((is_finite_device and ctx['supportMode'] in ('table_supported','gripper_supported')) or
+         (not is_finite_device and ctx['supportMode'] == ('empty_no_object' if is_noncontact else 'gripper_supported' if scope['schemaVersion'] in (RETURN_SCHEMA,BAND_RETURN_RECOVERY_SCHEMA)
+                              or (is_current_short or is_effective) and scope['pulse']['direction']=='down' else 'table_supported')))
         and all(isinstance(v, str) and bool(v) for v in ctx.values())
         and re.fullmatch('[0-9a-f]{32}', ctx['gripperCameraBootId']) is not None,
         'm4_current_contact_context_required')
@@ -632,8 +635,13 @@ class _CommissioningPort(transport.SequencePort):
                 require(angle>scope['goalAngleDeg'],'m4_recovery_already_at_goal')
             if short:
                 if scope['pulse']['direction']=='up':
-                    require(angle+scope['maxObservedDeltaDeg']<=policy['originalGlobalUpperDeg'],
-                            'm4_current_short_upper_headroom_insufficient')
+                    if policy.get('schemaVersion')==device_policy.FINITE_POLICY_SCHEMA:
+                        require(.1 < scope['goalAngleDeg']-angle <= 2.5
+                                and scope['goalAngleDeg']+.5<=policy['originalGlobalUpperDeg'],
+                                'm4_current_short_upper_headroom_insufficient')
+                    else:
+                        require(angle+scope['maxObservedDeltaDeg']<=policy['originalGlobalUpperDeg'],
+                                'm4_current_short_upper_headroom_insufficient')
                     require(angle<scope['goalAngleDeg'],'m4_current_short_already_at_goal')
                 else:
                     require(angle>scope['goalAngleDeg'],'m4_current_short_already_at_goal')
@@ -785,7 +793,11 @@ class M4UpCommissioning:
             require(onsite['jawContactVerified'] and (after_off is not None or onsite['tableSupportVerified'] is False),
                     'm4_return_support_review_required')
         elif after_off is None:
-            if self.scope['schemaVersion'] == CONTACT_PROBE_SCHEMA:
+            if (self.scope['schemaVersion']==DEVICE_GUARD_TASK_SCHEMA
+                    and self.scope['deviceGuardPolicy']['schemaVersion']==device_policy.FINITE_POLICY_SCHEMA):
+                require(onsite['jawContactVerified'] is True and onsite['tableSupportVerified']
+                        ==(self.scope['context']['supportMode']=='table_supported'),'m4_initial_contact_required')
+            elif self.scope['schemaVersion'] == CONTACT_PROBE_SCHEMA:
                 require(onsite['tableSupportVerified'] is True and onsite['jawContactVerified'] is False,
                         'm4_probe_requires_table_support_and_unconfirmed_contact')
             else:
@@ -1037,6 +1049,21 @@ class M4UpCommissioning:
             report['errors'].append(error)
         finally:
             if claimed:
+                capture_failure=getattr(self.observer,'capture_failure_evidence',None)
+                if report['errors'] and (self.port.off_verified or report.get('receipt',{}).get('offVerified') is True) and not self.port.evidence_failed and self.port.may_have_run and observer_started and callable(capture_failure):
+                    try:
+                        off_at=self.clock.monotonic()
+                        def failure_quiet_tick():
+                            require(self.port._call('/actions').get('bootId')==self.scope['controllerBootId'],
+                                    'm4_failure_evidence_boot_changed')
+                            self.port._queue(0);self.port._outputs(quiet=True)
+                            require(self.port.last_outputs=={i:0 for i in range(1,6)},'m4_failure_evidence_not_OFF')
+                        failure_quiet_tick()
+                        report['failureEvidence']=capture_failure(after_off=off_at,
+                            deadline=off_at+10.,tick=failure_quiet_tick)
+                    except (Exception,KeyboardInterrupt) as exc:
+                        report['failureEvidence']=dict(status='failed',type=type(exc).__name__,
+                            originalOutcomeChanged=False,trainingEligible=False)
                 if observer_started:
                     try:
                         report['observerClose'] = self.observer.close()

@@ -53,6 +53,9 @@ class M4DualCameraObserver:
         self.cached = self.closed = None
         self.started = self.failed = False
         self.labels = set()
+        self.failure_evidence_used = False
+        self.after_capture_requested = False
+        self.after_capture_folder = None
         self._native_admission_snapshot = None
 
     def start(self, *, deadline):
@@ -157,6 +160,9 @@ class M4DualCameraObserver:
                 self._wait(lambda: True if self.clock.monotonic() >= threshold else None, deadline, tick)
             # One fresh request; this source saves bytes even on capture failure.
             tick()
+            if after_off is not None:
+                self.after_capture_requested = True
+                self.after_capture_folder=f'capture-{self.gripper.count+1:04d}'
             record = self.gripper.capture(deadline=deadline)
             self.gripper.verify(record)
             binding = self.gripper._bindings[record['frame']['frameId']]
@@ -193,6 +199,47 @@ class M4DualCameraObserver:
         except BaseException:
             self.failed=True
             raise
+
+    def capture_failure_evidence(self, *, after_off, deadline, tick):
+        """OFF 뒤 별도 원본만 남긴다. 정상 after 재촬영·성공 판독·학습 승격은 없다."""
+        require(self.started and self.closed is None and not self.failure_evidence_used,
+                'm4_failure_evidence_single_use')
+        self.failure_evidence_used=True
+        require(type(after_off) in (int,float) and math.isfinite(after_off), 'm4_failure_OFF_time_required')
+        if self.after_capture_requested:
+            # Preserve the original capture attempt instead of replacing failed images.
+            names=['gripper/esp32-after.json','gripper/esp32-after.jpg','after-external.png','after-gripper.jpg','after-review.json']
+            files={name:sha(_read(self.store.root,name)) for name in names if (self.store.root/name).is_file()}
+            # capture() persists its own partial response even if copying into
+            # legacy after paths never happened; bind that original attempt too.
+            folder=self.after_capture_folder or f'capture-{self.gripper.count+1:04d}'
+            for path in (self.gripper.store.root/folder).glob('*'):
+                if path.is_file():
+                    relative=path.relative_to(self.store.root).as_posix()
+                    files[relative]=sha(_read(self.store.root,relative))
+            with self.recorder.lock:
+                native=[copy.deepcopy(f) for f in self.recorder.frames if f['sourceEarliest']>=after_off+3.]
+            result=dict(status='existing_after_attempt_preserved',sourceFiles=files,
+                        externalSourceRoot='external',external=native[-1] if native else None,newCameraRequests=0)
+        else:
+            threshold=after_off+3.
+            self._wait(lambda:True if self.clock.monotonic()>=threshold else None,deadline,tick)
+            tick()
+            # A distinct forensic label, never substituted for after-observation.json.
+            self.after_capture_requested=True
+            self.after_capture_folder=f'capture-{self.gripper.count+1:04d}'
+            gripper=self.gripper.capture(deadline=deadline)
+            self.gripper.verify(gripper)
+            external=self._external(threshold,deadline,tick)
+            tick()
+            result=dict(status='captured',gripperSourceRoot='gripper-source',gripper=copy.deepcopy(gripper),
+                externalSourceRoot='external',external=copy.deepcopy(external),newCameraRequests=1)
+        result.update(schemaVersion='motionbrain.m4_failed_after_raw.v1',afterOffAt=after_off,
+            hostClockId=self.scope['hostClockId'],context=copy.deepcopy(self.scope['context']),
+            originalOutcomeChanged=False,trainingEligible=False,taskSuccessLabel=False,controllerWrites=0)
+        self.store.write_json('failed-after-raw.json',result)
+        return dict(status=result['status'],artifact='failed-after-raw.json',sha256=sha(_read(self.store.root,'failed-after-raw.json')),
+                    originalOutcomeChanged=False,trainingEligible=False)
 
     def latest(self):
         self.check()

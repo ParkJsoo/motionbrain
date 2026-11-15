@@ -74,6 +74,25 @@ class AdapterTests(unittest.TestCase):
                     onsite=dict(operatorPresent=True,clearanceVerified=True,jawContactVerified=True,
                                 tableSupportVerified=request['label']=='before'))
     def adapter(self):return camera.M4DualCameraObserver(self.scope,self.config,self.store,self.review,clock=self.clock)
+    def test_failed_after_tick_can_capture_separate_forensic_raw_once(self):
+        observer=self.adapter();observer.start(deadline=60)
+        observer.observe(after_off=None,deadline=60,tick=lambda:None)
+        off=self.clock.monotonic()
+        with self.assertRaises(ValueError):
+            observer.observe(after_off=off,deadline=60,tick=lambda:(_ for _ in ()).throw(ValueError('excursion')))
+        result=observer.capture_failure_evidence(after_off=off,deadline=60,tick=lambda:None)
+        self.assertEqual(result['status'],'captured');self.assertEqual(self.gripper.count,2)
+        self.assertTrue(observer.failed);self.assertIsNone(observer.closed)
+        self.assertFalse((self.store.root/'after-review.json').exists())
+        with self.assertRaisesRegex(ValueError,'single_use'):observer.capture_failure_evidence(after_off=off,deadline=60,tick=lambda:None)
+
+    def test_already_attempted_after_camera_is_not_retried(self):
+        observer=self.adapter();observer.start(deadline=60)
+        observer.observe(after_off=None,deadline=60,tick=lambda:None)
+        observer.after_capture_requested=True;observer.failed=True
+        result=observer.capture_failure_evidence(after_off=self.clock.monotonic(),deadline=60,tick=lambda:None)
+        self.assertEqual(result['status'],'existing_after_attempt_preserved');self.assertEqual(self.gripper.count,1)
+
     def test_learning_windows_keep_full_pre_and_post_native_recording(self):
         observer=self.adapter();observer.start(deadline=60)
         first=self.native.frames[0]['sourceEarliest']
