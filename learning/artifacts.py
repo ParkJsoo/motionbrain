@@ -73,6 +73,13 @@ def _read(root, relative):
             fd = None
             return source.read()
     except (OSError, ValueError) as exc:
+        import errno
+        if isinstance(exc, OSError) and exc.errno == errno.ELOOP:
+            from learning.external_media import read_media_alias
+            try:
+                return read_media_alias(Path(root) / relative)
+            except (OSError, ValueError, KeyError, TypeError) as media_exc:
+                raise StorageError(f"cannot read {relative}: {media_exc}") from media_exc
         raise StorageError(f"cannot read {relative}: {exc}") from exc
     finally:
         if fd is not None:

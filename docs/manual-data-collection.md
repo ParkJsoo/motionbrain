@@ -254,3 +254,24 @@ python3 tools/evaluate_manual_collection.py \
 ## 대량 수집의 저장 예산
 
 기본 기록은 8fps다. 원본을 보존하면서 수집량을 늘려야 할 때 서버에 `--sample-fps 4`를 지정할 수 있다. 해상도와 BGRA 무손실 저장은 유지하고, 60초 세션의 프레임 예산은 500개에서 260개로 줄인다. 선택 프레임의 최대 간격 0.3초 등 기존 감사는 유지하므로 실제 간격이 초과하면 부적격이다. 4fps 서버에는 같은 설정으로 촬영한 새 참조가 필요하며, 각 세션은 남은 저장 공간과 예비 공간을 확인한다.
+
+## 외장 미디어의 명시적 읽기
+
+문서·모델·세션 JSON을 내부 디스크에 두고 영상 파일만 외장 저장소로 옮길 수 있다. 원본 상대 경로, 정확한 외장 대상 경로, 바이트 수와 SHA-256을 담은 비공개 명세를 먼저 검증한다. 파일별 복사와 해시 검증을 마친 뒤 원래 영상 경로에 마지막 파일의 심볼릭 링크를 둔다. 현재 모델 준비에 필요한 작은 기준 이미지는 내부에 유지할 수 있다.
+
+기본 아티팩트 읽기는 계속 링크를 거절한다. `learning.external_media.external_media_reads(receipt_path, expected_sha256, expected_volume_uuid)` 문맥 안에서만 명세에 등록한 미디어 파일을 읽는다. 예상 명세 SHA와 볼륨 UUID는 명세 본문과 독립적으로 고정해야 한다. 운영체제의 외장 볼륨 식별을 확인하고, 고정한 디렉터리 파일 기술자를 통해 중간 경로와 대상 파일의 링크를 거절하며, 읽은 바이트의 크기·SHA를 매번 대조한다. JSON·코드·모델 파일과 중간 폴더 링크는 이 허용에 포함되지 않으며 쓰기 정책도 바뀌지 않는다.
+
+기존 오프라인 스크립트는 다음 실행기로 감쌀 수 있다. 아래 변수는 검증된 로컬 명세의 경로·고정 SHA·볼륨 UUID로 미리 지정한다. 예시는 기존 원본을 다시 검사하며 촬영하지 않는다.
+
+```sh
+python3 tools/with_external_media.py \
+  --receipt "$MEDIA_RECEIPT" \
+  --receipt-sha256 "$MEDIA_RECEIPT_SHA256" \
+  --volume-uuid "$MEDIA_VOLUME_UUID" \
+  tools/check_development_gripper_source.py \
+  --config .local/check-config.json \
+  --output .local/replayed-check \
+  --frame-root .local/session/native-camera
+```
+
+실행기는 수집 적격성·학습/평가 분리·실물 실행 허용 조건을 변경하지 않는다. 파일 시스템의 링크 읽기 자체를 허용하는 일반 뷰어와 별개로, 근거 감사에는 위의 해시 검증 문맥을 사용한다. 기존 무손실 보관 도구의 링크 거절은 유지하므로, 이관한 세션을 다시 보관할 때는 필요한 미디어를 검증한 새 물리 임시 세션으로 복사하거나 기존 무손실 보관소에서 복원한 뒤 사용한다. 비공개 명세와 원본은 공개 문서나 Git에 포함하지 않는다.
