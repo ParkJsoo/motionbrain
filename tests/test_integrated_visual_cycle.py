@@ -112,7 +112,7 @@ class IntegratedVisualCycleTests(unittest.TestCase):
         self.cb['execute_approach']=lambda decision,permit:self.h.action('release',permit)
         report=self.run_cycle()
         self.assertEqual(report['status'],'completed')
-        self.assertTrue(report['schemaVersion'].endswith('.v3'))
+        self.assertTrue(report['schemaVersion'].endswith('.v4'))
         self.assertEqual(report['commands'][0]['phase'],'approach')
         self.assertEqual(report['commands'][0]['command'],command('release'))
         self.assertEqual(len(decisions),2)
@@ -419,3 +419,64 @@ class IntegratedVisualCycleTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class IntegratedNativeAngleBudgetTests(unittest.TestCase):
+    def native(self):
+        return dict(mode='native_target_angle', joint='shoulder', direction='down',
+                    percent=75, targetAngleDeg=194.22, maxMotionSeconds=12.)
+
+    def setup_cycle(self, *, result='completed', max_seconds=900):
+        h = Hooks(); calls = []
+        def choose(observation):
+            if not calls:
+                return dict(selected=dict(kind='action', command=self.native()))
+            return dict(selected=dict(kind='stop'), stopReason='current_near_gripper_phase')
+        def execute(decision, permit):
+            calls.append('dispatch')
+            command = decision['selected']['command']; reservation = permit(command)
+            if result == 'unknown':
+                raise TimeoutError('native dispatch outcome unknown')
+            receipt = dict(status='completed', offVerified=result != 'off_unverified', command=command,
+                           nativeTargetReached=False, nativeTerminalReason='TARGET_MISSED')
+            permit.complete(reservation, receipt)
+            return dict(status='completed', modelSelectedCommands=1, commandReceipts=[receipt])
+        callbacks = h.callbacks(); callbacks.update(choose_approach=choose, execute_approach=execute)
+        return IntegratedVisualCycle(callbacks, clock=h.clock, max_seconds=max_seconds).run()
+
+    def test_native_target_counts_once_and_target_miss_is_not_phase_success(self):
+        report = self.setup_cycle()
+        self.assertEqual(report['status'], 'completed')
+        native = [r for r in report['commands'] if r['command'].get('mode') == 'native_target_angle']
+        self.assertEqual(len(native), 1)
+        self.assertFalse(native[0]['receipt']['nativeTargetReached'])
+        self.assertEqual(native[0]['receipt']['nativeTerminalReason'], 'TARGET_MISSED')
+        self.assertEqual(report['commandAttempts'], 7)
+
+    def test_native_unknown_keeps_one_unconfirmed_attempt_and_never_retries(self):
+        report = self.setup_cycle(result='unknown')
+        self.assertEqual(report['commandAttempts'], 1)
+        self.assertEqual(report['modelSelectedCommands'], 0)
+        self.assertEqual(report['unconfirmedCommands'], 1)
+        self.assertFalse(report['automaticRetry'])
+
+    def test_native_completion_requires_off_and_reserves_full_twelve_seconds(self):
+        report = self.setup_cycle(result='off_unverified')
+        self.assertEqual(report['modelSelectedCommands'], 0)
+        self.assertEqual(report['unconfirmedCommands'], 1)
+        report = self.setup_cycle(max_seconds=12.)
+        self.assertEqual(report['commandAttempts'], 0)
+        self.assertEqual(report['status'], 'failed')
+
+    def test_native_command_is_approach_only_and_cannot_masquerade_as_a_pulse(self):
+        from learning.integrated_visual_cycle import _command
+        for phase in ('close', 'lift', 'lower', 'release'):
+            with self.subTest(phase=phase), self.assertRaises(ValueError):
+                _command(phase, self.native())
+        for key, value in (('percent', 70), ('maxMotionSeconds', 13.), ('targetAngleDeg', float('nan'))):
+            command = self.native(); command[key] = value
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                _command('approach', command)
+        command = self.native(); command['durationMs'] = 1000
+        with self.assertRaises(ValueError):
+            _command('approach', command)

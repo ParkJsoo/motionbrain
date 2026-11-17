@@ -4,12 +4,15 @@
 
 2026-11-15에는 별도 개발 모델과 상위 에이전트의 단계별 진행으로 수동 준비 후 집기부터 해제까지 관측했다. [해당 실측과 한계](evidence/2026-11-15-prepared-scene-model-grasp-lift-release.md)는 아래 코어 자체의 통합 실물 성공이나 자동 단계 전환을 검증한 결과가 아니다.
 
-## 별도 ㄱ자 70%·1000ms 유한 상위 실행기
+## 별도 ㄱ자 유한 상위 실행기
 
 `learning/integrated_visual_cycle.py`의 `IntegratedVisualCycle`은 별도 스키마
-`motionbrain.integrated_visual_cycle.L_pose70_1000.v3`로 접근→폐합→들기·보유→내리기→해제를
-한 시도 안에서 진행한다. 이 경로의 후보는 70%·1000ms 고정이며 접근은 M3 UP/DOWN 또는
-모델이 선택한 M1 OPEN 단발로 영상 입력을 준비할 수 있고,
+`motionbrain.integrated_visual_cycle.L_pose_with_native_angle.v4`로 접근→폐합→들기·보유→내리기→해제를
+한 시도 안에서 진행한다. 기본 펄스 후보는 70%·1000ms이며 접근은 M3 UP/DOWN 또는
+모델이 선택한 M1 OPEN 단발로 영상 입력을 준비할 수 있다. 접근 단계에 한해 별도
+`mode=native_target_angle` 명령으로 M4 DOWN75%·최대 12초의 구체적인 목표각을 전달할 수 있다.
+이는 펄스와 다른 명령이며 같은 전체 예산에서 한 번으로 계수한다.
+
 폐합·해제는 M1 CLOSE/OPEN, 들기·내리기는 M3 UP/DOWN이다. 기존
 `FiniteTaskCycle`·`CurrentCycleRuntime`의 기본 후보 제한과 M4 전용 경로는 바꾸지 않는다.
 생성자에는 장치 포트나 자동 실행 기본값이 없으며 실제 연결은 명시적으로 주입한 콜백이 담당한다.
@@ -19,7 +22,10 @@
 `observe(phase)`는 재사용하지 않은 `observationId`와 현재 `observedAt`를 반환한다.
 동작 콜백은 실제 RUN 전에 `permit(command)`로 예산을 소모하고, 확인된 OFF 뒤
 `permit.complete(token, receipt)`를 호출한다. 영수증의 명령·완료 상태·OFF와
-반환한 `commandReceipts`·`modelSelectedCommands`가 일치해야 한다. 기본 예산은
+반환한 `commandReceipts`·`modelSelectedCommands`가 일치해야 한다. native 명령은 최대 12초의
+남은 전역 기한도 확인한다. 목표각 미달, 명령 전달·출력·OFF 확인, 실제 단계 성공은 서로 다른
+결과이며 원래 native 결과를 바꾸지 않는다. 정상 사후 관측으로 다음의 다른 목표를 선택하는
+처리와 실패 목표 재송을 구분하는 것은 실행 콜백의 책임이다. 기본 예산은
 전체 12명령·900초이며 단계별 상한은 접근 4, 폐합 6, 들기·내리기 각 1회, 해제 3회다.
 콜백은 같은 전역 기한과 기존 actor의 원장·부팅·출력·정지 검사를 유지하고,
 고정 모델의 현재 지원 검사 및 ARMED 뒤 새 관측·동일 후보 재선택을 직접 수행해야 한다.

@@ -1,4 +1,8 @@
-"""별도 ㄱ자 70%·1000ms 실험의 유한 상위 단계 진행기.
+"""별도 ㄱ자 실험의 유한 상위 단계 진행기.
+
+기본 후보는 70%·1000ms 펄스다. 접근 단계만 명시적 native 목표각
+(shoulder DOWN75%, 최대12초)을 별도 명령으로 계수한다. native 목표 미달과
+명령 전달·출력·OFF 확인, 전체 과업 단계 성공은 서로 다른 결과다.
 
 장치 접근 기능은 없다. 콜백은 고정 모델·현재 두 영상·ARM 직전 재선택과
 기존 actor의 정지/원장 검사를 소유한다. permit은 실행 허가를 대체하지 않는
@@ -14,7 +18,7 @@ import time
 
 from learning.manual_collection_dataset import require
 
-SCHEMA = 'motionbrain.integrated_visual_cycle.L_pose70_1000.v3'
+SCHEMA = 'motionbrain.integrated_visual_cycle.L_pose_with_native_angle.v4'
 PHASES = ('approach', 'close', 'lift', 'lower', 'release')
 DEFAULT_STAGE_LIMITS = dict(approach=4, close=6, lift=1, lower=1, release=3)
 
@@ -24,6 +28,15 @@ def _finite(value):
 
 
 def _command(phase, command):
+    if isinstance(command, dict) and command.get('mode') == 'native_target_angle':
+        require(phase == 'approach' and set(command) ==
+                {'mode', 'joint', 'direction', 'percent', 'targetAngleDeg', 'maxMotionSeconds'}
+                and command['joint'] == 'shoulder' and command['direction'] == 'down'
+                and type(command['percent']) is int and command['percent'] == 75
+                and _finite(command['targetAngleDeg']) and 127.58 < command['targetAngleDeg'] < 296.12
+                and _finite(command['maxMotionSeconds']) and command['maxMotionSeconds'] == 12.,
+                'integrated_native_angle_command_required')
+        return
     require(isinstance(command, dict) and set(command) ==
             {'joint', 'direction', 'percent', 'durationMs'}, 'integrated_command_fields')
     expected = {'approach': (('elbow', 'up'), ('elbow', 'down'), ('gripper', 'open')),
@@ -51,7 +64,9 @@ class _Permit:
                 'integrated_approach_selection_changed')
         require(sum(row['phase'] == self.phase for row in c.report['commands']) < c.stage_limits[self.phase] and
                 c.report['commandAttempts'] < c.max_commands, 'integrated_command_budget')
-        require(c.clock.monotonic()+command['durationMs']/1000 < c.deadline,
+        seconds = (command['maxMotionSeconds'] if command.get('mode') == 'native_target_angle'
+                   else command['durationMs']/1000)
+        require(c.clock.monotonic()+seconds < c.deadline,
                 'integrated_insufficient_command_time')
         token = object()
         row = dict(phase=self.phase, command=copy.deepcopy(command), status='unconfirmed',
@@ -93,7 +108,9 @@ class IntegratedVisualCycle:
     close에는 원본 afterDecision 및 별도 closeReady 판독이 필요하다. 모델
     STOP 또는 두 번 이상 폐합한 뒤의 명시적 영상 정체 규칙으로만 종료한다.
     후자는 모델 ACTION 판단을 유지하며 모델이 STOP을 선택했다고 기록하지 않는다.
-    접근은 M3 UP/DOWN 또는 M1 OPEN 단발을 비교할 수 있다. release 콜백은
+    접근은 M3 UP/DOWN, M1 OPEN 단발 또는 별도 native M4 목표각을 비교할 수 있다.
+    native 명령도 RUN 직전 예산을 예약하고 확인된 OFF 후 완료하며, 목표 미달을
+    단계 성공으로 치환하지 않는다. release 콜백은
     최대 세 개의 기존 1OPEN 실행 단위를 연결한다. 매 단위의 새 탁상 판정·
     모델 OPEN/STOP 비교·ARM 재선택은 콜백 책임이며 단발 모델의 예산 STOP을
     전체 해제 성공으로 취급하지 않는다. 최종 released 영상 판정은 별도다.
