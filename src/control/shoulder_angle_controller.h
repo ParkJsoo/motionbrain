@@ -4,6 +4,11 @@
 #include <Arduino.h>
 #include <stdint.h>
 
+// Commissioning candidate only; the default firmware retains 35% / 250 ms.
+#ifndef MOTIONBRAIN_ENABLE_BOUNDED_SHOULDER_DOWN_CORRECTION
+#define MOTIONBRAIN_ENABLE_BOUNDED_SHOULDER_DOWN_CORRECTION 0
+#endif
+
 class SystemStateManager;
 class RobotArm;
 class MotorControl;
@@ -48,12 +53,23 @@ public:
   static constexpr uint32_t SETTLE_TIME_MS = 600;
   static constexpr float CORRECTION_CUTOFF_ERROR_DEGREES = 0.20f;
   static constexpr uint8_t UP_CORRECTION_PERCENT = 75;
+#if MOTIONBRAIN_ENABLE_BOUNDED_SHOULDER_DOWN_CORRECTION
+  // Relative to MotorControl::getDefaultSpeed(), NOT 255. At defaultSpeed=100,
+  // this requests PWM 75; at 255, PWM 191. The timer still includes ramp time.
+  // This increases bounded output energy; it is not physical validation.
+  static constexpr uint8_t DOWN_CORRECTION_PERCENT = 75;
+#else
   static constexpr uint8_t DOWN_CORRECTION_PERCENT = 35;
+#endif
   // Upward loaded moves need enough time for MotorControl's 50 ms / 10-count
-  // PWM ramp to cross static friction. Target cutoff, timeout, and the four
+  // PWM ramp to cross static friction. Target cutoff, timeout, and the six
   // attempt cap still bound the correction before this maximum duration.
   static constexpr uint32_t UP_CORRECTION_PULSE_MS = 500;
+#if MOTIONBRAIN_ENABLE_BOUNDED_SHOULDER_DOWN_CORRECTION
+  static constexpr uint32_t DOWN_CORRECTION_PULSE_MS = 500;
+#else
   static constexpr uint32_t DOWN_CORRECTION_PULSE_MS = 250;
+#endif
   // Keep correction pulses unchanged, but allow two additional bounded
   // attempts for small moves that settle just outside acceptance.
   static constexpr uint8_t MAX_CORRECTION_ATTEMPTS = 6;

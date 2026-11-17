@@ -438,6 +438,17 @@ void ShoulderAngleController::appendShoulderStatusJson(String& json) const {
   json += String(STOP_THRESHOLD_WINDOW_DEGREES, 2);
   json += ",\"upCorrectionPercent\":";
   json += String(UP_CORRECTION_PERCENT);
+  json += ",\"boundedDownCorrectionEnabled\":";
+#if MOTIONBRAIN_ENABLE_BOUNDED_SHOULDER_DOWN_CORRECTION
+  json += "true";
+#else
+  json += "false";
+#endif
+  json += ",\"motorDefaultSpeed\":";
+  json += String(available ? motorControl_->getDefaultSpeed() : 0);
+  json += ",\"downCorrectionTargetPwm\":";
+  json += String(available
+    ? (uint16_t)motorControl_->getDefaultSpeed() * DOWN_CORRECTION_PERCENT / 100 : 0);
   json += ",\"downCorrectionPercent\":";
   json += String(DOWN_CORRECTION_PERCENT);
   json += ",\"upCorrectionPulseMs\":";

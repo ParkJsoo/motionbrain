@@ -93,6 +93,24 @@ class ShoulderClosedLoopContractTest(unittest.TestCase):
             with self.subTest(status_field=field):
                 self.assertIn(field, source)
 
+    def test_bounded_down_correction_requires_explicit_build(self):
+        header = (ROOT / "src/control/shoulder_angle_controller.h").read_text()
+        source = (ROOT / "src/control/shoulder_angle_controller.cpp").read_text()
+        config = (ROOT / "platformio.ini").read_text()
+        flag = "MOTIONBRAIN_ENABLE_BOUNDED_SHOULDER_DOWN_CORRECTION"
+        self.assertIn(f"#ifndef {flag}\n#define {flag} 0", header)
+        self.assertIn("[env:esp32dev_m4_bounded_down_correction]", config)
+        self.assertEqual(config.count(f"-D{flag}=1"), 1)
+        candidate = config.split("[env:esp32dev_m4_bounded_down_correction]", 1)[1].split("\n[", 1)[0]
+        self.assertIn("extends = env:esp32dev_m4_goal_guard", candidate)
+        self.assertIn("${env:esp32dev_m4_goal_guard.build_flags}", candidate)
+        guard = config.split("[env:esp32dev_m4_goal_guard]", 1)[1].split("\n[", 1)[0]
+        self.assertIn("-DMOTIONBRAIN_ENABLE_M4_GOAL_GUARD=1", guard)
+
+        self.assertIn("default_envs = esp32dev", config)
+        for field in ("boundedDownCorrectionEnabled", "motorDefaultSpeed", "downCorrectionTargetPwm"):
+            self.assertIn(field, source)
+
     def test_http_dashboard_exposes_read_only_shoulder_feedback(self):
         web = (ROOT / "src" / "network" / "web_server.cpp").read_text()
         dashboard = (ROOT / "tools" / "motionbrain_dashboard.py").read_text()
