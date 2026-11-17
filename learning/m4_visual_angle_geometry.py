@@ -134,8 +134,21 @@ def _current(model, current):
     return point, target, angle
 
 
-def predict(model, current, target_angle_deg):
-    point, target, angle = _current(model, current); policy = model['supportPolicy']
+def _objective(observed_target, objective_point_px):
+    if objective_point_px is None:
+        return observed_target, {}
+    point = _point(objective_point_px)
+    binding = dict(schemaVersion=SCHEMA+'.objective', pointPx=point.tolist(),
+        coordinateFrame='external_image_1920x1080',
+        meaning='explicit_2d_planning_goal_not_observed_object_center_or_physical_grasp_point',
+        learnedModelChanged=False)
+    return point, dict(objectiveBinding=binding, objectiveBindingSha256=digest(binding))
+
+
+def predict(model, current, target_angle_deg, *, objective_point_px=None):
+    """명시 2D 목표는 비용만 바꾸며 원 관측·학습 모델·지원 한도는 유지한다."""
+    point, observed_target, angle = _current(model, current)
+    target, objective = _objective(observed_target, objective_point_px); policy = model['supportPolicy']
     _require(_number(target_angle_deg), 'geometry_target_angle_required')
     delta = float(target_angle_deg)-angle
     _require(-8. <= delta < 0., 'geometry_planned_down_zero_to_eight_degrees_only')
@@ -152,23 +165,26 @@ def predict(model, current, target_angle_deg):
         commandMeanPointPx=baseline.tolist(), commandMeanErrorPx=float(np.linalg.norm(baseline-target)),
         support=dict(sourceAngleRangeDeg=model['sourceAngleRangeDeg'], sourceAngleExpansionDeg=8.,
             maximumPlannedDecreaseDeg=8., localHypothesis=True, safetyBound=False),
-        calibratedUncertainty=False, uncertaintyInterval=None)
+        calibratedUncertainty=False, uncertaintyInterval=None, **objective)
 
 
-def select(model, current, goal_candidates, *, commands_used=0):
-    point, target, angle = _current(model, current)
+def select(model, current, goal_candidates, *, commands_used=0, objective_point_px=None):
+    """모든 후보·기준선·STOP을 같은 목표로 비교하고 목표 바인딩은 원 입력과 분리한다."""
+    point, observed_target, angle = _current(model, current)
+    target, objective = _objective(observed_target, objective_point_px)
     _require(type(commands_used) is int and 0 <= commands_used <= 3, 'geometry_command_budget')
     _require(isinstance(goal_candidates, list) and 1 <= len(goal_candidates) <= 32
              and all(_number(v) for v in goal_candidates)
              and len(set(goal_candidates)) == len(goal_candidates), 'geometry_explicit_distinct_goal_candidates')
     distance = float(np.linalg.norm(point-target))
     stop = dict(kind='stop', targetAngleDeg=None, deltaAngleDeg=0., predictedVirtualPointPx=point.tolist(),
-                errorPx=distance, commandMeanErrorPx=distance)
+                errorPx=distance, commandMeanErrorPx=distance, **copy.deepcopy(objective))
     ranked, rejected = [stop], []
     if commands_used < 3:
         for candidate in goal_candidates:
             if candidate == angle: continue
-            try: ranked.append(dict(kind='target_angle', **predict(model, current, candidate)))
+            try: ranked.append(dict(kind='target_angle', **predict(model, current, candidate,
+                                                                   objective_point_px=objective_point_px)))
             except ValueError as exc: rejected.append(dict(targetAngleDeg=candidate, reason=str(exc)))
     ranked.sort(key=lambda row: row['errorPx'])
     reason = ('command_budget_exhausted' if commands_used == 3 else
@@ -177,4 +193,4 @@ def select(model, current, goal_candidates, *, commands_used=0):
         observationContractSha256=model['observationContractSha256'], selected=copy.deepcopy(ranked[0]),
         candidates=ranked, rejected=rejected, selectionReason=reason, commandsUsed=commands_used,
         maximumCommands=3, currentDistancePx=distance, controlEligible=False, developmentOnly=True,
-        calibratedUncertainty=False, safetyBound=False, graspVerified=False, liftVerified=False)
+        calibratedUncertainty=False, safetyBound=False, graspVerified=False, liftVerified=False, **copy.deepcopy(objective))
