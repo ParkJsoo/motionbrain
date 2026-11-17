@@ -76,8 +76,34 @@ class Device(Controller):
         return result
 
 
+class OperatorRoleActor(actor.FiniteShoulderAngleActor):
+    """독립 목표 역할이 공용 native 실행·raw 검증을 그대로 통과하는지 검사한다."""
+    @staticmethod
+    def validate_scope(scope):
+        expected={'schemaVersion','trialId','controllerUrl','controllerBootId','cameraBootId','instruction',
+                  'initialInstruction','initialInstructionSha256','expectedStartAngleDeg','targetAngleDeg',
+                  'percent','maxMotionSeconds','maxObservationAgeSeconds'}
+        if set(scope)!=expected or scope['schemaVersion']!='test.operator_angle.v1':
+            raise ValueError('operator_scope')
+        actor._validate_motion_fields(scope)
+        if (scope['initialInstruction'].get('targetAngleDeg')!=scope['targetAngleDeg'] or
+                scope['initialInstruction'].get('modelSelected') is not False or
+                plan_digest(scope['initialInstruction'])!=scope['initialInstructionSha256']):
+            raise ValueError('operator_instruction')
+        return copy.deepcopy(scope)
+    def _observation_asset(self):return self.scope['instruction']
+    def _role_report_fields(self):return dict(modelSelected=False,manualPreparation=True)
+    def _validate_role_record(self,record,stage):
+        if (record.get('schemaVersion')!='test.operator_raw_dual.v1' or record.get('stage')!=stage or
+                record.get('instructionSha256')!=self.scope['instruction']['sha256'] or
+                record.get('instructionDigest')!=plan_digest(record['instruction']) or
+                record.get('instruction')!=self.scope['initialInstruction'] or
+                record.get('targetAngleDeg')!=self.scope['targetAngleDeg']):
+            raise ValueError('operator_raw_confirmation')
+
+
 class FiniteShoulderAngleActorTests(unittest.TestCase):
-    def setup_actor(self,*,mode='normal',observation_mode=None):
+    def setup_actor(self,*,mode='normal',observation_mode=None,operator_role=False):
         directory=tempfile.TemporaryDirectory();self.addCleanup(directory.cleanup)
         root=Path(directory.name);assets=root/'assets';assets.mkdir();clock=Clock()
         model=assets/'model.json';model.write_text('{"frozen":true}')
@@ -87,6 +113,12 @@ class FiniteShoulderAngleActorTests(unittest.TestCase):
             controllerBootId='a'*32,cameraBootId='b'*32,model=model_ref,initialDecision=initial,
             initialDecisionSha256=plan_digest(initial),expectedStartAngleDeg=193.,targetAngleDeg=190.,
             percent=75,maxMotionSeconds=12.,maxObservationAgeSeconds=3.)
+        if operator_role:
+            scope['schemaVersion']='test.operator_angle.v1'
+            scope['instruction']=scope.pop('model')
+            scope.pop('initialDecision');scope.pop('initialDecisionSha256')
+            scope['initialInstruction']=dict(targetAngleDeg=190.,modelSelected=False,role='operator')
+            scope['initialInstructionSha256']=plan_digest(scope['initialInstruction'])
         records=[]
         def observe(stage,snapshot):
             clock.sleep(.05);sources={}
@@ -120,13 +152,19 @@ class FiniteShoulderAngleActorTests(unittest.TestCase):
             decision=dict(targetAngleDeg=target,stage=stage)
             record=dict(schemaVersion=actor.OBSERVATION_SCHEMA,stage=stage,modelSha256=model_ref['sha256'],
                 targetAngleDeg=target,decision=decision,decisionSha256=plan_digest(decision),sources=sources)
+            if operator_role:
+                confirmation=dict(scope['initialInstruction'],targetAngleDeg=target)
+                record=dict(schemaVersion='test.operator_raw_dual.v1',stage=stage,
+                    instructionSha256=model_ref['sha256'],instruction=confirmation,
+                    instructionDigest=plan_digest(confirmation),targetAngleDeg=target,sources=sources)
             if stage=='armed' and observation_mode=='armed_drift':device.angle=194.
             if stage=='armed' and observation_mode=='armed_output':device.append(2,20)
             records.append(record);return record
         path=root/'journal.sqlite'
         journal=BoundedActionJournal(str(path),10000);journal.close()
         store=ArtifactStore(root/'run')
-        result=actor.FiniteShoulderAngleActor(scope,store,'secret',journal_path=path,asset_root=assets,
+        actor_type=OperatorRoleActor if operator_role else actor.FiniteShoulderAngleActor
+        result=actor_type(scope,store,'secret',journal_path=path,asset_root=assets,
                                              observe_and_select=observe,clock=clock)
         device=Device(clock,mode);result.port.opener=device
         return result,device,records,path
@@ -139,7 +177,7 @@ class FiniteShoulderAngleActorTests(unittest.TestCase):
         self.assertEqual(result['status'],'completed',result)
         self.assertTrue(result['deviceTargetReached']);self.assertTrue(result['finalIdleOffVerified'])
         self.assertTrue(result['nativeReportedTargetReached']);self.assertTrue(result['actualAngleWithinNativeTolerance'])
-        self.assertFalse(result['taskGoalEvaluated'])
+        self.assertFalse(result['taskGoalEvaluated']);self.assertTrue(result['modelSelected'])
         self.assertAlmostEqual(result['actualAngleErrorDeg'],.2)
         self.assertEqual([record['stage'] for record in records],['before','armed','after'])
         self.assertEqual(sum(route=='/shoulder' for route,_ in device.requests),1)
@@ -231,4 +269,63 @@ class FiniteShoulderAngleActorTests(unittest.TestCase):
         for changes in (dict(targetAngleDeg=194.),dict(percent=100),dict(initialDecisionSha256='f'*64)):
             with self.subTest(changes=changes),self.assertRaises(ValueError):
                 actor.validate_scope(dict(instance.scope,**changes))
+        self.assertFalse(device.requests)
+
+
+    def test_operator_role_persists_without_model_while_reusing_one_run_OFF_and_journal(self):
+        instance,device,records,path=self.setup_actor(operator_role=True)
+        self.assertNotIn('model',instance.scope)
+        result=self.run_actor(instance)
+        self.assertEqual(result['status'],'completed',result)
+        self.assertFalse(result['modelSelected']);self.assertTrue(result['manualPreparation'])
+        self.assertTrue(result['finalIdleOffVerified']);self.assertFalse(result['taskGoalEvaluated'])
+        self.assertEqual(sum(route=='/shoulder' for route,_ in device.requests),1)
+        self.assertEqual([r['stage'] for r in records],['before','armed','after'])
+        persisted=json.loads((instance.store.root/'result.json').read_bytes())
+        self.assertFalse(persisted['modelSelected'])
+        journal=BoundedActionJournal(str(path),10000)
+        try:
+            phase,raw=journal.connection.execute('SELECT phase,result_json FROM supervised_blocks WHERE session_id=?',
+                (instance.scope['trialId'],)).fetchone()
+            self.assertEqual(phase,'closed');self.assertFalse(json.loads(raw)['modelSelected'])
+        finally:journal.close()
+        with self.assertRaisesRegex(ValueError,'unconsumed'):self.run_actor(instance)
+
+    def test_operator_role_cannot_bypass_raw_freshness_ARM_or_native_hard_limits(self):
+        for mode in ('stale','same_frame','metadata_forged','pixels_changed','gripper_binding','armed_drift','armed_output','goal_changed'):
+            with self.subTest(mode=mode):
+                instance,device,_,_=self.setup_actor(operator_role=True,observation_mode=mode)
+                result=self.run_actor(instance)
+                self.assertFalse(result['mayHaveRun'],result)
+                self.assertFalse(result['modelSelected'])
+                self.assertFalse(any(route=='/shoulder' for route,_ in device.requests))
+                self.assertTrue(result['finalIdleOffVerified'])
+        instance,device,_,_=self.setup_actor(operator_role=True)
+        for changes in (dict(targetAngleDeg=194.),dict(percent=100),dict(maxMotionSeconds=20.)):
+            with self.subTest(changes=changes),self.assertRaises(ValueError):
+                OperatorRoleActor.validate_scope(dict(instance.scope,**changes))
+        self.assertFalse(device.requests)
+
+    def test_operator_role_shared_unresolved_journal_blocks_before_hardware(self):
+        instance,device,_,path=self.setup_actor(operator_role=True)
+        journal=BoundedActionJournal(str(path),10000)
+        try:
+            with journal.connection:
+                journal.connection.execute('CREATE TABLE supervised_blocks (session_id TEXT PRIMARY KEY,plan_hash TEXT NOT NULL,output_path TEXT NOT NULL,phase TEXT NOT NULL,result_json TEXT)')
+                journal.connection.execute('INSERT INTO supervised_blocks VALUES (?,?,?,?,NULL)',('prior','hash','path','off_unverified'))
+        finally:journal.close()
+        result=self.run_actor(instance)
+        self.assertFalse(device.requests);self.assertFalse(result['modelSelected'])
+        self.assertEqual(result['commandOutcome'],'not_started')
+        self.assertEqual(result['errors'][0]['reason'],'shoulder_angle_shared_block_unresolved')
+
+
+    def test_role_validator_cannot_skip_shared_native_limits_before_transport(self):
+        instance,device,_,_=self.setup_actor(operator_role=True)
+        class IncompleteRoleValidator(OperatorRoleActor):
+            validate_scope=staticmethod(copy.deepcopy)
+        with self.assertRaisesRegex(ValueError,'fixed_policy'):
+            IncompleteRoleValidator(dict(instance.scope,percent=100),None,'secret',
+                journal_path=instance.journal_path,asset_root=instance.asset_root,
+                observe_and_select=lambda *args:None,clock=instance.clock)
         self.assertFalse(device.requests)

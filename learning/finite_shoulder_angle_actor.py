@@ -36,6 +36,16 @@ def validate_scope(scope):
             'maxMotionSeconds','maxObservationAgeSeconds'}
     require(isinstance(scope,dict) and set(scope)==fields and scope['schemaVersion']==SCHEMA,
             'shoulder_angle_scope_fields')
+    _validate_motion_fields(scope)
+    require(isinstance(scope['initialDecision'],dict)
+            and scope['initialDecision'].get('targetAngleDeg')==scope['targetAngleDeg']
+            and plan_digest(scope['initialDecision'])==scope['initialDecisionSha256'],
+            'shoulder_angle_initial_selection')
+    return copy.deepcopy(scope)
+
+
+def _validate_motion_fields(scope):
+    """모델/사용자 목표 역할과 무관한 동일 native 동작 한도."""
     require(identifier(scope['trialId']) and all(isinstance(scope[k],str) and len(scope[k])==32
             and all(c in '0123456789abcdef' for c in scope[k]) for k in ('controllerBootId','cameraBootId')),
             'shoulder_angle_identity')
@@ -45,11 +55,6 @@ def validate_scope(scope):
             'shoulder_angle_finite_down_goal')
     require(type(scope['percent']) is int and scope['percent']==75 and scope['maxMotionSeconds']==12.
             and scope['maxObservationAgeSeconds']==3.,'shoulder_angle_fixed_policy')
-    require(isinstance(scope['initialDecision'],dict)
-            and scope['initialDecision'].get('targetAngleDeg')==scope['targetAngleDeg']
-            and plan_digest(scope['initialDecision'])==scope['initialDecisionSha256'],
-            'shoulder_angle_initial_selection')
-    return copy.deepcopy(scope)
 
 
 class _AnglePort(SequencePort):
@@ -65,8 +70,12 @@ class _AnglePort(SequencePort):
 
 
 class FiniteShoulderAngleActor:
+    validate_scope = staticmethod(validate_scope)
+
     def __init__(self,scope,store,token,*,journal_path,asset_root,observe_and_select,clock=time):
-        self.scope=validate_scope(scope);self.digest=plan_digest(self.scope)
+        self.scope=self.validate_scope(scope)
+        # 역할별 schema 검증과 별도로 동일 native 동작 한도는 항상 적용한다.
+        _validate_motion_fields(self.scope);self.digest=plan_digest(self.scope)
         require(callable(observe_and_select),'shoulder_angle_observer_required')
         self.store=store;self.asset_root=Path(asset_root).resolve();self.journal_path=Path(journal_path)
         self.observe_and_select=observe_and_select;self.clock=clock;self.used=False;self.observations=[]
@@ -83,9 +92,13 @@ class FiniteShoulderAngleActor:
     def _memory(self):
         require(plan_digest(self.scope)==self.digest,'shoulder_angle_scope_changed')
 
-    def _observe(self,stage,snapshot):
-        self._memory();self._binding(self.scope['model'])
-        record=self.observe_and_select(stage,copy.deepcopy(snapshot))
+    def _observation_asset(self):
+        return self.scope['model']
+
+    def _role_report_fields(self):
+        return dict(modelSelected=True)
+
+    def _validate_role_record(self,record,stage):
         require(isinstance(record,dict) and record.get('schemaVersion')==OBSERVATION_SCHEMA
                 and record.get('stage')==stage and record.get('modelSha256')==self.scope['model']['sha256']
                 and isinstance(record.get('decision'),dict)
@@ -95,6 +108,11 @@ class FiniteShoulderAngleActor:
             require(record.get('targetAngleDeg')==self.scope['targetAngleDeg']
                     and record['decision'].get('targetAngleDeg')==self.scope['targetAngleDeg'],
                     'shoulder_angle_fresh_selection_changed')
+
+    def _observe(self,stage,snapshot):
+        self._memory();self._binding(self._observation_asset())
+        record=self.observe_and_select(stage,copy.deepcopy(snapshot))
+        self._validate_role_record(record,stage)
         sources=record.get('sources')
         require(isinstance(sources,dict) and set(sources)=={'external','gripper'},'shoulder_angle_dual_sources')
         for camera,source in sources.items():
@@ -159,7 +177,7 @@ class FiniteShoulderAngleActor:
         report=dict(schemaVersion=SCHEMA,scopeSha256=self.digest,status='failed',commandOutcome='not_started',
             mayHaveRun=False,finalIdleOffVerified=False,nativeTerminalReason=None,deviceTargetReached=False,
             nativeReportedTargetReached=False,actualAngleWithinNativeTolerance=None,
-            taskGoalEvaluated=False,modelSelected=True,automaticRetry=False,errors=[])
+            taskGoalEvaluated=False,automaticRetry=False,errors=[],**self._role_report_fields())
         try:
             require(self.journal_path.is_file(),'shoulder_angle_existing_shared_journal_required')
             journal=BoundedActionJournal(str(self.journal_path),10000)
