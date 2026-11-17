@@ -257,9 +257,13 @@ def select(model,current,target_point_px,candidates=None,*,commands_used=0):
                     commandMeanErrorPx=float(np.linalg.norm(np.array(response['commandMeanState'][:2])-goal))))
             except ValueError as e:rejected.append(dict(command=copy.deepcopy(command),reason=str(e)))
     ranked.sort(key=lambda r:r['errorPx'])
+    predicted=any(r['kind']=='action' for r in ranked)
+    owner=('budget_guard' if commands_used else 'direct_observed_M3_categorical_response_comparison'
+           if predicted else 'admission_guard')
     return dict(schemaVersion=SCHEMA+'.decision',selected=copy.deepcopy(ranked[0]),candidates=ranked,rejected=rejected,
         modelSha256=digest(model),inputSha256=digest(current),projectionContractSha256=model['projectionContractSha256'],
         objectiveBinding=binding,objectiveBindingSha256=digest(binding),commandsUsed=commands_used,maximumCommands=1,
-        selectionOwner='direct_observed_M3_categorical_response_comparison',controlEligible=False,
+        selectionOwner=owner,controlEligible=False,modelPredictionPerformed=predicted,
+        modelSelectedStop=not commands_used and predicted and ranked[0]['kind']=='stop',
         modelSelectedAction=ranked[0]['kind']=='action',prospectivelyTested=False,
         selectionReason='command_budget_exhausted' if commands_used else 'minimum_predicted_tool_goal_distance')

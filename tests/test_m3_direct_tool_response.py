@@ -76,8 +76,11 @@ class DirectToolTests(unittest.TestCase):
         self.assertEqual(result['selected']['command'],direct.COMMANDS[0]);self.assertFalse(result['controlEligible'])
         self.assertEqual(len(result['candidates']),3);self.assertEqual(result['maximumCommands'],1)
         stopped=direct.select(model,current,[938.,375.]);self.assertEqual(stopped['selected']['kind'],'stop')
+        self.assertTrue(stopped['modelSelectedStop']);self.assertTrue(stopped['modelPredictionPerformed'])
         exhausted=direct.select(model,current,[942.,383.],commands_used=1);self.assertEqual(exhausted['selected']['kind'],'stop')
         self.assertEqual(len(exhausted['candidates']),1)
+        self.assertEqual(exhausted['selectionOwner'],'budget_guard')
+        self.assertFalse(exhausted['modelSelectedStop']);self.assertFalse(exhausted['modelPredictionPerformed'])
     def test_local_support_and_reaudited_source_guards_cannot_be_relaxed(self):
         model=self.fit()
         with self.assertRaisesRegex(ValueError,'declared_support'):direct.predict(model,self.obs(m4=212.),direct.COMMANDS[0])
@@ -93,5 +96,7 @@ class DirectToolTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'exact_command_not_trained'):direct.predict(model,self.obs(),direct.COMMANDS[1])
         result=direct.select(model,self.obs(),[942.,383.],candidates=[direct.COMMANDS[1]])
         self.assertEqual(result['selected']['kind'],'stop');self.assertEqual(len(result['rejected']),1)
+        self.assertEqual(result['selectionOwner'],'admission_guard')
+        self.assertFalse(result['modelSelectedStop']);self.assertFalse(result['modelPredictionPerformed'])
 
 if __name__=='__main__':unittest.main()
