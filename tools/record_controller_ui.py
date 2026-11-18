@@ -12,7 +12,7 @@ import re
 import os
 import tempfile
 import secrets
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 import hashlib
 import json
 import threading
@@ -402,8 +402,34 @@ def make_server(controller, output, port=8768, *, ready_file=None, opener=None):
     # Editing the source on disk only affects a newly started server.
     instrumentation = JS.read_bytes()
     log = EventLog(output, instrumentation=instrumentation)
-    forward_lock = threading.Lock()
+    motion_lock = threading.Lock()
     control_lock = threading.RLock()
+    arm_finished = threading.Condition(control_lock)
+    arm_inflight = False
+
+    @contextmanager
+    def forward_order(path, stopping):
+        nonlocal arm_inflight
+        if stopping:
+            # A motor/joint STOP addresses its own axis, even if another axis
+            # is active. Firmware invalidates covered START/RENEW requests.
+            # Only ARM is unversioned and must finish before STOP/DISARM.
+            with arm_finished:
+                arm_finished.wait_for(lambda: not arm_inflight)
+            yield
+        else:
+            with motion_lock:
+                if path == "/command":
+                    with arm_finished:
+                        arm_inflight = True
+                try:
+                    yield
+                finally:
+                    if path == "/command":
+                        with arm_finished:
+                            arm_inflight = False
+                            arm_finished.notify_all()
+
     control = dict(
         generation=0,
         stopPending=0,
@@ -863,13 +889,12 @@ def make_server(controller, output, port=8768, *, ready_file=None, opener=None):
                     requestReceivedMonotonic=received,
                     bodyPresent=raw is not None,
                 )
-                # Serialize actual controller writes. STOP admission cancels queued older
-                # writes before this lock; an already in-flight write must finish/timeout
-                # before STOP can be sent. urllib timeout=3 is an individual socket
-                # I/O timeout, NOT a whole-request wall-clock bound. No instant STOP
-                # latency or wire-level ordering after an unknown transport is claimed.
                 try:
-                    with forward_lock if self.command == "POST" else nullcontext():
+                    order = (
+                        forward_order(path, stopping)
+                        if self.command == "POST" else nullcontext()
+                    )
+                    with order:
                         if self.command == "POST" and not stopping:
                             with control_lock:
                                 independent_state = status_for(
@@ -965,7 +990,8 @@ def make_server(controller, output, port=8768, *, ready_file=None, opener=None):
                                 raise ValueError("upstream size")
                         except Exception:
                             if self.command == "POST":
-                                control["unknown"] = True
+                                with control_lock:
+                                    control["unknown"] = True
                             raise
                         log.write(
                             "proxy_response",

@@ -33,6 +33,7 @@ class Capture(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.ready = self.root / "live.json"
         self.requests = []
+        self.fake_controller = None
         self.fail = False
         self.forged_upstream = False
         self.hold = False
@@ -41,6 +42,8 @@ class Capture(unittest.TestCase):
 
         def upstream(request, timeout):
             self.requests.append(request)
+            if self.fake_controller:
+                return self.fake_controller(request)
             if self.hold and request.method == "POST":
                 self.hold = False
                 self.transport_started.set()
@@ -393,7 +396,7 @@ class Capture(unittest.TestCase):
         finally:
             self.server.capture_log.file = real
 
-    def test_stop_barrier_discards_queued_lease_and_serializes_inflight(self):
+    def test_stop_bypasses_inflight_lease_and_discards_queued_lease(self):
         self.establish()
         self.hold = True
         answers = {}
@@ -445,14 +448,9 @@ class Capture(unittest.TestCase):
             target=request, args=("stop", "/motor?action=stop&id=3", "fixture:6")
         )
         stop.start()
-        deadline = time.monotonic() + 1
-        while time.monotonic() < deadline:
-            if any(
-                r.get("captureId") == "fixture:6" and r["kind"] == "proxy_request"
-                for r in self.logs()
-            ):
-                break
-            time.sleep(0.005)
+        stop.join(1)
+        self.assertEqual(answers.get("stop"), 200)
+        self.assertTrue(first.is_alive())
         self.transport_release.set()
         for t in (first, lease, stop):
             t.join(2)
@@ -497,6 +495,101 @@ class Capture(unittest.TestCase):
             )[0],
             200,
         )
+
+    def async_post(self, path, sequence):
+        result = []
+        thread = threading.Thread(target=lambda: result.append(
+            self.post(path, **{"X-UI-Capture-ID": f"fixture:{sequence}"})[0]
+        ))
+        thread.start()
+        return thread, result
+
+    def test_release_before_slow_shoulder_start_is_processed(self):
+        # Episode 07: release arrived 408ms after START; START took 1106ms.
+        self.establish()
+        started = threading.Event()
+        generation = 1
+        pwm_writes = []
+
+        def slow_controller(request):
+            nonlocal generation
+            params = urllib.parse.parse_qs(urllib.parse.urlsplit(request.full_url).query)
+            response = Response(b'{"success":true}')
+            if params["action"] == ["stop"]:
+                generation += 1
+                pwm_writes.append(0)
+            else:
+                started.set()
+                time.sleep(1.106)
+                if int(params["expectedGeneration"][0]) != generation:
+                    response = Response(b'{"success":false,"error":"generation mismatch"}')
+                    response.code = 409
+                else:
+                    pwm_writes.append(179)
+            return response
+
+        self.fake_controller = slow_controller
+        path = "/joint?joint=shoulder&action=up&percent=70&lease=start&expectedBootId=" + "a"*32 + "&expectedGeneration=1"
+        thread, result = self.async_post(path, 4)
+        self.assertTrue(started.wait(1))
+        time.sleep(0.408)
+        self.assertEqual(self.post("/joint?joint=shoulder&action=stop",
+                                   **{"X-UI-Capture-ID": "fixture:5"})[0], 200)
+        self.assertTrue(thread.is_alive())
+        thread.join(2)
+        self.assertEqual(result, [409])
+        self.assertEqual(pwm_writes, [0])
+        rows = self.logs()
+        stop_sent = next(r["hostMonotonic"] for r in rows
+                         if r["kind"] == "proxy_dispatch" and r.get("captureId") == "fixture:5")
+        start_reply = next(r["hostMonotonic"] for r in rows
+                           if r["kind"] == "proxy_response" and r.get("captureId") == "fixture:4")
+        self.assertLess(stop_sent, start_reply)
+
+    def test_other_axis_stop_and_disarm_bypass_slow_renewal(self):
+        self.establish()
+        self.hold = True
+        path = "/motor?id=4&action=forward&percent=70&lease=renew&leaseId=" + "a"*32 + "-4-00000002&leaseSeq=1"
+        renew, result = self.async_post(path, 4)
+        self.assertTrue(self.transport_started.wait(1))
+        try:
+            for sequence, path in enumerate(("/motor?id=3&action=stop", "/command?cmd=disarm"), 5):
+                stop, stopped = self.async_post(path, sequence)
+                stop.join(0.8)
+                self.assertEqual(stopped, [200])
+                self.assertTrue(renew.is_alive())
+        finally:
+            self.transport_release.set()
+            renew.join(2)
+        self.assertEqual(result, [200])
+
+    def test_disarm_orders_unversioned_arm_and_invalidates_queued_motion(self):
+        self.establish()
+        self.hold = True
+        arm, armed = self.async_post("/command?cmd=arm", 4)
+        self.assertTrue(self.transport_started.wait(1))
+        queued, motion = self.async_post("/joint?joint=shoulder&action=up&percent=70", 5)
+        def wait_admitted(sequence):
+            deadline = time.monotonic() + 1
+            while time.monotonic() < deadline:
+                if any(r["kind"] == "proxy_request" and r.get("captureId") == f"fixture:{sequence}"
+                       for r in self.logs()):
+                    return
+                time.sleep(0.005)
+            raise AssertionError(f"request {sequence} did not arrive")
+        wait_admitted(5)
+        disarm, disarmed = self.async_post("/command?cmd=disarm", 6)
+        wait_admitted(6)
+        try:
+            self.assertTrue(disarm.is_alive())
+            self.assertEqual(len(self.requests), 1)
+        finally:
+            self.transport_release.set()
+            for thread in (arm, queued, disarm):
+                thread.join(2)
+        self.assertEqual((armed, motion, disarmed), ([200], [409], [200]))
+        self.assertEqual([r.full_url.split("?")[1] for r in self.requests],
+                         ["cmd=arm", "cmd=disarm"])
 
     def test_unknown_transport_blocks_followup_run_but_not_stop(self):
         self.establish()
