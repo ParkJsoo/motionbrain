@@ -4,6 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 import cv2
 import numpy as np
@@ -138,6 +139,73 @@ class CoreBridgeTests(unittest.TestCase):
         outside=self.projector.observe(raw,212.)
         with self.assertRaisesRegex(ValueError,'declared_support'):bridge.predict(self.projector,self.audit,outside,direct.COMMANDS[0])
         with self.assertRaises(ValueError):bridge.select(self.projector,None,current,[942.,383.],commands_used=1)
+    def dark_projector(self):
+        return bridge.CoreBridgeProjector(self.raw_model,self.fixture.seed,pair_policy='unique_dark_support_v1')
+    def ambiguous_image(self):
+        image=self.fixture.image.copy();cv2.ellipse(image,(1083,350),(9,10),0,0,360,(80,110,65),-1);return image
+    def test_dark_pair_policy_is_opt_in_and_strict_hash_stays_unchanged(self):
+        self.assertEqual(bridge.digest(bridge.observer_policy()),'dce6cf9e6e67c18f122e40824f0c91b98fd4ff78ad1838106f751a39114b3874')
+        self.assertEqual(bridge.observer_policy(),bridge.observer_policy('strict'))
+        self.assertNotIn('pairSelectionPolicy',bridge.observer_policy())
+        p=self.dark_projector();self.assertNotEqual(p.binding,self.projector.binding);self.assertNotEqual(p.observer_sha256,self.projector.observer_sha256)
+        image=self.ambiguous_image();raw=self.encode(image)
+        with self.assertRaisesRegex(ValueError,'marker_pair_missing_or_ambiguous'):self.projector.observe(raw,195.29)
+        value=p.observe(raw,195.29);bridge.observation(p,value)
+        self.assertEqual(value['quality']['pairSelection']['distanceEligiblePairs'],2);self.assertEqual(value['quality']['pairSelection']['darkSupportedPairs'],1)
+        np.testing.assert_allclose(value['state'][:2],[938.,375.],atol=1e-8,rtol=0.)
+        original=self.fixture.projector.observe(self.fixture.raw(),195.29);self.assertEqual(value['markerPair'],original['markerPair'])
+        p.pair_policy='strict'
+        with self.assertRaisesRegex(ValueError,'projector_changed'):p.observe(raw,195.29)
+        with self.assertRaisesRegex(ValueError,'pair_policy_required'):bridge.CoreBridgeProjector(self.raw_model,self.fixture.seed,pair_policy='guess')
+    def test_dark_pair_mode_rejects_two_zero_and_outside_window_candidates(self):
+        p=self.dark_projector();image=self.ambiguous_image();value=p.observe(self.encode(image),195.29)
+        candidates=value['quality']['pairSelection']['candidates']
+        both=image.copy()
+        for candidate in candidates:
+            x,y=np.rint(candidate['toolPointPx']).astype(int);cv2.rectangle(both,(x-23,y-23),(x+23,y+23),(30,30,30),-1)
+        with self.assertRaisesRegex(ValueError,'dark_supported_pair_not_unique'):p.observe(self.encode(both),195.29)
+        zero=image.copy()
+        for candidate in candidates:
+            x,y=np.rint(candidate['toolPointPx']).astype(int);cv2.rectangle(zero,(x-23,y-23),(x+23,y+23),(180,180,180),-1)
+        with self.assertRaisesRegex(ValueError,'dark_supported_pair_not_unique'):p.observe(self.encode(zero),195.29)
+        with self.assertRaisesRegex(ValueError,'dark_supported_pair_not_unique'):bridge._dark_supported_pair(image,p.registration['detectorPolicy'],[10000.,10000.])
+    def test_dark_candidate_metadata_counts_geometry_selection_and_mode_cannot_mix(self):
+        p=self.dark_projector();original=p.observe(self.encode(self.ambiguous_image()),195.29)
+        for mode in ('count','accepted','point','dark','duplicate','image','missing','window'):
+            value=copy.deepcopy(original);selection=value['quality']['pairSelection']
+            if mode=='count':selection['distanceEligiblePairs']=1
+            elif mode=='accepted':selection['candidates'][0]['accepted']=True
+            elif mode=='point':selection['candidates'][0]['toolPointPx'][0]+=1
+            elif mode=='dark':value['blackOccupancyFraction']=.5
+            elif mode=='duplicate':selection['candidates'].append(copy.deepcopy(selection['candidates'][0]));selection['distanceEligiblePairs']+=1
+            elif mode=='image':selection['sourceImageSha256']='a'*64
+            elif mode=='missing':value['quality'].pop('pairSelection')
+            else:selection['candidates'][0]['windowInsideImage']=False
+            with self.subTest(mode=mode),self.assertRaises(ValueError):bridge.observation(p,value)
+        with self.assertRaisesRegex(ValueError,'new_observation_contract_required'):bridge.observation(self.projector,original)
+        strict=self.projector.observe(self.fixture.raw(),195.29);strict['quality']['pairSelection']=original['quality']['pairSelection']
+        with self.assertRaisesRegex(ValueError,'strict_pair_metadata_changed'):bridge.observation(self.projector,strict)
+    def test_dark_mode_keeps_core_quality_guards_and_requires_new_source_audit(self):
+        p=self.dark_projector();audit=bridge.audit_sources(p,self.sources);bridge.validate_audit(p,audit)
+        for source in audit['sources']:
+            self.assertEqual(source['originalDelta'],source['newDelta'])
+            for phase in ('before','after'):self.assertEqual(source['phases'][phase]['originalState'],source['phases'][phase]['newState'])
+        with self.assertRaisesRegex(ValueError,'audit_binding_changed'):bridge.validate_audit(p,self.audit)
+        with self.assertRaisesRegex(ValueError,'audit_binding_changed'):bridge.validate_audit(self.projector,audit)
+        current=p.observe(self.fixture.raw(),195.29);response=bridge.predict(p,audit,current,direct.COMMANDS[0]);self.assertEqual(response['predictedState'],direct.predict(self.model,self.fixture.obs(),direct.COMMANDS[0])['predictedState'])
+        fallback=p.observe(self.fallback_raw(),195.29);self.assertEqual(fallback['quality']['tealValidation']['mode'],'core_quality_original_geometry')
+        with patch.object(bridge,'_teal_candidates',return_value=[]),self.assertRaisesRegex(ValueError,'dark_supported_pair_not_unique'):p.observe(self.fixture.raw(),195.29)
+    def test_real_dark_mode_source_audit_and_regrasp_frame_when_available(self):
+        root=Path(__file__).resolve().parents[1];audit_path=root/'.local/current-entry-20261118/marker-dark-bridge-01/source-audit.json';frame=root/'.local/current-entry-20261118/manual-regrasp-after-readonly-01/current-external-2.png'
+        if not audit_path.exists() or not frame.exists():self.skipTest('private dark bridge evidence unavailable')
+        raw=(root/'.local/current-entry-20261117/m3-down-source-audit-01/direct-tool-model-03/frozen-direct-M3-tool-response.json').read_bytes();seed=(root/'.local/current-entry-20261114/L-pose-marker-virtual-observer-20261115-01/reference.png').read_bytes()
+        p=bridge.CoreBridgeProjector(raw,seed,pair_policy='unique_dark_support_v1');strict=bridge.CoreBridgeProjector(raw,seed);audit=json.loads(audit_path.read_bytes());bridge.validate_audit(p,audit);sources={}
+        for ref in audit['sourceReadPaths']:
+            path=root/ref['path'];self.assertTrue(path.resolve().is_relative_to(root));sources.setdefault(ref['sessionId'],{})[ref['phase']]=path.read_bytes()
+        rebuilt=bridge.audit_sources(p,[dict(sessionId=s,**phases) for s,phases in sources.items()]);self.assertEqual(rebuilt['sources'],audit['sources'])
+        with self.assertRaisesRegex(ValueError,'marker_pair_missing_or_ambiguous'):strict.observe(frame.read_bytes(),191.77)
+        value=p.observe(frame.read_bytes(),191.77);bridge.observation(p,value);np.testing.assert_allclose(value['state'][:2],[719.9554496507244,601.4897549974909],atol=1e-8,rtol=0.)
+        self.assertEqual(value['quality']['pairSelection']['distanceEligiblePairs'],2);self.assertAlmostEqual(value['blackOccupancyFraction'],.7461728395061729)
     def test_real_six_sources_and_four_current_frames_when_available(self):
         root=Path(__file__).resolve().parents[1];audit_path=root/'.local/current-entry-20261118/marker-core-bridge-01/source-audit.json'
         if not audit_path.exists():self.skipTest('private source audit unavailable')

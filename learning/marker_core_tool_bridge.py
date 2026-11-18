@@ -24,14 +24,21 @@ AUDIT_SCHEMA=SCHEMA+'.source_audit'
 def require(ok,reason):
     if not ok:raise ValueError(reason)
 
-def observer_policy():
-    return dict(schemaVersion=SCHEMA+'.observer_policy',originalDetectorPolicy=marker.detector_policy(),
+def observer_policy(pair_policy='strict'):
+    require(pair_policy in ('strict','unique_dark_support_v1'),'core_bridge_pair_policy_required')
+    result=dict(schemaVersion=SCHEMA+'.observer_policy',originalDetectorPolicy=marker.detector_policy(),
         fullOpeningKernelSize=3,coreOpeningKernelSize=5,minimumCoreFullAreaFraction=.5,
         fallbackOnly='teal_solidity_failure_after_original_other_checks',
         coreMapping='global_core_pixels_wholly_inside_exactly_one_original_component',
         eligibleCoreCountPerFallbackComponent=1,coreMinimumArea=80,
         outputGeometry='original_3px_component_centroid_bbox_area_unchanged',
         originalSolidityRetained=True,qualityAndCoordinatesSeparated=True)
+    if pair_policy=='unique_dark_support_v1':
+        result['pairSelectionPolicy']=dict(name=pair_policy,
+            candidates='all_original_distance_eligible_pairs',selection='exactly_one_existing_dark_support_pass',
+            outOfImageWindowRejected=True,blackWindowRadiusPx=22,blackMaximumValue=85,
+            minimumBlackOccupancyFraction=.15,geometry='original_3px_component_unchanged')
+    return result
 
 
 def _component(labels,stats,centers,index,roi):
@@ -90,30 +97,63 @@ def _teal_candidates(image,policy):
     return candidates
 
 
-def _pair(image,policy):
+def _distance_pairs(image,policy):
     purple=marker._candidates(image,'purple',policy);teal=_teal_candidates(image,policy);pairs=[]
     for a in purple:
         for b,validation in teal:
             distance=float(np.linalg.norm(np.array(b['center'])-a['center']))
             if policy['pairDistancePx'][0]<=distance<=policy['pairDistancePx'][1]:
                 pairs.append((dict(purple=a,teal=b,distancePx=distance),validation))
+    return pairs,len(purple),len(teal)
+
+
+def _pair(image,policy):
+    pairs,purple_count,teal_count=_distance_pairs(image,policy)
     require(len(pairs)==1,'core_bridge_marker_pair_missing_or_ambiguous')
     pair,validation=pairs[0]
-    return pair,dict(purpleCandidates=len(purple),tealCandidates=len(teal),eligiblePairs=1,tealValidation=validation)
+    return pair,dict(purpleCandidates=purple_count,tealCandidates=teal_count,eligiblePairs=1,tealValidation=validation)
 
 
-def _contract(model,model_file_sha):
+def _projected_support(image,pair,coefficients,policy):
+    origin,basis=marker._basis(pair);point=origin+basis@np.array(coefficients)
+    radius=policy['blackWindowRadiusPx'];x,y=np.rint(point).astype(int)
+    inside=bool(radius<=x<1920-radius and radius<=y<1080-radius)
+    dark=None
+    if inside:
+        patch=image[y-radius:y+radius+1,x-radius:x+radius+1]
+        dark=float((cv2.cvtColor(patch,cv2.COLOR_BGR2HSV)[:,:,2]<policy['blackMaximumValue']).mean())
+    return point,dark,inside
+
+
+def _dark_supported_pair(image,policy,coefficients):
+    pairs,purple_count,teal_count=_distance_pairs(image,policy);candidates=[]
+    for pair,validation in pairs:
+        point,dark,inside=_projected_support(image,pair,coefficients,policy)
+        candidates.append(dict(markerPair=pair,tealValidation=validation,toolPointPx=point.tolist(),
+            blackOccupancyFraction=dark,windowInsideImage=inside,
+            accepted=bool(inside and dark>=policy['minimumBlackOccupancyFraction'])))
+    accepted=[c for c in candidates if c['accepted']]
+    require(len(accepted)==1,'core_bridge_dark_supported_pair_not_unique')
+    chosen=accepted[0]
+    selection=dict(policy='unique_dark_support_v1',distanceEligiblePairs=len(candidates),
+        darkSupportedPairs=1,candidates=candidates)
+    return chosen['markerPair'],dict(purpleCandidates=purple_count,tealCandidates=teal_count,
+        eligiblePairs=1,tealValidation=chosen['tealValidation'],pairSelection=selection)
+
+
+def _contract(model,model_file_sha,pair_policy='strict'):
     return dict(schemaVersion=SCHEMA,originalModelSha256=digest(model),originalModelFileSha256=model_file_sha,
         originalProjectionContractSha256=model['projectionContractSha256'],
         originalProjectionContract=copy.deepcopy(model['projectionContract']),
-        newObserverSha256=digest(observer_policy()),observerPolicy=observer_policy(),
+        newObserverSha256=digest(observer_policy(pair_policy)),observerPolicy=observer_policy(pair_policy),
         originalContractClaimed=False,newTrainingPerformed=False,
         sourceAuditRequired=True,stateFields=copy.deepcopy(model['projectionContract']['stateFields']))
 
 
 class CoreBridgeProjector:
-    def __init__(self,model_raw,seed_raw):
+    def __init__(self,model_raw,seed_raw,*,pair_policy='strict'):
         require(isinstance(model_raw,bytes) and isinstance(seed_raw,bytes),'core_bridge_original_bytes_required')
+        observer_policy(pair_policy);self.pair_policy=pair_policy;self._pair_policy_seal=pair_policy
         self.model=json.loads(model_raw);direct.validate(self.model)
         self._model_raw=model_raw;self._seed_raw=seed_raw
         self.original_model_file_sha256=hashlib.sha256(model_raw).hexdigest()
@@ -121,19 +161,23 @@ class CoreBridgeProjector:
         original=direct.ToolOnlyProjector(self.model['projectionContract']['sourceRegistration'],seed_raw)
         require(original.contract==self.model['projectionContract'],'core_bridge_original_projection_mismatch')
         self.registration=copy.deepcopy(original.registration)
-        self.contract=_contract(self.model,self.original_model_file_sha256);self.binding=digest(self.contract)
+        self.contract=_contract(self.model,self.original_model_file_sha256,self.pair_policy);self.binding=digest(self.contract)
         self.observer_sha256=self.contract['newObserverSha256']
     def verify(self):
         require(hashlib.sha256(self._model_raw).hexdigest()==self.original_model_file_sha256
-            and digest(self.model)==self._model_sha and self.contract==_contract(self.model,self.original_model_file_sha256)
-            and digest(self.contract)==self.binding and self.observer_sha256==digest(observer_policy())
+            and self.pair_policy==self._pair_policy_seal and digest(self.model)==self._model_sha and self.contract==_contract(self.model,self.original_model_file_sha256,self.pair_policy)
+            and digest(self.contract)==self.binding and self.observer_sha256==digest(observer_policy(self.pair_policy))
             and self.registration==self.model['projectionContract']['sourceRegistration']
             and hashlib.sha256(self._seed_raw).hexdigest()==self.registration['seedSha256'], 'core_bridge_projector_changed')
         direct.validate(self.model)
     def observe(self,raw,m4_deg):
         self.verify();image=marker._image(raw)
         require(direct.number(m4_deg) and 0<=m4_deg<360,'core_bridge_M4_required')
-        policy=self.registration['detectorPolicy'];pair,quality=_pair(image,policy)
+        policy=self.registration['detectorPolicy']
+        if self.pair_policy=='strict':pair,quality=_pair(image,policy)
+        else:
+            pair,quality=_dark_supported_pair(image,policy,self.registration['basisCoefficients'])
+            quality['pairSelection']['sourceImageSha256']=hashlib.sha256(raw).hexdigest()
         origin,basis=marker._basis(pair);point=origin+basis@np.array(self.registration['basisCoefficients'])
         radius=policy['blackWindowRadiusPx'];x,y=np.rint(point).astype(int)
         require(radius<=x<1920-radius and radius<=y<1080-radius,'core_bridge_point_outside_image')
@@ -162,6 +206,55 @@ def _validate_candidate(c,kind,policy):
         and c['fillFraction']==c['area']/(w*h) and _geometry(c,kind,policy),'core_bridge_component_geometry')
 
 
+def _validate_teal_quality(pair,v,policy):
+    require(isinstance(v,dict) and v.get('originalSolidity')==pair['teal']['solidity'],'core_bridge_quality_metadata_changed')
+    if pair['teal']['solidity']>=policy['minimumSolidity']:
+        require(v==dict(mode='original_strict_solidity',originalSolidity=pair['teal']['solidity']),'core_bridge_quality_metadata_changed')
+    else:
+        require(set(v)=={'mode','originalSolidity','core','coreFullAreaFraction','eligibleCoreCount','mappedFullComponentCount','corePixelsInsideFull'}
+            and v['mode']=='core_quality_original_geometry' and v['eligibleCoreCount']==v['mappedFullComponentCount']==1
+            and v['corePixelsInsideFull'] is True,'core_bridge_core_metadata_changed')
+        core=v['core'];_validate_candidate(core,'teal',policy);full=pair['teal'];x,y,w,h=full['bbox'];cx,cy,cw,ch=core['bbox']
+        require(core['solidity']>=policy['minimumSolidity'] and x<=cx<cx+cw<=x+w and y<=cy<cy+ch<=y+h
+            and v['coreFullAreaFraction']==core['area']/full['area'] and .5<=v['coreFullAreaFraction']<=1.,'core_bridge_core_quality_changed')
+
+
+def _validate_pair_selection(projector,value):
+    quality=value['quality']
+    if projector.pair_policy=='strict':
+        require('pairSelection' not in quality,'core_bridge_strict_pair_metadata_changed')
+        return
+    selection=quality.get('pairSelection');policy=projector.registration['detectorPolicy']
+    require(isinstance(selection,dict) and set(selection)=={'policy','sourceImageSha256','distanceEligiblePairs','darkSupportedPairs','candidates'}
+        and selection['policy']=='unique_dark_support_v1' and selection['sourceImageSha256']==value['imageSha256']
+        and type(selection['distanceEligiblePairs']) is int and type(selection['darkSupportedPairs']) is int
+        and selection['darkSupportedPairs']==1 and isinstance(selection['candidates'],list)
+        and selection['distanceEligiblePairs']==len(selection['candidates'])>0,'core_bridge_dark_selection_metadata_changed')
+    accepted=[];seen=set()
+    for candidate in selection['candidates']:
+        require(isinstance(candidate,dict) and set(candidate)=={'markerPair','tealValidation','toolPointPx','blackOccupancyFraction','windowInsideImage','accepted'},'core_bridge_dark_candidate_fields')
+        pair=candidate['markerPair'];require(isinstance(pair,dict) and set(pair)=={'purple','teal','distancePx'},'core_bridge_pair_required')
+        for kind in ('purple','teal'):_validate_candidate(pair[kind],kind,policy)
+        require(pair['purple']['solidity']>=policy['minimumSolidity'],'core_bridge_purple_strict_required')
+        _validate_teal_quality(pair,candidate['tealValidation'],policy)
+        pair_sha=digest(pair);require(pair_sha not in seen,'core_bridge_duplicate_dark_pair');seen.add(pair_sha)
+        origin,basis=marker._basis(pair);point=origin+basis@np.array(projector.registration['basisCoefficients']);distance=float(np.linalg.norm(basis[:,0]))
+        require(direct.number(pair['distancePx']) and abs(pair['distancePx']-distance)<1e-8
+            and policy['pairDistancePx'][0]<=distance<=policy['pairDistancePx'][1]
+            and isinstance(candidate['toolPointPx'],list) and len(candidate['toolPointPx'])==2
+            and all(direct.number(v) for v in candidate['toolPointPx'])
+            and np.allclose(candidate['toolPointPx'],point,atol=1e-8,rtol=0.),'core_bridge_dark_candidate_geometry_changed')
+        radius=policy['blackWindowRadiusPx'];x,y=np.rint(point).astype(int);inside=bool(radius<=x<1920-radius and radius<=y<1080-radius);dark=candidate['blackOccupancyFraction']
+        require(type(candidate['windowInsideImage']) is bool and candidate['windowInsideImage']==inside
+            and ((inside and direct.number(dark) and 0<=dark<=1.) or (not inside and dark is None)),'core_bridge_dark_candidate_window_changed')
+        passed=bool(inside and dark>=policy['minimumBlackOccupancyFraction'])
+        require(type(candidate['accepted']) is bool and candidate['accepted']==passed,'core_bridge_dark_candidate_acceptance_changed')
+        if passed:accepted.append(candidate)
+    require(len(accepted)==1 and accepted[0]['markerPair']==value['markerPair']
+        and accepted[0]['tealValidation']==quality['tealValidation']
+        and accepted[0]['blackOccupancyFraction']==value['blackOccupancyFraction'],'core_bridge_dark_selected_pair_changed')
+
+
 def observation(projector,value):
     projector.verify();require(isinstance(value,dict) and value.get('schemaVersion')==OBSERVATION_SCHEMA
         and value.get('bridgeContractSha256')==projector.binding
@@ -176,15 +269,8 @@ def observation(projector,value):
     require(pair['purple']['solidity']>=policy['minimumSolidity'],'core_bridge_purple_strict_required')
     quality=value.get('quality',{});v=quality.get('tealValidation',{})
     require(quality.get('eligiblePairs')==1 and v.get('originalSolidity')==pair['teal']['solidity'],'core_bridge_quality_metadata_changed')
-    if pair['teal']['solidity']>=policy['minimumSolidity']:
-        require(v==dict(mode='original_strict_solidity',originalSolidity=pair['teal']['solidity']),'core_bridge_quality_metadata_changed')
-    else:
-        require(set(v)=={'mode','originalSolidity','core','coreFullAreaFraction','eligibleCoreCount','mappedFullComponentCount','corePixelsInsideFull'}
-            and v['mode']=='core_quality_original_geometry' and v['eligibleCoreCount']==v['mappedFullComponentCount']==1
-            and v['corePixelsInsideFull'] is True,'core_bridge_core_metadata_changed')
-        core=v['core'];_validate_candidate(core,'teal',policy);full=pair['teal'];x,y,w,h=full['bbox'];cx,cy,cw,ch=core['bbox']
-        require(core['solidity']>=policy['minimumSolidity'] and x<=cx<cx+cw<=x+w and y<=cy<cy+ch<=y+h
-            and v['coreFullAreaFraction']==core['area']/full['area'] and .5<=v['coreFullAreaFraction']<=1.,'core_bridge_core_quality_changed')
+    _validate_teal_quality(pair,v,policy)
+    _validate_pair_selection(projector,value)
     state=value.get('state');require(isinstance(state,list) and len(state)==4 and all(direct.number(v) for v in state)
         and 0<=state[0]<1920 and 0<=state[1]<1080 and 0<=state[2]<360 and -180<=state[3]<=180,'core_bridge_state_required')
     origin,basis=marker._basis(pair);point=origin+basis@np.array(projector.registration['basisCoefficients'])
