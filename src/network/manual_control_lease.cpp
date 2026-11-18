@@ -202,8 +202,8 @@ bool Leases::execute(const Request& request, Port& port, bool& dispatched,
   state.acceptedAt = port.now();
   if (request.start) {
     state.lastSequence = 0;
-    snprintf(state.leaseId, sizeof(state.leaseId), "%s-%u-%08lx", boot_,
-             request.motor, static_cast<unsigned long>(state.generation));
+    snprintf(state.leaseId, sizeof(state.leaseId), "%s-%c-%08lx", boot_,
+             '0' + request.motor, static_cast<unsigned long>(state.generation));
   }
   reason = "accepted";
   return true;
