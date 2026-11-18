@@ -219,6 +219,13 @@ def validate(model):
 
 def predict(model,current,command):
     validate(model);command_key(command);state=observation(current,model['projectionContract'])
+    return _predict_state(model,state,command,input_sha256=digest(current))
+
+
+def _predict_state(model,state,command,*,input_sha256):
+    """검증된 계약 어댑터들이 공유하는 명령별 수치 예측. 관측 계약을 바꾸지 않는다."""
+    command_key(command);state=np.asarray(state,dtype=float)
+    require(state.shape==(4,) and np.isfinite(state).all() and sha(input_sha256),'direct_M3_numeric_input_required')
     rows=[r for r in model['trainingRows'] if r['command']==command]
     require(rows,'direct_M3_exact_command_not_trained')
     before=np.array([r['before']['state'] for r in rows]);delta=np.array([difference(r['after']['state'],r['before']['state']) for r in rows])
@@ -228,7 +235,7 @@ def predict(model,current,command):
     predicted[3]=(predicted[3]+180.)%360.-180.;mean[3]=(mean[3]+180.)%360.-180.
     require(0<=predicted[0]<1920 and 0<=predicted[1]<1080 and 0<=predicted[2]<360,'direct_M3_prediction_outside_image_or_angle')
     return dict(command=copy.deepcopy(command),predictedState=predicted.tolist(),commandMeanState=mean.tolist(),
-        observedSourceDeltaState=delta[n].tolist(),modelSha256=digest(model),inputSha256=digest(current),
+        observedSourceDeltaState=delta[n].tolist(),modelSha256=digest(model),inputSha256=input_sha256,
         support=dict(nearestSourceSessionId=rows[n]['sessionId'],nearestSourceSha256=rows[n]['sourceSha256'],
             nearestStandardDistance=float(distances[n]),M4DifferenceDeg=float(abs(diff[n,2])),
             imageAxisDifferenceDeg=float(abs(diff[n,3])),categorySourceCount=len(rows),singleton=len(rows)==1,
