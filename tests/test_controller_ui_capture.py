@@ -12,6 +12,8 @@ import unittest
 import urllib.error
 import urllib.request
 
+from tests.controller_ui_source import embedded_scripts
+
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location(
     "ui_capture", ROOT / "tools/record_controller_ui.py"
@@ -79,9 +81,19 @@ class Capture(unittest.TestCase):
         self.server.capture_log.close()
         self.tmp.cleanup()
 
-    def send(self, path, method="GET", data=None, headers=None):
+    @staticmethod
+    def typed_target(path):
+        import urllib.parse
+        parsed = urllib.parse.urlsplit(path)
+        params = urllib.parse.parse_qs(parsed.query)
+        if (parsed.path in ("/motor", "/joint") and params.get("action") != ["stop"]
+                and "lease" not in params):
+            return path + "&lease=start&expectedBootId="+"a"*32+"&expectedGeneration=0"
+        return path
+
+    def send(self, path, method="GET", data=None, headers=None, *, typed=True):
         request = urllib.request.Request(
-            self.base + path, data=data, method=method, headers=headers or {}
+            self.base + (self.typed_target(path) if method == "POST" and typed else path), data=data, method=method, headers=headers or {}
         )
         try:
             r = urllib.request.urlopen(request, timeout=2)
@@ -164,6 +176,31 @@ class Capture(unittest.TestCase):
             for s in (self.root / "out/ui-events.jsonl").read_text().splitlines()
         ]
 
+    def test_snapshot_get_and_typed_renew_preserve_fields_without_logging_opaque_token(self):
+        self.assertEqual(self.send("/manual_leases")[0], 200)
+        self.assertEqual(self.requests[-1].full_url, "http://controller.invalid/manual_leases")
+        self.establish()
+        token = "a"*32+"-3-00000001"
+        target = "/motor?action=forward&id=3&percent=70&lease=renew&leaseId="+token+"&leaseSeq=2"
+        self.assertEqual(self.post(target)[0], 200)
+        self.assertEqual(self.requests[-1].full_url, "http://controller.invalid"+target)
+        rows = self.logs()
+        request = next(r for r in rows if r["kind"] == "proxy_request" and r["path"] == "/motor")
+        self.assertEqual(request["query"]["lease"], ["renew"])
+        self.assertNotIn(token, json.dumps(rows))
+        self.assertNotIn("PRIVATE-FIXTURE", json.dumps(rows))
+
+    def test_untyped_legacy_motor_and_joint_commands_fail_closed(self):
+        self.establish()
+        before = len(self.requests)
+        for target in ("/motor?action=forward&id=3&percent=60", "/joint?joint=elbow&action=down&percent=60"):
+            with self.subTest(target=target):
+                code, _ = self.send(target, "POST", headers={"Origin": self.base,
+                    "X-UI-Capture-ID": "fixture:4", "X-MotionBrain": "1", "X-MotionBrain-Token": "PRIVATE-FIXTURE"}, typed=False)
+                self.assertEqual(code, 502)  # Existing malformed-command response; never forwarded.
+        self.assertEqual(len(self.requests), before)
+        self.assertEqual(self.post("/motor?action=stop&id=3")[0], 200)
+
     def test_prepare_no_hardware_and_no_output(self):
         out = self.root / "prepare"
         r = subprocess.run(
@@ -209,7 +246,7 @@ class Capture(unittest.TestCase):
         self.assertEqual(r.get_header("X-motionbrain-token"), "PRIVATE-FIXTURE")
         self.assertIsNone(r.get_header("X-ui-capture-id"))
         self.assertEqual(
-            r.full_url, "http://controller.invalid/motor?action=reverse&id=1&percent=70"
+            r.full_url, "http://controller.invalid"+self.typed_target("/motor?action=reverse&id=1&percent=70")
         )
         raw = (self.root / "out/ui-events.jsonl").read_text()
         self.assertNotIn("PRIVATE-FIXTURE", raw)
@@ -365,7 +402,7 @@ class Capture(unittest.TestCase):
 
         def request(label, path, capture):
             req = urllib.request.Request(
-                self.base + path,
+                self.base + self.typed_target(path),
                 method="POST",
                 headers={
                     "Origin": self.base,
@@ -442,7 +479,7 @@ class Capture(unittest.TestCase):
         self.assertEqual(
             [r.full_url for r in self.requests],
             [
-                "http://controller.invalid/motor?action=forward&id=3&percent=60",
+                "http://controller.invalid"+self.typed_target("/motor?action=forward&id=3&percent=60"),
                 "http://controller.invalid/motor?action=stop&id=3",
             ],
         )
@@ -880,7 +917,7 @@ class Capture(unittest.TestCase):
         self.establish()
         self.forged_upstream = True
         request = urllib.request.Request(
-            self.base + "/joint?joint=elbow&action=down&percent=60",
+            self.base + self.typed_target("/joint?joint=elbow&action=down&percent=60"),
             method="POST",
             headers={
                 "Origin": self.base,
@@ -917,7 +954,7 @@ class Capture(unittest.TestCase):
 
         def request(label, sequence):
             request = urllib.request.Request(
-                self.base + "/joint?joint=elbow&action=down&percent=60",
+                self.base + self.typed_target("/joint?joint=elbow&action=down&percent=60"),
                 method="POST",
                 headers={
                     "Origin": self.base,
@@ -1093,6 +1130,7 @@ class BrowserSemantics(unittest.TestCase):
         import re
 
         names = (
+            "function manualLease(",
             "function commandFetch(",
             "function commandHeaders(",
             "function updateTokenStatus(",
@@ -1105,17 +1143,10 @@ class BrowserSemantics(unittest.TestCase):
             'document.addEventListener("keyup"',
         )
         functions = []
-        for line in (ROOT / "src/network/web_server.cpp").read_text().splitlines():
-            match = re.search(r'server_\.sendContent\((".*")\);', line)
-            if not match:
-                continue
-            try:
-                decoded = json.loads(match.group(1))
-            except ValueError:
-                continue
+        for decoded in embedded_scripts((ROOT / "src/network/web_server.cpp").read_text()):
             if any(decoded.startswith(name) for name in names):
                 functions.append(decoded)
-        self.assertEqual(len(functions), 10)
+        self.assertEqual(len(functions), 11)
         fixture = r"""
 const vm=require('node:vm'),fs=require('node:fs');const config=JSON.parse(fs.readFileSync(0,'utf8'));
 const events=[],commands=[],intervals=[],elements={},listeners={},created=[],starts=[];let prompts=0,invalidNext=false;
@@ -1133,12 +1164,13 @@ global.fetch=async(url,options={})=>{
  if(url.startsWith('/__capture/clock'))return{ok:true,json:async()=>({hostReceivedMonotonic:1,hostSentMonotonic:1,anchorId:'fixtureanchor'})};
  if(url.startsWith('/__capture/status'))return{ok:true,json:async()=>({recordingReady:starts.length>0,startAllowed:!starts.length,reasonText:starts.length?'수집 연결됨':'수집 시작 대기'})};
  if(url==='/__capture/start'){starts.push(JSON.parse(options.body));return{ok:true,json:async()=>({reasonText:'수집 시작 요청됨'})};}
+ if(url==='/manual_leases')return {ok:true,json:async()=>({schemaVersion:'motionbrain.manual_control_leases.v1',bootId:'a'.repeat(32),ttlMs:750,motors:[1,2,3,4,5].map(motor=>({motor,generation:0,active:false}))})};
  const params=new URL(url,'http://localhost').searchParams;
  commands.push({url,method:options.method,headers:Object.fromEntries(new Headers(options.headers)),driverPWM:params.get('action')==='stop'?0:Math.round(Number(params.get('percent'))*255/100)});
- const invalid=invalidNext;invalidNext=false;return{ok:true,json:async()=>invalid?({success:false,error:'invalid X-MotionBrain-Token'}):({success:true})};
+ const invalid=invalidNext;invalidNext=false;return{ok:true,json:async()=>invalid?({success:false,error:'invalid X-MotionBrain-Token'}):({success:true,manualLeaseMs:750,leaseBootId:'a'.repeat(32),leaseGeneration:1,leaseId:'a'.repeat(32)+'-'+params.get('id')+'-00000001'})};
 };
 for(const fn of config.functions)vm.runInThisContext(fn);vm.runInThisContext(config.instrumentation);
-const settle=async()=>{for(let i=0;i<8;i++)await Promise.resolve();};
+const settle=async()=>{for(let i=0;i<36;i++)await Promise.resolve();};
 (async()=>{
  await settle();if(starts.length||commands.length)throw Error('page visit started collection or motor');
  const password=created.find(e=>e.id==='intent-capture-password'),form=created.find(e=>e.tagName==='FORM'),start=created.find(e=>e.id==='intent-capture-start');
@@ -1158,7 +1190,7 @@ const settle=async()=>{for(let i=0;i<8;i++)await Promise.resolve();};
  // A motor key pressed outside must still STOP when released inside the secret field.
  dispatch('keydown',element('btn-forward-1'),{code:'KeyQ'});await settle();dispatch('keyup',password,{code:'KeyQ'});await settle();
  // Original joystick mouse release also reaches its handler through the secret field.
- vm.runInThisContext("activeJoysticks[3]={area:document.getElementById('joystick-3'),handle:document.getElementById('handle-3'),motorId:3,touchId:null};joystickActive[3]={action:'forward',percent:60};");
+ vm.runInThisContext("activeJoysticks[3]={area:document.getElementById('joystick-3'),handle:document.getElementById('handle-3'),motorId:3,touchId:null};joystickActive[3]={action:'forward',percent:60,cancel:()=>{delete joystickActive[3];commandFetch('/motor?action=stop&id=3',{method:'POST'},false);}};");
  dispatch('mouseup',password);await settle();
  invalidNext=true;await window.commandFetch('/command?cmd=arm',{method:'POST'});await settle();
  if(!vm.runInThisContext("commandToken.length===0"))throw Error('invalid token not cleared');
@@ -1222,6 +1254,7 @@ const settle=async()=>{for(let i=0;i<8;i++)await Promise.resolve();};
         import re
 
         names = (
+            "function manualLease(",
             "function commandFetch(",
             "function commandHeaders(",
             "function jointStart(",
@@ -1230,17 +1263,10 @@ const settle=async()=>{for(let i=0;i<8;i++)await Promise.resolve();};
             "function refreshJointLease(",
         )
         functions = []
-        for line in (ROOT / "src/network/web_server.cpp").read_text().splitlines():
-            match = re.search(r'server_\.sendContent\((".*")\);', line)
-            if not match:
-                continue
-            try:
-                decoded = json.loads(match.group(1))
-            except ValueError:
-                continue
+        for decoded in embedded_scripts((ROOT / "src/network/web_server.cpp").read_text()):
             if any(decoded.startswith(name) for name in names):
                 functions.append(decoded)
-        self.assertEqual(len(functions), 6)
+        self.assertEqual(len(functions), 7)
         result = subprocess.run(
             ["node", str(ROOT / "tests/controller_ui_joint_fixture.cjs")],
             input=json.dumps(
@@ -1372,6 +1398,7 @@ const settle=async()=>{for(let i=0;i<8;i++)await Promise.resolve();};
         import re
 
         names = (
+            "function manualLease(",
             "function commandFetch(",
             "function commandHeaders(",
             "function jointStart(",
@@ -1383,17 +1410,10 @@ const settle=async()=>{for(let i=0;i<8;i++)await Promise.resolve();};
             "function refreshMotorLease(",
         )
         functions = []
-        for line in (ROOT / "src/network/web_server.cpp").read_text().splitlines():
-            match = re.search(r'server_\.sendContent\((".*")\);', line)
-            if not match:
-                continue
-            try:
-                decoded = json.loads(match.group(1))
-            except ValueError:
-                continue
+        for decoded in embedded_scripts((ROOT / "src/network/web_server.cpp").read_text()):
             if any(decoded.startswith(name) for name in names):
                 functions.append(decoded)
-        self.assertEqual(len(functions), 9)
+        self.assertEqual(len(functions), 10)
         result = subprocess.run(
             ["node", str(ROOT / "tests/controller_ui_joint_fixture.cjs")],
             input=json.dumps(
@@ -1460,7 +1480,7 @@ const settle=async()=>{for(let i=0;i<8;i++)await Promise.resolve();};
             )
         )
         self.assertEqual(
-            commands[0]["url"], "/joint?joint=gripper&action=open&percent=60"
+            commands[0]["url"], "/joint?joint=gripper&action=open&percent=60&lease=start&expectedBootId="+"a"*32+"&expectedGeneration=0"
         )
         self.assertTrue(
             next(

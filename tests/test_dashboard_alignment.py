@@ -10,6 +10,9 @@ from tools.motionbrain_dashboard import build_grasp_dry_run_plan
 from tools.motionbrain_dashboard import dependency_error_payload
 
 
+BASE_LEASE = {"schemaVersion": "motionbrain.manual_control_leases.v1", "bootId": "b" * 32,
+              "motors": [{"motor": 5, "generation": 9, "active": False}]}
+
 SOURCE_OBSERVATION = {
     "sourceFrameId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:10",
     "cameraBootId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -216,6 +219,22 @@ class DashboardAlignmentTest(unittest.TestCase):
         self.assertEqual(payload["errorClass"], "name_resolution_failed")
         self.assertEqual(payload["lastSuccessfulAt"], 123.5)
 
+    def test_base_nudge_rejects_unavailable_lease_before_post(self):
+        invalid_rows = [
+            [],
+            [{"motor": 5, "generation": 9, "active": True}],
+            [{"motor": 5, "generation": 0, "active": False}],
+        ]
+        for snapshot in [{}, *({**BASE_LEASE, "motors": rows} for rows in invalid_rows)]:
+            with (
+                self.subTest(snapshot=snapshot),
+                patch.object(dashboard, "fetch_json", return_value=snapshot),
+                patch.object(dashboard, "post_motionbrain") as post,
+            ):
+                with self.assertRaises(ValueError):
+                    dashboard.execute_base_nudge("http://motionbrain", "left", 25, 250, 2.0, "token")
+                post.assert_not_called()
+
     def test_execute_base_nudge_stops_after_successful_start(self) -> None:
         calls: list[str] = []
 
@@ -226,7 +245,7 @@ class DashboardAlignmentTest(unittest.TestCase):
             return {"success": True, "message": "base right at 25%"}
 
         with patch.object(dashboard, "post_motionbrain", side_effect=fake_post), patch.object(dashboard.time, "sleep"):
-            result = dashboard.execute_base_nudge("http://motionbrain", "right", 25, 250, 2.0, "token")
+            result = dashboard.execute_base_nudge("http://motionbrain", "right", 25, 250, 2.0, "token", BASE_LEASE)
 
         self.assertTrue(result["success"])
         self.assertTrue(result["stopped"])
@@ -234,7 +253,7 @@ class DashboardAlignmentTest(unittest.TestCase):
         self.assertTrue(result["stopSuccess"])
         self.assertEqual(
             calls,
-            ["/joint?joint=base&action=right&percent=25", "/joint?joint=base&action=stop"],
+            ["/joint?joint=base&action=right&percent=25&lease=start&expectedBootId=" + "b"*32 + "&expectedGeneration=9", "/joint?joint=base&action=stop"],
         )
 
     def test_execute_base_nudge_reports_failed_start_even_if_stop_succeeds(self) -> None:
@@ -247,7 +266,7 @@ class DashboardAlignmentTest(unittest.TestCase):
             return {"success": False, "message": "Blocked by safety"}
 
         with patch.object(dashboard, "post_motionbrain", side_effect=fake_post), patch.object(dashboard.time, "sleep") as sleep:
-            result = dashboard.execute_base_nudge("http://motionbrain", "left", 25, 250, 2.0, "token")
+            result = dashboard.execute_base_nudge("http://motionbrain", "left", 25, 250, 2.0, "token", BASE_LEASE)
 
         sleep.assert_not_called()
         self.assertFalse(result["ok"])
@@ -257,7 +276,7 @@ class DashboardAlignmentTest(unittest.TestCase):
         self.assertTrue(result["stopSuccess"])
         self.assertEqual(
             calls,
-            ["/joint?joint=base&action=left&percent=25", "/joint?joint=base&action=stop"],
+            ["/joint?joint=base&action=left&percent=25&lease=start&expectedBootId=" + "b"*32 + "&expectedGeneration=9", "/joint?joint=base&action=stop"],
         )
 
     def test_execute_base_nudge_attempts_stop_if_start_response_fails(self) -> None:
@@ -271,11 +290,11 @@ class DashboardAlignmentTest(unittest.TestCase):
 
         with patch.object(dashboard, "post_motionbrain", side_effect=fake_post):
             with self.assertRaises(OSError):
-                dashboard.execute_base_nudge("http://motionbrain", "left", 25, 250, 2.0, "token")
+                dashboard.execute_base_nudge("http://motionbrain", "left", 25, 250, 2.0, "token", BASE_LEASE)
 
         self.assertEqual(
             calls,
-            ["/joint?joint=base&action=left&percent=25", "/joint?joint=base&action=stop"],
+            ["/joint?joint=base&action=left&percent=25&lease=start&expectedBootId=" + "b"*32 + "&expectedGeneration=9", "/joint?joint=base&action=stop"],
         )
 
     def test_grasp_dry_run_plan_requires_centered_cup(self) -> None:

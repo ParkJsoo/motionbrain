@@ -8,6 +8,7 @@ monotonic 시각은 같은 호스트 기준이며 브라우저 anchor는 왕복 
 import argparse
 import copy
 import math
+import re
 import os
 import tempfile
 import secrets
@@ -25,6 +26,7 @@ from pathlib import Path
 GET_PATHS = {
     "/",
     "/status",
+    "/manual_leases",
     "/events",
     "/vision_endpoint",
     "/actions",
@@ -46,6 +48,7 @@ JOINT_ACTIONS = {
     "base": {"left", "right"},
 }
 QUERY_KEYS = {
+    "lease",
     "joint",
     "id",
     "action",
@@ -116,6 +119,37 @@ def safe_target(target):
         raise ValueError("relative target required")
     query = urllib.parse.parse_qs(u.query, keep_blank_values=True)
     return u.path, {k: v for k, v in query.items() if k in QUERY_KEYS}
+
+
+MANUAL_LEASE_FIELDS = {"lease", "leaseId", "leaseSeq", "expectedBootId", "expectedGeneration"}
+
+
+def validate_manual_lease_params(params, *, stopping):
+    """Validate the new manual protocol without logging opaque lease tokens."""
+    fields = set(params) & MANUAL_LEASE_FIELDS
+    if stopping:
+        if fields:
+            raise ValueError("stop has no lease fields")
+        return
+    mode = params.get("lease", [None])[0]
+    if mode == "start":
+        if fields != {"lease", "expectedBootId", "expectedGeneration"}:
+            raise ValueError("manual start fields")
+        if not re.fullmatch("[0-9a-f]{32}", params["expectedBootId"][0]):
+            raise ValueError("manual start boot")
+        number = params["expectedGeneration"][0]
+        if not re.fullmatch("0|[1-9][0-9]{0,9}", number) or int(number) > 2**32-1:
+            raise ValueError("manual start generation")
+    elif mode == "renew":
+        if fields != {"lease", "leaseId", "leaseSeq"}:
+            raise ValueError("manual renew fields")
+        if not re.fullmatch("[0-9a-f]{32}-[1-5]-[0-9a-f]{8}", params["leaseId"][0]):
+            raise ValueError("manual renew token")
+        number = params["leaseSeq"][0]
+        if not re.fullmatch("[1-9][0-9]{0,9}", number) or int(number) > 2**32-1:
+            raise ValueError("manual renew sequence")
+    else:
+        raise ValueError("manual lease=start|renew required")
 
 
 class EventLog:
@@ -677,6 +711,9 @@ def make_server(controller, output, port=8768, *, ready_file=None, opener=None):
                     if raw or any(len(v) != 1 for v in params.values()):
                         raise ValueError("query-only commands required")
                     stopping = False
+                    lease_params = {k: v for k, v in params.items() if k in MANUAL_LEASE_FIELDS}
+                    if path in ("/motor", "/joint"):
+                        params = {k: v for k, v in params.items() if k not in MANUAL_LEASE_FIELDS}
                     if path == "/command":
                         if set(params) != {"cmd"} or params["cmd"][0] not in (
                             "arm",
@@ -729,6 +766,8 @@ def make_server(controller, output, port=8768, *, ready_file=None, opener=None):
                             not in {str(n) for n in range(1, 101)}
                         ):
                             raise ValueError("joint action or percent")
+                    if path in ("/motor", "/joint"):
+                        validate_manual_lease_params(lease_params, stopping=stopping)
                     capture_id = self.headers.get("X-UI-Capture-ID")
                     page_id = None
                     if capture_id is not None and not stopping:

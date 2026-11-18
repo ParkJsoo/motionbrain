@@ -2,7 +2,7 @@
 const vm = require('node:vm'), fs = require('node:fs');
 const config = JSON.parse(fs.readFileSync(0, 'utf8'));
 const events = [], commands = [], intervals = [], created = [], listeners = {}, elements = {}, plans = [], delayed = [];
-let nextCommandId = 100;
+let nextCommandId = 100;const boot='a'.repeat(32),generations={1:0,2:0,3:0,4:0,5:0};
 global.window = global;
 global.location = {href: 'http://localhost/', origin: 'http://localhost'};
 global.crypto = require('node:crypto').webcrypto;
@@ -28,7 +28,8 @@ global.prompt = () => {throw Error('prompt forbidden');};
 global.MANUAL_LEASE_REFRESH_MS = 250;
 vm.runInThisContext("let commandToken='SECRET-FIXTURE';const COMMAND_TOKEN_CONFIGURED=true;let activeJointButtons={};let activeMotors={};let currentMode='button';");
 function response(plan, commandId) {
-  const data = plan.superseded ? {schemaVersion:'motionbrain.ui_proxy_command_disposition.v1',success:false,outcome:'superseded_without_dispatch',controllerForwarded:false,independentGuardsPassed:true,captureId:plan.wrongCapture?'another:999':plan.captureId,reason:'superseded',...plan.bodyOverrides} : {...(plan.data || {success: true}), commandId};
+  let data = plan.superseded ? {schemaVersion:'motionbrain.ui_proxy_command_disposition.v1',success:false,outcome:'superseded_without_dispatch',controllerForwarded:false,independentGuardsPassed:true,captureId:plan.wrongCapture?'another:999':plan.captureId,reason:'superseded',...plan.bodyOverrides} : {...(plan.data || {success: true}), commandId};
+  if(data.success===true&&plan.manual){data={...data,leaseBootId:boot,leaseGeneration:plan.manual.generation,manualLeaseMs:750,leaseId:boot+'-'+plan.manual.motor+'-'+plan.manual.generation.toString(16).padStart(8,'0')};}
   const status=plan.superseded?409:(plan.status||200);
   return {ok:status<400,status,headers:{get:name=>name==='X-MotionBrain-UI-Proxy-Disposition'&&plan.superseded&&!plan.noHeader?'superseded_without_dispatch':null},json:async()=>data};
 }
@@ -36,7 +37,9 @@ global.fetch = async (url, options = {}) => {
   if (url === '/__capture/events') {events.push(...JSON.parse(options.body).events); return {ok: true, json: async () => ({stored: true})};}
   if (url.startsWith('/__capture/clock')) return {ok: true, json: async () => ({hostReceivedMonotonic: 1, hostSentMonotonic: 1, anchorId: 'fixtureanchor'})};
   if (url.startsWith('/__capture/status')) return {ok: true, json: async () => ({recordingReady: true, startAllowed: false})};
+  if(url==='/manual_leases')return {ok:true,json:async()=>({schemaVersion:'motionbrain.manual_control_leases.v1',bootId:boot,ttlMs:750,motors:[1,2,3,4,5].map(motor=>({motor,generation:generations[motor],active:false}))})};
   const plan = plans.shift() || {}, commandId = plan.superseded?null:++nextCommandId;
+  const u=new URL(url,location.href),motor=Number(u.searchParams.get('id'))||({gripper:1,wrist:2,elbow:3,shoulder:4,base:5}[u.searchParams.get('joint')]);if(u.searchParams.get('action')==='stop')generations[motor]++;if(u.searchParams.get('lease')==='start')generations[motor]++;if(u.searchParams.get('lease'))plan.manual={motor,generation:generations[motor]};
   plan.captureId=new Headers(options.headers).get('X-UI-Capture-ID');
   commands.push({url, headers: Object.fromEntries(new Headers(options.headers)), commandId,controllerForwarded:!plan.superseded});
   if(plan.throw)throw Error('fixture network unknown');
@@ -45,7 +48,7 @@ global.fetch = async (url, options = {}) => {
 };
 for (const source of config.functions) vm.runInThisContext(source);
 vm.runInThisContext(config.instrumentation);
-const settle = async () => {for (let i = 0; i < 12; i++) await Promise.resolve();};
+const settle = async () => {for (let i = 0; i < 36; i++) await Promise.resolve();};
 async function fire(type, target, handler) {
   let stopped = false;
   const event = {type, target, currentTarget: document, isTrusted: true, pointerId: 1,
@@ -135,6 +138,6 @@ function notice(action) {const holder = created.find(e => e.id === 'intent-error
   await commandFetch('/joint?joint=elbow&action=down&percent=60', {method: 'POST'});
   delayed.shift()(); await oldFailure; await settle();
   const lateFailureDidNotReturn = notice('up');
-  for (let i = 0; i < 12; i++) {intervals.find(item => item.ms === 100).fn(); await settle();}
+  for (let i = 0; i < 36; i++) {intervals.find(item => item.ms === 100).fn(); await settle();}
   console.log(JSON.stringify({events, commands, failedDownAfterStop, downClearedAfterRun, upAndStopFailures, explicitStopFailure, clearedByNewRun, lateSuccessDidNotClear, lateFailureDidNotReturn}));
 })().catch(error => {console.error(error); process.exit(1);});

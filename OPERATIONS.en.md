@@ -4,6 +4,12 @@
 
 These are general repository reproduction steps. Device addresses, credentials and joint calibration belong to each installation. Passing builds/tests does not upload firmware or actuate motors.
 
+## Starting, holding and releasing a manual control
+
+On press, the UI reads the controller boot ID and the axis generation from `GET /manual_leases` and includes them in the start request. Once the controller accepts the start, the UI renews that hold using its `leaseId` and an increasing `leaseSeq`. On release, the UI sends STOP immediately, even if the start response is still pending. The hold ends when the controller processes STOP or 750 ms elapse since the last accepted request. A later renewal cannot restart the output. Network delay applies between releasing the button and the controller receiving STOP.
+
+Reload the control page after updating the firmware. Direct clients must also identify starts and renewals explicitly. STOP can be sent without a lease ID. Moving the joystick to neutral or reversing direction stops the axis. Release it and start a new drag to move again.
+
 ## Choose an entry point
 
 | Task | Guide |

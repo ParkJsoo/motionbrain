@@ -14,6 +14,7 @@ ROS_BRIDGE_SRC = Path(__file__).resolve().parents[1] / "ros2_ws" / "src" / "moti
 if str(ROS_BRIDGE_SRC) not in sys.path:
     sys.path.insert(0, str(ROS_BRIDGE_SRC))
 
+from motionbrain_ros_bridge.manual_lease import base_start_path  # noqa: E402
 from motionbrain_ros_bridge.vision_detection import TARGET_RATIO_THRESHOLD  # noqa: E402
 from motionbrain_ros_bridge.vision_detection import classify_alignment  # noqa: E402
 from motionbrain_ros_bridge.vision_detection import command_suggestion_for_alignment  # noqa: E402
@@ -202,47 +203,26 @@ def run(args: argparse.Namespace) -> int:
                         flush=True,
                     )
                 else:
-                    start_path = f"/joint?joint=base&action={direction}&percent={args.align_percent}"
+                    snapshot = fetch_json(f"{motion_base}/manual_leases", args.timeout)
+                    start_path = base_start_path(snapshot, direction, args.align_percent)
                     stop_path = "/joint?joint=base&action=stop"
-                    response: dict[str, object] = {}
-                    stopped = False
                     try:
-                        response = post_motionbrain_with_retries(
-                            motion_base,
-                            start_path,
-                            args.timeout,
-                            args.http_token,
-                            args.command_retries,
-                            args.command_retry_delay,
-                        )
-                        if response.get("success"):
-                            time.sleep(args.align_nudge_ms / 1000.0)
-                        stop_response = post_motionbrain_with_retries(
-                            motion_base,
-                            stop_path,
-                            args.timeout,
-                            args.http_token,
-                            args.command_retries,
-                            args.command_retry_delay,
-                        )
-                        stopped = bool(stop_response.get("success"))
-                    finally:
-                        if not stopped:
-                            try:
-                                post_motionbrain_with_retries(
-                                    motion_base,
-                                    stop_path,
-                                    args.timeout,
-                                    args.http_token,
-                                    3,
-                                    args.command_retry_delay,
-                                )
-                            except NETWORK_EXCEPTIONS as stop_exc:
-                                print(
-                                    f"[{timestamp}] ERROR base.stop retry failed: {stop_exc}",
-                                    file=sys.stderr,
-                                    flush=True,
-                                )
+                        try:
+                            response = post_motionbrain(motion_base, start_path, args.timeout, args.http_token)
+                            if response.get("success") is True:
+                                time.sleep(args.align_nudge_ms / 1000.0)
+                        finally:
+                            stop_response = post_motionbrain_with_retries(
+                                motion_base, stop_path, args.timeout, args.http_token,
+                                args.command_retries, args.command_retry_delay,
+                            )
+                    except LOOP_EXCEPTIONS as exc:
+                        print(f"[{timestamp}] ERROR base nudge interrupted: {exc}", file=sys.stderr)
+                        return 1
+                    stopped = stop_response.get("success") is True
+                    if response.get("success") is not True or not stopped:
+                        print(f"[{timestamp}] ERROR base nudge or STOP was rejected", file=sys.stderr)
+                        return 1
                     print(
                         f"[{timestamp}] ACTION base.{direction} "
                         f"nudge={args.align_nudge_ms}ms success={response.get('success')} "
@@ -272,7 +252,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--timeout", type=float, default=6.0)
     parser.add_argument("--capture-retries", type=int, default=2, help="Camera capture attempts per loop")
     parser.add_argument("--capture-retry-delay", type=float, default=1.0, help="Seconds to wait before retrying camera capture")
-    parser.add_argument("--command-retries", type=int, default=2, help="Motion command POST attempts")
+    parser.add_argument("--command-retries", type=int, default=2, help="Stop command POST attempts")
     parser.add_argument("--command-retry-delay", type=float, default=0.2, help="Seconds to wait before retrying command POST")
     parser.add_argument("--cooldown", type=float, default=5.0, help="Minimum seconds between actions")
     parser.add_argument("--http-token", default=os.environ.get("MOTIONBRAIN_HTTP_TOKEN", ""), help="Optional X-MotionBrain-Token for controller POST endpoints")

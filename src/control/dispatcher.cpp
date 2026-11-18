@@ -16,6 +16,7 @@
 #include "control/shoulder_angle_controller.h"
 #include "debug/debug_log.h"
 #include "motion/robot_arm.h"
+#include "motion/manual_command_direction.h"
 #include "motion/motion_sequence.h"
 #include "motor/motor_driver.h"
 #include "peripheral/search_light.h"
@@ -100,22 +101,6 @@ const char* directionToString(MotionDirection direction) {
     case MotionDirection::RIGHT: return "right";
     default:                     return "unknown";
   }
-}
-
-bool semanticPositiveIsForward(uint8_t motorId) {
-  switch (motorId) {
-    case MotorControl::MOTOR_1: return RobotArm::GRIPPER_OPEN_IS_FORWARD;
-    case MotorControl::MOTOR_2: return RobotArm::WRIST_UP_IS_FORWARD;
-    case MotorControl::MOTOR_3: return RobotArm::ELBOW_UP_IS_FORWARD;
-    case MotorControl::MOTOR_4: return RobotArm::SHOULDER_UP_IS_FORWARD;
-    case MotorControl::MOTOR_5: return RobotArm::BASE_LEFT_IS_FORWARD;
-    default:                    return true;
-  }
-}
-
-bool resolveMotorRunForward(uint8_t motorId, bool commandForward) {
-  return commandForward ? semanticPositiveIsForward(motorId)
-                        : !semanticPositiveIsForward(motorId);
 }
 
 } // namespace
@@ -327,7 +312,7 @@ bool Dispatcher::execute(const Command& command, CommandResult& result) {
           break;
         }
       }
-      success = resolveMotorRunForward(command.motorId, command.forward)
+      success = ManualCommandDirection::physicalForward(command.motorId, command.forward)
         ? motorControl_->forward(command.motorId, command.percent)
         : motorControl_->reverse(command.motorId, command.percent);
       if (success) {

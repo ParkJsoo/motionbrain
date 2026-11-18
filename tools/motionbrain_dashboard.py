@@ -23,6 +23,7 @@ if str(ROS_BRIDGE_SRC) not in sys.path:
 if str(MISSION_SRC) not in sys.path:
     sys.path.insert(0, str(MISSION_SRC))
 
+from motionbrain_ros_bridge.manual_lease import base_start_path  # noqa: E402
 from motionbrain_ros_bridge.vision_detection import detect_colored_target  # noqa: E402
 from motionbrain_mission.policy_proposal import PolicyConfig  # noqa: E402
 from motionbrain_mission.policy_proposal import PolicyDetectionSnapshot  # noqa: E402
@@ -1489,8 +1490,11 @@ def execute_base_nudge(
     nudge_ms: int,
     timeout: float,
     token: str,
+    lease_snapshot: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    start_path = f"/joint?joint=base&action={urllib.parse.quote(direction)}&percent={percent}"
+    if lease_snapshot is None:
+        lease_snapshot = fetch_json(f"{motion_base_url}/manual_leases", timeout)
+    start_path = base_start_path(lease_snapshot, direction, percent)
     stop_path = "/joint?joint=base&action=stop"
     start_result: dict[str, Any] = {}
     stopped = False
@@ -1737,6 +1741,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self.send_error_json(HTTPStatus.CONFLICT, f"alignment_not_allowed:{reason}")
                 return
 
+            lease_snapshot = fetch_json(f"{self.server.motion_base_url}/manual_leases", self.server.timeout)
             if not policy_detection_eligible(detection, time.monotonic() - observation_received):
                 self.send_error_json(HTTPStatus.CONFLICT, "alignment_source_expired")
                 return
@@ -1748,6 +1753,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self.server.align_nudge_ms,
                 self.server.timeout,
                 self.server.http_token,
+                lease_snapshot,
             )
             result["alignment"] = alignment
             result["detection"] = detection

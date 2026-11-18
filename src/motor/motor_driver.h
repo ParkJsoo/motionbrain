@@ -100,6 +100,10 @@ public:
    * @return 성공 여부 (상태 체크 실패 시 false)
    */
   bool setSpeedAll(int16_t speed);
+  // Software command ownership epoch, not measured motion. Target changes and
+  // STOP/OFF from every API invalidate HTTP manual lease snapshots.
+  uint64_t controlEpoch(uint8_t motorId) const {return motorId>=1&&motorId<=NUM_MOTORS?controlEpoch_[motorId-1]:0;}
+
   
   /**
    * 모터 정방향 구동 (기본 속도 사용)
@@ -289,6 +293,7 @@ private:
   bool enabled_[NUM_MOTORS];           // 각 모터 활성화 여부
   int16_t currentSpeed_[NUM_MOTORS];   // 각 모터 현재 속도 (-255 ~ 255)
   int16_t targetSpeed_[NUM_MOTORS];    // 각 모터 목표 속도 (-255 ~ 255)
+  uint64_t controlEpoch_[NUM_MOTORS];
   uint32_t lastUpdateTime_[NUM_MOTORS]; // 각 모터 마지막 업데이트 시간 (밀리초)
   
   // 기본 속도 설정

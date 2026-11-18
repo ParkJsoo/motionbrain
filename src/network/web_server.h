@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include "idle_connection_web_server.h"
 #include "vision_endpoint_lease.h"
+#include "manual_control_lease.h"
 #include <stdint.h>      // uint16_t를 위해 추가
 #include "motion/motion_sequence.h"
 
@@ -90,8 +91,7 @@ private:
   bool active_;         // 웹 서버 활성화 여부
   uint16_t port_;       // HTTP 서버 포트
   static const uint8_t MANUAL_LEASE_MOTOR_COUNT = 5;
-  bool manualLeaseActive_[MANUAL_LEASE_MOTOR_COUNT];
-  uint32_t manualLeaseUntilMs_[MANUAL_LEASE_MOTOR_COUNT];
+  manual_control::Leases manualLeases_;
 
   // 외부 객체 참조 (상태 조회 및 명령 처리용)
   SystemStateManager* systemState_;
@@ -114,7 +114,8 @@ private:
   void sendErrorJson(int statusCode, const char* error, const String& details = "");
   void sendCommandResult(const CommandResult& result, const String& extraJson = "");
   void expireManualLeases();
-  void extendManualLease(uint8_t motorId);
+  bool submitManualRun(const Command& command,uint8_t motorId,bool positive);
+  void handleManualLeases();
   void clearManualLease(uint8_t motorId);
   void clearAllManualLeases();
   uint8_t motorIdForJoint(MotionJoint joint) const;

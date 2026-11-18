@@ -50,7 +50,7 @@ window.addEventListener('blur',()=>mark('cancel_context',{eventType:'blur'}));
 document.addEventListener('visibilitychange',()=>mark('cancel_context',{eventType:document.visibilityState}));
 const gestures=new Map(), leaseInfo=new Map();let gestureOrdinal=0;
 const jointActions=new Map(), actionTargets=new Map(), errorNotices=new Map(), failedRequests=new Map(), responseStatuses=new Map(), latestSuccess=new Map();
-for(const name of ['motorStart','motorStop','stopAllMotors','switchMode','jointStart','jointStop','jointStopNow','refreshJointLease','refreshMotorLease']){
+for(const name of ['motorStart','motorStop','motorStopNow','stopAllMotors','switchMode','jointStart','jointStop','jointStopNow','refreshJointLease','refreshMotorLease']){
  const original=window[name];if(typeof original!=='function')continue;
  window[name]=function(...args){
   const isJoint=name.startsWith('joint')||name==='refreshJointLease',joint=isJoint?String(args[0]):null;
@@ -64,12 +64,22 @@ for(const name of ['motorStart','motorStop','stopAllMotors','switchMode','jointS
   const entry=isJoint?(typeof activeJointButtons==='object'&&activeJointButtons[joint]):(typeof activeMotors==='object'&&activeMotors[args[0]]);
   if(isStart&&!entry){const requestedAction=isJoint?args[1]:args[1];gestures.set(key,{id:pageId+':gesture:'+(++gestureOrdinal),key,action:requestedAction,active:true,initialAcknowledged:false,pendingRequestSequence:null});const info=leaseInfo.get(key);if(info)visibility(info,false);}
   const gesture=gestures.get(key)||null;
-  if(['jointStop','jointStopNow','motorStop'].includes(name)&&gesture)gesture.active=false;
+  if(['jointStop','jointStopNow','motorStop','motorStopNow'].includes(name)&&gesture)gesture.active=false;
   if(isLease&&entry&&gesture&&gesture.active&&gesture.pendingRequestSequence!==null){mark('lease_coalesced',{sourceFunction:name,gestureId:gesture.id,joint,pendingRequestSequence:gesture.pendingRequestSequence,uiOutcome:'not_issued_while_lease_pending'});return;}
   const prior=activeFunction;activeFunction={name,context,target,gesture};
   try{return original.apply(this,args);}finally{activeFunction=prior;}
  };
 }
+window.bindManualLeaseCommand=function(fn,detail){
+ let captured=activeFunction;
+ if(!captured&&detail&&detail.joystick){
+  const key='motor:'+detail.motor,context=eventContext();
+  const gesture={id:pageId+':gesture:'+(++gestureOrdinal),key,action:detail.action,active:true,initialAcknowledged:false,pendingRequestSequence:null};
+  gestures.set(key,gesture);captured={name:'joystickStart',context,target:context&&context.target,gesture};
+  mark('ui_function',{functionName:'joystickStart',motorId:detail.motor,action:detail.action,eventType:context&&context.eventType,isTrusted:context&&context.isTrusted,domEventSequence:context&&context.domEventSequence});
+ }
+ return function(...args){const prior=activeFunction;activeFunction=captured;try{return fn.apply(this,args);}finally{activeFunction=prior;}};
+};
 function controlKey(u){return u.pathname==='/joint'?'joint:'+u.searchParams.get('joint'):u.pathname==='/motor'?'motor:'+u.searchParams.get('id'):'command';}
 function actionName(u){return u.searchParams.get('action')||u.searchParams.get('cmd')||'request';}
 function visibility(holder,shown){holder.hidden=!shown;holder.style.display=shown?'block':'none';}
@@ -108,7 +118,7 @@ window.fetch=function(input,options={}){
 };
 function neutralLease(u,r,meta,source){
  const gesture=source&&source.gesture;
- return Boolean(source&&['refreshJointLease','refreshMotorLease'].includes(source.name)&&gesture&&gesture.initialAcknowledged&&gesture.key===controlKey(u)&&gesture.action===actionName(u)&&meta&&meta.httpStatus===409&&meta.proxyDisposition==='superseded_without_dispatch'&&r&&r.schemaVersion==='motionbrain.ui_proxy_command_disposition.v1'&&r.success===false&&r.outcome==='superseded_without_dispatch'&&r.controllerForwarded===false&&r.independentGuardsPassed===true&&r.captureId===meta.captureId&&r.commandId===undefined);
+ return Boolean(source&&['refreshJointLease','refreshMotorLease','refreshJoystickLease'].includes(source.name)&&gesture&&gesture.initialAcknowledged&&gesture.key===controlKey(u)&&gesture.action===actionName(u)&&meta&&meta.httpStatus===409&&meta.proxyDisposition==='superseded_without_dispatch'&&r&&r.schemaVersion==='motionbrain.ui_proxy_command_disposition.v1'&&r.success===false&&r.outcome==='superseded_without_dispatch'&&r.controllerForwarded===false&&r.independentGuardsPassed===true&&r.captureId===meta.captureId&&r.commandId===undefined);
 }
 function displayNeutralLease(u,target,gesture){
  if(gestures.get(gesture.key)!==gesture)return;
@@ -118,11 +128,12 @@ function displayNeutralLease(u,target,gesture){
 }
 const oldCommand=window.commandFetch;
 if(typeof oldCommand==='function')window.commandFetch=function(url,...args){
- const u=new URL(url,location.href),allowed=['joint','id','action','percent','cmd','direction','duration','durationMs','speed'],query={};for(const key of allowed)if(u.searchParams.has(key))query[key]=u.searchParams.get(key);
- const requestSequence=sequence+1,key=controlKey(u),stopping=u.searchParams.get('action')==='stop'||['stop','disarm'].includes(u.searchParams.get('cmd')),secret=typeof commandToken==='string'?commandToken:'',source=activeFunction;
+ const u=new URL(url,location.href),allowed=['lease','joint','id','action','percent','cmd','direction','duration','durationMs','speed'],query={};for(const key of allowed)if(u.searchParams.has(key))query[key]=u.searchParams.get(key);
+ const requestSequence=sequence+1,key=controlKey(u),stopping=u.searchParams.get('action')==='stop'||['stop','disarm'].includes(u.searchParams.get('cmd')),secret=typeof commandToken==='string'?commandToken:'';let source=activeFunction;
+ const gesture=gestures.get(key);if(!source&&u.pathname==='/motor'&&gesture&&(u.searchParams.get('lease')==='renew'||stopping)){source={name:stopping?'joystickStop':'refreshJoystickLease',gesture,context:null,target:actionTargets.get(key)};if(stopping)gesture.active=false;}
  const target=source&&source.target||actionTargets.get(key)||(u.pathname==='/motor'?document.getElementById('btn-'+u.searchParams.get('action')+'-'+u.searchParams.get('id')):null);
  mark('command_intent',{path:u.pathname,query,sourceFunction:source&&source.name,gestureId:source&&source.gesture&&source.gesture.id,domEventSequence:source&&source.context&&source.context.domEventSequence,relatedFailedRequestSequence:failedRequests.get(key)||null});
- const lease=source&&['refreshJointLease','refreshMotorLease'].includes(source.name)&&source.gesture;if(lease)lease.pendingRequestSequence=requestSequence;
+ const lease=source&&['refreshJointLease','refreshMotorLease','refreshJoystickLease'].includes(source.name)&&source.gesture;if(lease)lease.pendingRequestSequence=requestSequence;
  const clearPending=()=>{if(lease&&lease.pendingRequestSequence===requestSequence)lease.pendingRequestSequence=null;};
  const fail=(data,httpStatus)=>{if(requestSequence>=(latestSuccess.get(key)||0)&&requestSequence>=(failedRequests.get(key)||0))failedRequests.set(key,requestSequence);displayFailure(u,data,secret,httpStatus,requestSequence,target);};
  try{activeIntent=requestSequence;const result=oldCommand.call(this,url,...args);activeIntent=null;return Promise.resolve(result).then(r=>{
@@ -130,7 +141,7 @@ if(typeof oldCommand==='function')window.commandFetch=function(url,...args){
   const neutral=neutralLease(u,r,meta,source);clearPending();
   mark('command_result',{requestSequence,success:r&&r.success===true,httpStatus,gestureId:source&&source.gesture&&source.gesture.id,controllerForwarded:neutral?false:undefined,uiOutcome:neutral?'lease_superseded_without_dispatch':undefined,commandId:r&&Number.isSafeInteger(r.commandId)&&r.commandId>=0?r.commandId:null,reasonCode:neutral?'superseded_not_forwarded':r&&r.success===true?null:'command_rejected'});
   if(neutral){displayNeutralLease(u,target,source.gesture);/* Compatibility only: the legacy lease callback tests success. The raw result above remains false; no controller receipt is manufactured. */return {...r,success:true,uiOnlyLeaseNoOp:true,controllerSuccess:false};}
-  if(r&&r.success===true&&source&&['jointStart','motorStart'].includes(source.name)&&source.gesture)source.gesture.initialAcknowledged=true;
+  if(r&&r.success===true&&source&&['jointStart','motorStart','joystickStart'].includes(source.name)&&source.gesture)source.gesture.initialAcknowledged=true;
   if(!r||r.success!==true)fail(r,httpStatus);
   else if(!stopping){latestSuccess.set(key,Math.max(latestSuccess.get(key)||0,requestSequence));if(requestSequence>=(failedRequests.get(key)||0))failedRequests.delete(key);for(const notice of errorNotices.values())if(notice.key===key&&notice.failedSequence<=requestSequence)visibility(notice.holder,false);}
   return r;

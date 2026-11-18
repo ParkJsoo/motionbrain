@@ -23,6 +23,7 @@ MotorControl::MotorControl() {
     currentSpeed_[i] = 0;
     targetSpeed_[i] = 0;
     lastUpdateTime_[i] = 0;
+    controlEpoch_[i] = 0;
   }
   
   // 드라이버별 오류 상태 초기화
@@ -187,6 +188,7 @@ bool MotorControl::forward(uint8_t motorId, uint8_t percent) {
 
   // 목표 속도 설정
   uint8_t index = motorIdToIndex(motorId);
+  ++controlEpoch_[index];
   targetSpeed_[index] = speed;
   enabled_[index] = true;
 
@@ -237,6 +239,7 @@ bool MotorControl::reverse(uint8_t motorId, uint8_t percent) {
   
   // 목표 속도 설정
   uint8_t index = motorIdToIndex(motorId);
+  ++controlEpoch_[index];
   targetSpeed_[index] = reverseSpeed;
   enabled_[index] = true;
   
@@ -278,6 +281,7 @@ bool MotorControl::setSpeed(uint8_t motorId, int16_t speed) {
   
   // 목표 속도 설정 (점진적 변경을 위해)
   uint8_t index = motorIdToIndex(motorId);
+  ++controlEpoch_[index];
   targetSpeed_[index] = speed;
   
   // 목표 속도가 0이 아니면 활성화 상태로 표시
@@ -316,6 +320,7 @@ bool MotorControl::setSpeedAll(int16_t speed) {
   
   // 모든 모터의 목표 속도 설정
   for (uint8_t i = 0; i < NUM_MOTORS; i++) {
+    ++controlEpoch_[i];
     targetSpeed_[i] = speed;
     if (speed != 0) {
       enabled_[i] = true;
@@ -350,6 +355,7 @@ bool MotorControl::stop(uint8_t motorId) {
   
   // 정지 명령은 모든 상태에서 허용 (안전 최우선)
   uint8_t index = motorIdToIndex(motorId);
+  ++controlEpoch_[index];
   targetSpeed_[index] = 0;
 
   DebugLog::debug("Motor M%d: target speed set to 0 (will ramp down gradually)", motorId);
@@ -370,6 +376,7 @@ bool MotorControl::stopAll() {
 #endif
   // 정지 명령은 모든 상태에서 허용 (안전 최우선)
   for (uint8_t i = 0; i < NUM_MOTORS; i++) {
+    ++controlEpoch_[i];
     targetSpeed_[i] = 0;
   }
 
@@ -844,6 +851,7 @@ bool MotorControl::setMotorSpeedInternal(uint8_t motorId, int16_t speed) {
 void MotorControl::forceMotorOutputOff(uint8_t motorId) {
   uint8_t index = motorIdToIndex(motorId);
 
+  ++controlEpoch_[index];
   targetSpeed_[index] = 0;
   currentSpeed_[index] = 0;
   enabled_[index] = false;
