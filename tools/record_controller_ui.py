@@ -8,6 +8,8 @@ monotonic 시각은 같은 호스트 기준이며 브라우저 anchor는 왕복 
 import argparse
 import copy
 import math
+import os
+import tempfile
 import secrets
 from contextlib import nullcontext
 import hashlib
@@ -349,33 +351,183 @@ def make_server(controller, output, port=8768, *, ready_file=None, opener=None):
         unknown=False,
         unownedStopAt=0.0,
         ownerPage=None,
+        startPageId=None,
+        startMonotonic=None,
     )
 
-    def ready(page_id):
+    signal_file = (
+        Path(ready_file).parent / "operator-start.json"
+        if ready_file is not None
+        else None
+    )
+
+    def status_for(page_id):
+        page = log.pages.get(page_id, {})
+        reason = "browser_preparing"
+        text = "브라우저 준비 중"
+        can_start = False
+        ended_file = (
+            Path(ready_file).parent / "capture-ended.json"
+            if ready_file is not None
+            else None
+        )
+        state = {}
         try:
-            if ready_file is None:
-                return False
-            raw = Path(ready_file).read_bytes()
-            if len(raw) > 65536:
-                return False
-            state = json.loads(raw)
-            age = time.monotonic() - state["at"]
-            page = log.pages.get(page_id, {})
-            return bool(
-                state.get("recording") is True
-                and not state.get("errors")
-                and 0 <= age <= 2
-                and not log.degraded
-                and not control["unknown"]
-                and not control["stopPending"]
-                and control["ownerPage"] in (None, page_id)
-                and page.get("started")
-                and page.get("startedAt", 0) > control["unownedStopAt"]
-                and 0 <= time.monotonic() - page.get("heartbeatAt", 0) <= 2
-                and 0 <= time.monotonic() - page.get("anchorAt", 0) <= 10
+            if ready_file is not None and Path(ready_file).exists():
+                with Path(ready_file).open("rb") as file:
+                    raw = file.read(65537)
+                if len(raw) > 65536:
+                    raise ValueError("status size")
+                state = json.loads(raw)
+        except (OSError, ValueError, TypeError):
+            reason = "capture_status_invalid"
+            text = "수집 상태 파일 오류"
+            return dict(
+                recordingReady=False,
+                startAllowed=False,
+                reason=reason,
+                reasonText=text,
+                startRequested=control["startPageId"] is not None,
+                startPageId=control["startPageId"],
             )
-        except (OSError, ValueError, KeyError, TypeError):
-            return False
+        if ended_file is not None and ended_file.exists():
+            try:
+                ended = json.loads(ended_file.read_bytes())
+                failed = bool(ended.get("errors"))
+            except (OSError, ValueError, TypeError):
+                failed = True
+            reason = "capture_failed" if failed else "capture_ended"
+            text = (
+                "수집 실패로 종료 · 새 episode가 필요합니다"
+                if failed
+                else "수집 종료 · 새 episode가 필요합니다"
+            )
+        elif state.get("errors"):
+            reason = "capture_failed"
+            text = "카메라/출력 수집 실패 · 새 동작 차단"
+        elif log.degraded:
+            reason = "ui_log_failed"
+            text = "UI 기록 오류 · 새 동작 차단"
+        elif control["unknown"]:
+            reason = "transport_unknown"
+            text = "명령 전송 결과 불명 · 새 동작 차단"
+        elif control["stopPending"]:
+            reason = "stop_pending"
+            text = "STOP 처리 중 · 새 동작 차단"
+        elif control["ownerPage"] not in (None, page_id):
+            reason = "other_tab"
+            text = "다른 탭이 이 수집의 조작 탭입니다"
+        elif not page.get("started"):
+            pass
+        elif not page.get("anchorAt"):
+            reason = "clock_preparing"
+            text = "브라우저 시각 연결 중"
+        elif not 0 <= time.monotonic() - page.get("heartbeatAt", 0) <= 2:
+            reason = "browser_stale"
+            text = "브라우저 연결 지연 · 새 동작 차단"
+        elif not 0 <= time.monotonic() - page.get("anchorAt", 0) <= 10:
+            reason = "clock_stale"
+            text = "브라우저 시각 기준 지연 · 새 동작 차단"
+        elif page.get("startedAt", 0) <= control["unownedStopAt"]:
+            reason = "page_invalidated"
+            text = "외부 STOP 후 기존 탭 무효 · 새 수집 세션이 필요합니다"
+        elif control["startPageId"] is None:
+            if signal_file is not None and signal_file.exists():
+                reason = "start_exists"
+                text = (
+                    "이 episode에 시작 기록이 이미 있습니다 · 새 episode가 필요합니다"
+                )
+            else:
+                reason = "waiting_operator_start"
+                text = "브라우저 준비 완료 · 수집 시작을 누르세요"
+                can_start = signal_file is not None
+        elif control["startPageId"] != page_id:
+            reason = "other_tab"
+            text = "다른 탭이 수집을 시작했습니다"
+        elif not state:
+            reason = "capture_starting"
+            text = "수집 시작 요청됨 · 두 카메라와 출력 기록 준비 중"
+        elif (
+            state.get("operatorStartPageId") != control["startPageId"]
+            or state.get("operatorStartMonotonic") != control["startMonotonic"]
+            or type(state.get("at")) not in (int, float)
+            or state["at"] <= control["startMonotonic"]
+        ):
+            reason = "capture_starting"
+            text = "시작 요청 이후 두 카메라와 출력 기록 준비를 기다립니다"
+        elif state.get("recording") is not True:
+            reason = "capture_not_recording"
+            text = "수집 대기 또는 종료 · 새 동작 차단"
+        elif (
+            type(state.get("at")) not in (int, float)
+            or not math.isfinite(state["at"])
+            or not 0 <= time.monotonic() - state["at"] <= 2
+        ):
+            reason = "capture_stale"
+            text = "카메라/출력 기록 갱신 지연 · 새 동작 차단"
+        else:
+            reason = "recording"
+            text = "수집 연결됨 · 수동 조작 가능"
+        return dict(
+            recordingReady=reason == "recording",
+            startAllowed=can_start,
+            reason=reason,
+            reasonText=text,
+            startRequested=control["startPageId"] is not None,
+            startPageId=control["startPageId"],
+        )
+
+    def ready(page_id):
+        return status_for(page_id)["recordingReady"]
+
+    def operator_start(page_id):
+        with control_lock:
+            state = status_for(page_id)
+            if not state["startAllowed"]:
+                return False, state
+            payload = dict(
+                schemaVersion="motionbrain.operator_capture_start.v1",
+                pageId=page_id,
+                hostMonotonic=time.monotonic(),
+                hostEpoch=time.time(),
+            )
+            # Publish complete JSON atomically, while preserving O_EXCL semantics.
+            signal_file.parent.mkdir(parents=True, exist_ok=True)
+            temporary = None
+            try:
+                with tempfile.NamedTemporaryFile(
+                    mode="w",
+                    dir=signal_file.parent,
+                    prefix=".operator-start-",
+                    delete=False,
+                ) as file:
+                    temporary = Path(file.name)
+                    json.dump(payload, file)
+                    file.write("\n")
+                    file.flush()
+                    os.fsync(file.fileno())
+                os.link(temporary, signal_file)
+            except FileExistsError:
+                return False, dict(
+                    reason="start_exists",
+                    reasonText="시작 기록이 이미 있습니다 · 새 episode가 필요합니다",
+                )
+            finally:
+                if temporary is not None:
+                    temporary.unlink(missing_ok=True)
+            control["startPageId"] = page_id
+            control["startMonotonic"] = payload["hostMonotonic"]
+            control["ownerPage"] = page_id
+            log.write(
+                "operator_start_requested",
+                pageId=page_id,
+                signalFile=str(signal_file),
+                agentMotorCommands=0,
+            )
+            return True, dict(
+                reason="capture_starting",
+                reasonText="수집 시작 요청됨 · 두 카메라와 출력 기록 준비 중",
+            )
 
     # No environment proxy, redirects, or retry for mutating requests.
     class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -427,7 +579,7 @@ def make_server(controller, output, port=8768, *, ready_file=None, opener=None):
                         200,
                         json.dumps(
                             dict(
-                                recordingReady=ready(page_id),
+                                **status_for(page_id),
                                 browserConnected=page_id in log.pages,
                                 clockAnchorStored=bool(
                                     log.pages.get(page_id, {}).get("anchorAt")
@@ -463,6 +615,24 @@ def make_server(controller, output, port=8768, *, ready_file=None, opener=None):
                         raise ValueError("origin")
                     log.browser(json.loads(raw or b""))
                     return self.reply(200, b'{"stored":true}')
+                if path == "/__capture/start" and self.command == "POST":
+                    if self.headers.get("Origin") not in (
+                        f"http://127.0.0.1:{self.server.server_port}",
+                        f"http://localhost:{self.server.server_port}",
+                    ):
+                        raise ValueError("start origin")
+                    request_body = json.loads(raw or b"")
+                    if (
+                        not isinstance(request_body, dict)
+                        or set(request_body) != {"pageId"}
+                        or not isinstance(request_body["pageId"], str)
+                    ):
+                        raise ValueError("start body")
+                    started, result = operator_start(request_body["pageId"])
+                    return self.reply(
+                        201 if started else 409,
+                        json.dumps(result, ensure_ascii=False).encode(),
+                    )
                 allowed = GET_PATHS if self.command == "GET" else POST_PATHS
                 if path not in allowed:
                     return self.reply(404, b'{"error":"route"}')
@@ -692,7 +862,13 @@ def main():
     p.add_argument(
         "--ready-file",
         required=True,
-        help="Passive live-status.json: recording=true, at=host monotonic, errors empty; age <=2s",
+        help=(
+            "별도 sampler의 live-status.json. 수집 시작 버튼만 부모 경로에 "
+            "operator-start.json(pageId, hostMonotonic)을 exclusive 생성합니다. "
+            "녹화 heartbeat는 recording=true, 오류 없음, at이 시작 이후이면서 age<=2s, "
+            "operatorStartPageId=signal.pageId 및 operatorStartMonotonic=signal.hostMonotonic 필수. "
+            "이 도구는 camera recorder를 직접 기동하지 않습니다."
+        ),
     )
     p.add_argument("--prepare", action="store_true")
     a = p.parse_args()

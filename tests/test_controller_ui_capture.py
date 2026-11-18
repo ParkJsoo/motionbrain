@@ -90,7 +90,7 @@ class Capture(unittest.TestCase):
             **kw,
         )
 
-    def establish(self):
+    def establish(self, start=True):
         clock = json.loads(self.send("/__capture/clock?pageId=fixture")[1])
         events = [
             self.event(1, "page_started"),
@@ -108,8 +108,31 @@ class Capture(unittest.TestCase):
             )[0],
             200,
         )
+        if start:
+            self.assertEqual(
+                self.send(
+                    "/__capture/start",
+                    "POST",
+                    json.dumps({"pageId": "fixture"}).encode(),
+                    {"Origin": self.base},
+                )[0],
+                201,
+            )
+        signal = (
+            json.loads((self.root / "operator-start.json").read_bytes())
+            if start
+            else {}
+        )
         self.ready.write_text(
-            json.dumps(dict(recording=True, at=time.monotonic(), errors=[]))
+            json.dumps(
+                dict(
+                    recording=True,
+                    at=time.monotonic(),
+                    errors=[],
+                    operatorStartPageId=signal.get("pageId"),
+                    operatorStartMonotonic=signal.get("hostMonotonic"),
+                )
+            )
         )
 
     def post(self, path, **kw):
@@ -292,7 +315,7 @@ class Capture(unittest.TestCase):
                 "/motor?action=forward&id=3&percent=60",
                 **{"X-UI-Capture-ID": "other:4"},
             )[0],
-            200,
+            409,
         )
         self.server.capture_log.pages["other"]["heartbeatAt"] -= 3
         self.assertEqual(
@@ -553,6 +576,123 @@ class Capture(unittest.TestCase):
             )
         )
 
+    def test_page_visit_and_auth_ready_do_not_start_collection(self):
+        self.establish(start=False)
+        self.assertFalse((self.root / "operator-start.json").exists())
+        state = json.loads(self.send("/__capture/status?pageId=fixture")[1])
+        self.assertEqual(state["reason"], "waiting_operator_start")
+        self.assertTrue(state["startAllowed"])
+        self.assertFalse(state["recordingReady"])
+        self.assertEqual(self.post("/motor?action=forward&id=3&percent=60")[0], 409)
+        self.assertEqual(
+            self.send(
+                "/__capture/start",
+                "POST",
+                json.dumps({"pageId": "fixture"}).encode(),
+                {"Origin": self.base},
+            )[0],
+            201,
+        )
+        signal = self.root / "operator-start.json"
+        before = signal.read_bytes()
+        self.assertEqual(json.loads(before)["pageId"], "fixture")
+        self.assertEqual(
+            self.send(
+                "/__capture/start",
+                "POST",
+                json.dumps({"pageId": "fixture"}).encode(),
+                {"Origin": self.base},
+            )[0],
+            409,
+        )
+        self.assertEqual(signal.read_bytes(), before)
+        self.assertFalse(self.requests)
+
+    def test_start_requires_origin_fresh_browser_and_never_overwrites_ended_episode(
+        self,
+    ):
+        body = json.dumps({"pageId": "fixture"}).encode()
+        self.assertEqual(
+            self.send(
+                "/__capture/start", "POST", body, {"Origin": "http://evil.invalid"}
+            )[0],
+            502,
+        )
+        self.assertEqual(
+            self.send("/__capture/start", "POST", body, {"Origin": self.base})[0], 409
+        )
+        self.establish(start=False)
+        (self.root / "capture-ended.json").write_text(json.dumps({"errors": []}))
+        self.assertEqual(
+            self.send("/__capture/start", "POST", body, {"Origin": self.base})[0], 409
+        )
+        self.assertFalse((self.root / "operator-start.json").exists())
+        self.assertEqual(
+            json.loads(self.send("/__capture/status?pageId=fixture")[1])["reason"],
+            "capture_ended",
+        )
+        (self.root / "capture-ended.json").write_text(
+            json.dumps({"errors": ["camera fixture failure"]})
+        )
+        self.assertEqual(
+            json.loads(self.send("/__capture/status?pageId=fixture")[1])["reason"],
+            "capture_failed",
+        )
+        self.assertFalse(self.requests)
+
+    def test_start_needs_new_matching_sampler_heartbeat(self):
+        self.establish(start=False)
+        self.assertEqual(
+            self.send(
+                "/__capture/start",
+                "POST",
+                json.dumps({"pageId": "fixture"}).encode(),
+                {"Origin": self.base},
+            )[0],
+            201,
+        )
+        signal = json.loads((self.root / "operator-start.json").read_bytes())
+        self.assertEqual(
+            json.loads(self.send("/__capture/status?pageId=fixture")[1])["reason"],
+            "capture_starting",
+        )
+        for page, stamp, at in [
+            ("fixture", signal["hostMonotonic"], signal["hostMonotonic"] - 0.001),
+            ("other", signal["hostMonotonic"], time.monotonic()),
+            ("fixture", signal["hostMonotonic"] - 0.01, time.monotonic()),
+        ]:
+            self.ready.write_text(
+                json.dumps(
+                    dict(
+                        recording=True,
+                        at=at,
+                        operatorStartPageId=page,
+                        operatorStartMonotonic=stamp,
+                    )
+                )
+            )
+            self.assertFalse(
+                json.loads(self.send("/__capture/status?pageId=fixture")[1])[
+                    "recordingReady"
+                ]
+            )
+        self.ready.write_text(
+            json.dumps(
+                dict(
+                    recording=True,
+                    at=time.monotonic(),
+                    operatorStartPageId="fixture",
+                    operatorStartMonotonic=signal["hostMonotonic"],
+                )
+            )
+        )
+        self.assertTrue(
+            json.loads(self.send("/__capture/status?pageId=fixture")[1])[
+                "recordingReady"
+            ]
+        )
+        self.assertFalse(self.requests)
+
     def test_events_deduplicated_and_bad_metadata_rejected(self):
         self.establish()
         batch = dict(
@@ -608,56 +748,84 @@ class Capture(unittest.TestCase):
 
 
 class BrowserSemantics(unittest.TestCase):
-    def test_original_ui_press_change_release_cancel_and_auth_not_in_events(self):
-        # Execute the actual firmware button/lease functions with a browser API mock.
-        # This is a JS semantic test, not a real DOM rendering or physical driver test.
+    def test_original_ui_inline_secret_start_press_change_release_and_invalid_token(
+        self,
+    ):
         import re
 
         names = (
             "function commandFetch(",
+            "function commandHeaders(",
+            "function updateTokenStatus(",
             "function motorStart(",
             "function motorStop(",
             "function refreshMotorLease(",
             "function updateSpeedValue(",
+            "function handleGlobalDrag(",
+            'document.addEventListener("keydown"',
+            'document.addEventListener("keyup"',
         )
         functions = []
         for line in (ROOT / "src/network/web_server.cpp").read_text().splitlines():
-            if any(name in line for name in names):
-                literal = re.search(r'server_\.sendContent\((".*")\);', line).group(1)
-                functions.append(json.loads(literal))
-        self.assertEqual(len(functions), 5)
+            match = re.search(r'server_\.sendContent\((".*")\);', line)
+            if not match:
+                continue
+            try:
+                decoded = json.loads(match.group(1))
+            except ValueError:
+                continue
+            if any(decoded.startswith(name) for name in names):
+                functions.append(decoded)
+        self.assertEqual(len(functions), 10)
         fixture = r"""
 const vm=require('node:vm'),fs=require('node:fs');const config=JSON.parse(fs.readFileSync(0,'utf8'));
-const events=[],commands=[],intervals=[],elements={},listeners={},created=[];let authPrompts=0;
-global.window=global;global.location={href:'http://localhost/',origin:'http://localhost'};
-global.crypto=require('node:crypto').webcrypto;
-function element(id){return elements[id]??=( {id,value:'60',textContent:'',style:{},dataset:{},classList:{add(){},remove(){}},appendChild(){},matches(){return true;}} );}
-global.document={documentElement:element('root'),body:{appendChild(){}},getElementById:element,createElement:()=>{const e=element('node'+created.length);created.push(e);return e;},addEventListener:(n,f)=>{(listeners[n]??=[]).push(f);},visibilityState:'visible'};
-global.addEventListener=(n,f)=>{(listeners[n]??=[]).push(f);};
+const events=[],commands=[],intervals=[],elements={},listeners={},created=[],starts=[];let prompts=0,invalidNext=false;
+global.window=global;global.location={href:'http://localhost/',origin:'http://localhost'};global.crypto=require('node:crypto').webcrypto;
+function element(id){return elements[id]??={id,value:'60',textContent:'',style:{},dataset:{},classList:{add(){},remove(){}},appendChild(){},setAttribute(){},matches(){return true;}};}
+global.document={documentElement:element('root'),body:{appendChild(){}},getElementById:element,createElement:tag=>{const e=element('node'+created.length);e.tagName=tag.toUpperCase();created.push(e);return e;},addEventListener:(n,f,capture=false)=>{(listeners[n]??=[]).push({f,capture});},visibilityState:'visible'};
+global.addEventListener=(n,f)=>{(listeners[n]??=[]).push({f,capture:false});};
+function dispatch(type,target,extra={}){let stopped=false;const e={type,target,isTrusted:true,pointerId:1,clientX:1,clientY:2,preventDefault(){},stopImmediatePropagation(){stopped=true;},...extra};for(const entry of [...(listeners[type]||[])].sort((a,b)=>Number(b.capture)-Number(a.capture))){entry.f(e);if(stopped)break;}}
 global.setInterval=(f,ms)=>{intervals.push({f,ms});return intervals.length;};global.clearInterval=()=>{};
-global.commandToken='';global.updateTokenStatus=()=>{};global.showMessage=()=>{};global.updateStatus=()=>{};
-global.commandHeaders=()=>{authPrompts++;return {'X-MotionBrain':'1','X-MotionBrain-Token':'SECRET-FIXTURE'};};
-global.activeMotors={};global.currentMode='button';global.MANUAL_LEASE_REFRESH_MS=250;
+global.prompt=()=>{prompts++;throw Error('prompt forbidden');};global.showMessage=()=>{};global.updateStatus=()=>{};
+global.MANUAL_LEASE_REFRESH_MS=250;
+vm.runInThisContext("let commandToken='';const COMMAND_TOKEN_CONFIGURED=true;let activeMotors={};let currentMode='button';let activeJoysticks={};let joystickActive={};");
 global.fetch=async(url,options={})=>{
  if(url==='/__capture/events'){events.push(...JSON.parse(options.body).events);return{ok:true,json:async()=>({stored:true})};}
  if(url.startsWith('/__capture/clock'))return{ok:true,json:async()=>({hostReceivedMonotonic:1,hostSentMonotonic:1,anchorId:'fixtureanchor'})};
- if(url.startsWith('/__capture/status'))return{ok:true,json:async()=>({recordingReady:true})};
- commands.push({url,method:options.method,headers:Object.fromEntries(new Headers(options.headers)),driverPWM:new URL(url,'http://localhost').searchParams.get('action')==='stop'?0:Math.round(Number(new URL(url,'http://localhost').searchParams.get('percent'))*255/100)});
- return{ok:true,json:async()=>({success:true})};
+ if(url.startsWith('/__capture/status'))return{ok:true,json:async()=>({recordingReady:starts.length>0,startAllowed:!starts.length,reasonText:starts.length?'수집 연결됨':'수집 시작 대기'})};
+ if(url==='/__capture/start'){starts.push(JSON.parse(options.body));return{ok:true,json:async()=>({reasonText:'수집 시작 요청됨'})};}
+ const params=new URL(url,'http://localhost').searchParams;
+ commands.push({url,method:options.method,headers:Object.fromEntries(new Headers(options.headers)),driverPWM:params.get('action')==='stop'?0:Math.round(Number(params.get('percent'))*255/100)});
+ const invalid=invalidNext;invalidNext=false;return{ok:true,json:async()=>invalid?({success:false,error:'invalid X-MotionBrain-Token'}):({success:true})};
 };
-for(const fn of config.functions)vm.runInThisContext(fn);
-vm.runInThisContext(config.instrumentation);
+for(const fn of config.functions)vm.runInThisContext(fn);vm.runInThisContext(config.instrumentation);
 const settle=async()=>{for(let i=0;i<8;i++)await Promise.resolve();};
 (async()=>{
- await settle();
- created.find(e=>e.id==='intent-capture-auth').onclick();if(commands.length!==0)throw Error('auth preparation sent command');
- for(const f of listeners.pointerdown)f({type:'pointerdown',target:element('btn-forward-3'),pointerId:1,isTrusted:true,clientX:1,clientY:2});
- window.motorStart(3,'forward',{preventDefault(){}});await settle();
- element('speed-3').value='70';for(const f of listeners.input)f({type:'input',target:element('speed-3'),isTrusted:true});window.updateSpeedValue(3);window.refreshMotorLease(3);await settle();
- for(const f of listeners.pointerup)f({type:'pointerup',target:element('btn-forward-3'),pointerId:1,isTrusted:true});window.motorStop(3,{preventDefault(){}});await settle();
- for(const f of listeners.pointercancel)f({type:'pointercancel',target:element('btn-forward-3'),pointerId:1,isTrusted:true});
- for(const f of listeners.blur)f();
- intervals.find(x=>x.ms===100).f();await settle();console.log(JSON.stringify({events,commands,authPrompts}));
+ await settle();if(starts.length||commands.length)throw Error('page visit started collection or motor');
+ const password=created.find(e=>e.id==='intent-capture-password'),form=created.find(e=>e.tagName==='FORM'),start=created.find(e=>e.id==='intent-capture-start');
+ for(const code of ['KeyQ','KeyA','KeyW','KeyS','KeyE','KeyD','KeyR','KeyF','KeyT','KeyG','Enter','Tab']){dispatch('keydown',password,{code});dispatch('keyup',code==='Tab'?element('btn-forward-3'):password,{code});}
+ for(const type of ['beforeinput','input','paste','compositionstart','compositionupdate','compositionend','click'])dispatch(type,password,{data:'SECRET-FIXTURE'});
+ password.value='SECRET-FIXTURE';form.onsubmit({preventDefault(){}});
+ if(password.value||commands.length||starts.length||!vm.runInThisContext("commandToken==='SECRET-FIXTURE'"))throw Error('secret auth semantics');
+ await start.onclick();if(starts.length!==1||commands.length)throw Error('start button semantics');
+ dispatch('pointerdown',element('btn-forward-3'));window.motorStart(3,'forward',{preventDefault(){}});await settle();
+ element('speed-3').value='70';dispatch('input',element('speed-3'));window.updateSpeedValue(3);window.refreshMotorLease(3);await settle();
+ dispatch('pointerup',element('btn-forward-3'));window.motorStop(3,{preventDefault(){}});await settle();dispatch('pointercancel',element('btn-forward-3'));dispatch('blur',null);
+ // Lost key-up during blur cannot suppress a later new physical press/release.
+ dispatch('keydown',password,{code:'KeyQ'});dispatch('blur',null);
+ dispatch('keydown',element('btn-forward-1'),{code:'KeyQ',repeat:false});await settle();dispatch('keyup',element('btn-forward-1'),{code:'KeyQ'});await settle();
+ // A held secret key repeated after focus leaves the field must never RUN.
+ const beforeRepeat=commands.length;dispatch('keydown',password,{code:'KeyE'});dispatch('keydown',element('btn-forward-3'),{code:'KeyE',repeat:true});dispatch('keyup',element('btn-forward-3'),{code:'KeyE'});await settle();if(commands.length!==beforeRepeat)throw Error('held secret key leaked to motor');
+ // A motor key pressed outside must still STOP when released inside the secret field.
+ dispatch('keydown',element('btn-forward-1'),{code:'KeyQ'});await settle();dispatch('keyup',password,{code:'KeyQ'});await settle();
+ // Original joystick mouse release also reaches its handler through the secret field.
+ vm.runInThisContext("activeJoysticks[3]={area:document.getElementById('joystick-3'),handle:document.getElementById('handle-3'),motorId:3,touchId:null};joystickActive[3]={action:'forward',percent:60};");
+ dispatch('mouseup',password);await settle();
+ invalidNext=true;await window.commandFetch('/command?cmd=arm',{method:'POST'});await settle();
+ if(!vm.runInThisContext("commandToken.length===0"))throw Error('invalid token not cleared');
+ try{await window.commandFetch('/command?cmd=arm',{method:'POST'});}catch(e){}
+ if(commands.length!==9)throw Error('missing token used prompt or sent command');
+ intervals.find(x=>x.ms===100).f();await settle();console.log(JSON.stringify({events,commands,starts,prompts}));
 })().catch(e=>{console.error(e);process.exit(1);});
 """
         raw = subprocess.run(
@@ -672,24 +840,29 @@ const settle=async()=>{for(let i=0;i<8;i++)await Promise.resolve();};
         data = json.loads(raw)
         commands = data["commands"]
         events = data["events"]
-        self.assertEqual(data["authPrompts"], 4)
-        self.assertEqual([c["driverPWM"] for c in commands], [153, 179, 0])
-        self.assertEqual([c["method"] for c in commands], ["POST"] * 3)
+        self.assertEqual(data["prompts"], 0)
+        self.assertEqual(len(data["starts"]), 1)
+        self.assertEqual(set(data["starts"][0]), {"pageId"})
+        self.assertEqual([c["driverPWM"] for c in commands[:3]], [153, 179, 0])
+        self.assertEqual([c["method"] for c in commands], ["POST"] * 9)
+        self.assertTrue(
+            all(
+                c["headers"]["x-motionbrain-token"] == "SECRET-FIXTURE"
+                for c in commands
+            )
+        )
         self.assertEqual(
             [e["eventType"] for e in events if e["kind"] == "dom_intent"],
             ["pointerdown", "input", "pointerup", "pointercancel"],
         )
-        self.assertIn("cancel_context", [e["kind"] for e in events])
-        self.assertEqual(len([e for e in events if e["kind"] == "command_dispatch"]), 3)
         self.assertEqual(
-            [
-                e["query"]["percent"]
-                for e in events
-                if e["kind"] == "command_intent" and "percent" in e["query"]
-            ],
-            ["60", "70"],
+            [e["direction"] for e in events if e["kind"] == "keyboard_intent"],
+            ["KeyQ", "KeyQ", "KeyQ"],
         )
+        self.assertEqual([c["driverPWM"] for c in commands[3:8]], [153, 0, 153, 0, 0])
         self.assertNotIn("SECRET-FIXTURE", json.dumps(events))
+        self.assertNotIn("intent-capture-password", json.dumps(events))
+        self.assertEqual(len([e for e in events if e["kind"] == "command_dispatch"]), 9)
         with tempfile.TemporaryDirectory() as directory:
             log = m.EventLog(directory)
             anchor = next(e for e in events if e["kind"] == "clock_anchor")
