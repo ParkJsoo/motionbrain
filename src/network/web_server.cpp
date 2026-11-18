@@ -34,6 +34,7 @@
 extern const char deviceRecoveryScript[] asm("_binary_web_device_recovery_js_start");
 
 extern Stm32Bridge stm32Bridge;
+extern MotorControl motorControl;
 extern SafetyMonitor safetyMonitor;
 extern AngleController angleController;
 extern ShoulderAngleController shoulderAngleController;
@@ -123,6 +124,7 @@ bool MotionBrainWebServer::init(SystemStateManager* systemState, MotorControl* m
   server_.on("/vision_endpoint", HTTP_POST, [this]() { this->handleVisionEndpointPublish(); });
   server_.on("/status", HTTP_GET, [this]() { this->handleStatus(); });
   server_.on("/collection_status", HTTP_GET, [this]() { this->handleCollectionStatus(); });
+  server_.on("/collection_observation", HTTP_GET, [this]() { this->handleCollectionObservation(); });
 #if MOTIONBRAIN_ENABLE_FINITE_PROFILE_RUNTIME
   server_.on("/finite_profile", HTTP_POST, [this]() { this->handleFiniteProfile(); });
   server_.on("/finite_profile", HTTP_GET, [this]() { this->handleFiniteProfileStatus(); });
@@ -903,12 +905,11 @@ void MotionBrainWebServer::handleRoot() {
  * JSON 형식으로 현재 상태 반환
  * 주의: CSRF 헤더 불필요 — GET은 읽기 전용이므로 상태 변경 없음
  */
-void MotionBrainWebServer::handleCollectionStatus() {
-  if (!systemState_ || !motorControl_) { sendErrorJson(503, "collection_status_unavailable"); return; }
-  sendNoStoreHeaders(server_);
+bool MotionBrainWebServer::buildCollectionStatusJson(String& json, bool requireOutputProof) {
+  if (!systemState_ || !motorControl_) return false;
   const String outputBootBefore = BoundedActions::outputBootId();
   const uint32_t outputSequenceBefore = collection_http::latestOutputSequence(motorControl_->outputLog());
-  String json; json.reserve(1200);
+  json.reserve(1200);
   json = "{\"schemaVersion\":\"collection.v1\",\"uptimeMs\":";
   json += millis();
   json += ",\"state\":\""; json += systemState_->getStateString();
@@ -963,9 +964,54 @@ void MotionBrainWebServer::handleCollectionStatus() {
   // Optional evidence must not enlarge the existing collection.v1 body limit.
   // Absence retains the old independently-read output-history contract.
   if (json.length()+outputProof.length()+1 <= 1200) json += outputProof;
+  else if (requireOutputProof) return false;
   json += '}';
-  if (json.length() > 1200) { sendErrorJson(503, "collection_status_too_large"); return; }
+  return json.length() <= 1200;
+}
+
+void MotionBrainWebServer::handleCollectionStatus() {
+  if (!systemState_ || !motorControl_) { sendErrorJson(503, "collection_status_unavailable"); return; }
+  sendNoStoreHeaders(server_);
+  String json;
+  if (!buildCollectionStatusJson(json)) { sendErrorJson(503, "collection_status_too_large"); return; }
   server_.send(200, "application/json", json);
+}
+
+void MotionBrainWebServer::handleCollectionObservation() {
+  sendNoStoreHeaders(server_);
+  uint32_t after=0, limit=0;
+  if (!collection_http::observationPageArguments(server_,after,limit)) {
+    sendErrorJson(400, "invalid_collection_observation_page"); return;
+  }
+  // 출력 직렬화기는 기존 BoundedActions의 전역 드라이버 이력을 사용한다.
+  // 상태도 같은 드라이버를 읽는 경우에만 새 결합 계약을 제공한다.
+  if (!systemState_ || !motorControl_ || motorControl_!=&motorControl) {
+    sendErrorJson(503, "collection_observation_unavailable"); return;
+  }
+  const String bootBefore=BoundedActions::outputBootId();
+  const uint32_t sequenceBefore=collection_http::latestOutputSequence(motorControl_->outputLog());
+  String status;
+  if (!buildCollectionStatusJson(status,true)) {
+    sendErrorJson(503, "collection_observation_status_unavailable"); return;
+  }
+  const auto page=collection_http::outputPage(motorControl_->outputLog(),after,limit);
+  const String pageBoot=BoundedActions::outputBootId();
+  String outputs;outputs.reserve(1200);
+  BoundedActions::appendOutputJson(outputs,true,after,limit);
+  const uint32_t sequenceAfter=collection_http::latestOutputSequence(motorControl_->outputLog());
+  const String bootAfter=BoundedActions::outputBootId();
+  if (!collection_http::stableCollectionObservation(sequenceBefore,sequenceAfter,page.latest,
+      bootBefore.c_str(),bootAfter.c_str(),pageBoot.c_str())) {
+    sendErrorJson(503, "collection_observation_cursor_changed"); return;
+  }
+  if (outputs.length()>1200) {
+    sendErrorJson(503, "collection_observation_outputs_too_large"); return;
+  }
+  String json;json.reserve(2500);
+  json="{\"schemaVersion\":\"collection_observation.v1\",\"status\":";
+  json+=status;json+=",\"outputs\":";json+=outputs;json+='}';
+  if (json.length()>2500) { sendErrorJson(503, "collection_observation_too_large"); return; }
+  server_.send(200,"application/json",json);
 }
 
 void MotionBrainWebServer::handleStatus() {

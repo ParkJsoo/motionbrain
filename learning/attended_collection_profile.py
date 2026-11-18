@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 from learning.supervised_transport import (JOINTS, ELBOW_CONTACT_200_POLICY, ELBOW_CONTACT_250_POLICY,
-    WRIST_READ_BUDGET_REVISION)
+    WRIST_READ_BUDGET_REVISION, ELBOW_CONTACT_COMBINED_200_POLICY, ELBOW_CONTACT_COMBINED_250_POLICY,
+    ELBOW_CONTACT_READ_BUDGET_REVISION)
 
 ATTENDED_60_1000 = 'attended-60pct-1000ms-v1'
 ATTENDED_SHOULDER_DOWN_12 = 'attended-shoulder-down-12deg-v1'
@@ -94,10 +95,14 @@ def audit_profile(plan, session, pulse, receipt=None, *, motion_not_started=Fals
     elif any('attendedShoulderDownWindow' in value for value in (plan, session, receipt or {})):
         raise ValueError('attended_shoulder_down_window_unplanned')
     if profile['name'] == ATTENDED_ELBOW_CONTACT_FINE and not motion_not_started:
-        expected = {200:ELBOW_CONTACT_200_POLICY,250:ELBOW_CONTACT_250_POLICY}[pulse['durationMs']]
-        if (not isinstance(receipt,dict) or receipt.get('monitorTimingPolicy') != expected
+        legacy = {200:ELBOW_CONTACT_200_POLICY,250:ELBOW_CONTACT_250_POLICY}[pulse['durationMs']]
+        combined = {200:ELBOW_CONTACT_COMBINED_200_POLICY,250:ELBOW_CONTACT_COMBINED_250_POLICY}[pulse['durationMs']]
+        revision = ({legacy:WRIST_READ_BUDGET_REVISION, combined:ELBOW_CONTACT_READ_BUDGET_REVISION}
+                    .get(receipt.get('monitorTimingPolicy')) if isinstance(receipt,dict)
+                    and isinstance(receipt.get('monitorTimingPolicy'),str) else None)
+        if (revision is None
                 or receipt.get('monitorStatusVerified') is not True or receipt.get('offVerified') is not True
-                or receipt.get('monitorReadBudgetRevision') != WRIST_READ_BUDGET_REVISION):
+                or receipt.get('monitorReadBudgetRevision') != revision):
             raise ValueError('attended_elbow_contact_monitor_provenance')
     return profile.copy()
 

@@ -15,7 +15,7 @@ from learning import attended_collection_profile as profiles
 from learning import supervised_transport as transport
 from learning.near_gripper_tip_observer import digest
 
-SCHEMA = 'motionbrain.M3_fine_contact_response.v1'
+SCHEMA = 'motionbrain.M3_fine_contact_response.v2'
 COMMANDS = [dict(joint='elbow', direction='down', percent=60, durationMs=duration)
             for duration in (200, 250)]
 SCALES = np.array([10., 10., .5, 2.])
@@ -34,8 +34,8 @@ def command_key(command):
 
 
 def timing_policy(command):
-    return (transport.ELBOW_CONTACT_200_POLICY if command_key(command) == 200
-            else transport.ELBOW_CONTACT_250_POLICY)
+    return (transport.ELBOW_CONTACT_COMBINED_200_POLICY if command_key(command) == 200
+            else transport.ELBOW_CONTACT_COMBINED_250_POLICY)
 
 
 def policy():
@@ -72,7 +72,7 @@ def _receipt(row):
     require(isinstance(receipt, dict) and receipt.get('requestedPulse') == expected
             and receipt.get('offVerified') is True and receipt.get('monitorStatusVerified') is True
             and receipt.get('monitorTimingPolicy') == timing_policy(command)
-            and receipt.get('monitorReadBudgetRevision') == transport.WRIST_READ_BUDGET_REVISION,
+            and receipt.get('monitorReadBudgetRevision') == transport.ELBOW_CONTACT_READ_BUDGET_REVISION,
             'fine_contact_confirmed_monitor_receipt_required')
     require(all(direct.number(receipt.get(k)) for k in ('dispatchBefore', 'dispatchAfter', 'offAt'))
             and receipt['dispatchBefore'] <= receipt['dispatchAfter'] <= receipt['offAt'],

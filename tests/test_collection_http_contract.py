@@ -9,10 +9,10 @@ class CollectionHttpContractTest(unittest.TestCase):
     def test_route_and_required_status_guards(self):
         web = (ROOT/'src/network/web_server.cpp').read_text()
         self.assertIn('server_.on("/collection_status", HTTP_GET', web)
-        compact = web.split('void MotionBrainWebServer::handleCollectionStatus()')[1].split('void MotionBrainWebServer::handleStatus()')[0]
+        compact = web.split('bool MotionBrainWebServer::buildCollectionStatusJson')[1].split('void MotionBrainWebServer::handleCollectionStatus()')[0]
         for name in ('motorEnabled','motors','speed','enabled','connected','simulated','imuOk','blocked','faultLatched','lastUpdateMs','deadman','controlActive','active'):
             self.assertIn('\\"'+name+'\\"',compact)
-        self.assertIn('json.length() > 1200',compact)
+        self.assertIn('return json.length() <= 1200',compact)
         self.assertIn('driver_cursor.v1',compact)
         self.assertIn('stableOutputCursor',compact)
         self.assertIn('json.length()+outputProof.length()+1 <= 1200',compact)
@@ -37,3 +37,22 @@ class CollectionHttpContractTest(unittest.TestCase):
             appended=base+len(encoded)-1
             output_length=appended if appended<=1200 else base
             self.assertLessEqual(output_length,1200)
+
+    def test_combined_snapshot_reuses_existing_serializers_and_requires_stable_cursor(self):
+        web=(ROOT/'src/network/web_server.cpp').read_text()
+        self.assertIn('server_.on("/collection_observation", HTTP_GET',web)
+        combined=web.split('void MotionBrainWebServer::handleCollectionObservation()')[1].split('void MotionBrainWebServer::handleStatus()')[0]
+        for required in ('observationPageArguments(server_,after,limit)','buildCollectionStatusJson(status,true)',
+                         'BoundedActions::appendOutputJson(outputs,true,after,limit)','stableCollectionObservation',
+                         'sequenceBefore,sequenceAfter,page.latest','bootBefore.c_str(),bootAfter.c_str(),pageBoot.c_str()',
+                         'outputs.length()>1200','json.length()>2500','collection_observation_cursor_changed',
+                         'sendNoStoreHeaders(server_)','motorControl_!=&motorControl'):
+            self.assertIn(required,combined)
+        for mutation in ('setSpeed','stopAll','motorForward','motorReverse','append(', 'update(', 'delay(', 'yield('):
+            self.assertNotIn(mutation,combined)
+        self.assertIn('else if (requireOutputProof) return false;',web)
+
+    def test_combined_maximum_size_remains_bounded(self):
+        # 두 기존 본문 한도를 유지하고, 새 envelope만 더한다.
+        overhead=len('{"schemaVersion":"collection_observation.v1","status":,"outputs":}')
+        self.assertLessEqual(1200+1200+overhead,2500)

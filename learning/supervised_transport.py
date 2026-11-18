@@ -32,6 +32,10 @@ ELBOW_PLATEAU_POLICY = 'elbow-plateau-650-v1'
 ELBOW_FINE_POLICY = 'elbow-fine-450-v1'
 ELBOW_CONTACT_200_POLICY = 'elbow-contact-down-deadline-200-v1'
 ELBOW_CONTACT_250_POLICY = 'elbow-contact-down-deadline-250-v1'
+ELBOW_CONTACT_COMBINED_200_POLICY = 'elbow-contact-down-combined-200-v1'
+ELBOW_CONTACT_COMBINED_250_POLICY = 'elbow-contact-down-combined-250-v1'
+ELBOW_CONTACT_COMBINED_POLICIES = (ELBOW_CONTACT_COMBINED_200_POLICY, ELBOW_CONTACT_COMBINED_250_POLICY)
+ELBOW_CONTACT_READ_BUDGET_REVISION = 'combined-observation-shared-deadline-v1'
 M4_TARGET_UP_DEADLINE_POLICY = 'm4-target-up-deadline-650-v1'
 RECOVERY_DOWN_DEADLINE_POLICY = 'm4-band-recovery-down-deadline-400-v1'
 EFFECTIVE_UP_DEADLINE_POLICY = 'm4-effective-up-deadline-1200-v1'
@@ -70,7 +74,8 @@ def validate_monitor_policy(pulse, policy):
              and (pulse['percent'], pulse['durationMs']) == elbow_profiles[policy])
     # 접촉 부근의 새 수동 수집 예외만 정확한 두 명령으로 제한한다.
     # 공유 기한·첫 안전 상태 검사·STOP 경로를 기존 elbow 감시와 같이 쓴다.
-    contact_profiles = {ELBOW_CONTACT_200_POLICY: 200, ELBOW_CONTACT_250_POLICY: 250}
+    contact_profiles = {ELBOW_CONTACT_200_POLICY: 200, ELBOW_CONTACT_250_POLICY: 250,
+                        ELBOW_CONTACT_COMBINED_200_POLICY: 200, ELBOW_CONTACT_COMBINED_250_POLICY: 250}
     contact = (isinstance(policy, str) and policy in contact_profiles and pulse.get('joint') == 'elbow'
                and pulse.get('direction') == 'down'
                and all(type(pulse.get(k)) is int for k in ('motor','percent','durationMs','expectedPwm'))
@@ -248,13 +253,15 @@ class SequencePort:
         endpoint = urllib.parse.urlsplit(path).path
         if read_deadline is not None and (not finite_number(read_deadline)
                 or payload is not None or emergency or run or quiet_disconnect_retry
-                or endpoint not in ('/status', '/collection_status', '/action_outputs')):
+                or endpoint not in ('/status', '/collection_status', '/action_outputs', '/collection_observation')):
             raise ValueError('readonly_monitor_deadline_required')
         if type(protect_read_persistence) is not bool or (protect_read_persistence and read_deadline is None):
             raise ValueError('protected_read_deadline_required')
         if protect_read_persistence:
             policy = getattr(self, '_bounded_m4_monitor_policy', None)
             if policy not in BOUNDED_M4_MONITOR_POLICIES:
+                policy = getattr(self, '_fine_contact_monitor_policy', None)
+            if policy not in (*BOUNDED_M4_MONITOR_POLICIES, *ELBOW_CONTACT_COMBINED_POLICIES):
                 raise ValueError('bounded_m4_read_policy_required')
             validate_monitor_policy(self._active_pulse or {}, policy)
         if endpoint == '/shoulder':
@@ -262,9 +269,11 @@ class SequencePort:
                     or payload != getattr(self, '_finite_shoulder_request', None)
                     or self.may_have_run):
                 raise ValueError('finite_shoulder_exact_run_required')
-        elif endpoint not in ('/status', '/collection_status', '/sequence', '/actions', '/action_outputs', '/command', '/motor'):
+        elif endpoint not in ('/status', '/collection_status', '/collection_observation', '/sequence', '/actions', '/action_outputs', '/command', '/motor'):
             raise ValueError('unsupported_endpoint')
-        if '?' in path and (endpoint != '/action_outputs' or payload is not None):
+        if endpoint == '/collection_observation' and (payload is not None or emergency or run):
+            raise ValueError('combined_observation_readonly_required')
+        if '?' in path and (endpoint not in ('/action_outputs', '/collection_observation') or payload is not None):
             raise ValueError('unsupported_endpoint')
         if type(quiet_monitor_timeout) is not bool:
             raise ValueError('quiet_monitor_timeout_invalid')
@@ -551,7 +560,7 @@ class SequencePort:
         # The flag is cleared before RUN intent and before failure cleanup.
         if (self._preparing_execution and self.preparation_read_timeout is not None
                 and not self.may_have_run and not emergency and not run and payload is None
-                and endpoint in ('/actions', '/status', '/collection_status', '/sequence', '/action_outputs')):
+                and endpoint in ('/actions', '/status', '/collection_status', '/collection_observation', '/sequence', '/action_outputs')):
             return self.preparation_read_timeout
         return self.timeout
 
@@ -799,6 +808,67 @@ class SequencePort:
         return self._execute_validated(validate_pulse(pulse), tick, before_run=before_run,
                                        monitor_policy=monitor_policy, **prepare)
 
+    def _combined_observation(self, expected, *, end=None):
+        """미세 하강의 상태와 전체 증분 이력을 한 응답에서 함께 감사한다."""
+        if not self.compact_reads or type(self.last_sequence) is not int:
+            raise ValueError('combined_observation_baseline_required')
+        for _ in range(16):
+            cursor = self.last_sequence
+            kwargs = {} if end is None else dict(read_deadline=end, protect_read_persistence=True,
+                                                 request_timeout=end-self.clock.monotonic())
+            value = self._call(f'/collection_observation?after={cursor}&limit=8', **kwargs)
+            if value.get('schemaVersion') != 'collection_observation.v1':
+                raise ValueError('combined_observation_schema_invalid')
+            status, outputs = value.get('status'), value.get('outputs')
+            if not isinstance(status, dict) or not isinstance(outputs, dict) or status.get('schemaVersion') != 'collection.v1':
+                raise ValueError('combined_observation_schema_invalid')
+            proof = status.get('outputProof', {})
+            latest, oldest = outputs.get('latestSequence'), outputs.get('oldestSequence')
+            if (proof.get('schemaVersion') != 'driver_cursor.v1' or proof.get('bootId') != self.boot_id
+                    or proof.get('stable') is not True or type(latest) is not int
+                    or proof.get('sequenceBefore') != latest or proof.get('sequenceAfter') != latest
+                    or outputs.get('bootId') != self.boot_id or outputs.get('evidence') != 'driver_write'
+                    or outputs.get('clockDomain') != 'controller_boot_millis'
+                    or type(oldest) is not int or not 1 <= oldest <= latest or latest < cursor
+                    or outputs.get('gap') is not False or type(outputs.get('hasMore')) is not bool):
+                raise ValueError('combined_observation_cursor_invalid')
+            self._check_status(status, expected, self._active_pulse, None)
+            entries = outputs.get('entries')
+            if not isinstance(entries, list) or len(entries) > 8:
+                raise ValueError('combined_observation_page_invalid')
+            if entries:
+                if (not all(isinstance(e, dict) for e in entries) or entries[0].get('sequence') != cursor+1
+                        or type(entries[-1].get('sequence')) is not int or entries[-1]['sequence'] > latest
+                        or outputs['hasMore'] != (entries[-1]['sequence'] < latest)):
+                    raise ValueError('combined_observation_page_invalid')
+                self._consume(outputs, quiet=expected == 'IDLE')
+            elif cursor != latest or outputs['hasMore']:
+                raise ValueError('combined_observation_page_invalid')
+            if end is not None and self.clock.monotonic() >= end:
+                raise TimeoutError('request_deadline')
+            if not outputs['hasMore']:
+                if any(status['motors'][f'M{i}']['speed'] != self.last_outputs[i] for i in range(1, 6)):
+                    raise ValueError('combined_observation_output_state_mismatch')
+                return status
+        raise ValueError('output_page_budget_exceeded')
+
+    def _monitor_contact_combined_deadline(self, end, tick):
+        verified = False
+        while self.clock.monotonic() < end:
+            tick()
+            remaining = end-self.clock.monotonic()
+            if remaining <= 0:
+                break
+            if verified and remaining <= .2:
+                self.clock.sleep(min(.02, remaining))
+                continue
+            self._combined_observation('ARMED', end=end)
+            verified = True  # 상태와 출력 이력 모두 완전히 감사한 뒤에만 완료.
+        if not verified:
+            raise ValueError('active_safety_status_not_verified')
+        if self.clock.monotonic()-end > .02:
+            raise TimeoutError('monitor_deadline_overrun')
+
     def _monitor_wrist_deadline(self, end, tick):
         verified = False
         while self.clock.monotonic() < end:
@@ -908,6 +978,7 @@ class SequencePort:
                 raise ValueError('device_guard_host_monitor_forbidden')
         validate_monitor_policy(pulse, monitor_policy)
         target_monitor = monitor_policy in BOUNDED_M4_MONITOR_POLICIES
+        contact_monitor = monitor_policy in ELBOW_CONTACT_COMBINED_POLICIES
         if target_monitor and stop_when is None:
             raise ValueError('recovery_down_goal_callback_required' if monitor_policy == RECOVERY_DOWN_DEADLINE_POLICY
                              else 'target_up_goal_callback_required')
@@ -924,8 +995,9 @@ class SequencePort:
         stopped_early = False
         self._target_monitor_diagnostic = None
         self._target_deferred_evidence = []
-        self._target_stop_priority = target_monitor
+        self._target_stop_priority = target_monitor or contact_monitor
         self._bounded_m4_monitor_policy = monitor_policy if target_monitor else None
+        self._fine_contact_monitor_policy = monitor_policy if contact_monitor else None
         failure_in_flight = False
         self._device_goal_guard = device_goal_guard
         terminal_record = None
@@ -934,6 +1006,9 @@ class SequencePort:
             self._preparing_execution = True
             tick()
             snapshot = self.preflight()
+            if contact_monitor:
+                # 새 읽기 계약이 없는 펌웨어에서는 ARM·RUN 이전에 거절한다.
+                self._combined_observation('IDLE')
             baseline_angle = self._shoulder_angle(snapshot['status']) if pulse['motor'] == 4 else None
             if device_goal_guard is not None:
                 device_guard.capability(snapshot['sequence'], device_goal_guard)
@@ -974,6 +1049,8 @@ class SequencePort:
             elif target_monitor:
                 stopped_early = self._monitor_target_up_deadline(
                     after+pulse['durationMs']/1000, tick, pulse, baseline_angle, stop_when)
+            elif contact_monitor:
+                self._monitor_contact_combined_deadline(after+pulse['durationMs']/1000, tick)
             elif monitor_policy is not None:
                 self._monitor_wrist_deadline(after+pulse['durationMs']/1000, tick)
             while monitor_policy is None and device_goal_guard is None:
@@ -1017,7 +1094,7 @@ class SequencePort:
                     stoppedEarly=stopped_early, stopReason='device_'+terminal_record['reason'])
             if monitor_policy is not None:
                 receipt.update(monitorTimingPolicy=monitor_policy, monitorStatusVerified=True,
-                               monitorReadBudgetRevision=WRIST_READ_BUDGET_REVISION)
+                               monitorReadBudgetRevision=(ELBOW_CONTACT_READ_BUDGET_REVISION if contact_monitor else WRIST_READ_BUDGET_REVISION))
             if target_monitor:
                 key = ('effectiveMonitor' if monitor_policy in (EFFECTIVE_UP_DEADLINE_POLICY,EFFECTIVE_DOWN_DEADLINE_POLICY)
                        else 'currentShortMonitor' if monitor_policy in CURRENT_SHORT_MONITOR_POLICIES
@@ -1046,7 +1123,8 @@ class SequencePort:
             self._before_run = None
             self._target_stop_priority = False
             self._bounded_m4_monitor_policy = None
-            if target_monitor:
+            self._fine_contact_monitor_policy = None
+            if target_monitor or contact_monitor:
                 for name, value in self._target_deferred_evidence:
                     self._save(name, value, emergency=True)
                 if self.evidence_failed and not failure_in_flight:

@@ -31,7 +31,7 @@ class FineContactTests(unittest.TestCase):
         trace.extend(dict(sequence=i+3, atMs=1100, motor=i+1, pwm=0) for i in range(5))
         receipt = dict(requestedPulse=dict(**command, motor=3, expectedPwm=153), offVerified=True,
             monitorStatusVerified=True, monitorTimingPolicy=fine.timing_policy(command),
-            monitorReadBudgetRevision=transport.WRIST_READ_BUDGET_REVISION,
+            monitorReadBudgetRevision=transport.ELBOW_CONTACT_READ_BUDGET_REVISION,
             dispatchBefore=10., dispatchAfter=10.05, offAt=10.3, outputTrace=trace)
         return dict(sessionId='fine-'+str(duration), sourceSha256=sha('session-'+str(duration)), command=command,
             before=copy.deepcopy(self.before), after=after,

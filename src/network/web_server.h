@@ -134,6 +134,8 @@ private:
    */
   void handleStatus();
   void handleCollectionStatus();
+  bool buildCollectionStatusJson(String& json, bool requireOutputProof = false);
+  void handleCollectionObservation();
 
   /**
    * GET /events 처리

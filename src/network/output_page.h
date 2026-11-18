@@ -40,4 +40,28 @@ inline bool stableOutputCursor(uint32_t before, uint32_t after, const char* boot
   return before > 0 && before == after && bootBefore && bootAfter &&
     strlen(bootBefore) == 32 && strcmp(bootBefore, bootAfter) == 0;
 }
+// 새 결합 조회에만 적용한다. 기존 /action_outputs 인수 규칙은 바꾸지 않는다.
+template <typename Server>
+inline bool observationPageArguments(Server& server, uint32_t& after, uint32_t& limit) {
+  if (server.args() != 2) return false;
+  unsigned afterCount=0, limitCount=0;
+  for (int i=0; i<server.args(); ++i) {
+    const auto name=server.argName(i);
+    if (name=="after") ++afterCount;
+    else if (name=="limit") ++limitCount;
+    else return false;
+  }
+  uint32_t parsedAfter=0, parsedLimit=0;
+  if (afterCount!=1 || limitCount!=1 ||
+      !unsignedArgument(server.arg("after").c_str(), parsedAfter) ||
+      !unsignedArgument(server.arg("limit").c_str(), parsedLimit) ||
+      parsedLimit<1 || parsedLimit>8) return false;
+  after=parsedAfter;limit=parsedLimit;return true;
+}
+inline bool stableCollectionObservation(uint32_t before, uint32_t after, uint32_t pageLatest,
+    const char* bootBefore, const char* bootAfter, const char* pageBoot) {
+  return stableOutputCursor(before,after,bootBefore,bootAfter) && pageLatest==before &&
+    pageBoot && strcmp(bootBefore,pageBoot)==0;
+}
+
 }

@@ -1,6 +1,18 @@
 #include <initializer_list>
 #include <cassert>
+#include <string>
+#include <utility>
+#include <vector>
 #include "network/output_page.h"
+struct QueryServer {
+  std::vector<std::pair<std::string,std::string>> arguments;
+  int args() const { return static_cast<int>(arguments.size()); }
+  std::string argName(int index) const { return arguments[index].first; }
+  std::string arg(const char* key) const {
+    for (const auto& argument:arguments) if (argument.first==key) return argument.second;
+    return "";
+  }
+};
 int main() {
   uint32_t value=99;
   for (const char* bad : {"", "-1", "+1", "1.0", "1x", " 1", "4294967296"}) {
@@ -31,4 +43,31 @@ int main() {
   log.append(142,0,1,0,bounded::OutputReason::DriverWrite);
   assert(collection_http::latestOutputSequence(log)==142);
   assert(!collection_http::stableOutputCursor(140,142,boot,boot));
+  // 결합 endpoint는 정확히 두 개의 서로 다른 인수만 받는다.
+  uint32_t cursor=99,limit=99;
+  QueryServer query{{{"after","0"},{"limit","8"}}};
+  assert(collection_http::observationPageArguments(query,cursor,limit) && cursor==0 && limit==8);
+  query.arguments={{"limit","1"},{"after","4294967295"}};
+  assert(collection_http::observationPageArguments(query,cursor,limit) && cursor==UINT32_MAX && limit==1);
+  const std::vector<std::vector<std::pair<std::string,std::string>>> badQueries={
+    {},{{"after","0"}},{{"limit","8"}},{{"after","0"},{"after","1"}},
+    {{"after","0"},{"limit","8"},{"limit","8"}},{{"after","0"},{"unknown","8"}},
+    {{"after","-1"},{"limit","8"}},{{"after","+1"},{"limit","8"}},
+    {{"after","4294967296"},{"limit","8"}},{{"after"," 1"},{"limit","8"}},
+    {{"after","1.0"},{"limit","8"}},{{"after",""},{"limit","8"}},
+    {{"after","0"},{"limit","0"}},{{"after","0"},{"limit","9"}},
+    {{"after","0"},{"limit","8x"}},{{"after","0"},{"limit","1.0"}}};
+  for (const auto& args:badQueries) {
+    query.arguments=args;cursor=99;limit=99;
+    assert(!collection_http::observationPageArguments(query,cursor,limit));
+    assert(cursor==99 && limit==99);
+  }
+  assert(collection_http::stableCollectionObservation(142,142,142,boot,boot,boot));
+  assert(!collection_http::stableCollectionObservation(140,142,142,boot,boot,boot));
+  assert(!collection_http::stableCollectionObservation(142,142,141,boot,boot,boot));
+  assert(!collection_http::stableCollectionObservation(142,142,142,boot,boot,"ffffffffffffffffffffffffffffffff"));
+  assert(!collection_http::stableCollectionObservation(142,142,142,boot,"ffffffffffffffffffffffffffffffff",boot));
+  assert(!collection_http::stableCollectionObservation(0,0,0,boot,boot,boot));
+  assert(!collection_http::stableCollectionObservation(142,142,142,boot,boot,nullptr));
+
 }
