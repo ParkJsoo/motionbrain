@@ -4,6 +4,8 @@
 
 설계·사용법과 날짜별 실측을 구분해 읽을 수 있는 색인이다. 시작은 [프로젝트 개요](../README.md), 구현 판단과 대표 결과는 [포트폴리오](../PORTFOLIO.md), 실행 환경과 운영은 [운영 안내](../OPERATIONS.md)를 따른다. 날짜별 기록은 당시 구성의 결과이며 현재 장치 상태나 새 모델의 성능을 뜻하지 않는다.
 
+**실물 조작부터 보려면** [전체 팔 시험](whole-arm-cycle.md)에서 물체를 들어 내려놓고 빈 팔이 후퇴한 다섯 번째 시험과 앞선 네 번의 종료 이유를 확인할 수 있다.
+
 ## 팔 모델·보정과 결과 재생
 
 | 문서 | 역할 |
@@ -18,7 +20,7 @@
 
 | 문서 | 역할 |
 | --- | --- |
-| [시각 행동 학습](visual-action-learning.md) | 현재 단계, 관측·예측·기구학의 역할과 전체 팔의 집기·들기 계획 |
+| [시각 행동 학습](visual-action-learning.md) | 관측·예측·기구학의 역할과 개발 단계별 평가 |
 | [반복 실험 파이프라인](experiment-pipeline.md) | 단발 수집과 관측·학습 적격 분리, 고정 후 평가·버전 비교와 수동 접촉 탐색 |
 | [관절별 수동 수집](manual-data-collection.md) | 수집 화면·재생, M4 데이터셋 변환·학습·평가 사용법 |
 | [물체·집게 상대 상태](relative-action-selection.md) | 수동 점·등록 특징의 별도 계약, 관절/자세별 모델과 고정 평가·질의 |
@@ -76,6 +78,7 @@
 
 ## 공개 미디어
 
+- [전체 팔 자율 시험 장면](assets/whole-arm-cycle.jpg) · [MP4](assets/whole-arm-cycle.mp4). 고정 구도에서 집기부터 해제 후 후퇴까지 진행한 5회차의 공개용 편집본. 자세와 작업 결과는 [실물 판독](whole-arm-cycle.md)을 함께 본다.
 - [프로젝트 개요도](assets/overview.svg) · [English](assets/overview.en.svg): 공개 기하·표시 자세와 수집→예측→제한 실행의 흐름을 표현한 벡터 도식. 실물 사진이나 실시간 연동 화면이 아니다.
 - [원격조작 GIF](assets/demo/motionbrain-demo.gif) · [MP4](assets/demo/motionbrain-demo.mp4): 2026-06-08 고정 태그의 약 54초 편집 시연. 손동작·버튼 원격조작과 조명 동작을 보여주며, 학습 정책의 자율 조작 성과가 아니다. README의 고정 태그 링크와 같은 파일이다.
 - [RViz 모델 이미지](assets/motionbrain-rviz-robotmodel.png): 초기 URDF 모델·좌표축 표시 예시. 현재 외형·사진 근사 자세의 화면과 구분하며 실물 자세 추종이나 기구학 보정 정확도의 증거가 아니다. 현재 모델의 실행법은 [시각화 안내](robot-visualization.md)를 따른다.
