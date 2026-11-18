@@ -78,6 +78,8 @@ struct MockPort : Port {
     state.allOff = false;
     return acceptStart;
   }
+  uint32_t correctionStartedAt() const override { return clock; }
+  bool correctionStep(uint8_t) override { return true; }
   void stop(Phase phase) override {
     stops.push_back(phase);
     state.allOff = confirmOff;

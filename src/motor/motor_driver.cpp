@@ -988,6 +988,18 @@ bool MotorControl::beginPolicyOutput(uint8_t motorId,int16_t pwm) {
   return true;
 }
 
+bool MotorControl::writePolicyCorrection(int16_t pwm) {
+  if (pwm>=0 || pwm < -50 || getDefaultSpeed()!=100 || m4GoalOwned_
+      || m4_goal::activeWindow() || !checkSafety("whole arm correction")) return false;
+  const uint8_t i=motorIdToIndex(MOTOR_4);
+  if (!setMotorSpeedInternal(MOTOR_4,pwm)) return false;
+  // The demonstration supplies each ramp step. The regular ramp loop must
+  // see the already-applied target and therefore emit no intervening write.
+  targetSpeed_[i]=pwm;
+  ++controlEpoch_[i];
+  return true;
+}
+
 bool MotorControl::endPolicyOutput(uint8_t motorId) {
   // A normal model STOP is explicitly recorded as a zero driver write. Faults
   // use hardStop() and retain the distinct forced_off record.

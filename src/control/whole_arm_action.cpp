@@ -4,9 +4,13 @@
 #include <limits>
 
 namespace whole_arm {
+const CorrectionStep correctionWave[CORRECTION_STEPS] = {
+  {0,-10},{82,-20},{147,-30},{206,-40},{262,-50},
+  {347,-40},{403,-30},{453,-20},{503,-10},{554,0}
+};
 namespace {
-constexpr uint32_t CAPS[] = {7000,4000,10000,4000,3000,14000};
-constexpr float MAX_ANGLE[] = {224,194,208,208,194,224};
+constexpr uint32_t CAPS[] = {7000,4000,10000,4000,3000,14000,554+CORRECTION_LATE_MS};
+constexpr float MAX_ANGLE[] = {224,194,208,208,194,224,194};
 bool validTrial(const char* id) {
   if (!id || std::strlen(id)!=32) return false;
   for (unsigned i=0;i<32;i++)
@@ -20,7 +24,10 @@ bool validInputs(Inputs s, Phase phase) {
 }
 uint32_t phaseCapMs(Phase p) { return CAPS[static_cast<unsigned>(p)]; }
 uint8_t phaseMotor(Phase p) { return p==Phase::Close || p==Phase::Release ? 1 : 4; }
-int16_t phasePwm(Phase p) { return p==Phase::Lift || p==Phase::Release || p==Phase::Retreat ? 70 : -70; }
+int16_t phasePwm(Phase p) {
+  if (p==Phase::LowerCorrection) return -50;
+  return p==Phase::Lift || p==Phase::Release || p==Phase::Retreat ? 70 : -70;
+}
 void Controller::fail(const char* reason) {
   if (active_) port_.faultStop(phase_);
   active_=false;
@@ -40,29 +47,47 @@ void Controller::tick() {
   if (!validInputs(s,phase_)) fail("angle_limit");
   else if (t-started_>=phaseCapMs(phase_)) fail("phase_timeout");
   else if (t-renewed_>=750) fail("lease_expired");
+  else if (phase_==Phase::LowerCorrection) {
+    const auto& step=correctionWave[nextCorrectionStep_];
+    const uint32_t elapsed=t-started_;
+    if (elapsed>=step.atMs+CORRECTION_LATE_MS) fail("correction_step_late");
+    else if (elapsed>=step.atMs) {
+      if (!step.pwm) finish();
+      else if (!port_.correctionStep(nextCorrectionStep_)) fail("correction_write_failed");
+      else ++nextCorrectionStep_;
+    }
+  }
 }
 
 bool Controller::apply(const Request& r) {
   tick();
   if (done_ || failed_ || !validTrial(r.trial) ||
-      static_cast<unsigned>(r.phase)>static_cast<unsigned>(Phase::Retreat) ||
+      static_cast<unsigned>(r.phase)>static_cast<unsigned>(Phase::LowerCorrection) ||
       (trial_[0] && std::strcmp(trial_,r.trial)) ||
       seq_==std::numeric_limits<uint32_t>::max() || r.seq!=seq_+1) return false;
   if (r.op==Op::Start) {
-    const unsigned expected=seq_ ? static_cast<unsigned>(phase_)+1 : 0;
-    if (active_ || static_cast<unsigned>(r.phase)!=expected) return false;
+    const Phase expected=!seq_ ? Phase::Approach : phase_==Phase::LowerCorrection
+      ? Phase::Release : static_cast<Phase>(static_cast<unsigned>(phase_)+1);
+    const bool optionalCorrection=phase_==Phase::Lower && r.phase==Phase::LowerCorrection;
+    if (active_ || (r.phase!=expected && !optionalCorrection)) return false;
     const Inputs s=port_.inputs();
     if (!s.allOff || !validInputs(s,r.phase)) return false;
     std::strcpy(trial_,r.trial);
     phase_=r.phase;
     seq_=r.seq;
     started_=renewed_=port_.now();
+    nextCorrectionStep_=1;
     active_=true;
     if (!port_.start(phase_)) { fail("driver_rejected"); return false; }
+    if (phase_==Phase::LowerCorrection) started_=port_.correctionStartedAt();
     reason_="active";
     return true;
   }
   if (!active_ || phase_!=r.phase) return false;
+  if (phase_==Phase::LowerCorrection) {
+    if (r.op==Op::Stop) fail("interrupted");
+    return false;
+  }
   if (r.op==Op::Keep) {
     seq_=r.seq;
     renewed_=port_.now();
@@ -70,6 +95,10 @@ bool Controller::apply(const Request& r) {
   }
   if (r.op!=Op::Stop) return false;
   seq_=r.seq;
+  return finish();
+}
+
+bool Controller::finish() {
   port_.stop(phase_);
   active_=false;
   const auto stopped=port_.inputs();

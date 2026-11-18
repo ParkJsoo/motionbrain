@@ -27,7 +27,7 @@ extern MotionBrainWebServer webServer;
 namespace WholeArmService {
 using whole_arm::Phase;
 namespace {
-constexpr const char* NAMES[]={"approach","close","held_lift","lower","release","retreat"};
+constexpr const char* NAMES[]={"approach","close","held_lift","lower","release","retreat","lower_correction"};
 // Arduino HTTP may block the loop while waiting for a partial request. A
 // separate ESP timer task cuts PWM even then. The callback touches neither
 // the HTTP state, motor bookkeeping nor its non-thread-safe output journal.
@@ -39,6 +39,9 @@ struct Cutoff {
   int16_t pwm=0;
   bool tripped=false;
   int64_t lease=0,phase=0,sensor=0;
+  int64_t correctionOriginUs=0;
+  uint32_t correctionOriginMs=0;
+  bool awaitingFirstCorrectionWrite=false;
 } cutoff;
 
 void expireLocked(int64_t t) {
@@ -84,10 +87,11 @@ bool serviceCutoff(bool renew) {
 void disarmCutoff() {
   if (!cutoff.mutex) return;
   xSemaphoreTake(cutoff.mutex,portMAX_DELAY);
-  cutoff.motor=0;cutoff.tripped=false;
+  cutoff.motor=0;cutoff.tripped=false;cutoff.awaitingFirstCorrectionWrite=false;
   xSemaphoreGive(cutoff.mutex);
 }
 class Hardware : public whole_arm::Port {
+  uint32_t correctionStartedAt() const override { return cutoff.correctionOriginMs; }
   uint64_t epochs_[5]{};
   bool tracked_=false;
   void remember() {
@@ -122,9 +126,27 @@ public:
     cutoff.tripped=false;
     cutoff.lease=t+750000;
     cutoff.phase=t+1000LL*phaseCapMs(p);
+    cutoff.awaitingFirstCorrectionWrite=(p==Phase::LowerCorrection);
+    if (cutoff.awaitingFirstCorrectionWrite) cutoff.phase=t+1000LL*whole_arm::CORRECTION_LATE_MS;
     cutoff.sensor=sensorDeadline(t);
     xSemaphoreGive(cutoff.mutex);
-    bool ok=motorControl.beginPolicyOutput(motor,pwm);
+    bool ok=p==Phase::LowerCorrection ? motorControl.writePolicyCorrection(whole_arm::correctionWave[0].pwm)
+                                      : motorControl.beginPolicyOutput(motor,pwm);
+    if (ok && p==Phase::LowerCorrection) systemState.resetTimeout();
+    remember();
+    return ok;
+  }
+  bool correctionStep(uint8_t i) override {
+    if (!shoulderAngleController.manualDirectionAllowed(false)
+        || !motorControl.writePolicyCorrection(whole_arm::correctionWave[i].pwm)) return false;
+    // Never extend an expired window. The guard also checks the previous
+    // window under this mutex at the point where PWM is written.
+    xSemaphoreTake(cutoff.mutex,portMAX_DELAY);
+    expireLocked(esp_timer_get_time());
+    const bool ok=!cutoff.tripped;
+    if (ok) cutoff.phase=cutoff.correctionOriginUs+1000LL*(
+        whole_arm::correctionWave[i+1].atMs+whole_arm::CORRECTION_LATE_MS);
+    xSemaphoreGive(cutoff.mutex);
     remember();
     return ok;
   }
@@ -157,7 +179,18 @@ bool writePwm(uint8_t motor,uint8_t channel,int16_t pwm) {
   expireLocked(esp_timer_get_time());
   bool ok=!pwm || !cutoff.motor || (cutoff.motor==motor && !cutoff.tripped &&
       (cutoff.pwm>0 ? (pwm>0 && pwm<=cutoff.pwm) : (pwm<0 && pwm>=cutoff.pwm)));
-  if (ok) ledcWrite(channel,abs(pwm));
+  if (ok) {
+    ledcWrite(channel,abs(pwm));
+    if (cutoff.awaitingFirstCorrectionWrite && motor==4 && pwm==-10) {
+      // Anchor the entire waveform to the confirmed first HAL write. Setup
+      // and mutex acquisition before the write are outside this interval.
+      cutoff.awaitingFirstCorrectionWrite=false;
+      cutoff.correctionOriginUs=esp_timer_get_time();
+      cutoff.correctionOriginMs=millis();
+      cutoff.phase=cutoff.correctionOriginUs+1000LL*(
+          whole_arm::correctionWave[1].atMs+whole_arm::CORRECTION_LATE_MS);
+    }
+  }
   if (cutoff.motor==motor && cutoff.tripped) ok=false;
   xSemaphoreGive(cutoff.mutex);
   return ok;
@@ -165,7 +198,7 @@ bool writePwm(uint8_t motor,uint8_t channel,int16_t pwm) {
 bool owns(){return controller.owns();}
 void update(){controller.tick();}
 bool parsePhase(const char* raw,Phase& phase) {
-  for (unsigned i=0;i<6;++i) if (!strcmp(raw,NAMES[i])) { phase=static_cast<Phase>(i); return true; }
+  for (unsigned i=0;i<sizeof(NAMES)/sizeof(NAMES[0]);++i) if (!strcmp(raw,NAMES[i])) { phase=static_cast<Phase>(i); return true; }
   return false;
 }
 uint32_t generation() {
@@ -209,7 +242,7 @@ void status(String& s) {
   s+="\",\"seq\":";s+=controller.seq();s+=",\"active\":";s+=controller.active()?"true":"false";
   s+=",\"failed\":";s+=(controller.failed()||hardware.normalStopFailed)?"true":"false";
   s+=",\"controlGeneration\":";s+=generation();
-  s+=",\"reason\":\"";s+=hardware.normalStopFailed?"stop_fault":controller.reason();s+="\",\"rawPwm\":70}";
+  s+=",\"reason\":\"";s+=hardware.normalStopFailed?"stop_fault":controller.reason();s+="\",\"rawPwm\":70,\"correctionProfile\":\"demo6_m4_lower_554ms_v1\"}";
 }
 }
 #endif

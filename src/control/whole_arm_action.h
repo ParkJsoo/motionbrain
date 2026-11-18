@@ -2,11 +2,15 @@
 #include <stdint.h>
 
 namespace whole_arm {
-enum class Phase : uint8_t { Approach, Close, Lift, Lower, Release, Retreat };
+enum class Phase : uint8_t { Approach, Close, Lift, Lower, Release, Retreat, LowerCorrection };
 enum class Op : uint8_t { Start, Keep, Stop };
 uint32_t phaseCapMs(Phase);
 uint8_t phaseMotor(Phase);
 int16_t phasePwm(Phase);
+struct CorrectionStep { uint16_t atMs; int16_t pwm; };
+constexpr uint8_t CORRECTION_STEPS=10;
+constexpr uint32_t CORRECTION_LATE_MS=15;
+extern const CorrectionStep correctionWave[CORRECTION_STEPS];
 struct Request { Op op; Phase phase; const char* trial; uint32_t seq; };
 struct Inputs { bool ready; bool allOff; float shoulderDeg; };
 class Port {
@@ -14,6 +18,8 @@ public:
   virtual uint32_t now() const = 0;
   virtual Inputs inputs() const = 0;
   virtual bool start(Phase phase) = 0;
+  virtual uint32_t correctionStartedAt() const = 0;
+  virtual bool correctionStep(uint8_t index) = 0;
   virtual void stop(Phase phase) = 0;
   virtual void faultStop(Phase phase) { stop(phase); }
 };
@@ -32,9 +38,11 @@ public:
   const char* reason() const { return reason_; }
 private:
   void fail(const char*);
+  bool finish();
   Port& port_;
   char trial_[33]{};
   uint32_t seq_=0, started_=0, renewed_=0;
+  uint8_t nextCorrectionStep_=0;
   Phase phase_=Phase::Approach;
   bool active_=false, failed_=false, done_=false;
   const char* reason_="idle";

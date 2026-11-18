@@ -40,7 +40,8 @@ class WholeArmActionTests(unittest.TestCase):
         )
 
     def test_independent_timeout_and_disarm(self):
-        for case in ("stalled", "preempt", "first", "race"):
+        for case in ("stalled", "preempt", "first", "race", "correction-once", "correction-stall", "correction-abort",
+                     "correction-start-offset", "correction-slow-start"):
             with self.subTest(case=case):
                 subprocess.run([str(self.service), case], check=True, timeout=5)
 

@@ -13,6 +13,8 @@
 
 #include <cassert>
 #include <cstring>
+#include <cstdio>
+#include <cstdlib>
 
 MotorControl motorControl;
 SystemStateManager systemState;
@@ -30,6 +32,7 @@ static unsigned duty[5]{};
 static FakeTimer timer{};
 static bool locked = false;
 static int expireOnRead = 0;
+static unsigned firstPinDelayMs = 0;
 
 uint32_t millis() { return clockMs; }
 int64_t esp_timer_get_time() {
@@ -45,7 +48,7 @@ int esp_timer_create(const esp_timer_create_args_t* args, esp_timer_handle_t* ha
 int esp_timer_start_periodic(esp_timer_handle_t h, uint64_t us) { assert(h==&timer && us==5000); return 0; }
 void esp_timer_delete(esp_timer_handle_t) {}
 void pinMode(uint8_t, uint8_t) {}
-void digitalWrite(uint8_t, uint8_t) {}
+void digitalWrite(uint8_t, uint8_t) { clockMs+=firstPinDelayMs; firstPinDelayMs=0; }
 void ledcSetup(uint8_t, uint32_t, uint8_t) {}
 void ledcAttachPin(uint8_t, uint8_t) {}
 void ledcWrite(uint8_t channel, uint32_t value) { assert(channel<5 && value<=70); duty[channel]=value; }
@@ -122,11 +125,108 @@ static void staleInitialStart() {
   assert(!WholeArmService::owns());
 }
 
+static bool phaseRequest(Op op, Phase phase, unsigned seq) {
+  return WholeArmService::apply({op,phase,TRIAL,seq}, WholeArmService::generation(), BOOT);
+}
+
+static void finishLower() {
+  assert(motorControl.init());
+  systemState.state=SystemState::ARMED;
+  shoulderAngleSensor.angle=190.f;
+  Phase parsed;
+  assert(WholeArmService::parsePhase("lower_correction",parsed) && parsed==Phase::LowerCorrection);
+  assert(!phaseRequest(Op::Start,parsed,1));
+  unsigned seq=0;
+  for (Phase p : {Phase::Approach,Phase::Close,Phase::Lift,Phase::Lower}) {
+    shoulderAngleSensor.sample=clockMs;
+    assert(phaseRequest(Op::Start,p,++seq));
+    clockMs+=50;
+    shoulderAngleSensor.sample=clockMs;
+    WholeArmService::update();
+    motorControl.update();
+    assert(phaseRequest(Op::Stop,p,++seq));
+  }
+}
+
+static void correction(const char* mode, char** wire) {
+  if (wire) TRIAL=wire[3];
+  finishLower();
+  const auto& journal=motorControl.outputLog();
+  const auto before=journal.count();
+  if (!strcmp(mode,"correction-slow-start")) {
+    firstPinDelayMs=16;
+    assert(!phaseRequest(Op::Start,Phase::LowerCorrection,9));
+    assert(duty[3]==0 && journal.count()==before+1);
+    assert(journal.at(before)->reason==bounded::OutputReason::ForcedOff);
+    return;
+  }
+  if (!strcmp(mode,"correction-start-offset")) firstPinDelayMs=10;
+  const auto start=clockMs+firstPinDelayMs;
+  if (wire) {
+    Phase phase;
+    assert(WholeArmService::parsePhase(wire[0],phase));
+    assert(!strcmp(wire[1],"start"));
+    const whole_arm::Request packet{Op::Start,phase,wire[3],static_cast<uint32_t>(std::stoul(wire[2]))};
+    assert(WholeArmService::apply(packet,static_cast<uint32_t>(std::stoul(wire[5])),wire[4]));
+  } else {
+    assert(phaseRequest(Op::Start,Phase::LowerCorrection,9));
+  }
+  assert(duty[3]==10 && journal.count()==before+1);
+  assert(!phaseRequest(Op::Keep,Phase::LowerCorrection,10));
+  assert(!phaseRequest(Op::Start,Phase::Release,10));
+  if (!strcmp(mode,"correction-stall")) {
+    clockMs+=97; timer.callback(nullptr);
+    assert(duty[3]==0);
+    shoulderAngleSensor.sample=clockMs;
+    WholeArmService::update();
+    assert(!phaseRequest(Op::Start,Phase::Release,10));
+    assert(journal.count()==before+2);
+    assert(journal.at(before+1)->reason==bounded::OutputReason::ForcedOff);
+    return;
+  }
+  if (!strcmp(mode,"correction-abort")) {
+    assert(WholeArmService::beforeLegacy(CommandType::STOP));
+    assert(duty[3]==0);
+    assert(!phaseRequest(Op::Start,Phase::LowerCorrection,10));
+    assert(!phaseRequest(Op::Start,Phase::Release,10));
+    return;
+  }
+  for (unsigned elapsed=1;elapsed<=600;++elapsed) {
+    clockMs=start+elapsed;
+    shoulderAngleSensor.sample=clockMs;
+    timer.callback(nullptr);
+    WholeArmService::update();
+    motorControl.update();
+  }
+  assert(journal.count()==before+10);
+  static const unsigned offsets[]={0,82,147,206,262,347,403,453,503,554};
+  static const int expected[]={-10,-20,-30,-40,-50,-40,-30,-20,-10,0};
+  for (unsigned i=0;i<10;++i) {
+    auto* row=journal.at(before+i);
+    assert(row->atMs==start+offsets[i] && row->motor==4 && row->pwm==expected[i]);
+    assert(row->reason==bounded::OutputReason::DriverWrite);
+    if (!strcmp(mode,"correction-trace"))
+      std::printf("%u\t%u\t%u\t%d\n",row->sequence,row->atMs,row->motor,row->pwm);
+  }
+  String state;
+  WholeArmService::status(state);
+  if (!strcmp(mode,"correction-trace")) std::puts(state.c_str());
+  assert(strstr(state.c_str(),"\"reason\":\"stopped\""));
+  assert(strstr(state.c_str(),"\"active\":false"));
+  assert(!motorControl.hasPendingOutput() && !motorControl.isEnabled());
+  for (auto value : duty) assert(value==0);
+  assert(!phaseRequest(Op::Start,Phase::LowerCorrection,9));
+  assert(!phaseRequest(Op::Start,Phase::LowerCorrection,10));
+  assert(!phaseRequest(Op::Stop,Phase::LowerCorrection,10));
+  if (strcmp(mode,"correction-trace")) assert(phaseRequest(Op::Start,Phase::Release,10));
+}
+
 int main(int argc, char** argv) {
-  assert(argc == 2);
+  assert(argc == 2 || (argc==8 && !strcmp(argv[1],"correction-trace")));
   if (!strcmp(argv[1],"stalled")) stalledLoop();
   else if (!strcmp(argv[1],"preempt")) preempt();
   else if (!strcmp(argv[1],"first")) staleInitialStart();
   else if (!strcmp(argv[1],"race")) stopRace();
+  else if (!strncmp(argv[1],"correction-",11)) correction(argv[1],argc==8 ? argv+2 : nullptr);
   else return 2;
 }

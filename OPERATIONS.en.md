@@ -16,6 +16,8 @@ Reload the control page after updating the firmware. Direct clients must also id
 
 The host renews an action only when fresh observations support the same choice. The device checks the 750 ms renewal deadline, phase duration, shoulder angle limits and sensor status. The output journal distinguishes normal STOP from fault-driven OFF. Evaluate each model choice against actual output and OFF, then check the object's pose after release.
 
+After a completed lower, the host can select one optional `lower_correction` before release. A single START runs the demonstrated M4 down waveform locally, with ten driver writes over a nominal 554 ms and peak absolute PWM 50. The firmware stops automatically. A step delayed by 15 ms faults the trial. The independent timer checks deadlines every 5 ms. The host checks the output journal and fresh images from both cameras before evaluating release. This correction has been exercised with simulated motor output.
+
 ## Choose an entry point
 
 | Task | Guide |
