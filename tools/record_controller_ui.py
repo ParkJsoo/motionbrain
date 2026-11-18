@@ -37,8 +37,16 @@ GET_PATHS = {
     "/routine",
     "/favicon.ico",
 }
-POST_PATHS = {"/command", "/motor"}
+POST_PATHS = {"/command", "/motor", "/joint"}
+JOINT_ACTIONS = {
+    "gripper": {"open", "close"},
+    "wrist": {"up", "down"},
+    "elbow": {"up", "down"},
+    "shoulder": {"up", "down"},
+    "base": {"left", "right"},
+}
 QUERY_KEYS = {
+    "joint",
     "id",
     "action",
     "percent",
@@ -51,6 +59,15 @@ QUERY_KEYS = {
     "limit",
 }
 EVENT_KEYS = {
+    "commandId",
+    "joint",
+    "action",
+    "percent",
+    "sourceFunction",
+    "domEventSequence",
+    "relatedFailedRequestSequence",
+    "httpStatus",
+    "reasonCode",
     "kind",
     "pageId",
     "sequence",
@@ -98,7 +115,7 @@ def safe_target(target):
 
 
 class EventLog:
-    def __init__(self, directory):
+    def __init__(self, directory, *, instrumentation=None):
         self.root = Path(directory)
         self.root.mkdir(parents=True, exist_ok=True)
         self.file = (self.root / "ui-events.jsonl").open("x")
@@ -114,7 +131,9 @@ class EventLog:
         self.clocks = {}
         self.write(
             "capture_started",
-            instrumentationSha256=hashlib.sha256(JS.read_bytes()).hexdigest(),
+            instrumentationSha256=hashlib.sha256(
+                JS.read_bytes() if instrumentation is None else instrumentation
+            ).hexdigest(),
             agentMotorCommands=0,
             automaticRetry=False,
             datasetEligible=False,
@@ -341,7 +360,10 @@ def make_server(controller, output, port=8768, *, ready_file=None, opener=None):
     ):
         raise ValueError("plain controller HTTP origin required")
     base = controller.rstrip("/")
-    log = EventLog(output)
+    # A running capture serves exactly the bytes whose hash was recorded.
+    # Editing the source on disk only affects a newly started server.
+    instrumentation = JS.read_bytes()
+    log = EventLog(output, instrumentation=instrumentation)
     forward_lock = threading.Lock()
     control_lock = threading.RLock()
     control = dict(
@@ -677,6 +699,30 @@ def make_server(controller, output, port=8768, *, ready_file=None, opener=None):
                             not in {str(n) for n in range(1, 101)}
                         ):
                             raise ValueError("motor percent")
+                    elif path == "/joint":
+                        if not {"joint", "action"} <= set(params) or set(params) - {
+                            "joint",
+                            "action",
+                            "percent",
+                        }:
+                            raise ValueError("joint fields")
+                        joint = params["joint"][0]
+                        action = params["action"][0]
+                        stopping = action == "stop"
+                        if joint not in JOINT_ACTIONS and not (
+                            joint == "all" and stopping
+                        ):
+                            raise ValueError("joint name")
+                        if stopping:
+                            if set(params) != {"joint", "action"}:
+                                raise ValueError("joint stop fields")
+                        elif (
+                            action not in JOINT_ACTIONS[joint]
+                            or set(params) != {"joint", "action", "percent"}
+                            or params["percent"][0]
+                            not in {str(n) for n in range(1, 101)}
+                        ):
+                            raise ValueError("joint action or percent")
                     capture_id = self.headers.get("X-UI-Capture-ID")
                     page_id = None
                     if capture_id is not None and not stopping:
@@ -712,7 +758,14 @@ def make_server(controller, output, port=8768, *, ready_file=None, opener=None):
                         )
                         return self.reply(
                             409,
-                            b'{"success":false,"error":"dual recording/browser clock not ready"}',
+                            json.dumps(
+                                dict(
+                                    success=False,
+                                    error="dual recording/browser clock not ready",
+                                    reason=status_for(page_id)["reason"],
+                                    reasonText=status_for(page_id)["reasonText"],
+                                )
+                            ).encode(),
                         )
                     with control_lock:
                         if stopping:
@@ -783,7 +836,26 @@ def make_server(controller, output, port=8768, *, ready_file=None, opener=None):
                             if not eligible:
                                 return self.reply(
                                     409,
-                                    b'{"success":false,"error":"superseded or recording ended before dispatch"}',
+                                    json.dumps(
+                                        dict(
+                                            success=False,
+                                            error="superseded or recording ended before dispatch",
+                                            reason=(
+                                                "superseded"
+                                                if generation != control["generation"]
+                                                or control["highest"].get(page_id)
+                                                != int(parts[1])
+                                                else status_for(page_id)["reason"]
+                                            ),
+                                            reasonText=(
+                                                "이전 명령이 새 입력 또는 STOP에 의해 취소되었습니다"
+                                                if generation != control["generation"]
+                                                or control["highest"].get(page_id)
+                                                != int(parts[1])
+                                                else status_for(page_id)["reasonText"]
+                                            ),
+                                        )
+                                    ).encode(),
                                 )
                         log.write(
                             "proxy_dispatch",
@@ -829,7 +901,7 @@ def make_server(controller, output, port=8768, *, ready_file=None, opener=None):
                         raise ValueError("HTML injection anchor missing")
                     body = body.replace(
                         b"</body>",
-                        b"<script>" + JS.read_bytes() + b"</script></body>",
+                        b"<script>" + instrumentation + b"</script></body>",
                         1,
                     )
                 self.reply(status, body, content)

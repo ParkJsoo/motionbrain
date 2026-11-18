@@ -6,7 +6,7 @@ let sequence=0, queue=[], pending=false, dropped=0;
 function mark(kind,fields={}) {
  const event={kind,pageId,sequence:++sequence,browserPerformanceMs:performance.now(),browserEpochMs:Date.now(),...fields};
  if(queue.length>=2048){dropped++;document.documentElement.dataset.intentCapture='overflow';return;}
- queue.push(event);
+ queue.push(event);return event.sequence;
 }
 function flush(){
  if(pending||!queue.length)return;
@@ -38,35 +38,82 @@ for(const type of ['pointerdown','pointermove','pointerup','pointercancel','mous
   if((secret||suppressed)&&['keydown','keyup','keypress'].includes(type))e.stopImmediatePropagation();
  },true);
 }
+let activeFunction=null;const domEventContexts=new WeakMap();
+function contextFor(e,seq){domEventContexts.set(e,{event:e,target:e.target,eventType:e.type,isTrusted:e.isTrusted===true,domEventSequence:seq});}
+function eventContext(e){const event=e&&e.type?e:window.event;return event&&domEventContexts.get(event)||null;}
 function fields(e){const t=e.target;return {eventType:e.type,targetId:(t&&t.id)||'',pointerId:e.pointerId??null,clientX:e.clientX??null,clientY:e.clientY??null,isTrusted:e.isTrusted===true,value:t&&t.matches&&t.matches('input[type=range],select')?String(t.value):null};}
 for(const type of ['pointerdown','pointermove','pointerup','pointercancel','mousedown','mouseup','mouseleave','touchstart','touchend','touchcancel','input','change','click'])
- document.addEventListener(type,e=>{if(secretTarget(e.target))return;if(type==='pointermove'&&!e.buttons)return;mark('dom_intent',fields(e));},true);
-document.addEventListener('keydown',e=>{if(secretTarget(e.target))return;if(['KeyQ','KeyA','KeyW','KeyS','KeyE','KeyD','KeyR','KeyF','KeyT','KeyG','Escape'].includes(e.code))mark('keyboard_intent',{eventType:e.type,direction:e.code,isTrusted:e.isTrusted===true});},true);
-document.addEventListener('keyup',e=>{if(secretTarget(e.target))return;if(['KeyQ','KeyA','KeyW','KeyS','KeyE','KeyD','KeyR','KeyF','KeyT','KeyG','Escape'].includes(e.code))mark('keyboard_intent',{eventType:e.type,direction:e.code,isTrusted:e.isTrusted===true});},true);
+ document.addEventListener(type,e=>{if(secretTarget(e.target))return;if(type==='pointermove'&&!e.buttons)return;const seq=mark('dom_intent',fields(e));contextFor(e,seq);},true);
+document.addEventListener('keydown',e=>{if(secretTarget(e.target))return;if(['KeyQ','KeyA','KeyW','KeyS','KeyE','KeyD','KeyR','KeyF','KeyT','KeyG','Escape'].includes(e.code)){const seq=mark('keyboard_intent',{eventType:e.type,direction:e.code,isTrusted:e.isTrusted===true});contextFor(e,seq);}},true);
+document.addEventListener('keyup',e=>{if(secretTarget(e.target))return;if(['KeyQ','KeyA','KeyW','KeyS','KeyE','KeyD','KeyR','KeyF','KeyT','KeyG','Escape'].includes(e.code)){const seq=mark('keyboard_intent',{eventType:e.type,direction:e.code,isTrusted:e.isTrusted===true});contextFor(e,seq);}},true);
 window.addEventListener('blur',()=>mark('cancel_context',{eventType:'blur'}));
 document.addEventListener('visibilitychange',()=>mark('cancel_context',{eventType:document.visibilityState}));
-for(const name of ['motorStart','motorStop','stopAllMotors','switchMode']){
+const jointActions=new Map(), actionTargets=new Map(), errorNotices=new Map(), failedRequests=new Map(), responseStatuses=new Map(), latestSuccess=new Map();
+for(const name of ['motorStart','motorStop','stopAllMotors','switchMode','jointStart','jointStop','jointStopNow','refreshJointLease']){
  const original=window[name];if(typeof original!=='function')continue;
- window[name]=function(...args){mark('ui_function',{functionName:name,motorId:Number.isInteger(args[0])?args[0]:null,direction:typeof args[1]==='string'?args[1]:null,mode:name==='switchMode'?args[0]:null});return original.apply(this,args);};
+ window[name]=function(...args){
+  const isJoint=name.startsWith('joint')||name==='refreshJointLease',joint=isJoint?String(args[0]):null;
+  const event=isJoint?(name==='jointStart'?args[2]:args[1]):(name==='motorStart'?args[2]:args[1]);
+  const context=eventContext(event),target=context&&(context.event.currentTarget&&context.event.currentTarget!==document?context.event.currentTarget:context.target);
+  if(name==='jointStart')jointActions.set(joint,args[1]);
+  if(isJoint&&target)actionTargets.set('joint:'+joint,target);
+  const action=isJoint?(name==='jointStart'?args[1]:(name==='refreshJointLease'?jointActions.get(joint):'stop')):null;
+  mark('ui_function',{functionName:name,motorId:Number.isInteger(args[0])?args[0]:null,joint,action:action||null,percent:isJoint&&['jointStart','refreshJointLease'].includes(name)?Number(document.getElementById('joint-speed').value):null,direction:typeof args[1]==='string'?args[1]:null,mode:name==='switchMode'?args[0]:null,eventType:context?context.eventType:(event&&event.type)||null,isTrusted:context?context.isTrusted:event&&event.isTrusted===true,domEventSequence:context&&context.domEventSequence});
+  const prior=activeFunction;activeFunction={name,context,target};
+  try{return original.apply(this,args);}finally{activeFunction=prior;}
+ };
+}
+function controlKey(u){return u.pathname==='/joint'?'joint:'+u.searchParams.get('joint'):u.pathname==='/motor'?'motor:'+u.searchParams.get('id'):'command';}
+function actionName(u){return u.searchParams.get('action')||u.searchParams.get('cmd')||'request';}
+function visibility(holder,shown){holder.hidden=!shown;holder.style.display=shown?'block':'none';}
+function noticeFor(u,target){
+ const key=controlKey(u),noticeKey=key+'|'+actionName(u);let record=errorNotices.get(noticeKey);
+ if(!record){
+  const holder=document.createElement('span'),text=document.createElement('span');holder.id='intent-error-'+key.replace(':','-')+'-'+actionName(u);holder.style.cssText='color:#ffb4b4;font-size:13px;';visibility(holder,false);holder.appendChild(text);
+  record={holder,text,key,failedSequence:0};errorNotices.set(noticeKey,record);
+ }
+ const button=target&&target.closest?target.closest('button'):target;
+ if(button&&button.insertAdjacentElement)button.insertAdjacentElement('afterend',record.holder);
+ else{
+  const status=u.pathname==='/joint'?document.getElementById('joint-status-'+u.searchParams.get('joint')):null,card=status&&status.closest&&status.closest('.motor-card');
+  if(card)card.appendChild(record.holder);else document.body.appendChild(record.holder);
+ }
+ return record;
+}
+function displayFailure(u,data,secret,httpStatus,requestSequence,target){
+ if(requestSequence<(latestSuccess.get(controlKey(u))||0))return;
+ const record=noticeFor(u,target);if(requestSequence<record.failedSequence)return;record.failedSequence=requestSequence;
+ let message=String(data&&(data.reasonText||data.message||data.error)||'제어기가 명령을 거절했습니다');
+ for(const value of [secret,typeof commandToken==='string'?commandToken:''])if(value)message=message.split(value).join('[비밀 제외]');
+ message=message.replace(/X-MotionBrain-Token\s*[:=]\s*\S+/ig,'X-MotionBrain-Token [비밀 제외]').slice(0,240);
+ record.text.textContent='명령 실패 '+controlKey(u)+'/'+actionName(u)+' · '+(httpStatus?'HTTP '+httpStatus+' · ':'')+message;visibility(record.holder,true);
 }
 let activeIntent=null;
 window.fetch=function(input,options={}){
  const u=new URL(typeof input==='string'?input:input.url,location.href);
- if(u.origin===location.origin&&['/motor','/command'].includes(u.pathname)&&String(options.method||'GET').toUpperCase()==='POST'){
-  const captureId=pageId+':'+(sequence+1), headers=new Headers(options.headers||{});headers.set('X-UI-Capture-ID',captureId);
-  mark('command_dispatch',{captureId,requestSequence:activeIntent,path:u.pathname});
-  return nativeFetch(input,{...options,headers});
+ if(u.origin===location.origin&&['/motor','/command','/joint'].includes(u.pathname)&&String(options.method||'GET').toUpperCase()==='POST'){
+  const captureId=pageId+':'+(sequence+1),headers=new Headers(options.headers||{});headers.set('X-UI-Capture-ID',captureId);
+  const requestSequence=activeIntent,source=activeFunction;
+  mark('command_dispatch',{captureId,requestSequence,path:u.pathname,joint:u.searchParams.get('joint'),sourceFunction:source&&source.name,domEventSequence:source&&source.context&&source.context.domEventSequence});
+  return nativeFetch(input,{...options,headers}).then(response=>{responseStatuses.set(requestSequence,Number.isInteger(response.status)?response.status:null);return response;});
  }
  return nativeFetch(input,options);
 };
 const oldCommand=window.commandFetch;
 if(typeof oldCommand==='function')window.commandFetch=function(url,...args){
- // Store only known action parameters; headers, token prompts and bodies are excluded.
- const u=new URL(url,location.href), allowed=['id','action','percent','cmd','direction','duration','durationMs','speed'];
- const query={};for(const key of allowed)if(u.searchParams.has(key))query[key]=u.searchParams.get(key);
- const requestSequence=sequence+1;mark('command_intent',{path:u.pathname,query});
- try{activeIntent=requestSequence;const result=oldCommand.call(this,url,...args);activeIntent=null;return Promise.resolve(result).then(r=>{mark('command_result',{requestSequence,success:r&&r.success===true});return r;},e=>{mark('command_failure',{requestSequence});throw e;});}
- catch(e){activeIntent=null;mark('command_failure',{requestSequence});throw e;}
+ const u=new URL(url,location.href),allowed=['joint','id','action','percent','cmd','direction','duration','durationMs','speed'],query={};for(const key of allowed)if(u.searchParams.has(key))query[key]=u.searchParams.get(key);
+ const requestSequence=sequence+1,key=controlKey(u),stopping=u.searchParams.get('action')==='stop'||['stop','disarm'].includes(u.searchParams.get('cmd')),secret=typeof commandToken==='string'?commandToken:'',source=activeFunction;
+ const target=source&&source.target||actionTargets.get(key)||(u.pathname==='/motor'?document.getElementById('btn-'+u.searchParams.get('action')+'-'+u.searchParams.get('id')):null);
+ mark('command_intent',{path:u.pathname,query,sourceFunction:source&&source.name,domEventSequence:source&&source.context&&source.context.domEventSequence,relatedFailedRequestSequence:failedRequests.get(key)||null});
+ const fail=(data,httpStatus)=>{if(requestSequence>=(latestSuccess.get(key)||0)&&requestSequence>=(failedRequests.get(key)||0))failedRequests.set(key,requestSequence);displayFailure(u,data,secret,httpStatus,requestSequence,target);};
+ try{activeIntent=requestSequence;const result=oldCommand.call(this,url,...args);activeIntent=null;return Promise.resolve(result).then(r=>{
+  const httpStatus=responseStatuses.get(requestSequence)||null;responseStatuses.delete(requestSequence);
+  mark('command_result',{requestSequence,success:r&&r.success===true,httpStatus,commandId:r&&Number.isSafeInteger(r.commandId)&&r.commandId>=0?r.commandId:null,reasonCode:r&&r.success===true?null:'command_rejected'});
+  if(!r||r.success!==true)fail(r,httpStatus);
+  else if(!stopping){latestSuccess.set(key,Math.max(latestSuccess.get(key)||0,requestSequence));if(requestSequence>=(failedRequests.get(key)||0))failedRequests.delete(key);for(const notice of errorNotices.values())if(notice.key===key&&notice.failedSequence<=requestSequence)visibility(notice.holder,false);}
+  return r;
+ },e=>{responseStatuses.delete(requestSequence);mark('command_failure',{requestSequence,reasonCode:'network_or_auth_failure'});fail({error:'인증 또는 전송 오류 · 결과를 확인하세요'},null);throw e;});}
+ catch(e){activeIntent=null;responseStatuses.delete(requestSequence);mark('command_failure',{requestSequence,reasonCode:'network_or_auth_failure'});fail({error:'인증 또는 전송 오류 · 결과를 확인하세요'},null);throw e;}
 };
 async function anchor(){const before=performance.now();try{const r=await nativeFetch('/__capture/clock?pageId='+encodeURIComponent(pageId),{cache:'no-store'});const data=await r.json();mark('clock_anchor',{browserBeforeMs:before,browserAfterMs:performance.now(),hostReceivedMonotonic:data.hostReceivedMonotonic,hostSentMonotonic:data.hostSentMonotonic,anchorId:data.anchorId});}catch(e){mark('clock_failure');}}
 const banner=document.createElement('div');banner.id='intent-capture-status';banner.style.cssText='position:fixed;top:0;left:0;right:0;z-index:999999;background:#513b00;color:white;padding:6px;font:14px sans-serif';

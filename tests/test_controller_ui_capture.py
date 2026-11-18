@@ -693,6 +693,140 @@ class Capture(unittest.TestCase):
         )
         self.assertFalse(self.requests)
 
+    def test_joint_explicit_action_matrix_and_all_stop_preserve_query(self):
+        self.establish()
+        sequence = 4
+        for joint, actions in m.JOINT_ACTIONS.items():
+            for action in sorted(actions):
+                self.assertEqual(
+                    self.post(
+                        f"/joint?joint={joint}&action={action}&percent=60",
+                        **{"X-UI-Capture-ID": f"fixture:{sequence}"},
+                    )[0],
+                    200,
+                )
+                sequence += 1
+        self.assertEqual(len(self.requests), 10)
+        rows = [
+            r
+            for r in self.logs()
+            if r["kind"] == "proxy_request" and r["path"] == "/joint"
+        ]
+        self.assertEqual(len(rows), 10)
+        self.assertEqual(rows[0]["query"]["joint"], ["gripper"])
+        self.assertEqual(
+            self.post(
+                "/joint?joint=all&action=stop",
+                **{"X-UI-Capture-ID": f"fixture:{sequence}"},
+            )[0],
+            200,
+        )
+        self.assertEqual(
+            self.post(
+                "/joint?joint=elbow&action=stop", **{"X-UI-Capture-ID": "fixture:999"}
+            )[0],
+            200,
+        )
+
+    def test_joint_invalid_combinations_missing_id_and_duplicate_rejected(self):
+        self.establish()
+        for query in [
+            "joint=gripper&action=up&percent=60",
+            "joint=elbow&action=open&percent=60",
+            "joint=base&action=up&percent=60",
+            "joint=all&action=left&percent=60",
+            "joint=wrong&action=stop",
+            "joint=elbow&action=down&percent=0",
+            "joint=elbow&action=down&percent=101",
+            "joint=elbow&action=down&percent=060",
+            "joint=elbow&action=down",
+            "joint=elbow&action=stop&percent=0",
+            "joint=elbow&joint=wrist&action=stop",
+        ]:
+            self.assertNotEqual(self.post("/joint?" + query)[0], 200)
+        self.assertFalse(self.requests)
+        path = "/joint?joint=elbow&action=down&percent=60"
+        self.assertEqual(self.send(path, "POST", headers={"Origin": self.base})[0], 409)
+        self.assertEqual(self.post(path)[0], 200)
+        self.assertEqual(self.post(path)[0], 409)
+        self.assertEqual(len(self.requests), 1)
+
+    def test_joint_stop_survives_not_ready_unknown_and_stop_pending_blocks_run(self):
+        self.assertEqual(
+            self.send(
+                "/joint?joint=all&action=stop", "POST", headers={"Origin": self.base}
+            )[0],
+            200,
+        )
+        # Leave more than the declared browser timer-quantization interval.
+        time.sleep(0.01)
+        self.establish()
+        self.hold = True
+        answers = {}
+        t = threading.Thread(
+            target=lambda: answers.setdefault(
+                "stop",
+                self.post(
+                    "/joint?joint=elbow&action=stop", **{"X-UI-Capture-ID": "fixture:4"}
+                )[0],
+            )
+        )
+        t.start()
+        self.assertTrue(self.transport_started.wait(1))
+        self.assertEqual(
+            self.post(
+                "/joint?joint=elbow&action=down&percent=60",
+                **{"X-UI-Capture-ID": "fixture:5"},
+            )[0],
+            409,
+        )
+        self.transport_release.set()
+        t.join(2)
+        self.assertEqual(answers["stop"], 200)
+        self.fail = True
+        self.assertEqual(
+            self.post(
+                "/joint?joint=elbow&action=down&percent=60",
+                **{"X-UI-Capture-ID": "fixture:6"},
+            )[0],
+            502,
+        )
+        self.fail = False
+        self.assertEqual(
+            self.post(
+                "/joint?joint=all&action=stop", **{"X-UI-Capture-ID": "fixture:7"}
+            )[0],
+            200,
+        )
+
+    def test_blocked_joint_exposes_actual_recording_reason(self):
+        self.establish(start=False)
+        code, raw = self.post("/joint?joint=elbow&action=down&percent=60")
+        self.assertEqual(code, 409)
+        data = json.loads(raw)
+        self.assertEqual(data["reason"], "waiting_operator_start")
+        self.assertIn("수집 시작", data["reasonText"])
+        self.assertFalse(self.requests)
+
+    def test_injected_javascript_is_frozen_to_recorded_startup_hash(self):
+        import hashlib
+        from unittest.mock import patch
+
+        original = m.JS.read_bytes()
+        replacement = self.root / "changed-ui.js"
+        replacement.write_bytes(b"CHANGED_AFTER_SERVER_START")
+        with patch.object(m, "JS", replacement):
+            code, body = self.send("/")
+            self.assertEqual(code, 200)
+            self.assertIn(b"<script>" + original + b"</script>", body)
+            self.assertNotIn(replacement.read_bytes(), body)
+            replacement.unlink()
+            self.assertEqual(self.send("/")[0], 200)
+        recorded = next(row for row in self.logs() if row["kind"] == "capture_started")
+        self.assertEqual(
+            recorded["instrumentationSha256"], hashlib.sha256(original).hexdigest()
+        )
+
     def test_events_deduplicated_and_bad_metadata_rejected(self):
         self.establish()
         batch = dict(
@@ -877,6 +1011,156 @@ const settle=async()=>{for(let i=0;i<8;i++)await Promise.resolve();};
 
             with patch.object(m.time, "monotonic", return_value=1.1):
                 log.browser(dict(events=events))
+            log.close()
+
+    def test_original_joint_handlers_dom_identity_errors_and_command_ids(self):
+        import re
+
+        names = (
+            "function commandFetch(",
+            "function commandHeaders(",
+            "function jointStart(",
+            "function jointStop(",
+            "function jointStopNow(",
+            "function refreshJointLease(",
+        )
+        functions = []
+        for line in (ROOT / "src/network/web_server.cpp").read_text().splitlines():
+            match = re.search(r'server_\.sendContent\((".*")\);', line)
+            if not match:
+                continue
+            try:
+                decoded = json.loads(match.group(1))
+            except ValueError:
+                continue
+            if any(decoded.startswith(name) for name in names):
+                functions.append(decoded)
+        self.assertEqual(len(functions), 6)
+        result = subprocess.run(
+            ["node", str(ROOT / "tests/controller_ui_joint_fixture.cjs")],
+            input=json.dumps(
+                dict(functions=functions, instrumentation=m.JS.read_text())
+            ),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        data = json.loads(result.stdout)
+        events = data["events"]
+        commands = data["commands"]
+        expected = [
+            ("elbow", "down"),
+            ("elbow", "down"),
+            ("elbow", "stop"),
+            ("wrist", "up"),
+            ("wrist", "stop"),
+            ("gripper", "stop"),
+            ("elbow", "down"),
+            ("elbow", "stop"),
+            ("elbow", "down"),
+            ("elbow", "stop"),
+            ("elbow", "up"),
+            ("elbow", "stop"),
+            ("elbow", "stop"),
+            ("elbow", "down"),
+            ("elbow", "stop"),
+            ("elbow", "down"),
+            ("elbow", "up"),
+            ("elbow", "down"),
+            ("elbow", "up"),
+            ("elbow", "down"),
+        ]
+        import urllib.parse
+
+        parsed = [
+            urllib.parse.parse_qs(urllib.parse.urlsplit(c["url"]).query)
+            for c in commands
+        ]
+        self.assertEqual([(q["joint"][0], q["action"][0]) for q in parsed], expected)
+        ids = [c["headers"].get("x-ui-capture-id") for c in commands]
+        self.assertTrue(all(ids))
+        self.assertEqual(len(set(ids)), 20)
+        self.assertEqual(parsed[1]["percent"], ["70"])
+        starts = [
+            e
+            for e in events
+            if e["kind"] == "ui_function" and e["functionName"] == "jointStart"
+        ]
+        self.assertTrue(all(e["domEventSequence"] is not None for e in starts))
+        self.assertTrue(all(e["joint"] for e in starts))
+        stops = [
+            e
+            for e in events
+            if e["kind"] == "ui_function" and e["functionName"] == "jointStopNow"
+        ]
+        self.assertTrue(any(e["domEventSequence"] is not None for e in stops))
+        self.assertTrue(any(e["domEventSequence"] is None for e in stops))
+        self.assertTrue(
+            any(
+                e["kind"] == "command_intent"
+                and e["sourceFunction"] == "jointStopNow"
+                and e["relatedFailedRequestSequence"] is not None
+                for e in events
+            )
+        )
+        self.assertTrue(
+            any(
+                e["kind"] == "ui_function"
+                and e["functionName"] == "jointStop"
+                and e["eventType"] == "touchcancel"
+                for e in events
+            )
+        )
+        self.assertTrue(
+            any(
+                e["kind"] == "command_intent"
+                and e["sourceFunction"] == "refreshJointLease"
+                and e["query"]["percent"] == "70"
+                for e in events
+            )
+        )
+        command_ids = {c["commandId"] for c in commands}
+        self.assertEqual(
+            {e["commandId"] for e in events if e["kind"] == "command_result"},
+            command_ids,
+        )
+        self.assertFalse(data["failedDownAfterStop"]["hidden"])
+        self.assertIn("[비밀 제외]", data["failedDownAfterStop"]["text"])
+        self.assertIn("elbow/down", data["failedDownAfterStop"]["text"])
+        self.assertTrue(data["downClearedAfterRun"]["hidden"])
+        self.assertEqual(data["downClearedAfterRun"]["display"], "none")
+        self.assertTrue(all(not n["hidden"] for n in data["upAndStopFailures"]))
+        self.assertEqual(data["upAndStopFailures"][0]["anchorId"], "elbow-up-button")
+        self.assertEqual(data["explicitStopFailure"]["anchorId"], "elbow-stop-button")
+        self.assertIn("HTTP 403", data["explicitStopFailure"]["text"])
+        self.assertTrue(
+            all(n["hidden"] and n["display"] == "none" for n in data["clearedByNewRun"])
+        )
+        self.assertFalse(data["lateSuccessDidNotClear"]["hidden"])
+        self.assertIn("newer failure", data["lateSuccessDidNotClear"]["text"])
+        self.assertTrue(data["lateFailureDidNotReturn"]["hidden"])
+        self.assertNotIn("SECRET-FIXTURE", json.dumps(events))
+        self.assertNotIn(
+            "SECRET-FIXTURE",
+            json.dumps(
+                {k: v for k, v in data.items() if k not in ("commands", "events")}
+            ),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            log = m.EventLog(directory)
+            anchor = next(e for e in events if e["kind"] == "clock_anchor")
+            log.clocks[anchor["anchorId"]] = (
+                anchor["pageId"],
+                {
+                    k: anchor[k]
+                    for k in ("anchorId", "hostReceivedMonotonic", "hostSentMonotonic")
+                },
+            )
+            from unittest.mock import patch
+
+            with patch.object(m.time, "monotonic", return_value=1.5):
+                for offset in range(0, len(events), 64):
+                    log.browser(dict(events=events[offset : offset + 64]))
             log.close()
 
 
