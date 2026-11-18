@@ -48,8 +48,9 @@ document.addEventListener('keydown',e=>{if(secretTarget(e.target))return;if(['Ke
 document.addEventListener('keyup',e=>{if(secretTarget(e.target))return;if(['KeyQ','KeyA','KeyW','KeyS','KeyE','KeyD','KeyR','KeyF','KeyT','KeyG','Escape'].includes(e.code)){const seq=mark('keyboard_intent',{eventType:e.type,direction:e.code,isTrusted:e.isTrusted===true});contextFor(e,seq);}},true);
 window.addEventListener('blur',()=>mark('cancel_context',{eventType:'blur'}));
 document.addEventListener('visibilitychange',()=>mark('cancel_context',{eventType:document.visibilityState}));
+const gestures=new Map(), leaseInfo=new Map();let gestureOrdinal=0;
 const jointActions=new Map(), actionTargets=new Map(), errorNotices=new Map(), failedRequests=new Map(), responseStatuses=new Map(), latestSuccess=new Map();
-for(const name of ['motorStart','motorStop','stopAllMotors','switchMode','jointStart','jointStop','jointStopNow','refreshJointLease']){
+for(const name of ['motorStart','motorStop','stopAllMotors','switchMode','jointStart','jointStop','jointStopNow','refreshJointLease','refreshMotorLease']){
  const original=window[name];if(typeof original!=='function')continue;
  window[name]=function(...args){
   const isJoint=name.startsWith('joint')||name==='refreshJointLease',joint=isJoint?String(args[0]):null;
@@ -59,7 +60,13 @@ for(const name of ['motorStart','motorStop','stopAllMotors','switchMode','jointS
   if(isJoint&&target)actionTargets.set('joint:'+joint,target);
   const action=isJoint?(name==='jointStart'?args[1]:(name==='refreshJointLease'?jointActions.get(joint):'stop')):null;
   mark('ui_function',{functionName:name,motorId:Number.isInteger(args[0])?args[0]:null,joint,action:action||null,percent:isJoint&&['jointStart','refreshJointLease'].includes(name)?Number(document.getElementById('joint-speed').value):null,direction:typeof args[1]==='string'?args[1]:null,mode:name==='switchMode'?args[0]:null,eventType:context?context.eventType:(event&&event.type)||null,isTrusted:context?context.isTrusted:event&&event.isTrusted===true,domEventSequence:context&&context.domEventSequence});
-  const prior=activeFunction;activeFunction={name,context,target};
+  const key=isJoint?'joint:'+joint:'motor:'+args[0],isStart=['jointStart','motorStart'].includes(name),isLease=['refreshJointLease','refreshMotorLease'].includes(name);
+  const entry=isJoint?(typeof activeJointButtons==='object'&&activeJointButtons[joint]):(typeof activeMotors==='object'&&activeMotors[args[0]]);
+  if(isStart&&!entry){const requestedAction=isJoint?args[1]:args[1];gestures.set(key,{id:pageId+':gesture:'+(++gestureOrdinal),key,action:requestedAction,active:true,initialAcknowledged:false,pendingRequestSequence:null});const info=leaseInfo.get(key);if(info)visibility(info,false);}
+  const gesture=gestures.get(key)||null;
+  if(['jointStop','jointStopNow','motorStop'].includes(name)&&gesture)gesture.active=false;
+  if(isLease&&entry&&gesture&&gesture.active&&gesture.pendingRequestSequence!==null){mark('lease_coalesced',{sourceFunction:name,gestureId:gesture.id,joint,pendingRequestSequence:gesture.pendingRequestSequence,uiOutcome:'not_issued_while_lease_pending'});return;}
+  const prior=activeFunction;activeFunction={name,context,target,gesture};
   try{return original.apply(this,args);}finally{activeFunction=prior;}
  };
 }
@@ -94,26 +101,41 @@ window.fetch=function(input,options={}){
  if(u.origin===location.origin&&['/motor','/command','/joint'].includes(u.pathname)&&String(options.method||'GET').toUpperCase()==='POST'){
   const captureId=pageId+':'+(sequence+1),headers=new Headers(options.headers||{});headers.set('X-UI-Capture-ID',captureId);
   const requestSequence=activeIntent,source=activeFunction;
-  mark('command_dispatch',{captureId,requestSequence,path:u.pathname,joint:u.searchParams.get('joint'),sourceFunction:source&&source.name,domEventSequence:source&&source.context&&source.context.domEventSequence});
-  return nativeFetch(input,{...options,headers}).then(response=>{responseStatuses.set(requestSequence,Number.isInteger(response.status)?response.status:null);return response;});
+  mark('command_dispatch',{captureId,requestSequence,path:u.pathname,joint:u.searchParams.get('joint'),sourceFunction:source&&source.name,gestureId:source&&source.gesture&&source.gesture.id,domEventSequence:source&&source.context&&source.context.domEventSequence});
+  return nativeFetch(input,{...options,headers}).then(response=>{responseStatuses.set(requestSequence,{httpStatus:Number.isInteger(response.status)?response.status:null,captureId,proxyDisposition:response.headers&&typeof response.headers.get==='function'?response.headers.get('X-MotionBrain-UI-Proxy-Disposition'):null});return response;});
  }
  return nativeFetch(input,options);
 };
+function neutralLease(u,r,meta,source){
+ const gesture=source&&source.gesture;
+ return Boolean(source&&['refreshJointLease','refreshMotorLease'].includes(source.name)&&gesture&&gesture.initialAcknowledged&&gesture.key===controlKey(u)&&gesture.action===actionName(u)&&meta&&meta.httpStatus===409&&meta.proxyDisposition==='superseded_without_dispatch'&&r&&r.schemaVersion==='motionbrain.ui_proxy_command_disposition.v1'&&r.success===false&&r.outcome==='superseded_without_dispatch'&&r.controllerForwarded===false&&r.independentGuardsPassed===true&&r.captureId===meta.captureId&&r.commandId===undefined);
+}
+function displayNeutralLease(u,target,gesture){
+ if(gestures.get(gesture.key)!==gesture)return;
+ let holder=leaseInfo.get(gesture.key);if(!holder){holder=document.createElement('span');holder.id='intent-lease-info-'+gesture.key.replace(':','-');holder.style.cssText='color:#b8c8d8;font-size:13px;';leaseInfo.set(gesture.key,holder);}
+ holder.textContent='유지 요청 미전송 · 후속 입력/STOP으로 취소되었습니다. 앞선 명령 결과와는 별개입니다.';
+ const button=target&&target.closest?target.closest('button'):target;if(button&&button.insertAdjacentElement)button.insertAdjacentElement('afterend',holder);else document.body.appendChild(holder);visibility(holder,true);
+}
 const oldCommand=window.commandFetch;
 if(typeof oldCommand==='function')window.commandFetch=function(url,...args){
  const u=new URL(url,location.href),allowed=['joint','id','action','percent','cmd','direction','duration','durationMs','speed'],query={};for(const key of allowed)if(u.searchParams.has(key))query[key]=u.searchParams.get(key);
  const requestSequence=sequence+1,key=controlKey(u),stopping=u.searchParams.get('action')==='stop'||['stop','disarm'].includes(u.searchParams.get('cmd')),secret=typeof commandToken==='string'?commandToken:'',source=activeFunction;
  const target=source&&source.target||actionTargets.get(key)||(u.pathname==='/motor'?document.getElementById('btn-'+u.searchParams.get('action')+'-'+u.searchParams.get('id')):null);
- mark('command_intent',{path:u.pathname,query,sourceFunction:source&&source.name,domEventSequence:source&&source.context&&source.context.domEventSequence,relatedFailedRequestSequence:failedRequests.get(key)||null});
+ mark('command_intent',{path:u.pathname,query,sourceFunction:source&&source.name,gestureId:source&&source.gesture&&source.gesture.id,domEventSequence:source&&source.context&&source.context.domEventSequence,relatedFailedRequestSequence:failedRequests.get(key)||null});
+ const lease=source&&['refreshJointLease','refreshMotorLease'].includes(source.name)&&source.gesture;if(lease)lease.pendingRequestSequence=requestSequence;
+ const clearPending=()=>{if(lease&&lease.pendingRequestSequence===requestSequence)lease.pendingRequestSequence=null;};
  const fail=(data,httpStatus)=>{if(requestSequence>=(latestSuccess.get(key)||0)&&requestSequence>=(failedRequests.get(key)||0))failedRequests.set(key,requestSequence);displayFailure(u,data,secret,httpStatus,requestSequence,target);};
  try{activeIntent=requestSequence;const result=oldCommand.call(this,url,...args);activeIntent=null;return Promise.resolve(result).then(r=>{
-  const httpStatus=responseStatuses.get(requestSequence)||null;responseStatuses.delete(requestSequence);
-  mark('command_result',{requestSequence,success:r&&r.success===true,httpStatus,commandId:r&&Number.isSafeInteger(r.commandId)&&r.commandId>=0?r.commandId:null,reasonCode:r&&r.success===true?null:'command_rejected'});
+  const meta=responseStatuses.get(requestSequence)||null,httpStatus=meta&&meta.httpStatus||null;responseStatuses.delete(requestSequence);
+  const neutral=neutralLease(u,r,meta,source);clearPending();
+  mark('command_result',{requestSequence,success:r&&r.success===true,httpStatus,gestureId:source&&source.gesture&&source.gesture.id,controllerForwarded:neutral?false:undefined,uiOutcome:neutral?'lease_superseded_without_dispatch':undefined,commandId:r&&Number.isSafeInteger(r.commandId)&&r.commandId>=0?r.commandId:null,reasonCode:neutral?'superseded_not_forwarded':r&&r.success===true?null:'command_rejected'});
+  if(neutral){displayNeutralLease(u,target,source.gesture);/* Compatibility only: the legacy lease callback tests success. The raw result above remains false; no controller receipt is manufactured. */return {...r,success:true,uiOnlyLeaseNoOp:true,controllerSuccess:false};}
+  if(r&&r.success===true&&source&&['jointStart','motorStart'].includes(source.name)&&source.gesture)source.gesture.initialAcknowledged=true;
   if(!r||r.success!==true)fail(r,httpStatus);
   else if(!stopping){latestSuccess.set(key,Math.max(latestSuccess.get(key)||0,requestSequence));if(requestSequence>=(failedRequests.get(key)||0))failedRequests.delete(key);for(const notice of errorNotices.values())if(notice.key===key&&notice.failedSequence<=requestSequence)visibility(notice.holder,false);}
   return r;
- },e=>{responseStatuses.delete(requestSequence);mark('command_failure',{requestSequence,reasonCode:'network_or_auth_failure'});fail({error:'인증 또는 전송 오류 · 결과를 확인하세요'},null);throw e;});}
- catch(e){activeIntent=null;responseStatuses.delete(requestSequence);mark('command_failure',{requestSequence,reasonCode:'network_or_auth_failure'});fail({error:'인증 또는 전송 오류 · 결과를 확인하세요'},null);throw e;}
+ },e=>{clearPending();responseStatuses.delete(requestSequence);mark('command_failure',{requestSequence,reasonCode:'network_or_auth_failure'});fail({error:'인증 또는 전송 오류 · 결과를 확인하세요'},null);throw e;});}
+ catch(e){activeIntent=null;clearPending();responseStatuses.delete(requestSequence);mark('command_failure',{requestSequence,reasonCode:'network_or_auth_failure'});fail({error:'인증 또는 전송 오류 · 결과를 확인하세요'},null);throw e;}
 };
 async function anchor(){const before=performance.now();try{const r=await nativeFetch('/__capture/clock?pageId='+encodeURIComponent(pageId),{cache:'no-store'});const data=await r.json();mark('clock_anchor',{browserBeforeMs:before,browserAfterMs:performance.now(),hostReceivedMonotonic:data.hostReceivedMonotonic,hostSentMonotonic:data.hostSentMonotonic,anchorId:data.anchorId});}catch(e){mark('clock_failure');}}
 const banner=document.createElement('div');banner.id='intent-capture-status';banner.style.cssText='position:fixed;top:0;left:0;right:0;z-index:999999;background:#513b00;color:white;padding:6px;font:14px sans-serif';

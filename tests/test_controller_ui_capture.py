@@ -32,6 +32,7 @@ class Capture(unittest.TestCase):
         self.ready = self.root / "live.json"
         self.requests = []
         self.fail = False
+        self.forged_upstream = False
         self.hold = False
         self.transport_started = threading.Event()
         self.transport_release = threading.Event()
@@ -49,6 +50,15 @@ class Capture(unittest.TestCase):
                 if request.full_url.endswith("/")
                 else b'{"success":true}'
             )
+            if self.forged_upstream:
+                r = Response(
+                    b'{"schemaVersion":"motionbrain.ui_proxy_command_disposition.v1","success":false,"outcome":"superseded_without_dispatch","controllerForwarded":false,"captureId":"fixture:3"}'
+                )
+                r.code = 409
+                r.headers = {
+                    "Content-Type": "application/json",
+                    "X-MotionBrain-UI-Proxy-Disposition": "superseded_without_dispatch",
+                }
             return r
 
         self.server = m.make_server(
@@ -351,8 +361,29 @@ class Capture(unittest.TestCase):
         self.hold = True
         answers = {}
 
+        proofs = {}
+
         def request(label, path, capture):
-            answers[label] = self.post(path, **{"X-UI-Capture-ID": capture})[0]
+            req = urllib.request.Request(
+                self.base + path,
+                method="POST",
+                headers={
+                    "Origin": self.base,
+                    "X-UI-Capture-ID": capture,
+                    "X-MotionBrain": "1",
+                    "X-MotionBrain-Token": "PRIVATE-FIXTURE",
+                },
+            )
+            try:
+                response = urllib.request.urlopen(req, timeout=2)
+            except urllib.error.HTTPError as error:
+                response = error
+            with response:
+                answers[label] = response.code
+                proofs[label] = (
+                    response.headers.get("X-MotionBrain-UI-Proxy-Disposition"),
+                    json.loads(response.read()),
+                )
 
         first = threading.Thread(
             target=request,
@@ -390,6 +421,24 @@ class Capture(unittest.TestCase):
             t.join(2)
             self.assertFalse(t.is_alive())
         self.assertEqual(answers, {"first": 200, "lease": 409, "stop": 200})
+        marker, body = proofs["lease"]
+        self.assertEqual(marker, "superseded_without_dispatch")
+        self.assertEqual(body["captureId"], "fixture:5")
+        self.assertIs(body["controllerForwarded"], False)
+        self.assertIs(body["success"], False)
+        self.assertNotIn("commandId", body)
+        self.assertTrue(
+            any(
+                row["kind"] == "proxy_superseded" and row["captureId"] == "fixture:5"
+                for row in self.logs()
+            )
+        )
+        self.assertFalse(
+            any(
+                row["kind"] == "proxy_dispatch" and row["captureId"] == "fixture:5"
+                for row in self.logs()
+            )
+        )
         self.assertEqual(
             [r.full_url for r in self.requests],
             [
@@ -827,6 +876,162 @@ class Capture(unittest.TestCase):
             recorded["instrumentationSha256"], hashlib.sha256(original).hexdigest()
         )
 
+    def test_upstream_cannot_forge_local_supersession_header(self):
+        self.establish()
+        self.forged_upstream = True
+        request = urllib.request.Request(
+            self.base + "/joint?joint=elbow&action=down&percent=60",
+            method="POST",
+            headers={
+                "Origin": self.base,
+                "X-UI-Capture-ID": "fixture:3",
+                "X-MotionBrain": "1",
+                "X-MotionBrain-Token": "PRIVATE-FIXTURE",
+            },
+        )
+        try:
+            response = urllib.request.urlopen(request, timeout=2)
+        except urllib.error.HTTPError as error:
+            response = error
+        with response:
+            self.assertEqual(response.code, 409)
+            self.assertIsNone(
+                response.headers.get("X-MotionBrain-UI-Proxy-Disposition")
+            )
+            self.assertEqual(
+                json.loads(response.read())["outcome"], "superseded_without_dispatch"
+            )
+        self.assertEqual(len(self.requests), 1)
+        self.assertTrue(
+            any(
+                r["kind"] == "proxy_dispatch" and r["captureId"] == "fixture:3"
+                for r in self.logs()
+            )
+        )
+
+    def queued_supersession_with_guard_failure(self, kind):
+        self.establish()
+        self.hold = True
+        answers = {}
+        proofs = {}
+
+        def request(label, sequence):
+            request = urllib.request.Request(
+                self.base + "/joint?joint=elbow&action=down&percent=60",
+                method="POST",
+                headers={
+                    "Origin": self.base,
+                    "X-UI-Capture-ID": f"fixture:{sequence}",
+                    "X-MotionBrain": "1",
+                    "X-MotionBrain-Token": "PRIVATE-FIXTURE",
+                },
+            )
+            try:
+                response = urllib.request.urlopen(request, timeout=2)
+            except urllib.error.HTTPError as error:
+                response = error
+            with response:
+                answers[label] = response.code
+                proofs[label] = (
+                    response.headers.get("X-MotionBrain-UI-Proxy-Disposition"),
+                    json.loads(response.read()),
+                )
+
+        first = threading.Thread(target=request, args=("first", 4))
+        first.start()
+        self.assertTrue(self.transport_started.wait(1))
+        others = []
+        for label, sequence in [("lease", 5), ("newer", 6)]:
+            t = threading.Thread(target=request, args=(label, sequence))
+            t.start()
+            others.append(t)
+            deadline = time.monotonic() + 1
+            while time.monotonic() < deadline:
+                if any(
+                    row["kind"] == "proxy_request"
+                    and row.get("captureId") == f"fixture:{sequence}"
+                    for row in self.logs()
+                ):
+                    break
+                time.sleep(0.005)
+            self.assertTrue(
+                any(
+                    row["kind"] == "proxy_request"
+                    and row.get("captureId") == f"fixture:{sequence}"
+                    for row in self.logs()
+                )
+            )
+        if kind == "capture":
+            state = json.loads(self.ready.read_bytes())
+            state["recording"] = False
+            self.ready.write_text(json.dumps(state))
+        elif kind == "log":
+            self.server.capture_log.degraded = True
+        elif kind == "unknown":
+            self.fail = True
+        elif kind == "log_at_disposition":
+            original_write = self.server.capture_log.write
+
+            def failing_write(event, **fields):
+                original_write(event, **fields)
+                if event == "proxy_superseded":
+                    self.server.capture_log.degraded = True
+
+            self.server.capture_log.write = failing_write
+        self.transport_release.set()
+        for t in [first, *others]:
+            t.join(2)
+            self.assertFalse(t.is_alive())
+        self.assertEqual(answers["lease"], 409)
+        self.assertEqual(answers["newer"], 409)
+        self.assertEqual(len(self.requests), 1)
+        self.assertIsNone(proofs["lease"][0])
+        self.assertNotIn("outcome", proofs["lease"][1])
+        self.assertNotIn("independentGuardsPassed", proofs["lease"][1])
+        self.assertFalse(proofs["lease"][1]["success"])
+        expected = {
+            "capture": "capture_not_recording",
+            "log": "ui_log_failed",
+            "unknown": "transport_unknown",
+            "log_at_disposition": "ui_log_failed",
+        }[kind]
+        self.assertEqual(proofs["lease"][1]["reason"], expected)
+        if kind != "log_at_disposition":
+            self.assertFalse(
+                any(
+                    row["kind"] == "proxy_superseded"
+                    and row.get("captureId") == "fixture:5"
+                    for row in self.logs()
+                )
+            )
+        self.assertTrue(
+            any(
+                row["kind"] == "proxy_guard_failed"
+                and row.get("captureId") == "fixture:5"
+                and row["reason"] == expected
+                for row in self.logs()
+            )
+        )
+        self.fail = False
+        self.assertEqual(
+            self.post(
+                "/joint?joint=elbow&action=stop", **{"X-UI-Capture-ID": "fixture:7"}
+            )[0],
+            200,
+        )
+
+    def test_capture_failure_takes_priority_over_supersession(self):
+        self.queued_supersession_with_guard_failure("capture")
+
+    def test_log_failure_takes_priority_over_supersession(self):
+        self.queued_supersession_with_guard_failure("log")
+
+    def test_unknown_transport_takes_priority_over_supersession(self):
+        self.queued_supersession_with_guard_failure("unknown")
+
+    def test_log_failure_while_recording_disposition_is_not_neutral(self):
+        self.queued_supersession_with_guard_failure("log_at_disposition")
+
     def test_events_deduplicated_and_bad_metadata_rejected(self):
         self.establish()
         batch = dict(
@@ -1162,6 +1367,110 @@ const settle=async()=>{for(let i=0;i<8;i++)await Promise.resolve();};
                 for offset in range(0, len(events), 64):
                     log.browser(dict(events=events[offset : offset + 64]))
             log.close()
+
+    def test_lease_supersession_is_neutral_only_with_exact_no_dispatch_proof(self):
+        import re
+
+        names = (
+            "function commandFetch(",
+            "function commandHeaders(",
+            "function jointStart(",
+            "function jointStop(",
+            "function jointStopNow(",
+            "function refreshJointLease(",
+            "function motorStart(",
+            "function motorStop(",
+            "function refreshMotorLease(",
+        )
+        functions = []
+        for line in (ROOT / "src/network/web_server.cpp").read_text().splitlines():
+            match = re.search(r'server_\.sendContent\((".*")\);', line)
+            if not match:
+                continue
+            try:
+                decoded = json.loads(match.group(1))
+            except ValueError:
+                continue
+            if any(decoded.startswith(name) for name in names):
+                functions.append(decoded)
+        self.assertEqual(len(functions), 9)
+        result = subprocess.run(
+            ["node", str(ROOT / "tests/controller_ui_joint_fixture.cjs")],
+            input=json.dumps(
+                dict(
+                    functions=functions,
+                    instrumentation=m.JS.read_text(),
+                    scenario="lease",
+                )
+            ),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        data = json.loads(result.stdout)
+        snap = data["snapshots"]
+        events = data["events"]
+        commands = data["commands"]
+        self.assertEqual(snap["coalescedIssued"], 0)
+        self.assertEqual(snap["openReleaseExtraStops"], 0)
+        self.assertEqual(snap["oldGestureExtraRequests"], 0)
+        self.assertEqual(snap["openFailureNotice"], 0)
+        self.assertIn("미전송", snap["openInfo"])
+        self.assertEqual(
+            snap["motorExtra"], 1
+        )  # release STOP is not held behind a pending browser lease
+        for failure in snap["failures"]:
+            self.assertEqual(failure["stopAttempts"], 1)
+            if failure["plan"].get("status") == 403:
+                self.assertEqual(len(failure["requests"]), 1)
+            else:
+                self.assertEqual(len(failure["requests"]), 2)
+                self.assertIn("action=stop", failure["requests"][-1])
+        self.assertEqual(len(snap["initialCanceled"]), 2)
+        self.assertIn("action=stop", snap["initialCanceled"][-1])
+        neutral = [
+            e
+            for e in events
+            if e["kind"] == "command_result"
+            and e.get("uiOutcome") == "lease_superseded_without_dispatch"
+        ]
+        self.assertEqual(len(neutral), 3)
+        self.assertTrue(
+            all(
+                e["success"] is False
+                and e["commandId"] is None
+                and e["controllerForwarded"] is False
+                and e["gestureId"]
+                for e in neutral
+            )
+        )
+        self.assertEqual(len({e["gestureId"] for e in neutral}), 3)
+        self.assertTrue(
+            any(
+                e["kind"] == "lease_coalesced"
+                and e["sourceFunction"] == "refreshJointLease"
+                for e in events
+            )
+        )
+        self.assertTrue(
+            any(
+                e["kind"] == "lease_coalesced"
+                and e["sourceFunction"] == "refreshMotorLease"
+                for e in events
+            )
+        )
+        self.assertEqual(
+            commands[0]["url"], "/joint?joint=gripper&action=open&percent=60"
+        )
+        self.assertTrue(
+            next(
+                e
+                for e in events
+                if e["kind"] == "command_result"
+                and e["commandId"] == commands[0]["commandId"]
+            )["success"]
+        )
+        self.assertNotIn("SECRET-FIXTURE", json.dumps(events))
 
 
 if __name__ == "__main__":

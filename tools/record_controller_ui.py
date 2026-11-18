@@ -59,6 +59,10 @@ QUERY_KEYS = {
     "limit",
 }
 EVENT_KEYS = {
+    "gestureId",
+    "controllerForwarded",
+    "uiOutcome",
+    "pendingRequestSequence",
     "commandId",
     "joint",
     "action",
@@ -383,7 +387,7 @@ def make_server(controller, output, port=8768, *, ready_file=None, opener=None):
         else None
     )
 
-    def status_for(page_id):
+    def status_for(page_id, *, ignore_stop_pending=False):
         page = log.pages.get(page_id, {})
         reason = "browser_preparing"
         text = "브라우저 준비 중"
@@ -433,7 +437,7 @@ def make_server(controller, output, port=8768, *, ready_file=None, opener=None):
         elif control["unknown"]:
             reason = "transport_unknown"
             text = "명령 전송 결과 불명 · 새 동작 차단"
-        elif control["stopPending"]:
+        elif control["stopPending"] and not ignore_stop_pending:
             reason = "stop_pending"
             text = "STOP 처리 중 · 새 동작 차단"
         elif control["ownerPage"] not in (None, page_id):
@@ -569,11 +573,13 @@ def make_server(controller, output, port=8768, *, ready_file=None, opener=None):
         def log_message(self, *args):
             pass
 
-        def reply(self, status, raw, content="application/json"):
+        def reply(self, status, raw, content="application/json", *, disposition=None):
             self.send_response(status)
             self.send_header("Content-Type", content)
             self.send_header("Content-Length", str(len(raw)))
             self.send_header("Cache-Control", "no-store")
+            if disposition is not None:
+                self.send_header("X-MotionBrain-UI-Proxy-Disposition", disposition)
             self.end_headers()
             self.wfile.write(raw)
 
@@ -827,34 +833,72 @@ def make_server(controller, output, port=8768, *, ready_file=None, opener=None):
                     with forward_lock if self.command == "POST" else nullcontext():
                         if self.command == "POST" and not stopping:
                             with control_lock:
+                                independent_state = status_for(
+                                    page_id, ignore_stop_pending=True
+                                )
+                                superseded = generation != control[
+                                    "generation"
+                                ] or control["highest"].get(page_id) != int(parts[1])
                                 eligible = (
-                                    generation == control["generation"]
+                                    not superseded
                                     and not control["stopPending"]
-                                    and control["highest"].get(page_id) == int(parts[1])
-                                    and ready(page_id)
+                                    and independent_state["recordingReady"]
+                                )
+                                neutralizable = (
+                                    superseded and independent_state["recordingReady"]
                                 )
                             if not eligible:
+                                if neutralizable:
+                                    # Only this branch proves that a reserved unique
+                                    # request never entered the controller transport.
+                                    payload = dict(
+                                        schemaVersion="motionbrain.ui_proxy_command_disposition.v1",
+                                        success=False,
+                                        outcome="superseded_without_dispatch",
+                                        controllerForwarded=False,
+                                        independentGuardsPassed=True,
+                                        captureId=capture_id,
+                                        reason="superseded",
+                                        reasonText="후속 입력 또는 STOP으로 취소되어 이 요청은 제어기에 보내지 않았습니다",
+                                    )
+                                    log.write(
+                                        "proxy_superseded",
+                                        captureId=capture_id,
+                                        path=path,
+                                        controllerForwarded=False,
+                                    )
+                                    if not log.degraded:
+                                        return self.reply(
+                                            409,
+                                            json.dumps(
+                                                payload, ensure_ascii=False
+                                            ).encode(),
+                                            disposition="superseded_without_dispatch",
+                                        )
+                                    independent_state = status_for(
+                                        page_id, ignore_stop_pending=True
+                                    )
+                                state = (
+                                    independent_state
+                                    if not independent_state["recordingReady"]
+                                    else status_for(page_id)
+                                )
+                                log.write(
+                                    "proxy_guard_failed",
+                                    captureId=capture_id,
+                                    path=path,
+                                    reason=state["reason"],
+                                )
                                 return self.reply(
                                     409,
                                     json.dumps(
                                         dict(
                                             success=False,
-                                            error="superseded or recording ended before dispatch",
-                                            reason=(
-                                                "superseded"
-                                                if generation != control["generation"]
-                                                or control["highest"].get(page_id)
-                                                != int(parts[1])
-                                                else status_for(page_id)["reason"]
-                                            ),
-                                            reasonText=(
-                                                "이전 명령이 새 입력 또는 STOP에 의해 취소되었습니다"
-                                                if generation != control["generation"]
-                                                or control["highest"].get(page_id)
-                                                != int(parts[1])
-                                                else status_for(page_id)["reasonText"]
-                                            ),
-                                        )
+                                            error="recording ended before dispatch",
+                                            reason=state["reason"],
+                                            reasonText=state["reasonText"],
+                                        ),
+                                        ensure_ascii=False,
                                     ).encode(),
                                 )
                         log.write(
