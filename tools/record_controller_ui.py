@@ -13,7 +13,10 @@ import os
 import tempfile
 import secrets
 from contextlib import contextmanager, nullcontext
+import functools
 import hashlib
+import http.client
+import socket
 import json
 import threading
 import time
@@ -22,6 +25,42 @@ import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+
+class TimedHTTPConnection(http.client.HTTPConnection):
+    """One direct HTTP request. All host times use the recorder's monotonic clock."""
+
+    def __init__(self, *args, timing, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.timing = timing
+
+    def connect(self):
+        self.timing["connectStart"] = time.monotonic()
+        super().connect()
+        self.timing["connected"] = time.monotonic()
+
+    def getresponse(self):
+        # HTTPConnection.request has finished sending. Peek without consuming
+        # the status line so the normal response parser and 409 path are intact.
+        self.timing["requestSent"] = time.monotonic()
+        if self.sock.recv(1, socket.MSG_PEEK):
+            self.timing["firstByteObserved"] = time.monotonic()
+        return super().getresponse()
+
+
+class TimedHTTPHandler(urllib.request.HTTPHandler):
+    def http_open(self, request):
+        conn = functools.partial(TimedHTTPConnection, timing=request.host_timing)
+        return self.do_open(conn, request)
+
+
+def device_timing(headers):
+    timing = {}
+    for field in ("Handler", "LeaseCheck", "WorkDone"):
+        value = headers.get("X-MB-" + field + "-Ms", "")
+        if re.fullmatch(r"[0-9]{1,10}", value) and int(value) <= 0xffffffff:
+            timing[field + "Ms"] = int(value)
+    return timing
+
 
 GET_PATHS = {
     "/",
@@ -623,7 +662,7 @@ def make_server(controller, output, port=8768, *, ready_file=None, opener=None):
     transport = (
         opener
         or urllib.request.build_opener(
-            urllib.request.ProxyHandler({}), NoRedirect()
+            urllib.request.ProxyHandler({}), NoRedirect(), TimedHTTPHandler()
         ).open
     )
 
@@ -651,6 +690,8 @@ def make_server(controller, output, port=8768, *, ready_file=None, opener=None):
 
         def handle_capture(self):
             received = time.monotonic()
+            transport_capture_id = None
+            host_timing = {}
             try:
                 expected = {
                     f"127.0.0.1:{self.server.server_port}",
@@ -880,6 +921,8 @@ def make_server(controller, output, port=8768, *, ready_file=None, opener=None):
                 request = urllib.request.Request(
                     base + self.path, data=raw, headers=headers, method=self.command
                 )
+                request.host_timing = host_timing
+                transport_capture_id = capture_id
                 log.write(
                     "proxy_request",
                     method=self.command,
@@ -982,6 +1025,8 @@ def make_server(controller, output, port=8768, *, ready_file=None, opener=None):
                                 response = e
                             with response:
                                 body = response.read(2_000_001)
+                                request.host_timing["bodyRead"] = time.monotonic()
+                                mcu_timing = device_timing(response.headers)
                                 status = response.code
                                 content = response.headers.get(
                                     "Content-Type", "application/octet-stream"
@@ -999,6 +1044,8 @@ def make_server(controller, output, port=8768, *, ready_file=None, opener=None):
                             path=path,
                             captureId=capture_id,
                             httpStatus=status,
+                            hostTiming=request.host_timing,
+                            deviceTiming=mcu_timing,
                             requestReceivedMonotonic=received,
                         )
                 finally:
@@ -1018,6 +1065,8 @@ def make_server(controller, output, port=8768, *, ready_file=None, opener=None):
                 log.write(
                     "capture_or_proxy_error",
                     errorType=type(e).__name__,
+                    captureId=transport_capture_id,
+                    hostTiming=host_timing,
                     requestReceivedMonotonic=received,
                     automaticRetry=False,
                 )

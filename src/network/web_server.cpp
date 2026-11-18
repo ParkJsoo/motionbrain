@@ -506,6 +506,7 @@ bool MotionBrainWebServer::hasManualControlLeases() const {
 }
 
 void MotionBrainWebServer::handleManualLeases() {
+  const uint32_t handlerAt = millis();
   DriverLeasePort port(motorControl_);
   manualLeases_.synchronize(port);
   String json = "{\"schemaVersion\":\"motionbrain.manual_control_leases.v1\",\"bootId\":\"";
@@ -525,12 +526,14 @@ void MotionBrainWebServer::handleManualLeases() {
     json += '}';
   }
   json += "]}";
+  server_.sendHeader("X-MB-Handler-Ms", String(handlerAt));
+  server_.sendHeader("X-MB-WorkDone-Ms", String(millis()));
   sendNoStoreHeaders(server_);
   server_.send(200, "application/json", json);
 }
 
 bool MotionBrainWebServer::submitManualRun(const Command& command,
-                                          uint8_t motorId, bool positive) {
+                                          uint8_t motorId, bool positive, uint32_t handlerAt) {
   // These objects outlive parseRequest: no temporary String::c_str() is retained.
   const String mode = server_.arg("lease");
   const String boot = server_.arg("expectedBootId");
@@ -576,7 +579,13 @@ bool MotionBrainWebServer::submitManualRun(const Command& command,
   } port(*this, motorControl_, command, result);
   bool dispatched = false;
   const char* reason = nullptr;
-  if (!manualLeases_.execute(request, port, dispatched, reason)) {
+  uint32_t checkedAt = 0;
+  const bool accepted = manualLeases_.execute(request, port, dispatched, reason, &checkedAt);
+  server_.sendHeader("X-MB-Handler-Ms", String(handlerAt));
+  if (strcmp(reason, "manual_lease_malformed") != 0)
+    server_.sendHeader("X-MB-LeaseCheck-Ms", String(checkedAt));
+  server_.sendHeader("X-MB-WorkDone-Ms", String(millis()));
+  if (!accepted) {
     if (dispatched) sendCommandResult(result);
     else sendErrorJson(409, reason);
     return false;
@@ -1504,6 +1513,7 @@ void MotionBrainWebServer::handleCommand() {
  * 모터 제어 (forward, reverse, stop, default)
  */
 void MotionBrainWebServer::handleMotor() {
+  const uint32_t handlerAt = millis();
   DebugLog::debug("Web Server: POST /motor requested");
   
   if (motorControl_ == nullptr) {
@@ -1633,7 +1643,7 @@ void MotionBrainWebServer::handleMotor() {
   }
 
   if (action == "forward" || action == "reverse") {
-    submitManualRun(command, command.motorId, command.forward);
+    submitManualRun(command, command.motorId, command.forward, handlerAt);
     return;
   }
   if (action == "stop") clearManualLease(command.motorId);
@@ -1647,6 +1657,7 @@ void MotionBrainWebServer::handleMotor() {
  * 관절 제어 (gripper/wrist/elbow/shoulder/base)
  */
 void MotionBrainWebServer::handleJoint() {
+  const uint32_t handlerAt = millis();
   DebugLog::debug("Web Server: POST /joint requested");
 
   if (robotArm_ == nullptr) {
@@ -1738,7 +1749,7 @@ void MotionBrainWebServer::handleJoint() {
     const bool positive = command.direction == MotionDirection::OPEN ||
                           command.direction == MotionDirection::UP ||
                           command.direction == MotionDirection::LEFT;
-    submitManualRun(command, motorIdForJoint(command.joint), positive);
+    submitManualRun(command, motorIdForJoint(command.joint), positive, handlerAt);
     return;
   }
   if (command.type == CommandType::JOINT_STOP)

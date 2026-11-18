@@ -59,7 +59,9 @@ static bool run(manual_control::Leases& leases, DriverPort& port,
   port.pending = request;
   bool dispatched = false; const char* reason = nullptr;
   const unsigned before = port.dispatches;
-  const bool accepted = leases.execute(request, port, dispatched, reason);
+  uint32_t checkedAt = ~clockMs;
+  const bool accepted = leases.execute(request, port, dispatched, reason, &checkedAt);
+  if (strcmp(reason, "manual_lease_malformed")) assert(checkedAt == clockMs);
   assert(reason && dispatched == expectedDispatch);
   assert(port.dispatches == before + unsigned(expectedDispatch));
   return accepted;

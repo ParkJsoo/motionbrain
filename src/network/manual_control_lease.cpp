@@ -122,7 +122,7 @@ void Leases::clear(Port& port) {
   for (uint8_t motor = 1; motor <= 5; ++motor) invalidate(motor, port);
 }
 
-void Leases::tick(Port& port) {
+uint32_t Leases::tick(Port& port) {
   synchronize(port);
   const uint32_t now = port.now();
   for (uint8_t i = 0; i < 5; ++i) {
@@ -133,10 +133,11 @@ void Leases::tick(Port& port) {
       states_[i].observedEpoch = port.controlEpoch(i + 1);
     }
   }
+  return now;
 }
 
 bool Leases::execute(const Request& request, Port& port, bool& dispatched,
-                     const char*& reason) {
+                     const char*& reason, uint32_t* checkedAt) {
   dispatched = false;
   reason = "manual_lease_malformed";
   if (!*boot_ || request.motor < 1 || request.motor > 5 ||
@@ -146,7 +147,8 @@ bool Leases::execute(const Request& request, Port& port, bool& dispatched,
     return false;
 
   // Check TTL in the handler transaction even when the outer loop was delayed.
-  tick(port);
+  const uint32_t now = tick(port);
+  if (checkedAt) *checkedAt = now;
   State& state = states_[request.motor - 1];
   if (request.start) {
     if (strcmp(request.boot, boot_) != 0) {

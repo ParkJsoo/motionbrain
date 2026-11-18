@@ -46,13 +46,14 @@ public:
   // External serial/OOB STOP or another target owner invalidates the token;
   // observation alone never stops the new owner.
   void synchronize(Port& port);
-  void tick(Port& port);
+  uint32_t tick(Port& port);
   void invalidate(uint8_t motor,Port& port);
   void clear(Port& port);
   // False means no lease receipt. dispatched distinguishes existing dispatcher
   // rejection from pre-dispatch admission rejection. Rejection never stops a
   // fresh gesture; only the independent expiry watchdog writes OFF.
-  bool execute(const Request& request,Port& port,bool& dispatched,const char*& reason);
+  bool execute(const Request& request,Port& port,bool& dispatched,const char*& reason,
+               uint32_t* checkedAt = nullptr);
 private:
   char boot_[33];
   State states_[5];

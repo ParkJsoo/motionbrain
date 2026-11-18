@@ -114,7 +114,7 @@ private:
   void sendErrorJson(int statusCode, const char* error, const String& details = "");
   void sendCommandResult(const CommandResult& result, const String& extraJson = "");
   void expireManualLeases();
-  bool submitManualRun(const Command& command,uint8_t motorId,bool positive);
+  bool submitManualRun(const Command& command,uint8_t motorId,bool positive,uint32_t handlerAt);
   void handleManualLeases();
   void clearManualLease(uint8_t motorId);
   void clearAllManualLeases();
