@@ -44,18 +44,21 @@ class Camera:
         _, jpeg = cv2.imencode('.jpg', np.zeros((24, 32, 3), np.uint8))
         self.body, self.boot, self.status = jpeg.tobytes(), BOOT, 200
         self.error, self.regress = None, False
+        self.source_age_us, self.capture_delay_us = None, 1
     def open(self, request, timeout):
         self.calls.append((request.full_url, request.get_method(), timeout))
         if self.error: raise self.error
         self.clock.sleep(.01)
-        captured = 1000 if self.regress else len(self.calls)*1000
+        captured = 1000 if self.regress else len(self.calls)*1000+self.capture_delay_us
         headers = {'X-MotionBrain-Camera-Boot-Id': self.boot,
                    'X-MotionBrain-Captured-Us': str(captured),
-                   'X-MotionBrain-Capture-Requested-Us': str(captured-1),
+                   'X-MotionBrain-Capture-Requested-Us': str(captured-self.capture_delay_us),
                    'X-MotionBrain-Frame-Id': f'{self.boot}:{captured}',
                    'X-MotionBrain-Capture-Mode': 'after_request',
                    'X-MotionBrain-Clock-Domain': 'camera_boot_us',
                    'X-MotionBrain-Timestamp-Semantics': 'first_dma_buffer'}
+        if self.source_age_us is not None:
+            headers['X-MotionBrain-Source-Age-Us'] = self.source_age_us
         return Response(self.body, headers, self.clock, self.status)
 
 
@@ -107,6 +110,88 @@ class ObservationTests(unittest.TestCase):
         self.assertEqual(record['context']['cameraIdentity']['cameraBootId'], BOOT)
         self.assertEqual(record['context']['imageShape'], [24, 32])
         self.source.verify(record)
+
+    def timing_record(self, age='4000', delay=3000):
+        self.camera.source_age_us, self.camera.capture_delay_us = age, delay
+        self.source.start(deadline=60.)
+        return self.source.capture(deadline=60.)
+
+    def rewrite_timing_metadata(self, **updates):
+        # Rebind deliberately invalid original metadata to test semantic checks,
+        # separately from the immutable-byte tampering tests below.
+        path = self.store.root/'capture-0001/esp32-frame.json'
+        metadata = json.loads(path.read_bytes()); metadata.update(updates)
+        path.write_text(json.dumps(metadata))
+        binding = next(iter(self.source._bindings.values()))
+        binding['metadataSha256'] = m.digest(path.read_bytes())
+
+    def test_capture_interval_uses_header_time_margins_and_preserves_default_bounds(self):
+        record = self.timing_record()
+        original = copy.deepcopy(record); requests = len(self.camera.calls)
+        low, high = self.source.capture_interval(record)
+        rate = 1+m.FRESH_CLOCK_RATE_ERROR_PPM/1e6
+        margin = m.FRESH_TIMESTAMP_ERROR_MS/1000
+        self.assertAlmostEqual(low, 50.+.003/rate-margin)
+        self.assertAlmostEqual(high, 50.01-.004/rate+margin)
+        self.assertLess(low, 50.003); self.assertGreater(high, 50.006)
+        self.assertEqual(record, original); self.assertEqual(len(self.camera.calls), requests)
+        self.assertEqual(record['sourceEarliest'], 50.)
+        self.assertAlmostEqual(record['sourceLatest'], 50.02)
+        metadata = json.loads((self.store.root/'capture-0001/esp32-frame.json').read_bytes())
+        self.assertAlmostEqual(metadata['headersReceivedAt'], 50.01)
+        self.assertEqual(self.source.capture_interval(record), (low, high))
+
+    def test_capture_interval_clips_timestamp_margin_to_request_and_headers(self):
+        record = self.timing_record(age='0', delay=1)
+        low, high = self.source.capture_interval(record)
+        self.assertEqual(low, 50.); self.assertAlmostEqual(high, 50.01)
+
+    def test_capture_interval_rejects_missing_or_invalid_age_without_device_retry(self):
+        record = self.timing_record(age=None)
+        with self.assertRaisesRegex(ValueError, 'age_required'): self.source.capture_interval(record)
+        self.assertEqual(len(self.camera.calls), 1)
+        for value in ('nan', '-1', '1.5', '9'*21, True):
+            metadata = json.loads((self.store.root/'capture-0001/esp32-frame.json').read_bytes())
+            metadata['headers']['X-MotionBrain-Source-Age-Us'] = value
+            self.rewrite_timing_metadata(headers=metadata['headers'])
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'age_required'):
+                self.source.capture_interval(record)
+
+    def test_capture_interval_requires_ordered_header_time_but_old_source_still_verifies(self):
+        record = self.timing_record()
+        for headers in (None, True, 49., 51.):
+            self.rewrite_timing_metadata(headersReceivedAt=headers)
+            self.source.verify(record)
+            with self.subTest(headers=headers), self.assertRaisesRegex(ValueError, 'header_time_required'):
+                self.source.capture_interval(record)
+
+    def test_capture_interval_rejects_impossible_camera_timing_and_invalid_clock_margin(self):
+        record = self.timing_record(age='20000')
+        with self.assertRaisesRegex(ValueError, 'inconsistent'): self.source.capture_interval(record)
+        from unittest.mock import patch
+        for key in ('FRESH_CLOCK_RATE_ERROR_PPM', 'FRESH_TIMESTAMP_ERROR_MS'):
+            with patch.object(m, key, True), self.assertRaisesRegex(ValueError, 'clock_margin_invalid'):
+                self.source.capture_interval(record)
+
+    def test_capture_interval_retains_boot_frame_and_first_dma_checks(self):
+        record = self.timing_record()
+        path = self.store.root/'capture-0001/esp32-frame.json'
+        original = json.loads(path.read_bytes())
+        for key, value in (('X-MotionBrain-Camera-Boot-Id', 'b'*32),
+                           ('X-MotionBrain-Frame-Id', 'other'),
+                           ('X-MotionBrain-Timestamp-Semantics', 'exposure')):
+            headers = dict(original['headers']); headers[key] = value
+            self.rewrite_timing_metadata(headers=headers)
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                self.source.capture_interval(record)
+
+    def test_capture_interval_revalidates_original_record_and_bytes(self):
+        record = self.timing_record()
+        changed = copy.deepcopy(record); changed['frame']['frameId'] = 'other'
+        with self.assertRaisesRegex(ValueError, 'record_changed'): self.source.capture_interval(changed)
+        path = self.store.root/'capture-0001/esp32-frame.json'
+        path.write_bytes(path.read_bytes()+b' ')
+        with self.assertRaisesRegex(ValueError, 'source_bytes_changed'): self.source.capture_interval(record)
 
     def test_failed_jpeg_is_preserved_and_not_retried(self):
         self.camera.body = b'not a jpeg'

@@ -20,6 +20,7 @@ from learning.gripper_camera_dataset import POLICY, read_frame
 from learning.manual_collection_dataset import digest, require
 from learning.relative_action_learning import point_state, state_fields
 from learning.registered_gripper_crosssection import SHAFT_PREFIX
+from learning.source_age import FRESH_CLOCK_RATE_ERROR_PPM, FRESH_TIMESTAMP_ERROR_MS
 
 
 def _number(value):
@@ -93,6 +94,7 @@ class GripperObservationSource:
                                                                      method='GET'), timeout=remaining)
                 except urllib.error.HTTPError as exc:
                     response = exc
+                metadata['headersReceivedAt'] = self.clock.monotonic()
                 with response:
                     metadata['status'] = response.status
                     metadata['headers'] = {k: v for k, v in response.headers.items()
@@ -141,6 +143,42 @@ class GripperObservationSource:
         frame, _, boot = read_frame(self.store.root/folder, 'frame', self.session_id)
         require(boot == self.boot and all(frame[k] == record['frame'][k] for k in record['frame']),
                 'reviewed_source_identity_changed')
+
+    def capture_interval(self, record):
+        """Return a first-DMA host-monotonic interval from verified originals.
+
+        This optional interval assumes camera rate <= host rate * (1+1000ppm)
+        within the request and allows 2us timestamp error on each bound, using
+        the existing source-age policy constants. These are conservative model
+        assumptions, not measured clock calibration or optical exposure times.
+        Older records remain valid sources but lack this optional timing proof.
+        No device request or default record/source-bound mutation occurs here.
+        """
+        self.verify(record)
+        folder = self._bindings[record['frame']['frameId']]['folder']
+        frame, metadata, _ = read_frame(self.store.root/folder, 'frame', self.session_id)
+        require(metadata.get('status') == 200 and metadata.get('method') == 'GET'
+                and metadata.get('path') == '/capture' and metadata.get('query') == {'fresh': '1'}
+                and metadata.get('retry') is False, 'camera_capture_interval_request_changed')
+        start, headers, received = (metadata.get(k) for k in
+                                    ('requestStartedAt', 'headersReceivedAt', 'receivedAt'))
+        require(all(_number(t) for t in (start, headers, received))
+                and start <= headers <= received, 'camera_capture_interval_header_time_required')
+        age = {k.lower(): v for k, v in metadata['headers'].items()}.get('x-motionbrain-source-age-us')
+        require(isinstance(age, str) and re.fullmatch('[0-9]{1,20}', age)
+                and 0 <= int(age) <= 2**64-1
+                and 0 < frame['requestedUs'] < frame['capturedUs'] <= 2**64-1,
+                'camera_capture_interval_age_required')
+        rate_error, error_ms = FRESH_CLOCK_RATE_ERROR_PPM, FRESH_TIMESTAMP_ERROR_MS
+        require(_number(rate_error) and rate_error >= 0 and _number(error_ms) and error_ms >= 0,
+                'camera_capture_interval_clock_margin_invalid')
+        rate, margin = 1+rate_error/1e6, error_ms/1000
+        delay = (frame['capturedUs']-frame['requestedUs'])/1e6
+        low = max(start, start+delay/rate-margin)
+        high = min(headers, headers-int(age)/1e6/rate+margin)
+        require(_number(low) and _number(high) and low <= high,
+                'camera_capture_interval_inconsistent')
+        return low, high
 
     def check(self):
         require(self.started and not self.closed and not self.failed, 'camera_source_not_active')
