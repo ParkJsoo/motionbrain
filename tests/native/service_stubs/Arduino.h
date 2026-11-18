@@ -6,6 +6,7 @@ class String {
 public:
   std::string value;
   String() {}
+  String(const char* rhs) : value(rhs) {}
   String(float number, unsigned precision) {
     char buffer[80];
     snprintf(buffer, sizeof(buffer), "%.*f", static_cast<int>(precision), number);

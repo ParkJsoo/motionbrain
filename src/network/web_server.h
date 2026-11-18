@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include "idle_connection_web_server.h"
+#include "control/whole_arm_service.h"
 #include "vision_endpoint_lease.h"
 #include "manual_control_lease.h"
 #include <stdint.h>      // uint16_t를 위해 추가
@@ -116,6 +117,9 @@ private:
   void expireManualLeases();
   bool submitManualRun(const Command& command,uint8_t motorId,bool positive,uint32_t handlerAt);
   void handleManualLeases();
+#if MOTIONBRAIN_ENABLE_WHOLE_ARM_POLICY
+  void handleWholeArmAction();
+#endif
   void clearManualLease(uint8_t motorId);
   void clearAllManualLeases();
   uint8_t motorIdForJoint(MotionJoint joint) const;

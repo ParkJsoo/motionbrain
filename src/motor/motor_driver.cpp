@@ -1,3 +1,4 @@
+#include "control/whole_arm_service.h"
 #include "control/m4_goal_guard.h"
 #include "motor_driver.h"
 #include "debug/debug_log.h"
@@ -159,6 +160,9 @@ bool MotorControl::forward(uint8_t motorId) {
  * 모터 정방향 구동 (속도 비율 지정)
  */
 bool MotorControl::forward(uint8_t motorId, uint8_t percent) {
+#if MOTIONBRAIN_ENABLE_WHOLE_ARM_POLICY
+  if (WholeArmService::owns()) return false;
+#endif
   if (m4GoalOwned_ || m4_goal::activeWindow()) return false;
 #if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
   if (finiteLease_ != 0) return false;
@@ -209,6 +213,9 @@ bool MotorControl::reverse(uint8_t motorId) {
  * 모터 역방향 구동 (속도 비율 지정)
  */
 bool MotorControl::reverse(uint8_t motorId, uint8_t percent) {
+#if MOTIONBRAIN_ENABLE_WHOLE_ARM_POLICY
+  if (WholeArmService::owns()) return false;
+#endif
   if (m4GoalOwned_ || m4_goal::activeWindow()) return false;
 #if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
   if (finiteLease_ != 0) return false;
@@ -256,6 +263,9 @@ bool MotorControl::reverse(uint8_t motorId, uint8_t percent) {
  * 개별 모터 속도 설정
  */
 bool MotorControl::setSpeed(uint8_t motorId, int16_t speed) {
+#if MOTIONBRAIN_ENABLE_WHOLE_ARM_POLICY
+  if (WholeArmService::owns()) return false;
+#endif
   if (m4GoalOwned_ || m4_goal::activeWindow()) return false;
 #if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
   if (finiteLease_ != 0) {
@@ -301,6 +311,9 @@ bool MotorControl::setSpeed(uint8_t motorId, int16_t speed) {
  * 모든 모터 속도 설정 (동일한 속도)
  */
 bool MotorControl::setSpeedAll(int16_t speed) {
+#if MOTIONBRAIN_ENABLE_WHOLE_ARM_POLICY
+  if (WholeArmService::owns()) return false;
+#endif
   if (m4GoalOwned_ || m4_goal::activeWindow()) return false;
 #if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
   if (finiteLease_ != 0) {
@@ -510,6 +523,9 @@ void MotorControl::invalidateFiniteProfileLease() {
 }
 
 bool MotorControl::finiteProfileReady() const {
+#if MOTIONBRAIN_ENABLE_WHOLE_ARM_POLICY
+  if (WholeArmService::owns()) return false;
+#endif
   if (m4GoalOwned_ || m4_goal::activeWindow()) return false;
   if (!finiteInitialized_ || finiteLease_ != 0 || finiteLeaseCounter_ == UINT32_MAX ||
       hasPendingOutput() || getCurrentState() != SystemState::ARMED ||
@@ -786,7 +802,7 @@ bool MotorControl::setMotorSpeedInternal(uint8_t motorId, int16_t speed) {
   // 방향 결정
   bool forward = (speed > 0);
   bool reverse = (speed < 0);
-  uint8_t pwmValue = (speed < 0) ? -speed : speed;  // 절댓값
+
   
   // 드라이버별 핀 설정
   // 방향 핀 제어 (드라이버별)
@@ -826,7 +842,12 @@ bool MotorControl::setMotorSpeedInternal(uint8_t motorId, int16_t speed) {
   }
 
   // PWM 출력 — PWM_CHANNELS[] 배열 사용 (산술 의존 없음, emergencyStop/update와 동일 패턴)
+#if MOTIONBRAIN_ENABLE_WHOLE_ARM_POLICY
+  if (!WholeArmService::writePwm(motorId,PWM_CHANNELS[index],speed)) return false;
+#else
+  const uint8_t pwmValue = static_cast<uint8_t>(speed < 0 ? -speed : speed);
   ledcWrite(PWM_CHANNELS[index], pwmValue);
+#endif
   recordActualWrite(motorId, speed, bounded::OutputReason::DriverWrite, actionOrdinal_);
   
   // 상태 업데이트
@@ -933,6 +954,9 @@ uint8_t MotorControl::percentToSpeed(uint8_t percent) const {
 }
 
 bool MotorControl::beginM4Goal(int16_t pwm) {
+#if MOTIONBRAIN_ENABLE_WHOLE_ARM_POLICY
+  if (WholeArmService::owns()) return false;
+#endif
   if (m4GoalOwned_ || hasPendingOutput() || isEnabled() || (pwm != 127 && pwm != -89)) return false;
 #if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
   if (finiteProfileOwned()) return false;
@@ -948,3 +972,28 @@ void MotorControl::endM4Goal() {
   m4GoalOwned_ = false;
   hardStopAll();
 }
+
+
+#if MOTIONBRAIN_ENABLE_WHOLE_ARM_POLICY
+bool MotorControl::beginPolicyOutput(uint8_t motorId,int16_t pwm) {
+  if ((motorId!=MOTOR_1 && motorId!=MOTOR_4) || (pwm!=70 && pwm!=-70)
+      || getDefaultSpeed()!=100 || hasPendingOutput() || !checkSafety("whole arm policy")
+      || m4GoalOwned_ || m4_goal::activeWindow() || driverError_[getDriverId(motorId)]) return false;
+  uint8_t i=motorIdToIndex(motorId);
+  ++controlEpoch_[i];
+  targetSpeed_[i]=pwm;
+  enabled_[i]=true;
+  lastUpdateTime_[i]=millis();
+  systemState.resetTimeout();
+  return true;
+}
+
+bool MotorControl::endPolicyOutput(uint8_t motorId) {
+  // A normal model STOP is explicitly recorded as a zero driver write. Faults
+  // use hardStop() and retain the distinct forced_off record.
+  uint8_t i=motorIdToIndex(motorId);
+  ++controlEpoch_[i];
+  targetSpeed_[i]=0;
+  return setMotorSpeedInternal(motorId,0);
+}
+#endif

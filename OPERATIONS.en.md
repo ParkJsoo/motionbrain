@@ -10,6 +10,12 @@ On press, the UI reads the controller boot ID and the axis generation from `GET 
 
 Reload the control page after updating the firmware. Direct clients must also identify starts and renewals explicitly. STOP can be sent without a lease ID. Moving the joystick to neutral or reversing direction stops the axis. Release it and start a new drag to move again.
 
+## Whole-arm model trial
+
+`pio run -e esp32dev_whole_arm_policy` builds a separate firmware profile for one sequence of approach, close, lift, lower, release and retreat per boot. The host runs the model and processes both cameras. This profile limits the shoulder and gripper to the absolute PWM of 70 observed in demonstrations. `GET /whole_arm_action` reports the phase, trial ID, sequence number and failure reason.
+
+The host renews an action only when fresh observations support the same choice. The device checks the 750 ms renewal deadline, phase duration, shoulder angle limits and sensor status. The output journal distinguishes normal STOP from fault-driven OFF. Evaluate each model choice against actual output and OFF, then check the object's pose after release.
+
 ## Choose an entry point
 
 | Task | Guide |

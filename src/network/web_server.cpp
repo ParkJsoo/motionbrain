@@ -141,6 +141,10 @@ bool MotionBrainWebServer::init(SystemStateManager* systemState, MotorControl* m
   server_.on("/vision_endpoint", HTTP_GET, [this]() { this->handleVisionEndpoint(); });
   server_.on("/vision_endpoint", HTTP_POST, [this]() { this->handleVisionEndpointPublish(); });
   server_.on("/status", HTTP_GET, [this]() { this->handleStatus(); });
+#if MOTIONBRAIN_ENABLE_WHOLE_ARM_POLICY
+  server_.on("/whole_arm_action", HTTP_GET, [this]() { handleWholeArmAction(); });
+  server_.on("/whole_arm_action", HTTP_POST, [this]() { handleWholeArmAction(); });
+#endif
   server_.on("/manual_leases", HTTP_GET, [this]() { this->handleManualLeases(); });
   server_.on("/collection_status", HTTP_GET, [this]() { this->handleCollectionStatus(); });
   server_.on("/collection_observation", HTTP_GET, [this]() { this->handleCollectionObservation(); });
@@ -2575,5 +2579,42 @@ void MotionBrainWebServer::handleFiniteProfile() {
   json += extra; json += '}';
   server_.send(result.code == finite_profile::Code::Accepted ||
       result.code == finite_profile::Code::Duplicate ? 200 : 409, "application/json", json);
+}
+#endif
+
+#if MOTIONBRAIN_ENABLE_WHOLE_ARM_POLICY
+void MotionBrainWebServer::handleWholeArmAction() {
+  if (server_.method()==HTTP_POST) {
+    if (!requireCommandAuth()) return;
+    if (server_.args()!=6 || !server_.hasArg("controlGeneration") || !server_.hasArg("op") || !server_.hasArg("phase")
+        || !server_.hasArg("bootId") || !server_.hasArg("trialId") || !server_.hasArg("seq")) {
+      sendErrorJson(400,"whole_arm_fields");return;
+    }
+    if (server_.arg("bootId")!=BoundedActions::outputBootId()) {
+      sendErrorJson(409,"whole_arm_boot_changed");return;
+    }
+    whole_arm::Request r{};
+    const String op=server_.arg("op"),trial=server_.arg("trialId"),seq=server_.arg("seq");
+    if(op=="start") r.op=whole_arm::Op::Start;
+    else if(op=="keep") r.op=whole_arm::Op::Keep;
+    else if(op=="stop") r.op=whole_arm::Op::Stop;
+    else { sendErrorJson(400,"whole_arm_op");return; }
+    r.trial=trial.c_str();
+    if (trial.length()!=32 || !WholeArmService::parsePhase(server_.arg("phase").c_str(),r.phase) ||
+        !collection_http::unsignedArgument(seq.c_str(),r.seq) || seq!=String(r.seq) || !r.seq) {
+      sendErrorJson(400,"whole_arm_identity_or_phase");return;
+    }
+    uint32_t generation=0;
+    const String g=server_.arg("controlGeneration");
+    if (!collection_http::unsignedArgument(g.c_str(),generation) || g!=String(generation)) {
+      sendErrorJson(400,"whole_arm_generation");return;
+    }
+    if (!WholeArmService::apply(r,generation,server_.arg("bootId").c_str())) { sendErrorJson(409,"whole_arm_rejected");return; }
+  }
+  WholeArmService::update();
+  String body;
+  WholeArmService::status(body);
+  sendNoStoreHeaders(server_);
+  server_.send(200,"application/json",body);
 }
 #endif

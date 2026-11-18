@@ -48,6 +48,9 @@ jobs:
       - name: Build opt-in M4 device goal guard
         run: pio run -e esp32dev_m4_goal_guard
 
+      - name: Build opt-in whole-arm policy controller
+        run: pio run -e esp32dev_whole_arm_policy
+
       - name: Build ESP32-CAM firmware
         run: pio run -d firmware/esp32cam
 

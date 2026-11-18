@@ -1,0 +1,215 @@
+#include "whole_arm_service.h"
+#if MOTIONBRAIN_ENABLE_WHOLE_ARM_POLICY
+#include <Arduino.h>
+#include <esp_timer.h>
+#include <cstring>
+#include "control/angle_controller.h"
+#include "control/bounded_action_service.h"
+#include "control/command.h"
+#include "control/m4_goal_service.h"
+#include "control/shoulder_angle_controller.h"
+#include "input/teleop_adapter.h"
+#include "motion/motion_sequence.h"
+#include "motor/motor_driver.h"
+#include "network/web_server.h"
+#include "peripheral/shoulder_angle_sensor.h"
+#include "safety/safety_monitor.h"
+
+extern MotorControl motorControl;
+extern SystemStateManager systemState;
+extern SafetyMonitor safetyMonitor;
+extern MotionSequence motionSequence;
+extern AngleController angleController;
+extern ShoulderAngleSensor shoulderAngleSensor;
+extern ShoulderAngleController shoulderAngleController;
+extern TeleopAdapter teleopAdapter;
+extern MotionBrainWebServer webServer;
+namespace WholeArmService {
+using whole_arm::Phase;
+namespace {
+constexpr const char* NAMES[]={"approach","close","held_lift","lower","release","retreat"};
+// Arduino HTTP may block the loop while waiting for a partial request. A
+// separate ESP timer task cuts PWM even then. The callback touches neither
+// the HTTP state, motor bookkeeping nor its non-thread-safe output journal.
+// The main loop reconciles the latched fault with hardStop/forced_off.
+struct Cutoff {
+  SemaphoreHandle_t mutex=nullptr;
+  esp_timer_handle_t timer=nullptr;
+  uint8_t motor=0,channel=0;
+  int16_t pwm=0;
+  bool tripped=false;
+  int64_t lease=0,phase=0,sensor=0;
+} cutoff;
+
+void expireLocked(int64_t t) {
+  if (cutoff.motor && !cutoff.tripped &&
+      (t>=cutoff.lease || t>=cutoff.phase || t>=cutoff.sensor)) {
+    ledcWrite(cutoff.channel,0);
+    cutoff.tripped=true;
+  }
+}
+void timerTick(void*) {
+  xSemaphoreTake(cutoff.mutex,portMAX_DELAY);
+  expireLocked(esp_timer_get_time());
+  xSemaphoreGive(cutoff.mutex);
+}
+bool setupTimer() {
+  if (cutoff.timer) return true;
+  if (!cutoff.mutex) cutoff.mutex=xSemaphoreCreateMutex();
+  if (!cutoff.mutex) return false;
+  esp_timer_create_args_t cfg{};
+  cfg.callback=timerTick;cfg.name="mb_policy_stop";
+  if (esp_timer_create(&cfg,&cutoff.timer)!=ESP_OK) return false;
+  if (esp_timer_start_periodic(cutoff.timer,5000)==ESP_OK) return true;
+  esp_timer_delete(cutoff.timer);cutoff.timer=nullptr;
+  return false;
+}
+int64_t sensorDeadline(int64_t now) {
+  uint32_t age=millis()-shoulderAngleSensor.getI2cLastUpdateMs();
+  return now+1000*(int32_t(150)-int32_t(age<150 ? age:150));
+}
+bool serviceCutoff(bool renew) {
+  if (!cutoff.timer) return true;
+  xSemaphoreTake(cutoff.mutex,portMAX_DELAY);
+  int64_t t=esp_timer_get_time();
+  expireLocked(t);
+  bool ok=!cutoff.tripped;
+  if (ok && cutoff.motor) {
+    cutoff.sensor=sensorDeadline(t);
+    if (renew) cutoff.lease=t+750000;
+  }
+  xSemaphoreGive(cutoff.mutex);
+  return ok;
+}
+void disarmCutoff() {
+  if (!cutoff.mutex) return;
+  xSemaphoreTake(cutoff.mutex,portMAX_DELAY);
+  cutoff.motor=0;cutoff.tripped=false;
+  xSemaphoreGive(cutoff.mutex);
+}
+class Hardware : public whole_arm::Port {
+  uint64_t epochs_[5]{};
+  bool tracked_=false;
+  void remember() {
+    for (uint8_t i=1;i<=5;++i) epochs_[i-1]=motorControl.controlEpoch(i);
+    tracked_=true;
+  }
+public:
+  uint32_t now() const override { return millis(); }
+  whole_arm::Inputs inputs() const override {
+    bool same=true;
+    for (uint8_t i=1;tracked_ && i<=5;++i)
+      same=same && epochs_[i-1]==motorControl.controlEpoch(i);
+    bool ready=!normalStopFailed && same && serviceCutoff(false) && motorControl.getDefaultSpeed()==100
+      && systemState.getState()==SystemState::ARMED && !safetyMonitor.isMotionBlocked()
+      && !safetyMonitor.hasLatchedFault() && !webServer.hasManualControlLeases()
+      && !motionSequence.getTotalCount() && !teleopAdapter.isDeadmanHeld()
+      && !teleopAdapter.isControlActive() && !M4GoalService::owns() && !m4_goal::activeWindow()
+      && !angleController.isActive() && !shoulderAngleController.isActive()
+      && shoulderAngleSensor.isReadyForMotion(150);
+    return {ready,!motorControl.hasPendingOutput()&&!motorControl.isEnabled(),shoulderAngleSensor.getI2cDegrees()};
+  }
+  bool start(Phase p) override {
+    if (!setupTimer()) return false;
+    auto motor=phaseMotor(p);
+    auto pwm=phasePwm(p);
+    if (motor==4 && !shoulderAngleController.manualDirectionAllowed(pwm>0)) return false;
+    xSemaphoreTake(cutoff.mutex,portMAX_DELAY);
+    auto t=esp_timer_get_time();
+    cutoff.motor=motor;
+    cutoff.channel=motorControl.pwmChannel(motor);
+    cutoff.pwm=pwm;
+    cutoff.tripped=false;
+    cutoff.lease=t+750000;
+    cutoff.phase=t+1000LL*phaseCapMs(p);
+    cutoff.sensor=sensorDeadline(t);
+    xSemaphoreGive(cutoff.mutex);
+    bool ok=motorControl.beginPolicyOutput(motor,pwm);
+    remember();
+    return ok;
+  }
+  void stop(Phase p) override {
+    // Do not certify a normal STOP if the independent timeout won this race.
+    if (!serviceCutoff(false) || !motorControl.endPolicyOutput(phaseMotor(p))) {
+      motorControl.hardStop(phaseMotor(p));
+      normalStopFailed=true;
+    }
+    disarmCutoff();
+    remember();
+  }
+  void faultStop(Phase p) override {
+    motorControl.hardStop(phaseMotor(p));
+    disarmCutoff();
+    remember();
+  }
+  bool normalStopFailed=false;
+} hardware;
+whole_arm::Controller controller(hardware);
+uint32_t epoch=1;
+bool observed=false;
+uint64_t idleEpochs[5]{};
+void advanceEpoch() { if (epoch<UINT32_MAX) ++epoch; }
+}
+
+bool writePwm(uint8_t motor,uint8_t channel,int16_t pwm) {
+  if (!cutoff.mutex) { ledcWrite(channel,abs(pwm)); return true; }
+  xSemaphoreTake(cutoff.mutex,portMAX_DELAY);
+  expireLocked(esp_timer_get_time());
+  bool ok=!pwm || !cutoff.motor || (cutoff.motor==motor && !cutoff.tripped &&
+      (cutoff.pwm>0 ? (pwm>0 && pwm<=cutoff.pwm) : (pwm<0 && pwm>=cutoff.pwm)));
+  if (ok) ledcWrite(channel,abs(pwm));
+  if (cutoff.motor==motor && cutoff.tripped) ok=false;
+  xSemaphoreGive(cutoff.mutex);
+  return ok;
+}
+bool owns(){return controller.owns();}
+void update(){controller.tick();}
+bool parsePhase(const char* raw,Phase& phase) {
+  for (unsigned i=0;i<6;++i) if (!strcmp(raw,NAMES[i])) { phase=static_cast<Phase>(i); return true; }
+  return false;
+}
+uint32_t generation() {
+  // Capture direct (teleop/serial/driver) control changes before the first
+  // model START. ARMED alone leaves the generation intact.
+  if (!controller.trial()[0]) {
+    bool changed=false;
+    for (uint8_t motor=1;motor<=5;motor++) {
+      const auto current=motorControl.controlEpoch(motor);
+      changed |= observed && current!=idleEpochs[motor-1];
+      idleEpochs[motor-1]=current;
+    }
+    if (changed) advanceEpoch();
+    observed=true;
+  }
+  return epoch;
+}
+bool apply(const whole_arm::Request& req,uint32_t expectedGeneration,const char* expectedBoot) {
+  if (!expectedBoot || strcmp(expectedBoot,BoundedActions::outputBootId()) ||
+      expectedGeneration!=generation() || epoch==UINT32_MAX) return false;
+  bool ok=controller.apply(req);
+  if (!ok) return false;
+  if (req.op==whole_arm::Op::Keep && !serviceCutoff(true)) {
+    controller.abort();
+    return false;
+  }
+  return !hardware.normalStopFailed;
+}
+bool beforeLegacy(CommandType c) {
+  switch(c) {
+    case CommandType::DISARM:case CommandType::STOP:case CommandType::MOTOR_STOP:
+    case CommandType::MOTOR_STOP_ALL:case CommandType::JOINT_STOP:case CommandType::JOINT_STOP_ALL:
+    case CommandType::SEQUENCE_STOP:case CommandType::SEQUENCE_CLEAR:case CommandType::ROUTINE_ABORT:
+      advanceEpoch();controller.abort();return true;
+    default:return !owns();
+  }
+}
+void status(String& s) {
+  s="{\"bootId\":\"";s+=BoundedActions::outputBootId();s+="\",\"trialId\":\"";
+  s+=controller.trial();s+="\",\"phase\":\"";s+=NAMES[static_cast<unsigned>(controller.phase())];
+  s+="\",\"seq\":";s+=controller.seq();s+=",\"active\":";s+=controller.active()?"true":"false";
+  s+=",\"failed\":";s+=(controller.failed()||hardware.normalStopFailed)?"true":"false";
+  s+=",\"controlGeneration\":";s+=generation();
+  s+=",\"reason\":\"";s+=hardware.normalStopFailed?"stop_fault":controller.reason();s+="\",\"rawPwm\":70}";
+}
+}
+#endif

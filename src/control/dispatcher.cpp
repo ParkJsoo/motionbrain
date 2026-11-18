@@ -1,3 +1,4 @@
+#include "control/whole_arm_service.h"
 #include "control/m4_goal_service.h"
 #include "control/finite_profile_legacy_guard.h"
 #include "control/dispatcher.h"
@@ -230,6 +231,13 @@ bool Dispatcher::commandExtendsTimeout(CommandType type) const {
 }
 
 bool Dispatcher::execute(const Command& command, CommandResult& result) {
+#if MOTIONBRAIN_ENABLE_WHOLE_ARM_POLICY
+  if (!WholeArmService::beforeLegacy(command.type)) {
+    setResult(result, command.id, false, "whole-arm model owns control");
+    recordCommandResult(command, result);
+    return false;
+  }
+#endif
 #if MOTIONBRAIN_ENABLE_M4_GOAL_GUARD
   if (!M4GoalService::beforeLegacy(command.type, command.source == CommandSource::WEB_INPUT)) {
     setResult(result, command.id, false, "M4 goal owner holds control");

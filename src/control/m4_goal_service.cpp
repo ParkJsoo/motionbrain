@@ -1,3 +1,4 @@
+#include "control/whole_arm_service.h"
 #include "m4_goal_service.h"
 #include "control/bounded_action_service.h"
 #include "control/finite_profile_runtime.h"
@@ -45,6 +46,9 @@ void finish(){
 bool owns(){return guard.owns();}
 bool pending(){return requested||guard.active();}
 bool queue(const m4_goal::Request& r){
+#if MOTIONBRAIN_ENABLE_WHOLE_ARM_POLICY
+ if(WholeArmService::owns())return false;
+#endif
 #if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
  if(motorControl.finiteProfileOwned())return false;
 #endif

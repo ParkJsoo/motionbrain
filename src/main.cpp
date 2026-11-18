@@ -1,3 +1,4 @@
+#include "control/whole_arm_service.h"
 #include "control/m4_goal_service.h"
 #include <Arduino.h>
 #include <esp_system.h>
@@ -262,6 +263,9 @@ void loop() {
   // 모터 제어 업데이트 (점진적 속도 변경 처리)
   BoundedActions::tick();
   M4GoalService::update();
+#if MOTIONBRAIN_ENABLE_WHOLE_ARM_POLICY
+  WholeArmService::update();
+#endif
   motorControl.update();
 
   // 모션 시퀀스 업데이트 (Phase 2-B)
