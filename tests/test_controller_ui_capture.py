@@ -1,0 +1,711 @@
+"""Loopback mock only: no controller or motor access."""
+
+import importlib.util
+import io
+import json
+from pathlib import Path
+import subprocess
+import tempfile
+import threading
+import time
+import unittest
+import urllib.error
+import urllib.request
+
+ROOT = Path(__file__).resolve().parents[1]
+spec = importlib.util.spec_from_file_location(
+    "ui_capture", ROOT / "tools/record_controller_ui.py"
+)
+m = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(m)
+
+
+class Response(io.BytesIO):
+    code = 200
+    headers = {"Content-Type": "text/html"}
+
+
+class Capture(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.ready = self.root / "live.json"
+        self.requests = []
+        self.fail = False
+        self.hold = False
+        self.transport_started = threading.Event()
+        self.transport_release = threading.Event()
+
+        def upstream(request, timeout):
+            self.requests.append(request)
+            if self.hold and request.method == "POST":
+                self.hold = False
+                self.transport_started.set()
+                self.transport_release.wait(2)
+            if self.fail:
+                raise TimeoutError("fixture")
+            r = Response(
+                b"<html><body>original UI</body></html>"
+                if request.full_url.endswith("/")
+                else b'{"success":true}'
+            )
+            return r
+
+        self.server = m.make_server(
+            "http://controller.invalid",
+            self.root / "out",
+            0,
+            ready_file=self.ready,
+            opener=upstream,
+        )
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        self.base = f"http://127.0.0.1:{self.server.server_port}"
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.thread.join()
+        self.server.server_close()
+        self.server.capture_log.close()
+        self.tmp.cleanup()
+
+    def send(self, path, method="GET", data=None, headers=None):
+        request = urllib.request.Request(
+            self.base + path, data=data, method=method, headers=headers or {}
+        )
+        try:
+            r = urllib.request.urlopen(request, timeout=2)
+        except urllib.error.HTTPError as e:
+            r = e
+        with r:
+            return r.code, r.read()
+
+    def event(self, sequence, kind, **kw):
+        return dict(
+            pageId="fixture",
+            sequence=sequence,
+            kind=kind,
+            browserPerformanceMs=float(sequence),
+            browserEpochMs=1000.0 + sequence,
+            **kw,
+        )
+
+    def establish(self):
+        clock = json.loads(self.send("/__capture/clock?pageId=fixture")[1])
+        events = [
+            self.event(1, "page_started"),
+            self.event(
+                2, "clock_anchor", browserBeforeMs=1.0, browserAfterMs=2.0, **clock
+            ),
+            self.event(3, "browser_heartbeat"),
+        ]
+        self.assertEqual(
+            self.send(
+                "/__capture/events",
+                "POST",
+                json.dumps(dict(events=events)).encode(),
+                {"Origin": self.base},
+            )[0],
+            200,
+        )
+        self.ready.write_text(
+            json.dumps(dict(recording=True, at=time.monotonic(), errors=[]))
+        )
+
+    def post(self, path, **kw):
+        return self.send(
+            path,
+            "POST",
+            headers={
+                "Origin": self.base,
+                "X-MotionBrain": "1",
+                "X-MotionBrain-Token": "PRIVATE-FIXTURE",
+                "X-UI-Capture-ID": "fixture:3",
+                **kw,
+            },
+        )
+
+    def logs(self):
+        return [
+            json.loads(s)
+            for s in (self.root / "out/ui-events.jsonl").read_text().splitlines()
+        ]
+
+    def test_prepare_no_hardware_and_no_output(self):
+        out = self.root / "prepare"
+        r = subprocess.run(
+            [
+                "python3",
+                str(ROOT / "tools/record_controller_ui.py"),
+                "--controller",
+                "http://controller.invalid",
+                "--output",
+                str(out),
+                "--ready-file",
+                str(self.ready),
+                "--prepare",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        self.assertEqual(json.loads(r.stdout)["hardwareRequests"], 0)
+        self.assertFalse(out.exists())
+        self.assertFalse(self.requests)
+
+    def test_original_html_instrumented_without_commands(self):
+        status, body = self.send("/")
+        self.assertEqual(status, 200)
+        self.assertIn(b"original UI", body)
+        self.assertIn(b"command_dispatch", body)
+        self.assertEqual(len(self.requests), 1)
+        self.assertEqual(self.requests[0].method, "GET")
+
+    def test_no_recording_or_browser_blocks_motion_stop_survives(self):
+        self.assertEqual(self.post("/motor?action=forward&id=3&percent=60")[0], 409)
+        self.assertFalse(self.requests)
+        self.assertEqual(self.post("/motor?action=stop&id=3")[0], 200)
+        self.assertEqual(len(self.requests), 1)
+        self.assertEqual(self.post("/command?cmd=disarm")[0], 200)
+
+    def test_exact_forward_auth_correlation_no_secret_log(self):
+        self.establish()
+        self.assertEqual(self.post("/motor?action=reverse&id=1&percent=70")[0], 200)
+        r = self.requests[0]
+        self.assertEqual(r.method, "POST")
+        self.assertEqual(r.get_header("X-motionbrain-token"), "PRIVATE-FIXTURE")
+        self.assertIsNone(r.get_header("X-ui-capture-id"))
+        self.assertEqual(
+            r.full_url, "http://controller.invalid/motor?action=reverse&id=1&percent=70"
+        )
+        raw = (self.root / "out/ui-events.jsonl").read_text()
+        self.assertNotIn("PRIVATE-FIXTURE", raw)
+        self.assertEqual(
+            [r for r in self.logs() if r["kind"] == "proxy_request"][0]["captureId"],
+            "fixture:3",
+        )
+
+    def test_end_error_stale_future_and_browser_loss_block_run(self):
+        self.establish()
+        for value in [
+            dict(recording=False, at=time.monotonic()),
+            dict(recording=True, at=time.monotonic(), errors=["capture"]),
+            dict(recording=True, at=time.monotonic() - 3),
+            dict(recording=True, at=time.monotonic() + 3),
+        ]:
+            self.ready.write_text(json.dumps(value))
+            self.assertEqual(self.post("/motor?action=forward&id=3&percent=60")[0], 409)
+        self.ready.write_text(json.dumps(dict(recording=True, at=time.monotonic())))
+        self.server.capture_log.pages["fixture"]["heartbeatAt"] -= 3
+        self.assertEqual(self.post("/command?cmd=arm")[0], 409)
+        self.assertFalse(self.requests)
+        self.assertEqual(self.post("/command?cmd=stop")[0], 200)
+
+    def test_no_retry_on_unknown_upstream(self):
+        self.establish()
+        self.fail = True
+        self.assertEqual(self.post("/motor?action=forward&id=3&percent=60")[0], 502)
+        self.assertEqual(len(self.requests), 1)
+        self.assertEqual(self.logs()[-1]["automaticRetry"], False)
+
+    def test_host_origin_allowlist_and_query_rejection(self):
+        self.establish()
+        for path, kw in [
+            (
+                "/motor?action=forward&id=3&percent=60",
+                {"Origin": "http://evil.invalid"},
+            ),
+            ("/motor?action=stop&id=3", {"Host": "evil.invalid"}),
+            ("/motor?action=forward&id=3&id=4&percent=60", {}),
+            ("/motor?action=forward&id=3&percent=60&token=secret", {}),
+            ("/command?cmd=reboot", {}),
+            ("/motor?action=forward&id=3&percent=060", {}),
+            ("/%2fmotor?action=stop&id=3", {}),
+            ("/joint?action=down", {}),
+        ]:
+            self.assertNotEqual(self.post(path, **kw)[0], 200)
+        self.assertFalse(self.requests)
+
+    def test_capture_identity_required_page_bound_and_single_forward(self):
+        self.establish()
+        self.assertEqual(
+            self.send(
+                "/motor?action=forward&id=3&percent=60",
+                "POST",
+                headers={
+                    "Origin": self.base,
+                    "X-MotionBrain": "1",
+                    "X-MotionBrain-Token": "PRIVATE-FIXTURE",
+                },
+            )[0],
+            409,
+        )
+        for capture_id in ("", "otherpage:1", "fixture:0003"):
+            self.assertNotEqual(
+                self.post(
+                    "/motor?action=forward&id=3&percent=60",
+                    **{"X-UI-Capture-ID": capture_id},
+                )[0],
+                200,
+            )
+        self.assertEqual(len(self.requests), 0)
+        self.assertEqual(self.post("/motor?action=forward&id=3&percent=60")[0], 200)
+        self.assertEqual(self.post("/motor?action=forward&id=3&percent=60")[0], 409)
+        self.assertEqual(len(self.requests), 1)
+        self.assertEqual(
+            self.send(
+                "/motor?action=stop&id=3",
+                "POST",
+                headers={
+                    "Origin": self.base,
+                    "X-MotionBrain": "1",
+                    "X-MotionBrain-Token": "PRIVATE-FIXTURE",
+                },
+            )[0],
+            200,
+        )
+
+    def test_per_page_anchor_and_heartbeat_cannot_be_mixed(self):
+        self.establish()
+        self.server.capture_log.pages["fixture"]["anchorAt"] -= 11
+        clock = json.loads(self.send("/__capture/clock?pageId=other")[1])
+        batch = dict(
+            events=[
+                dict(self.event(1, "page_started"), pageId="other"),
+                dict(
+                    self.event(
+                        2,
+                        "clock_anchor",
+                        browserBeforeMs=1.0,
+                        browserAfterMs=2.0,
+                        **clock,
+                    ),
+                    pageId="other",
+                ),
+                dict(self.event(3, "browser_heartbeat"), pageId="other"),
+            ]
+        )
+        self.send("/__capture/events", "POST", json.dumps(batch).encode())
+        self.assertEqual(self.post("/motor?action=forward&id=3&percent=60")[0], 409)
+        self.assertEqual(
+            self.post(
+                "/motor?action=forward&id=3&percent=60",
+                **{"X-UI-Capture-ID": "other:4"},
+            )[0],
+            200,
+        )
+        self.server.capture_log.pages["other"]["heartbeatAt"] -= 3
+        self.assertEqual(
+            self.post(
+                "/motor?action=forward&id=3&percent=60",
+                **{"X-UI-Capture-ID": "other:5"},
+            )[0],
+            409,
+        )
+
+    def test_disk_failure_blocks_motion_but_stop_still_forwarded(self):
+        self.establish()
+        real = self.server.capture_log.file
+
+        class Broken:
+            def write(self, *args):
+                raise OSError("disk fixture")
+
+            def flush(self):
+                pass
+
+        self.server.capture_log.file = Broken()
+        try:
+            self.assertEqual(self.post("/motor?action=forward&id=3&percent=60")[0], 409)
+            self.assertEqual(len(self.requests), 0)
+            self.assertEqual(self.post("/motor?action=stop&id=3")[0], 200)
+            self.assertEqual(len(self.requests), 1)
+        finally:
+            self.server.capture_log.file = real
+
+    def test_stop_barrier_discards_queued_lease_and_serializes_inflight(self):
+        self.establish()
+        self.hold = True
+        answers = {}
+
+        def request(label, path, capture):
+            answers[label] = self.post(path, **{"X-UI-Capture-ID": capture})[0]
+
+        first = threading.Thread(
+            target=request,
+            args=("first", "/motor?action=forward&id=3&percent=60", "fixture:4"),
+        )
+        first.start()
+        self.assertTrue(self.transport_started.wait(1))
+        lease = threading.Thread(
+            target=request,
+            args=("lease", "/motor?action=forward&id=3&percent=70", "fixture:5"),
+        )
+        lease.start()
+        deadline = time.monotonic() + 1
+        while time.monotonic() < deadline:
+            if any(
+                r.get("captureId") == "fixture:5" and r["kind"] == "proxy_request"
+                for r in self.logs()
+            ):
+                break
+            time.sleep(0.005)
+        stop = threading.Thread(
+            target=request, args=("stop", "/motor?action=stop&id=3", "fixture:6")
+        )
+        stop.start()
+        deadline = time.monotonic() + 1
+        while time.monotonic() < deadline:
+            if any(
+                r.get("captureId") == "fixture:6" and r["kind"] == "proxy_request"
+                for r in self.logs()
+            ):
+                break
+            time.sleep(0.005)
+        self.transport_release.set()
+        for t in (first, lease, stop):
+            t.join(2)
+            self.assertFalse(t.is_alive())
+        self.assertEqual(answers, {"first": 200, "lease": 409, "stop": 200})
+        self.assertEqual(
+            [r.full_url for r in self.requests],
+            [
+                "http://controller.invalid/motor?action=forward&id=3&percent=60",
+                "http://controller.invalid/motor?action=stop&id=3",
+            ],
+        )
+        self.assertEqual(
+            self.post(
+                "/motor?action=forward&id=3&percent=60",
+                **{"X-UI-Capture-ID": "fixture:5"},
+            )[0],
+            409,
+        )
+        self.assertEqual(
+            self.post(
+                "/motor?action=forward&id=3&percent=60",
+                **{"X-UI-Capture-ID": "fixture:7"},
+            )[0],
+            200,
+        )
+
+    def test_unknown_transport_blocks_followup_run_but_not_stop(self):
+        self.establish()
+        self.fail = True
+        self.assertEqual(self.post("/motor?action=forward&id=3&percent=60")[0], 502)
+        self.fail = False
+        self.assertEqual(
+            self.post(
+                "/motor?action=forward&id=3&percent=60",
+                **{"X-UI-Capture-ID": "fixture:4"},
+            )[0],
+            409,
+        )
+        self.assertEqual(self.post("/motor?action=stop&id=3")[0], 200)
+
+    def test_unowned_stop_invalidates_existing_page(self):
+        self.establish()
+        self.assertEqual(
+            self.send("/command?cmd=stop", "POST", headers={"Origin": self.base})[0],
+            200,
+        )
+        self.assertEqual(self.post("/motor?action=forward&id=3&percent=60")[0], 409)
+
+    def test_bad_anchor_timestamp_and_unissued_identity_rejected(self):
+        self.establish()
+        clock = json.loads(self.send("/__capture/clock?pageId=fixture")[1])
+        base = self.event(
+            4, "clock_anchor", browserBeforeMs=3.0, browserAfterMs=4.0, **clock
+        )
+        from unittest.mock import patch
+
+        variants = [
+            {"browserBeforeMs": None},
+            {"browserAfterMs": float("nan")},
+            {"hostSentMonotonic": float("inf")},
+            {"browserBeforeMs": 5.0},
+            {"browserAfterMs": 6.0},
+            {"anchorId": "notissued"},
+        ]
+        for change in variants:
+            with self.subTest(change=change):
+                with self.assertRaises((ValueError, TypeError)):
+                    self.server.capture_log.browser(dict(events=[dict(base, **change)]))
+        with patch.object(m.time, "monotonic", return_value=time.monotonic() + 11):
+            self.server.capture_log.browser(dict(events=[base]))
+        self.assertEqual(self.post("/motor?action=stop&id=3")[0], 200)
+
+    def test_delayed_heartbeat_and_out_of_order_event_sequences_rejected(self):
+        self.establish()
+        log = self.server.capture_log
+        for e in [
+            self.event(5, "browser_heartbeat"),
+            dict(self.event(4, "browser_heartbeat"), browserPerformanceMs=1.0),
+        ]:
+            with self.assertRaises(ValueError):
+                log.browser(dict(events=[e]))
+        from unittest.mock import patch
+
+        now = time.monotonic()
+        with patch.object(m.time, "monotonic", return_value=now + 3):
+            log.browser(dict(events=[self.event(4, "browser_heartbeat")]))
+        self.assertEqual(self.post("/motor?action=stop&id=3")[0], 200)
+
+    def test_new_run_during_inflight_stop_is_rejected_at_admission(self):
+        self.establish()
+        self.hold = True
+        answers = {}
+        t = threading.Thread(
+            target=lambda: answers.setdefault(
+                "stop",
+                self.post(
+                    "/motor?action=stop&id=3", **{"X-UI-Capture-ID": "fixture:4"}
+                )[0],
+            )
+        )
+        t.start()
+        self.assertTrue(self.transport_started.wait(1))
+        self.assertEqual(
+            self.post(
+                "/motor?action=forward&id=3&percent=60",
+                **{"X-UI-Capture-ID": "fixture:5"},
+            )[0],
+            409,
+        )
+        self.transport_release.set()
+        t.join(2)
+        self.assertEqual(answers["stop"], 200)
+        self.assertEqual(len(self.requests), 1)
+
+    def test_only_one_controlling_page_and_foreign_stop_invalidates_owner(self):
+        self.establish()
+        self.assertEqual(self.post("/motor?action=forward&id=3&percent=60")[0], 200)
+        clock = json.loads(self.send("/__capture/clock?pageId=other")[1])
+        events = [
+            dict(self.event(1, "page_started"), pageId="other"),
+            dict(
+                self.event(
+                    2, "clock_anchor", browserBeforeMs=1.0, browserAfterMs=2.0, **clock
+                ),
+                pageId="other",
+            ),
+            dict(self.event(3, "browser_heartbeat"), pageId="other"),
+        ]
+        self.assertEqual(
+            self.send(
+                "/__capture/events", "POST", json.dumps(dict(events=events)).encode()
+            )[0],
+            200,
+        )
+        self.assertEqual(
+            self.post(
+                "/motor?action=forward&id=3&percent=60",
+                **{"X-UI-Capture-ID": "other:4"},
+            )[0],
+            409,
+        )
+        self.assertEqual(
+            self.post("/motor?action=stop&id=3", **{"X-UI-Capture-ID": "other:5"})[0],
+            200,
+        )
+        self.assertEqual(
+            self.post(
+                "/motor?action=forward&id=3&percent=60",
+                **{"X-UI-Capture-ID": "fixture:4"},
+            )[0],
+            409,
+        )
+
+    def test_delayed_valid_heartbeat_kept_without_authority_then_fresh_recovers(self):
+        self.establish()
+        log = self.server.capture_log
+        old = log.pages["fixture"]["heartbeatAt"]
+        from unittest.mock import patch
+
+        later = time.monotonic() + 3
+        with patch.object(m.time, "monotonic", return_value=later):
+            log.browser(dict(events=[self.event(4, "browser_heartbeat")]))
+            self.assertEqual(log.pages["fixture"]["heartbeatAt"], old)
+            self.assertFalse(log.degraded)
+            clock = log.issue_clock("fixture", later)
+            log.browser(
+                dict(
+                    events=[
+                        self.event(
+                            5,
+                            "clock_anchor",
+                            browserBeforeMs=4.0,
+                            browserAfterMs=5.0,
+                            **clock,
+                        ),
+                        self.event(6, "browser_heartbeat"),
+                    ]
+                )
+            )
+        self.assertGreater(log.pages["fixture"]["heartbeatAt"], old + 2)
+        self.assertFalse(log.degraded)
+        self.assertTrue(
+            any(
+                e["sequence"] == 4
+                for r in self.logs()
+                if r["kind"] == "browser_batch"
+                for e in r["events"]
+            )
+        )
+
+    def test_events_deduplicated_and_bad_metadata_rejected(self):
+        self.establish()
+        batch = dict(
+            events=[
+                self.event(
+                    4, "dom_intent", eventType="pointerdown", targetId="btn-forward-3"
+                )
+            ]
+        )
+        for _ in range(2):
+            self.assertEqual(
+                self.send("/__capture/events", "POST", json.dumps(batch).encode())[0],
+                200,
+            )
+        self.assertEqual(
+            sum(len(e["events"]) for e in self.logs() if e["kind"] == "browser_batch"),
+            4,
+        )
+        batch["events"][0]["token"] = "secret"
+        self.assertEqual(
+            self.send("/__capture/events", "POST", json.dumps(batch).encode())[0], 502
+        )
+
+    def test_drop_count_permanently_blocks_new_motion(self):
+        self.establish()
+        self.send(
+            "/__capture/events",
+            "POST",
+            json.dumps(
+                dict(events=[self.event(3, "browser_heartbeat")], dropped=1)
+            ).encode(),
+        )
+        self.assertEqual(self.post("/motor?action=forward&id=3&percent=60")[0], 409)
+        self.assertEqual(self.post("/motor?action=stop&id=3")[0], 200)
+
+    def test_clock_bracket_and_original_query_guards(self):
+        before = time.monotonic()
+        code, raw = self.send("/__capture/clock?pageId=fixture")
+        after = time.monotonic()
+        d = json.loads(raw)
+        self.assertEqual(code, 200)
+        self.assertLessEqual(before, d["hostReceivedMonotonic"])
+        self.assertLessEqual(d["hostReceivedMonotonic"], d["hostSentMonotonic"])
+        self.assertLessEqual(d["hostSentMonotonic"], after)
+        for p in [
+            "http://evil.invalid/motor",
+            "//evil.invalid/motor",
+            "/../motor",
+            "/mo%74or",
+        ]:
+            with self.assertRaises(ValueError):
+                m.safe_target(p)
+
+
+class BrowserSemantics(unittest.TestCase):
+    def test_original_ui_press_change_release_cancel_and_auth_not_in_events(self):
+        # Execute the actual firmware button/lease functions with a browser API mock.
+        # This is a JS semantic test, not a real DOM rendering or physical driver test.
+        import re
+
+        names = (
+            "function commandFetch(",
+            "function motorStart(",
+            "function motorStop(",
+            "function refreshMotorLease(",
+            "function updateSpeedValue(",
+        )
+        functions = []
+        for line in (ROOT / "src/network/web_server.cpp").read_text().splitlines():
+            if any(name in line for name in names):
+                literal = re.search(r'server_\.sendContent\((".*")\);', line).group(1)
+                functions.append(json.loads(literal))
+        self.assertEqual(len(functions), 5)
+        fixture = r"""
+const vm=require('node:vm'),fs=require('node:fs');const config=JSON.parse(fs.readFileSync(0,'utf8'));
+const events=[],commands=[],intervals=[],elements={},listeners={},created=[];let authPrompts=0;
+global.window=global;global.location={href:'http://localhost/',origin:'http://localhost'};
+global.crypto=require('node:crypto').webcrypto;
+function element(id){return elements[id]??=( {id,value:'60',textContent:'',style:{},dataset:{},classList:{add(){},remove(){}},appendChild(){},matches(){return true;}} );}
+global.document={documentElement:element('root'),body:{appendChild(){}},getElementById:element,createElement:()=>{const e=element('node'+created.length);created.push(e);return e;},addEventListener:(n,f)=>{(listeners[n]??=[]).push(f);},visibilityState:'visible'};
+global.addEventListener=(n,f)=>{(listeners[n]??=[]).push(f);};
+global.setInterval=(f,ms)=>{intervals.push({f,ms});return intervals.length;};global.clearInterval=()=>{};
+global.commandToken='';global.updateTokenStatus=()=>{};global.showMessage=()=>{};global.updateStatus=()=>{};
+global.commandHeaders=()=>{authPrompts++;return {'X-MotionBrain':'1','X-MotionBrain-Token':'SECRET-FIXTURE'};};
+global.activeMotors={};global.currentMode='button';global.MANUAL_LEASE_REFRESH_MS=250;
+global.fetch=async(url,options={})=>{
+ if(url==='/__capture/events'){events.push(...JSON.parse(options.body).events);return{ok:true,json:async()=>({stored:true})};}
+ if(url.startsWith('/__capture/clock'))return{ok:true,json:async()=>({hostReceivedMonotonic:1,hostSentMonotonic:1,anchorId:'fixtureanchor'})};
+ if(url.startsWith('/__capture/status'))return{ok:true,json:async()=>({recordingReady:true})};
+ commands.push({url,method:options.method,headers:Object.fromEntries(new Headers(options.headers)),driverPWM:new URL(url,'http://localhost').searchParams.get('action')==='stop'?0:Math.round(Number(new URL(url,'http://localhost').searchParams.get('percent'))*255/100)});
+ return{ok:true,json:async()=>({success:true})};
+};
+for(const fn of config.functions)vm.runInThisContext(fn);
+vm.runInThisContext(config.instrumentation);
+const settle=async()=>{for(let i=0;i<8;i++)await Promise.resolve();};
+(async()=>{
+ await settle();
+ created.find(e=>e.id==='intent-capture-auth').onclick();if(commands.length!==0)throw Error('auth preparation sent command');
+ for(const f of listeners.pointerdown)f({type:'pointerdown',target:element('btn-forward-3'),pointerId:1,isTrusted:true,clientX:1,clientY:2});
+ window.motorStart(3,'forward',{preventDefault(){}});await settle();
+ element('speed-3').value='70';for(const f of listeners.input)f({type:'input',target:element('speed-3'),isTrusted:true});window.updateSpeedValue(3);window.refreshMotorLease(3);await settle();
+ for(const f of listeners.pointerup)f({type:'pointerup',target:element('btn-forward-3'),pointerId:1,isTrusted:true});window.motorStop(3,{preventDefault(){}});await settle();
+ for(const f of listeners.pointercancel)f({type:'pointercancel',target:element('btn-forward-3'),pointerId:1,isTrusted:true});
+ for(const f of listeners.blur)f();
+ intervals.find(x=>x.ms===100).f();await settle();console.log(JSON.stringify({events,commands,authPrompts}));
+})().catch(e=>{console.error(e);process.exit(1);});
+"""
+        raw = subprocess.run(
+            ["node", "-e", fixture],
+            input=json.dumps(
+                dict(functions=functions, instrumentation=m.JS.read_text())
+            ),
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        data = json.loads(raw)
+        commands = data["commands"]
+        events = data["events"]
+        self.assertEqual(data["authPrompts"], 4)
+        self.assertEqual([c["driverPWM"] for c in commands], [153, 179, 0])
+        self.assertEqual([c["method"] for c in commands], ["POST"] * 3)
+        self.assertEqual(
+            [e["eventType"] for e in events if e["kind"] == "dom_intent"],
+            ["pointerdown", "input", "pointerup", "pointercancel"],
+        )
+        self.assertIn("cancel_context", [e["kind"] for e in events])
+        self.assertEqual(len([e for e in events if e["kind"] == "command_dispatch"]), 3)
+        self.assertEqual(
+            [
+                e["query"]["percent"]
+                for e in events
+                if e["kind"] == "command_intent" and "percent" in e["query"]
+            ],
+            ["60", "70"],
+        )
+        self.assertNotIn("SECRET-FIXTURE", json.dumps(events))
+        with tempfile.TemporaryDirectory() as directory:
+            log = m.EventLog(directory)
+            anchor = next(e for e in events if e["kind"] == "clock_anchor")
+            log.clocks[anchor["anchorId"]] = (
+                anchor["pageId"],
+                {
+                    k: anchor[k]
+                    for k in ("anchorId", "hostReceivedMonotonic", "hostSentMonotonic")
+                },
+            )
+            from unittest.mock import patch
+
+            with patch.object(m.time, "monotonic", return_value=1.1):
+                log.browser(dict(events=events))
+            log.close()
+
+
+if __name__ == "__main__":
+    unittest.main()
