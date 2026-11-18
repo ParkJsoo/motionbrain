@@ -16,6 +16,7 @@ import numpy as np
 SCHEMA = 'motionbrain.near_gripper_visible_tips.v1'
 PROFILE_SCHEMA = 'motionbrain.near_gripper_visible_tips.v2'
 FRAGMENT_SCHEMA = 'motionbrain.near_gripper_visible_tips.v3'
+BOUNDARY_SCHEMA = 'motionbrain.near_gripper_visible_tips.v4'
 PREFIX = 'near-gripper-visible-tips-v1:'
 STATE_FIELDS = ['objectMinusVisibleJawMidXpx', 'objectMinusVisibleJawMidYpx', 'visibleTipHorizontalGapPx']
 
@@ -29,7 +30,7 @@ def _require(ok, reason):
 
 
 def observer_policy(*, version=1):
-    _require(type(version) is int and version in (1, 2, 3), 'near_observer_policy_version')
+    _require(type(version) is int and version in (1, 2, 3, 4), 'near_observer_policy_version')
     policy = dict(schemaVersion=SCHEMA, imageShape=[240, 320],
         leftRoi=[20, 35, 160, 170], rightRoi=[160, 35, 300, 170], blackMaximumValue=85,
         componentArea=[80, 6000], componentWidth=[8, 80], componentHeight=[25, 130],
@@ -41,13 +42,13 @@ def observer_policy(*, version=1):
         depthBandBeforeObjectTopPx=40., depthBandAfterObjectBottomPx=15.,
         tipMeaning='bottom_eight_visible_component_rows_not_fingertip_depth_contact_force_or_clearance',
         gateMeaning='image_visibility_only_external_alignment_and_contact_verification_required')
-    if version in (2, 3):
+    if version in (2, 3, 4):
         policy['schemaVersion'] = PROFILE_SCHEMA
         del policy['depthBandBeforeObjectTopPx']; del policy['depthBandAfterObjectBottomPx']
         policy.update(verticalGate='object_overlaps_both_full_visible_finger_component_profiles',
             minimumVerticalProfileOverlapPx=3.,
             gateMeaning='both_finger_profile_image_overlap_not_depth_contact_force_or_clearance')
-    if version == 3:
+    if version in (3, 4):
         policy.update(schemaVersion=FRAGMENT_SCHEMA,
             objectFragmentPolicy=dict(maximumQualifiedComponents=2, maximumSecondaryMainAreaRatio=.35,
                 maximumCenterXDifferencePx=5., minimumHorizontalOverlapFraction=.5,
@@ -55,6 +56,9 @@ def observer_policy(*, version=1):
                 minimumFillAppliesToVisibleFragments=True, unionEnvelopeFillNotForegroundAccuracy=True,
                 centroidMeaning='observed_pixel_area_weighted', occludedPixelsEstimated=False,
                 meaning='known_single_pink_object_visible_fragment_union_not_object_identity_or_grasp_proof'))
+    if version == 4:
+        policy.update(schemaVersion=BOUNDARY_SCHEMA,
+            orphanBoundaryPolicy='ignore_small_side_clipped_orphan_below_and_disjoint_from_unique_finger')
     return policy
 
 
@@ -79,12 +83,13 @@ def _tip(hsv, roi, policy):
     x, y, xx, yy = roi; patch = hsv[y:yy, x:xx]
     mask = np.uint8(patch[:, :, 2] < policy['blackMaximumValue'])*255
     count, labels, stats, _ = cv2.connectedComponentsWithStats(mask)
-    candidates = []; orphan_components = 0
+    candidates = []; orphan_components = []
     for index in range(1, count):
         bx, by, width, height, area = map(int, stats[index])
         if (area >= policy['componentArea'][0] and policy['minimumOrphanHeightPx'] <= height <= policy['componentHeight'][1]
                 and policy['componentWidth'][0] <= width <= policy['componentWidth'][1]
-                and by > policy['maximumRootOffsetPx']): orphan_components += 1
+                and by > policy['maximumRootOffsetPx']):
+            orphan_components.append(dict(bbox=[bx+x, by+y, width, height], area=area))
         if not (policy['componentArea'][0] <= area <= policy['componentArea'][1]
                 and policy['componentWidth'][0] <= width <= policy['componentWidth'][1]
                 and policy['componentHeight'][0] <= height <= policy['componentHeight'][1]
@@ -97,7 +102,19 @@ def _tip(hsv, roi, policy):
         if int(bottom.sum()) < policy['minimumBottomPixels']: continue
         candidates.append(dict(point=[float(xs[bottom].mean()+x), float(bottom_y+y)],
             bbox=[bx+x, by+y, width, height], area=area, bottomPixels=int(bottom.sum())))
-    _require(len(candidates) == 1 and orphan_components == 0, 'near_tip_missing_or_ambiguous')
+    _require(len(candidates) == 1, 'near_tip_missing_or_ambiguous')
+    ignored = []
+    if policy.get('orphanBoundaryPolicy') is not None:
+        fx, fy, fw, fh = candidates[0]['bbox']
+        for component in orphan_components:
+            ox, oy, ow, oh = component['bbox']
+            if ((ox == x if roi == policy['leftRoi'] else ox+ow == xx)
+                    and oh < policy['componentHeight'][0]
+                    and oy >= fy+fh and (ox+ow <= fx or ox >= fx+fw)):
+                ignored.append(component)
+    _require(len(ignored) == len(orphan_components), 'near_tip_missing_or_ambiguous')
+    if policy.get('orphanBoundaryPolicy') is not None:
+        candidates[0]['ignoredBoundaryBackground'] = ignored
     return candidates[0]
 
 
@@ -159,7 +176,7 @@ def _object(hsv, policy):
                 and area/(width*height) >= policy['minimumObjectFill']):
             candidates.append(dict(center=(centers[index]+[x, y]).tolist(),
                 bbox=[bx+x, by+y, width, height], area=area))
-    if policy['schemaVersion'] == FRAGMENT_SCHEMA:
+    if policy['schemaVersion'] in (FRAGMENT_SCHEMA, BOUNDARY_SCHEMA):
         obj = _fragment_object(candidates, policy)
         return obj, dict(
             mode='single_visible_component' if len(candidates) == 1 else 'observed_fragment_union',
@@ -186,7 +203,7 @@ class NearGripperTipObserver:
         _require(gap >= self.policy['minimumGapPx'] and abs(l[1]-r[1]) <= self.policy['maximumTipYDifferencePx'],
                  'near_visible_tips_not_separated')
         detected = _object(hsv, self.policy)
-        obj, fragments = detected if self.policy['schemaVersion'] == FRAGMENT_SCHEMA else (detected, None)
+        obj, fragments = detected if self.policy['schemaVersion'] in (FRAGMENT_SCHEMA, BOUNDARY_SCHEMA) else (detected, None)
         x, y, width, height = obj['bbox']
         observation = dict(schemaVersion=self.policy['schemaVersion'], policySha256=self.binding, observationContractSha256=self.binding,
             landmarkContract=self.landmark_contract, imageSha256=hashlib.sha256(raw).hexdigest(),
@@ -204,7 +221,7 @@ class NearGripperTipObserver:
 
 def validate_observation(observation):
     """모델 입력의 정책·점·간격·물체·가시성 표기가 서로 같은 관측인지 검사한다."""
-    versions = {SCHEMA: 1, PROFILE_SCHEMA: 2, FRAGMENT_SCHEMA: 3}
+    versions = {SCHEMA: 1, PROFILE_SCHEMA: 2, FRAGMENT_SCHEMA: 3, BOUNDARY_SCHEMA: 4}
     _require(isinstance(observation, dict) and observation.get('schemaVersion') in versions, 'near_observation_contract')
     version = versions[observation['schemaVersion']]
     policy = observer_policy(version=version); binding = digest(policy)
@@ -215,7 +232,7 @@ def validate_observation(observation):
              and isinstance(observation.get('imageSha256'), str)
              and re.fullmatch('[0-9a-f]{64}', observation['imageSha256']) is not None,
              'near_observation_contract')
-    if version == 3:
+    if version in (3, 4):
         fragments = observation.get('objectFragments')
         _require(isinstance(fragments, dict) and set(fragments) == {
             'mode', 'components', 'occludedPixelsEstimated', 'centroidMeaning', 'unionEnvelopeFill'}
@@ -227,7 +244,7 @@ def validate_observation(observation):
                                      else 'observed_fragment_union') and observation.get('object') == obj
                  and type(fragments['unionEnvelopeFill']) is float
                  and fragments['unionEnvelopeFill'] == obj['area']/(obj['bbox'][2]*obj['bbox'][3])
-                 and observation.get('landmarkContract') == f'near-gripper-visible-tips-v3:{binding}'
+                 and observation.get('landmarkContract') == f'near-gripper-visible-tips-v{version}:{binding}'
                  and all(observation.get(k) is False for k in
                          ('contactVerified', 'forceVerified', 'depthVerified', 'graspVerified', 'clearanceVerified')),
                  'near_fragment_union_changed')
