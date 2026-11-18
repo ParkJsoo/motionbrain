@@ -1,10 +1,12 @@
 """명시적으로 선택하는 감독 수집 조건. 기존 기본 프로필은 바꾸지 않는다."""
 from __future__ import annotations
 
-from learning.supervised_transport import JOINTS
+from learning.supervised_transport import (JOINTS, ELBOW_CONTACT_200_POLICY, ELBOW_CONTACT_250_POLICY,
+    WRIST_READ_BUDGET_REVISION)
 
 ATTENDED_60_1000 = 'attended-60pct-1000ms-v1'
 ATTENDED_SHOULDER_DOWN_12 = 'attended-shoulder-down-12deg-v1'
+ATTENDED_ELBOW_CONTACT_FINE = 'attended-elbow-contact-fine-60pct-200-250ms-v1'
 
 
 def shoulder_down_window():
@@ -14,6 +16,13 @@ def shoulder_down_window():
 
 
 def collection_profile(name):
+    if name == ATTENDED_ELBOW_CONTACT_FINE:
+        return dict(schemaVersion='motionbrain.attended_collection_profile.v1', name=name,
+            minimumPercent=60, maximumPercent=60, minimumDurationMs=200, maximumDurationMs=250,
+            allowedDurationMs=[200,250], maximumCommands=1, directions={'elbow':['down']},
+            supervision='onsite_operator', automaticRetry=False,
+            manualMinimumException='explicit_contact_fine_collection_only',
+            physicalDurationHardGuarantee=False)
     if name not in (ATTENDED_60_1000, ATTENDED_SHOULDER_DOWN_12):
         raise ValueError('unknown_attended_collection_profile')
     profile = dict(schemaVersion='motionbrain.attended_collection_profile.v1', name=name,
@@ -31,6 +40,10 @@ def collection_profile(name):
 
 def validate_command(name, command):
     profile = collection_profile(name)
+    if name == ATTENDED_ELBOW_CONTACT_FINE and (not isinstance(command,dict)
+            or set(command) != {'joint','direction','percent','durationMs'}
+            or command['durationMs'] not in profile['allowedDurationMs']):
+        raise ValueError('attended_elbow_contact_exact_command_required')
     joint = command['joint']
     if command['direction'] not in profile['directions'].get(joint, []):
         raise ValueError('joint_direction_not_enabled')
@@ -80,6 +93,12 @@ def audit_profile(plan, session, pulse, receipt=None, *, motion_not_started=Fals
             raise ValueError('attended_shoulder_down_window_provenance')
     elif any('attendedShoulderDownWindow' in value for value in (plan, session, receipt or {})):
         raise ValueError('attended_shoulder_down_window_unplanned')
+    if profile['name'] == ATTENDED_ELBOW_CONTACT_FINE and not motion_not_started:
+        expected = {200:ELBOW_CONTACT_200_POLICY,250:ELBOW_CONTACT_250_POLICY}[pulse['durationMs']]
+        if (not isinstance(receipt,dict) or receipt.get('monitorTimingPolicy') != expected
+                or receipt.get('monitorStatusVerified') is not True or receipt.get('offVerified') is not True
+                or receipt.get('monitorReadBudgetRevision') != WRIST_READ_BUDGET_REVISION):
+            raise ValueError('attended_elbow_contact_monitor_provenance')
     return profile.copy()
 
 

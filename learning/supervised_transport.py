@@ -30,6 +30,8 @@ WRIST_DEADLINE_POLICY = 'wrist-deadline-550-v1'
 ELBOW_DEADLINE_POLICY = 'elbow-deadline-350-v1'
 ELBOW_PLATEAU_POLICY = 'elbow-plateau-650-v1'
 ELBOW_FINE_POLICY = 'elbow-fine-450-v1'
+ELBOW_CONTACT_200_POLICY = 'elbow-contact-down-deadline-200-v1'
+ELBOW_CONTACT_250_POLICY = 'elbow-contact-down-deadline-250-v1'
 M4_TARGET_UP_DEADLINE_POLICY = 'm4-target-up-deadline-650-v1'
 RECOVERY_DOWN_DEADLINE_POLICY = 'm4-band-recovery-down-deadline-400-v1'
 EFFECTIVE_UP_DEADLINE_POLICY = 'm4-effective-up-deadline-1200-v1'
@@ -66,6 +68,14 @@ def validate_monitor_policy(pulse, policy):
              and pulse['direction'] in ('up', 'down')
              and type(pulse['percent']) is int and type(pulse['durationMs']) is int
              and (pulse['percent'], pulse['durationMs']) == elbow_profiles[policy])
+    # 접촉 부근의 새 수동 수집 예외만 정확한 두 명령으로 제한한다.
+    # 공유 기한·첫 안전 상태 검사·STOP 경로를 기존 elbow 감시와 같이 쓴다.
+    contact_profiles = {ELBOW_CONTACT_200_POLICY: 200, ELBOW_CONTACT_250_POLICY: 250}
+    contact = (isinstance(policy, str) and policy in contact_profiles and pulse.get('joint') == 'elbow'
+               and pulse.get('direction') == 'down'
+               and all(type(pulse.get(k)) is int for k in ('motor','percent','durationMs','expectedPwm'))
+               and (pulse['motor'],pulse['percent'],pulse['durationMs'],pulse['expectedPwm']) ==
+                   (3,60,contact_profiles[policy],153))
     target_up = (policy == M4_TARGET_UP_DEADLINE_POLICY
                  and pulse.get('joint') == 'shoulder' and pulse.get('direction') == 'up'
                  and all(type(pulse.get(k)) is int for k in ('motor','percent','durationMs','expectedPwm'))
@@ -87,7 +97,7 @@ def validate_monitor_policy(pulse, policy):
     short = (isinstance(policy,str) and policy in short_profiles and pulse.get('joint')=='shoulder'
              and all(type(pulse.get(k)) is int for k in ('motor','percent','durationMs','expectedPwm'))
              and tuple(pulse.get(k) for k in ('direction','motor','percent','durationMs','expectedPwm'))==short_profiles[policy])
-    if not (wrist or elbow or target_up or recovery_down or short):
+    if not (wrist or elbow or contact or target_up or recovery_down or short):
         raise ValueError('unsupported_monitor_timing_policy')
 
 
