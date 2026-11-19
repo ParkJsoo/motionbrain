@@ -29,7 +29,7 @@ I applied the same evaluation discipline to vision. An object-and-gripper detect
 
 ## Action prediction | When do images improve on a simple baseline?
 
-I froze the models before scoring new actions and kept joint, command duration and observation conventions separate.
+For M3 and M4, I collected new actions after freezing the models and measured prediction error on those actions. For M2, I split 32 existing records by capture group into 16 training, eight validation and eight test records. In a subsequent physical M2 trial, I measured the remaining distance to the target angle after one command.
 
 | Question | Comparison and result | Decision |
 | --- | --- | --- |
@@ -43,11 +43,13 @@ I checked physical progress independently of prediction error. One UP command se
 
 I recorded link dimensions and uncertainties from measurements, assembly drawings and photographs in a common geometry file, then compared FK, IK and whole-arm and M4-only URDF coordinates. The last measured M4 angle can be applied to a virtual pose, with assumed values on the other four axes. A roughly 3° residual in the stationary photograph was retained. [Shared geometry](ros2_ws/src/motionbrain_ros_bridge/motionbrain_ros_bridge/arm_geometry.json) · [Dimensions and calibration conditions (Korean)](docs/arm-calibration.md)
 
-![RViz displaying the arm model built from shared geometry](docs/assets/motionbrain-rviz-robotmodel.png)
+![Arm links and coordinate axes from the early URDF in RViz](docs/assets/motionbrain-rviz-robotmodel.png)
+
+*RViz rendering of the early URDF model.*
 
 I also measured endpoints in physical recordings. After registration on the first frame of each of two demonstrations, the motion-only prediction on eight additional frames had mean image errors of **1.56 px** at the elbow, **4.72 px** at the wrist and **46.58 px** at the jaw tip. Opening the jaws changes the silhouette endpoint, so link alignment alone does not determine grasp-point accuracy. [Measurement method and errors (Korean)](docs/arm-calibration.md#시연-영상에서-측정한-2차원-오차)
 
-I used RViz to inspect joints and coordinate frames and Gazebo and MuJoCo to check whether the same geometry transferred consistently between engines. Rerun replays the two physical camera views alongside predictions and outputs. W&B reports compare frozen models against baselines. Mass, inertia, actuation delay and jaw contact still require physical calibration. [Replay and validation across the five tools (Korean)](docs/robot-visualization.md)
+I inspected joints and coordinate frames in RViz. I compared the end-effector frame (`tool0`) of the converted MuJoCo model numerically against the URDF and the kinematics calculations. In Gazebo, I checked the SDF syntax and verified that the model appeared in the GUI. Rerun replays the two physical camera views alongside predictions and outputs. W&B reports compare frozen models against baselines. Mass, inertia, actuation delay and jaw contact still require physical calibration. [Replay and validation across the five tools (Korean)](docs/robot-visualization.md)
 
 ## Physical action policies | From one action to a sequence
 
