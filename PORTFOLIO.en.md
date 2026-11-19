@@ -2,7 +2,7 @@
 
 [한국어](PORTFOLIO.md) · [Project overview and build](README.en.md) · [Experiment index (Korean)](docs/README.md)
 
-This personal project asks **how to verify that a robot arm picked up and moved an object when only one joint reports its angle**. I connected the ESP32 motor controller, teleoperation recorder, visual observations, learning and evaluation pipeline, and physical action policy. Each stage records the human demonstration, model choice, rule-based transition and actual motor output separately.
+The engineering question behind this project is **whether a physical arm with angle feedback at only the shoulder can learn what its actions do and use successive observations to correct its motion toward a goal**. To investigate this, I connected an ESP32 motor controller, image and output recording, candidate-action prediction and a policy running on the physical arm. In the tabletop experiment below, I recorded human demonstrations, model decisions, rule-based transitions and actual motor outputs separately to determine how the arm and object moved.
 
 ![External-camera frames from a whole-arm autonomous trial](docs/assets/whole-arm-cycle.jpg)
 

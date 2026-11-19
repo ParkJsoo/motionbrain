@@ -2,7 +2,9 @@
 
 [한국어](README.md) · [Portfolio](PORTFOLIO.en.md) · [Build and operations](OPERATIONS.en.md) · [Documentation index (Korean)](docs/README.md)
 
-MotionBrain is a **five-axis DC robot arm that uses images to choose its next action**. Only the shoulder reports a joint angle. An external camera and a gripper-mounted camera observe the rest of the motion. The task starts with a human teleoperation demonstration. The arm must approach an object, grasp and lift it, set it down, release it and retreat.
+MotionBrain is a personal **physical AI project aimed at teaching a real robot arm to predict the effects of its actions and use those predictions to reach a goal**. Given the current images and a candidate joint command, the model predicts how the arm and object will move. The arm compares candidates, takes one action, then observes the result with two cameras to choose its next move. Of its five axes, only the shoulder provides direct joint-angle feedback.
+
+The video shows a tabletop manipulation experiment within that project. It used human teleoperation demonstrations to connect approach, grasp, lift, placement, release and retreat.
 
 ![Frames from a physical trial showing the arm and the pink object at different stages](docs/assets/whole-arm-cycle.jpg)
 
