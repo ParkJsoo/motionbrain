@@ -1,6 +1,6 @@
 # MotionBrain
 
-[한국어](README.md) · [Portfolio](PORTFOLIO.en.md) · [Build and operations](OPERATIONS.en.md) · [Documentation and experiments (Korean)](docs/README.md)
+[한국어](README.md) · [Portfolio](PORTFOLIO.en.md) · [Physical trial video · 35.5 s](docs/assets/whole-arm-cycle.mp4) · [Build and operations](OPERATIONS.en.md) · [Documentation and experiments (Korean)](docs/README.md)
 
 **MotionBrain is a personal physical AI project that aims to teach a real arm what its actions do and use those predictions to reach a goal.** Given an image of the arm and object, the model predicts the effects of candidate joint commands. The controller can then choose a move that brings the arm closer to its target, observe what actually moved, and adjust its next choice.
 
@@ -12,7 +12,7 @@ The platform is an OWI-535 arm with five DC motors. Only the shoulder has a join
 
 | Component | Role |
 | --- | --- |
-| **STM32, ESP32 and motor drivers** | The default STM32 firmware sends remote-control commands over UART using IMU tilt and button inputs. Sensor bridge mode can transmit IMU data. Ultrasonic ranging is disabled by default. The browser also provides joystick and joint-button controls. The ESP32 drives five motors through three TB6612FNGs, controlling direction, PWM and stop state. On the M4 shoulder it reads an AS5600 angle sensor to check motion and settling after power cutoff. [Wiring and sensors](PIN_MAP.en.md) |
+| **STM32, ESP32 and motor drivers** | The default STM32 firmware sends remote-control commands over UART using IMU tilt and button inputs. The browser also provides joystick and joint-button controls. The ESP32 drives five motors through three TB6612FNGs, controlling direction, PWM and stop state. On the M4 shoulder it reads an AS5600 angle sensor to check motion and settling after power cutoff. [Wiring and sensors](PIN_MAP.en.md) |
 | **External camera and ESP32-CAM** | The external view shows the arm and object moving together. The gripper-mounted camera shows the jaws relative to the object. Experiments include object and gripper detection in a fixed view. Joint-response predictors use features such as markers, relative coordinates and object height validated for the recording setup. [Perception experiments (Korean)](docs/evidence/2026-10-30-cv-development.md) |
 | **Raspberry Pi and ROS2** | The Pi hosts perception, a dashboard and a ROS2 bridge. After operator confirmation of an M4 target proposed through `ros2_control`, the physical controller drives the shoulder to its sensor target. The other four joints have no direct angle feedback. [ROS2 hardware interface](ros2_ws/src/motionbrain_hardware_interface/README.en.md) |
 | **Host and learning software** | The host records video alongside teleoperation input, command receipt and actual motor output. It builds datasets from recorded episodes and compares models with baselines on the same samples. [Collection and replay (Korean)](docs/manual-data-collection.md) · [Experiment pipeline (Korean)](docs/experiment-pipeline.md) |
@@ -59,6 +59,14 @@ In this Rerun replay, the predicted rise was 17 px and the observed rise was 21 
 ## Getting started without hardware
 
 Host tests use Python 3.12, NumPy, OpenCV, Node.js and a C++ compiler. Optional PyTorch tests may be skipped depending on installed dependencies. Firmware builds use PlatformIO.
+
+Try the gripper release check with synthetic observations. The test checks whether the jaws have opened far enough, whether the object is at the table reference position, and whether both camera observations are fresh and follow confirmed motor output.
+
+```sh
+python3 -m unittest discover -s tests -p 'test_whole_arm_release.py'
+```
+
+To run the full host test suite and build both firmware targets, use the following commands.
 
 ```sh
 python3 -m unittest discover -s tests
