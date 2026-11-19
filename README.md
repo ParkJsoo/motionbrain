@@ -44,7 +44,17 @@
 
 실물 치수에서 공통 기하 모델을 만들고 FK·IK·URDF의 좌표를 대조한다. **RViz**에서 링크와 좌표계를 보고, **Gazebo·MuJoCo**에서 같은 기하의 가상 자세를 확인한다. 실물 영상에서는 두 시연의 첫 장면으로 등록한 뒤 나머지 8장에서 팔꿈치·손목·집게 끝의 평균 위치 오차가 각각 **1.56·4.72·46.58px**였다. 이 측정은 2차원 투영 오차다. 실물 동역학·접촉 보정과 시뮬레이션 정책의 실물 전이는 남아 있다. [기구학 측정](docs/arm-calibration.md)
 
+| RViz | Gazebo | MuJoCo |
+| --- | --- | --- |
+| [![RViz에 표시한 현재 OWI-535 링크 모델](docs/assets/arm-rviz.png)](docs/assets/arm-rviz.png) | [![Gazebo 장면에 놓인 OWI-535 팔](docs/assets/arm-gazebo.png)](docs/assets/arm-gazebo.png) | [![MuJoCo로 렌더링한 OWI-535 모델](docs/assets/arm-mujoco.png)](docs/assets/arm-mujoco.png) |
+
 **Rerun**은 저장된 외부·집게 영상과 예측·실측을 함께 재생한다. 별도 읽기 전용 화면에서는 두 카메라와 M4 센서의 최신 관측을 표시한다. **W&B**는 고정 모델과 기준선의 오차를 비교하는 데 쓴다. 모델을 바꾸면 어떤 조건에서 결과가 좋아졌는지 실패·평가 분모까지 추적할 수 있다. [실시간 미리보기](docs/live-observation.md) · [도구 실행 안내](docs/robot-visualization.md) · [공개 W&B 보고서가 있는 실험 기록](docs/evidence/2026-11-15-prepared-scene-model-grasp-lift-release.md#모델-비교-보고서)
+
+| Rerun | W&B |
+| --- | --- |
+| [![Rerun에서 재생한 실물 관측](docs/assets/arm-rerun.png)](docs/assets/arm-rerun.png) | [![W&B 보고서의 닫기 횟수별 턱 사이 간격과 영상 목표](docs/assets/arm-wandb.png)](docs/assets/arm-wandb.png) |
+
+Rerun 장면은 어깨 UP 명령(50%, 500ms)에서 예측한 상승량 17px와 관측한 물체 상승량 21px를 보여준다. 별도 집게 실험의 W&B 보고서에서는 CLOSE 3회 동안 턱 사이 간격이 137.24px에서 49.70px로 줄었다. 그래프의 목표선은 35px다.
 
 ## 장치 없이 시작하기
 

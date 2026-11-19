@@ -36,6 +36,8 @@ docker compose -f tools/visualization/compose.yaml up -d
 
 ## 외형과 보기용 자세
 
+공개 이미지의 [RViz](assets/arm-rviz.png)는 현재 URDF를 띄운 화면이고, [Gazebo](assets/arm-gazebo.png)는 그 형상에서 생성한 SDF의 뷰포트다. [MuJoCo](assets/arm-mujoco.png)는 같은 URDF에서 만든 MJCF를 사진 기반 표시 자세로 렌더링했다. 세 장면은 각 도구에서 선택한 시점과 표시 자세를 사용한다.
+
 기본 화면은 OWI-535 사진·조립도를 참고해 직접 작성한 외형 근사다. 노랑·검정 베이스 층판, 평행 링크, 관절 케이스, 실제 손목 힌지와 구분한 M2 모터 케이스, 양쪽 집게, 흰 카메라 지지대를 같은 URDF의 여러 visual로 표현한다. 제조사 CAD나 정밀 스캔은 아니며, 케이스 지름·두께·나사·카메라 장착 치수는 외형 추정이다. 실측한 관절 중심 간 치수와 구분한다.
 
 베이스 옆에 떠 있던 카메라 상자, 편심 0을 나타내던 얇은 파란 원판은 제거했다. 카메라 외형은 집게 몸체에 연결했지만 외부 좌표 보정을 뜻하지 않는다. 기존 `camera_link`는 호환용 미보정 프레임으로 남고 외형은 그리지 않는다. RViz 좌표축은 기본으로 숨기며 필요할 때 Displays의 TF를 켠다.

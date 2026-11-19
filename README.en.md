@@ -44,7 +44,17 @@ Each experiment measures a different quantity. Joint sensor angles, image-space 
 
 Measured dimensions define a common arm geometry for checking FK, IK and URDF coordinates. **RViz** displays links and coordinate frames, and **Gazebo and MuJoCo** display simulated poses using that geometry. In two physical demonstrations, registration used the first frame of each. On eight other frames, mean image-space error was **1.56 px at the elbow, 4.72 px at the wrist and 46.58 px at the jaw tip**. These are 2D projection errors. Physical dynamics, contact calibration and policy transfer from simulation remain open. [Kinematic measurements (Korean)](docs/arm-calibration.md)
 
+| RViz | Gazebo | MuJoCo |
+| --- | --- | --- |
+| [![Current OWI-535 link model in RViz](docs/assets/arm-rviz.png)](docs/assets/arm-rviz.png) | [![OWI-535 arm in the Gazebo scene](docs/assets/arm-gazebo.png)](docs/assets/arm-gazebo.png) | [![MuJoCo rendering of the OWI-535 model](docs/assets/arm-mujoco.png)](docs/assets/arm-mujoco.png) |
+
 **Rerun** replays both camera views alongside predictions and measurements. A separate read-only view displays the latest frames from both cameras and the M4 sensor reading. **W&B** compares frozen models with baselines, preserving failures and evaluation counts so that readers can see which conditions benefited from a model change. [Live preview (Korean)](docs/live-observation.md) · [Tool setup (Korean)](docs/robot-visualization.md) · [Experiment record with the public W&B report (Korean)](docs/evidence/2026-11-15-prepared-scene-model-grasp-lift-release.md#모델-비교-보고서)
+
+| Rerun | W&B |
+| --- | --- |
+| [![Recorded physical observations in Rerun](docs/assets/arm-rerun.png)](docs/assets/arm-rerun.png) | [![W&B chart of observed jaw gap against the image target after successive closes](docs/assets/arm-wandb.png)](docs/assets/arm-wandb.png) |
+
+In this Rerun replay, the predicted rise was 17 px and the observed rise was 21 px for a shoulder UP command (50%, 500 ms). The W&B report shows a separate gripper experiment. Across three CLOSE commands, the observed jaw gap fell from 137.24 px to 49.70 px against a 35 px image target.
 
 ## Getting started without hardware
 

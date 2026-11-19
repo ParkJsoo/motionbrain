@@ -39,13 +39,21 @@ For M3 and M4, I collected new actions after freezing the models and measured pr
 
 I checked physical progress independently of prediction error. One UP command selected by a separate M3 development model reached the boundary of the image-space tolerance. The first model-selected M1 closure reduced the jaw gap from 126.677 px to 113.767 px, short of its 85.3 px goal. After realignment, a later model-selected closure was followed by a **manual** shoulder lift. [New-view M3 test (Korean)](docs/evidence/2026-11-13-bounded-m3-approach.md) · [M1 closure and manual lift (Korean)](docs/evidence/2026-11-13-model-selected-m1-close.md) · [Earlier lift candidate failures (Korean)](docs/m4-up-commissioning.md)
 
+| Rerun | W&B |
+| --- | --- |
+| [![Recorded physical observations in Rerun](docs/assets/arm-rerun.png)](docs/assets/arm-rerun.png) | [![W&B chart of observed jaw gap against the image target after successive closes](docs/assets/arm-wandb.png)](docs/assets/arm-wandb.png) |
+
+In this Rerun replay, the predicted rise was 17 px and the observed rise was 21 px for a shoulder UP command (50%, 500 ms). The W&B report shows a separate gripper experiment. Across three CLOSE commands, the observed jaw gap fell from 137.24 px to 49.70 px against a 35 px image target.
+
 ## Kinematics and simulation | How closely does the model match the arm?
 
 I recorded link dimensions and uncertainties from measurements, assembly drawings and photographs in a common geometry file, then compared FK, IK and whole-arm and M4-only URDF coordinates. The last measured M4 angle can be applied to a virtual pose, with assumed values on the other four axes. A roughly 3° residual in the stationary photograph was retained. [Shared geometry](ros2_ws/src/motionbrain_ros_bridge/motionbrain_ros_bridge/arm_geometry.json) · [Dimensions and calibration conditions (Korean)](docs/arm-calibration.md)
 
-![Arm links and coordinate axes from the early URDF in RViz](docs/assets/motionbrain-rviz-robotmodel.png)
+| RViz | Gazebo | MuJoCo |
+| --- | --- | --- |
+| [![Current OWI-535 link model in RViz](docs/assets/arm-rviz.png)](docs/assets/arm-rviz.png) | [![OWI-535 arm in the Gazebo scene](docs/assets/arm-gazebo.png)](docs/assets/arm-gazebo.png) | [![MuJoCo rendering of the OWI-535 model](docs/assets/arm-mujoco.png)](docs/assets/arm-mujoco.png) |
 
-*RViz rendering of the early URDF model.*
+The yellow base plates, black links, jaw assembly and white camera mount follow the physical OWI-535. Link dimensions come from the shared geometry model. The rendered pose is for display.
 
 I also measured endpoints in physical recordings. After registration on the first frame of each of two demonstrations, the motion-only prediction on eight additional frames had mean image errors of **1.56 px** at the elbow, **4.72 px** at the wrist and **46.58 px** at the jaw tip. Opening the jaws changes the silhouette endpoint, so link alignment alone does not determine grasp-point accuracy. [Measurement method and errors (Korean)](docs/arm-calibration.md#시연-영상에서-측정한-2차원-오차)
 

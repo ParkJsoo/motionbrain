@@ -39,13 +39,21 @@ M3와 M4는 모델을 고정한 뒤 새 동작을 수집해 예측 오차를 쟀
 
 예측 오차가 작아도 실제로 달성한 동작은 따로 확인했다. M3의 별도 개발 모델이 선택한 한 번의 UP은 영상상 허용오차 경계에 도달했다. M1의 첫 모델 닫기는 턱 간격을 126.677px에서 113.767px로 줄였지만 목표 85.3px에 못 미쳤다. 재정렬 후에는 모델 폐합과 **수동** 어깨 들기를 연결했다. [M3 새 구도 실측](docs/evidence/2026-11-13-bounded-m3-approach.md) · [M1 폐합·수동 들기](docs/evidence/2026-11-13-model-selected-m1-close.md) · [들기 후보의 이전 실패](docs/m4-up-commissioning.md)
 
+| Rerun | W&B |
+| --- | --- |
+| [![Rerun에서 재생한 실물 관측](docs/assets/arm-rerun.png)](docs/assets/arm-rerun.png) | [![W&B 보고서의 닫기 횟수별 턱 사이 간격과 영상 목표](docs/assets/arm-wandb.png)](docs/assets/arm-wandb.png) |
+
+Rerun 장면은 어깨 UP 명령(50%, 500ms)에서 예측한 상승량 17px와 관측한 물체 상승량 21px를 보여준다. 별도 집게 실험의 W&B 보고서에서는 CLOSE 3회 동안 턱 사이 간격이 137.24px에서 49.70px로 줄었다. 그래프의 목표선은 35px다.
+
 ## 기구학과 시뮬레이션 | 계산상의 팔이 실물과 얼마나 맞는가
 
 실측·조립도·사진에서 얻은 링크 치수와 불확실도를 공통 기하 파일에 기록하고, FK·IK·전체 팔 및 M4 전용 URDF의 좌표를 대조했다. 마지막 실측 M4를 가상 자세에 반영할 수 있지만 다른 네 축은 가정값이다. 정지 사진의 약 3° 잔차는 그대로 보존했다. [공통 기하 원본](ros2_ws/src/motionbrain_ros_bridge/motionbrain_ros_bridge/arm_geometry.json) · [치수와 보정 조건](docs/arm-calibration.md)
 
-![RViz에 표시한 초기 URDF의 팔 링크와 좌표축](docs/assets/motionbrain-rviz-robotmodel.png)
+| RViz | Gazebo | MuJoCo |
+| --- | --- | --- |
+| [![RViz에 표시한 현재 OWI-535 링크 모델](docs/assets/arm-rviz.png)](docs/assets/arm-rviz.png) | [![Gazebo 장면에 놓인 OWI-535 팔](docs/assets/arm-gazebo.png)](docs/assets/arm-gazebo.png) | [![MuJoCo로 렌더링한 OWI-535 모델](docs/assets/arm-mujoco.png)](docs/assets/arm-mujoco.png) |
 
-*초기 URDF를 RViz에 표시한 화면.*
+실물 OWI-535의 노란 베이스 층판, 검은 링크, 집게와 흰 카메라 지지대를 모델에 반영했다. 링크 치수는 공통 기하 모델에서 가져왔고, 화면의 관절 자세는 표시용이다.
 
 실물에서도 끝점을 확인했다. 두 시연의 첫 프레임으로 각각 등록한 뒤 나머지 여덟 프레임에서 운동 변화만 반영한 예측의 평균 영상 오차는 팔꿈치 **1.56px**, 손목 **4.72px**, 턱끝 **46.58px**였다. 턱이 열리면서 실루엣 끝이 달라지므로 링크의 정합만으로 파지점 정확도를 설명할 수 없다. [측정 방법·오차](docs/arm-calibration.md#시연-영상에서-측정한-2차원-오차)
 
