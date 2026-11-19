@@ -1,6 +1,6 @@
 # MotionBrain
 
-[English](README.en.md) · [포트폴리오](PORTFOLIO.md) · [빌드·운영](OPERATIONS.md) · [문서·실험 색인](docs/README.md)
+[English](README.en.md) · [포트폴리오](PORTFOLIO.md) · [실물 시험 영상 · 35.5초](docs/assets/whole-arm-cycle.mp4) · [빌드·운영](OPERATIONS.md) · [문서·실험 색인](docs/README.md)
 
 **실물 로봇팔이 자기 행동의 결과를 학습하고, 그 예측으로 목표에 다가가게 하는 개인 피지컬 AI 프로젝트다.** 현재 팔과 물체의 모습에서 가능한 관절 명령들의 결과를 예측하고, 목표에 더 가까워질 동작을 고른다. 한 동작이 끝나면 실제로 무엇이 움직였는지 다시 관측해 다음 선택을 보정한다.
 
@@ -59,6 +59,14 @@ Rerun 장면은 어깨 UP 명령(50%, 500ms)에서 예측한 상승량 17px와 �
 ## 장치 없이 시작하기
 
 호스트 검사에는 Python 3.12, NumPy, OpenCV, Node.js와 C++ 컴파일러가 필요하다. 선택적 PyTorch 검사는 설치된 의존성에 따라 건너뛴다. 펌웨어 빌드에는 PlatformIO를 사용한다.
+
+합성 영상으로 집게 해제 시점을 검사해 볼 수 있다. 아래 테스트는 턱이 충분히 벌어졌는지, 물체가 탁상 기준 위치에 있는지, 두 카메라 모두 출력 확인 뒤의 새 관측을 제공했는지 확인한다.
+
+```sh
+python3 -m unittest discover -s tests -p 'test_whole_arm_release.py'
+```
+
+전체 호스트 검사와 펌웨어 빌드는 다음 명령으로 실행한다.
 
 ```sh
 python3 -m unittest discover -s tests

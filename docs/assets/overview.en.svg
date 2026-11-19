@@ -46,7 +46,7 @@
 <text x="778" y="525" font-size="20" font-weight="650" fill="#edf4ff" >Observe and evaluate</text>
 <text x="779" y="547" font-size="14" font-weight="400" fill="#a4b6cf" >Compare predictions with measurements; retain failures</text>
 <rect x="711" y="584" width="687" height="51" rx="12" fill="#29271f" stroke="#5b5132"/>
-<text x="1054" y="615" font-size="15" font-weight="600" fill="#e5c978" text-anchor="middle">Single-joint trials · continuous whole-arm grasping in progress</text>
+<text x="1054" y="615" font-size="15" font-weight="600" fill="#e5c978" text-anchor="middle">Approach through retreat observed on hardware · repeatability untested</text>
 <text x="45" y="686" font-size="19" font-weight="650" fill="#edf4ff" >Five perspectives on robot models and experiment results</text>
 <rect x="44" y="705" width="252" height="61" rx="12" fill="#132139" stroke="#31425d"/>
 <text x="60" y="731" font-size="18" font-weight="700" fill="#e9f3ff" >RViz</text>

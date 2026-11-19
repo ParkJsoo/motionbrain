@@ -1,6 +1,6 @@
 # MotionBrain
 
-[한국어](README.md) · [Portfolio](PORTFOLIO.en.md) · [Build and operations](OPERATIONS.en.md) · [Documentation and experiments (Korean)](docs/README.md)
+[한국어](README.md) · [Portfolio](PORTFOLIO.en.md) · [Physical trial video · 35.5 s](docs/assets/whole-arm-cycle.mp4) · [Build and operations](OPERATIONS.en.md) · [Documentation and experiments (Korean)](docs/README.md)
 
 **MotionBrain is a personal physical AI project that aims to teach a real arm what its actions do and use those predictions to reach a goal.** Given an image of the arm and object, the model predicts the effects of candidate joint commands. The controller can then choose a move that brings the arm closer to its target, observe what actually moved, and adjust its next choice.
 
@@ -59,6 +59,14 @@ In this Rerun replay, the predicted rise was 17 px and the observed rise was 21 
 ## Getting started without hardware
 
 Host tests use Python 3.12, NumPy, OpenCV, Node.js and a C++ compiler. Optional PyTorch tests may be skipped depending on installed dependencies. Firmware builds use PlatformIO.
+
+Try the gripper release check with synthetic observations. The test checks whether the jaws have opened far enough, whether the object is at the table reference position, and whether both camera observations are fresh and follow confirmed motor output.
+
+```sh
+python3 -m unittest discover -s tests -p 'test_whole_arm_release.py'
+```
+
+To run the full host test suite and build both firmware targets, use the following commands.
 
 ```sh
 python3 -m unittest discover -s tests

@@ -46,7 +46,7 @@
 <text x="778" y="525" font-size="20" font-weight="650" fill="#edf4ff" >재관측·평가</text>
 <text x="779" y="547" font-size="14" font-weight="400" fill="#a4b6cf" >예측과 실측을 대조하고 실패도 보존</text>
 <rect x="711" y="584" width="687" height="51" rx="12" fill="#29271f" stroke="#5b5132"/>
-<text x="1054" y="615" font-size="15" font-weight="600" fill="#e5c978" text-anchor="middle">관절별 단발 검증 · 전체 팔 연속 집기는 개발 중</text>
+<text x="1054" y="615" font-size="15" font-weight="600" fill="#e5c978" text-anchor="middle">실물에서 접근부터 후퇴까지 관측 · 반복성 미검증</text>
 <text x="45" y="686" font-size="19" font-weight="650" fill="#edf4ff" >로봇 모델과 실험 결과를 다섯 관점에서 확인</text>
 <rect x="44" y="705" width="252" height="61" rx="12" fill="#132139" stroke="#31425d"/>
 <text x="60" y="731" font-size="18" font-weight="700" fill="#e9f3ff" >RViz</text>
