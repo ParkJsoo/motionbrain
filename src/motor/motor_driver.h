@@ -156,6 +156,9 @@ public:
    */
 #if MOTIONBRAIN_ENABLE_WHOLE_ARM_POLICY
   bool beginPolicyOutput(uint8_t motorId, int16_t pwm);
+#if MOTIONBRAIN_ENABLE_ELBOW_WAVE
+  bool writePolicyElbowStep(int16_t pwm);
+#endif
   bool writePolicyCorrection(int16_t pwm);
   bool endPolicyOutput(uint8_t motorId);
   uint8_t pwmChannel(uint8_t motorId) const { return PWM_CHANNELS[motorId-1]; }

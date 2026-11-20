@@ -13,6 +13,10 @@
 #define MOTIONBRAIN_ENABLE_POSE_GRASP 0
 #endif
 
+#ifndef MOTIONBRAIN_ENABLE_ELBOW_WAVE
+#define MOTIONBRAIN_ENABLE_ELBOW_WAVE 0
+#endif
+
 namespace whole_arm {
 constexpr uint32_t ELBOW_DOWN_MS=350;
 constexpr uint32_t ELBOW_DOWN_CUTOFF_MS=365;
@@ -37,6 +41,10 @@ public:
   virtual bool start(Phase phase) = 0;
   virtual uint32_t correctionStartedAt() const = 0;
   virtual bool correctionStep(uint8_t index) = 0;
+#if MOTIONBRAIN_ENABLE_ELBOW_WAVE
+  enum class WaveTick { Running, ZeroDue, Fault };
+  virtual WaveTick serviceElbowWave() = 0;
+#endif
   virtual void stop(Phase phase) = 0;
   virtual void faultStop(Phase phase) { stop(phase); }
 };

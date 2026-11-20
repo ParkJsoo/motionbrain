@@ -1007,6 +1007,19 @@ bool MotorControl::writePolicyCorrection(int16_t pwm) {
   return true;
 }
 
+#if MOTIONBRAIN_ENABLE_ELBOW_WAVE
+bool MotorControl::writePolicyElbowStep(int16_t pwm) {
+  if (pwm<10 || pwm>50 || pwm%10 || getDefaultSpeed()!=100 || m4GoalOwned_
+      || m4_goal::activeWindow() || !checkSafety("whole arm elbow wave")) return false;
+  const auto i=motorIdToIndex(MOTOR_3);
+  if (pwm==10 && (hasPendingOutput() || isEnabled())) return false;
+  if (currentSpeed_[i]+10!=pwm || !setMotorSpeedInternal(MOTOR_3,pwm)) return false;
+  targetSpeed_[i]=pwm;
+  ++controlEpoch_[i];
+  return true;
+}
+#endif
+
 bool MotorControl::endPolicyOutput(uint8_t motorId) {
   // A normal model STOP is explicitly recorded as a zero driver write. Faults
   // use hardStop() and retain the distinct forced_off record.

@@ -33,6 +33,8 @@ static_assert(!MOTIONBRAIN_ENABLE_BOUNDED_APPROACH || MOTIONBRAIN_ENABLE_ELBOW_D
               "bounded approach requires the motor-3 output profile");
 static_assert(!MOTIONBRAIN_ENABLE_POSE_GRASP || MOTIONBRAIN_ENABLE_BOUNDED_APPROACH,
               "pose grasp requires the bounded approach journal");
+static_assert(!MOTIONBRAIN_ENABLE_ELBOW_WAVE || MOTIONBRAIN_ENABLE_POSE_GRASP,
+              "the elbow waveform requires pose preparation budgets");
 namespace {
 constexpr const char* NAMES[]={"approach","close","held_lift","lower","release","retreat","lower_correction"
 #if MOTIONBRAIN_ENABLE_ELBOW_DOWN_ONCE
@@ -50,6 +52,13 @@ constexpr const char* NAMES[]={"approach","close","held_lift","lower","release",
 // the HTTP state, motor bookkeeping nor its non-thread-safe output journal.
 // The main loop reconciles the latched fault with hardStop/forced_off.
 constexpr int64_t CUTOFF_PERIOD_US=5000;
+#if MOTIONBRAIN_ENABLE_ELBOW_WAVE
+// The first edge is relative to admission. The others are relative to the
+// measured first LEDC write, as in the successful device output journal.
+constexpr whole_arm::CorrectionStep ELBOW_WAVE[]={{50,10},{56,20},{117,30},{178,40},{228,50},{300,0}};
+constexpr size_t ELBOW_EDGES=sizeof(ELBOW_WAVE)/sizeof(ELBOW_WAVE[0]);
+constexpr int64_t ELBOW_LATE_US=10000;
+#endif
 struct Cutoff {
   SemaphoreHandle_t mutex=nullptr;
   esp_timer_handle_t timer=nullptr;
@@ -63,14 +72,33 @@ struct Cutoff {
   int64_t correctionOriginUs=0;
   uint32_t correctionOriginMs=0;
   bool awaitingFirstCorrectionWrite=false;
+#if MOTIONBRAIN_ENABLE_ELBOW_WAVE
+  bool elbowWave=false;
+  size_t elbowEdge=0;
+#endif
 } cutoff;
 
+void tripLocked() {
+  ledcWrite(cutoff.channel,0);
+  if (cutoff.timedStep && !cutoff.zeroUs) cutoff.zeroUs=esp_timer_get_time();
+  cutoff.tripped=true;
+}
+
+#if MOTIONBRAIN_ENABLE_ELBOW_WAVE
+int64_t elbowDueLocked() {
+  return (cutoff.elbowEdge ? cutoff.firstWriteUs : cutoff.admissionUs)
+      + 1000LL*ELBOW_WAVE[cutoff.elbowEdge].atMs;
+}
+void armElbowDeadlineLocked() {
+  const int64_t edgeLimit=elbowDueLocked()+ELBOW_LATE_US;
+  const int64_t hardLimit=cutoff.admissionUs+1000LL*whole_arm::ELBOW_DOWN_CUTOFF_MS-CUTOFF_PERIOD_US;
+  cutoff.phase=edgeLimit<hardLimit ? edgeLimit:hardLimit;
+}
+#endif
 void expireLocked(int64_t t) {
   if (cutoff.motor && !cutoff.tripped &&
       (t>=cutoff.lease || t>=cutoff.phase || t>=cutoff.sensor)) {
-    ledcWrite(cutoff.channel,0);
-    if (cutoff.timedStep && !cutoff.zeroUs) cutoff.zeroUs=esp_timer_get_time();
-    cutoff.tripped=true;
+    tripLocked();
   }
 }
 void timerTick(void*) {
@@ -160,14 +188,45 @@ public:
     if (whole_arm::isApproachStep(p) || p==Phase::PoseClose) cutoff.phase-=CUTOFF_PERIOD_US;
     cutoff.awaitingFirstCorrectionWrite=(p==Phase::LowerCorrection);
     if (cutoff.awaitingFirstCorrectionWrite) cutoff.phase=t+1000LL*whole_arm::CORRECTION_LATE_MS;
+#if MOTIONBRAIN_ENABLE_ELBOW_WAVE
+    cutoff.elbowWave=p==Phase::ElbowDown350;
+    cutoff.elbowEdge=0;
+    if (cutoff.elbowWave) armElbowDeadlineLocked();
+#endif
     cutoff.sensor=sensorDeadline(t);
     xSemaphoreGive(cutoff.mutex);
+#if MOTIONBRAIN_ENABLE_ELBOW_WAVE
+    if (p==Phase::ElbowDown350) {
+      // Leave the ordinary ramp idle. The first explicit driver write also
+      // rechecks exclusivity, system state and the M3 driver's error latch.
+      systemState.resetTimeout();
+      remember();
+      return true;
+    }
+#endif
     bool ok=p==Phase::LowerCorrection ? motorControl.writePolicyCorrection(whole_arm::correctionWave[0].pwm)
                                       : motorControl.beginPolicyOutput(motor,pwm);
     if (ok && p==Phase::LowerCorrection) systemState.resetTimeout();
     remember();
     return ok;
   }
+#if MOTIONBRAIN_ENABLE_ELBOW_WAVE
+  WaveTick serviceElbowWave() override {
+    xSemaphoreTake(cutoff.mutex,portMAX_DELAY);
+    const int64_t t=esp_timer_get_time();
+    expireLocked(t);
+    const bool valid=cutoff.elbowWave && !cutoff.tripped && cutoff.elbowEdge<ELBOW_EDGES;
+    const bool due=valid && t>=elbowDueLocked();
+    const int16_t pwm=due ? ELBOW_WAVE[cutoff.elbowEdge].pwm:0;
+    xSemaphoreGive(cutoff.mutex);
+    if (!valid) return WaveTick::Fault;
+    if (!due) return WaveTick::Running;
+    if (!pwm) return WaveTick::ZeroDue;
+    if (!motorControl.writePolicyElbowStep(pwm)) return WaveTick::Fault;
+    remember();
+    return WaveTick::Running;
+  }
+#endif
   bool correctionStep(uint8_t i) override {
     if (!shoulderAngleController.manualDirectionAllowed(false)
         || !motorControl.writePolicyCorrection(whole_arm::correctionWave[i].pwm)) return false;
@@ -193,6 +252,9 @@ public:
       normalStopFailed |= !cutoff.firstWriteUs || !cutoff.zeroUs
         || cutoff.zeroUs <= cutoff.firstWriteUs
         || cutoff.zeroUs-cutoff.admissionUs >= 1000LL*phaseCapMs(p);
+#if MOTIONBRAIN_ENABLE_ELBOW_WAVE
+      if (cutoff.elbowWave) normalStopFailed |= cutoff.tripped || cutoff.elbowEdge!=ELBOW_EDGES;
+#endif
       if (whole_arm::isApproachStep(p) || p==Phase::PoseClose) {
         if (whole_arm::isApproachStep(p))
           normalStopFailed |= cutoff.zeroUs-cutoff.admissionUs < 1000LL*(whole_arm::stepDurationMs(p)-1);
@@ -243,14 +305,30 @@ bool validDigest(const char* digest) {
 bool writePwm(uint8_t motor,uint8_t channel,int16_t pwm) {
   if (!cutoff.mutex) { ledcWrite(channel,abs(pwm)); return true; }
   xSemaphoreTake(cutoff.mutex,portMAX_DELAY);
-  expireLocked(esp_timer_get_time());
+  const int64_t now=esp_timer_get_time();
+  expireLocked(now);
   bool ok=!pwm || !cutoff.motor || (cutoff.motor==motor && !cutoff.tripped &&
       (cutoff.pwm>0 ? (pwm>0 && pwm<=cutoff.pwm) : (pwm<0 && pwm>=cutoff.pwm)));
+#if MOTIONBRAIN_ENABLE_ELBOW_WAVE
+  const bool wave=cutoff.motor==motor && cutoff.elbowWave;
+  if (wave && (cutoff.tripped || cutoff.elbowEdge>=ELBOW_EDGES ||
+      pwm!=ELBOW_WAVE[cutoff.elbowEdge].pwm || now<elbowDueLocked())) {
+    if (!cutoff.tripped) tripLocked();
+    ok=false;
+  }
+#endif
   if (ok) {
     ledcWrite(channel,abs(pwm));
     if (cutoff.timedStep && cutoff.motor && cutoff.motor==motor) {
-      if (pwm && !cutoff.firstWriteUs) cutoff.firstWriteUs=esp_timer_get_time();
-      if (!pwm && !cutoff.zeroUs) cutoff.zeroUs=esp_timer_get_time();
+      const int64_t written=esp_timer_get_time();
+      if (pwm && !cutoff.firstWriteUs) cutoff.firstWriteUs=written;
+      if (!pwm && !cutoff.zeroUs) cutoff.zeroUs=written;
+#if MOTIONBRAIN_ENABLE_ELBOW_WAVE
+      if (wave) {
+        expireLocked(written);
+        if (!cutoff.tripped && ++cutoff.elbowEdge<ELBOW_EDGES) armElbowDeadlineLocked();
+      }
+#endif
     }
     if (cutoff.awaitingFirstCorrectionWrite && motor==4 && pwm==-10) {
       // Anchor the entire waveform to the confirmed first HAL write. Setup
@@ -367,6 +445,9 @@ void status(String& s,bool includePreparedNonce) {
   s+="\",\"seq\":";s+=controller.seq();s+=",\"active\":";s+=controller.active()?"true":"false";
   s+=",\"failed\":";s+=(controller.failed()||hardware.normalStopFailed)?"true":"false";
   s+=",\"controlGeneration\":";s+=generation();
+#if MOTIONBRAIN_ENABLE_ELBOW_WAVE
+  s+=",\"elbowDownWaveProfile\":\"m3-50-300ms-ledger-v1\"";
+#endif
 #if MOTIONBRAIN_ENABLE_ELBOW_DOWN_ONCE
   s+=",\"elbowDownOnceProfile\":\"m3-down-50-350ms-v1\"";
   if (controller.phase()==Phase::ElbowDownOnce && cutoff.mutex) {

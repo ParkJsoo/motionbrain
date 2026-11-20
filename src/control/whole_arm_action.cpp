@@ -87,6 +87,13 @@ void Controller::tick() {
   if (!validInputs(s,phase_)) fail("angle_limit");
   else if (t-started_>=phaseCapMs(phase_)) fail("phase_timeout");
   else if (t-renewed_>=750) fail("lease_expired");
+#if MOTIONBRAIN_ENABLE_ELBOW_WAVE
+  else if (phase_==Phase::ElbowDown350) {
+    const auto result=port_.serviceElbowWave();
+    if (result==Port::WaveTick::ZeroDue) finish();
+    else if (result==Port::WaveTick::Fault) fail("elbow_wave_failed");
+  }
+#endif
   else if (stepDurationMs(phase_) && t-started_>=stepDurationMs(phase_)) finish();
   else if (phase_==Phase::LowerCorrection) {
     const auto& step=correctionWave[nextCorrectionStep_];

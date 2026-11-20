@@ -557,9 +557,79 @@ static void poseWorkflow(const char* mode) {
   shoulderAngleSensor.angle=208.01f;WholeArmService::update();assert(duty[3]==0);
 }
 
+static void elbowWave(const char* mode) {
+  assert(motorControl.init());
+  String state;
+  WholeArmService::status(state);
+  assert(bool(strstr(state.c_str(),"\"elbowDownWaveProfile\":\"m3-50-300ms-ledger-v1\""))
+         ==bool(MOTIONBRAIN_ENABLE_ELBOW_WAVE));
+  if (!strcmp(mode,"wave-disabled")) return;
+  systemState.state=SystemState::ARMED;
+  shoulderAngleSensor.angle=220.f;
+  shoulderAngleSensor.sample=clockMs;
+  const unsigned admitted=clockMs;
+  const auto cursor=outputCursor();
+  assert(stepStart(Phase::ElbowDown350,1,cursor));
+  const auto& log=motorControl.outputLog();
+  const auto before=log.count();
+  auto tick=[&](unsigned at) {
+    clockMs=at;shoulderAngleSensor.sample=clockMs;
+    WholeArmService::update();motorControl.update();
+  };
+  tick(admitted+49);
+  assert(log.count()==before && !duty[2]);
+  const bool normal=!strcmp(mode,"wave-normal") || !strcmp(mode,"wave-jitter");
+  const unsigned first=admitted+(!strcmp(mode,"wave-jitter") ? 54:50);
+  if (!strcmp(mode,"wave-late-first")) firstPinDelayMs=10;
+  tick(first);
+  if (strcmp(mode,"wave-late-first")) {
+    assert(duty[2]==10 && log.count()==before+1);
+    if (!strcmp(mode,"wave-stall")) {
+      clockMs=first+65;timer.callback(nullptr);assert(duty[2]==10);
+      clockMs+=5;timer.callback(nullptr);assert(!duty[2]);
+      assert(!WholeArmService::writePwm(3,2,20));
+    } else if (!strcmp(mode,"wave-early")) {
+      assert(!WholeArmService::writePwm(3,2,20));
+    } else if (!strcmp(mode,"wave-abort")) {
+      assert(WholeArmService::beforeLegacy(CommandType::STOP));
+    } else if (!strcmp(mode,"wave-angle")) {
+      shoulderAngleSensor.angle=224.1f;
+    } else {
+      const unsigned offsets[]={56,117,178,228,300};
+      for (unsigned i=0;i<5;++i) {
+        const bool late=(!strcmp(mode,"wave-late-edge") && i==1)
+                     || (!strcmp(mode,"wave-late-zero") && i==4);
+        if (late) firstPinDelayMs=10;
+        const unsigned jitter=!strcmp(mode,"wave-jitter") ? (4-i):0;
+        tick(first+offsets[i]+jitter);
+        if (late) break;
+        const auto* event=log.at(before+i+1);
+        assert(event && event->atMs==first+offsets[i]+jitter && event->motor==3
+               && event->pwm==(i<4 ? int((i+2)*10):0)
+               && event->reason==bounded::OutputReason::DriverWrite);
+      }
+    }
+  }
+  tick(clockMs);
+  for (auto value : duty) assert(value==0);
+  assert(!motorControl.hasPendingOutput() && !motorControl.isEnabled());
+  WholeArmService::status(state);
+  if (normal) {
+    assert(log.count()==before+6 && strstr(state.c_str(),"\"reason\":\"stopped\""));
+    assert(strstr(state.c_str(),"\"stepZeroSequence\":"));
+    assert(!stepStart(Phase::ElbowDown350,1,cursor));
+    runStep(Phase::ElbowDown350,2);
+  } else {
+    assert(strstr(state.c_str(),"\"failed\":true") && !strstr(state.c_str(),"\"stepZeroSequence\":"));
+    assert(log.at(log.count()-1)->reason==bounded::OutputReason::ForcedOff);
+    assert(!stepStart(Phase::ElbowDown350,2,outputCursor()));
+  }
+}
+
 int main(int argc, char** argv) {
   assert(argc == 2 || (argc==8 && !strcmp(argv[1],"correction-trace")));
   if (!strcmp(argv[1],"stalled")) stalledLoop();
+  else if (!strncmp(argv[1],"wave-",5)) elbowWave(argv[1]);
   else if (!strncmp(argv[1],"pose-",5)) poseWorkflow(argv[1]);
   else if (!strncmp(argv[1],"steps-",6)) approachSteps(argv[1]);
   else if (!strncmp(argv[1],"elbow-",6)) elbowOnce(argv[1]);

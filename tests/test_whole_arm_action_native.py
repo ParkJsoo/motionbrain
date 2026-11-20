@@ -50,6 +50,20 @@ class WholeArmActionTests(unittest.TestCase):
         subprocess.run([command[0], "-DMOTIONBRAIN_ENABLE_ELBOW_DOWN_ONCE=1",
                         "-DMOTIONBRAIN_ENABLE_BOUNDED_APPROACH=1", "-DMOTIONBRAIN_ENABLE_POSE_GRASP=1",
                         *command[1:-1], str(cls.pose_service)], check=True, timeout=60)
+        cls.wave_service = Path(cls.tmp.name) / "pose_elbow_wave"
+        subprocess.run([command[0], "-DMOTIONBRAIN_ENABLE_ELBOW_DOWN_ONCE=1",
+                        "-DMOTIONBRAIN_ENABLE_BOUNDED_APPROACH=1", "-DMOTIONBRAIN_ENABLE_POSE_GRASP=1",
+                        "-DMOTIONBRAIN_ENABLE_ELBOW_WAVE=1", *command[1:-1], str(cls.wave_service)],
+                       check=True, timeout=60)
+
+    def test_elbow_wave(self):
+        for binary in (self.service, self.elbow_service, self.step_service, self.pose_service):
+            subprocess.run([str(binary), "wave-disabled"], check=True, timeout=5)
+        for case in ("wave-normal", "wave-jitter", "wave-early", "wave-late-first", "wave-late-edge",
+                     "wave-late-zero", "wave-stall", "wave-angle", "wave-abort", "pose-chain",
+                     "pose-budgets", "pose-long-step", "elbow-normal"):
+            with self.subTest(case=case):
+                subprocess.run([str(self.wave_service), case], check=True, timeout=5)
 
     def test_pose_grasp(self):
         for binary in (self.service,self.elbow_service,self.step_service):
