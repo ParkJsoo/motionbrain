@@ -448,6 +448,9 @@ void MotorControl::emergencyStop() {
  * 모터 활성화 여부 확인
  */
 bool MotorControl::isEnabled(uint8_t motorId) const {
+#if MOTIONBRAIN_ENABLE_ELBOW_TIMER
+  WholeArmService::syncTimedOutputs();
+#endif
   if (!isValidMotorId(motorId)) {
     return false;
   }
@@ -466,6 +469,9 @@ bool MotorControl::isEnabled(uint8_t motorId) const {
  * 모든 모터 활성화 여부 확인 (하나라도 활성화되어 있으면 true)
  */
 bool MotorControl::isEnabled() const {
+#if MOTIONBRAIN_ENABLE_ELBOW_TIMER
+  WholeArmService::syncTimedOutputs();
+#endif
   // ARMED 상태가 아니면 항상 false
   SystemState currentState = getCurrentState();
   if (currentState != SystemState::ARMED) {
@@ -484,6 +490,9 @@ bool MotorControl::isEnabled() const {
  * 현재 모터 속도 가져오기
  */
 int16_t MotorControl::getSpeed(uint8_t motorId) const {
+#if MOTIONBRAIN_ENABLE_ELBOW_TIMER
+  WholeArmService::syncTimedOutputs();
+#endif
   if (!isValidMotorId(motorId)) {
     return 0;
   }
@@ -492,11 +501,21 @@ int16_t MotorControl::getSpeed(uint8_t motorId) const {
 }
 
 bool MotorControl::hasPendingOutput() const {
+#if MOTIONBRAIN_ENABLE_ELBOW_TIMER
+  WholeArmService::syncTimedOutputs();
+#endif
   for (uint8_t i = 0; i < NUM_MOTORS; i++) {
     if (currentSpeed_[i] != 0 || targetSpeed_[i] != 0) return true;
   }
   return false;
 }
+
+#if MOTIONBRAIN_ENABLE_ELBOW_TIMER
+const bounded::AppliedOutputLog& MotorControl::outputLog() const {
+  WholeArmService::syncTimedOutputs();
+  return outputLog_;
+}
+#endif
 
 uint32_t MotorControl::recordActualWrite(uint8_t motorId, int16_t pwm,
                                         bounded::OutputReason reason, uint32_t ordinal) {
@@ -771,6 +790,9 @@ uint8_t MotorControl::indexToMotorId(uint8_t index) const {
  * 개별 모터 제어 (내부 헬퍼)
  */
 bool MotorControl::setMotorSpeedInternal(uint8_t motorId, int16_t speed) {
+#if MOTIONBRAIN_ENABLE_ELBOW_TIMER
+  if (WholeArmService::cancelTimedOutput(motorId==MOTOR_4)) return false;
+#endif
 #if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
   if (finiteLease_ != 0) {
     if (speed != 0 || !isValidMotorId(motorId)) return false;
@@ -870,6 +892,9 @@ bool MotorControl::setMotorSpeedInternal(uint8_t motorId, int16_t speed) {
  * 개별 모터 출력을 즉시 차단
  */
 void MotorControl::forceMotorOutputOff(uint8_t motorId) {
+#if MOTIONBRAIN_ENABLE_ELBOW_TIMER
+  WholeArmService::cancelTimedOutput();
+#endif
   uint8_t index = motorIdToIndex(motorId);
 
   ++controlEpoch_[index];
@@ -1017,6 +1042,30 @@ bool MotorControl::writePolicyElbowStep(int16_t pwm) {
   targetSpeed_[i]=pwm;
   ++controlEpoch_[i];
   return true;
+}
+#endif
+
+#if MOTIONBRAIN_ENABLE_ELBOW_TIMER
+bool MotorControl::prepareTimedElbow() {
+  if (getDefaultSpeed()!=100 || hasPendingOutput() || isEnabled() || m4GoalOwned_ || m4_goal::activeWindow()
+      || driverError_[getDriverId(MOTOR_3)] || !checkSafety("timed elbow")) return false;
+  // Current duty is zero; establish direction once before handing PWM to the timer.
+  digitalWrite(PIN_AIN1_2,HIGH);
+  digitalWrite(PIN_AIN2_2,LOW);
+  ++controlEpoch_[motorIdToIndex(MOTOR_3)];
+  return true;
+}
+void MotorControl::clearTimedPins(uint8_t motor) {
+  const bool elbow=motor==MOTOR_3;
+  digitalWrite(elbow ? PIN_AIN1_2:PIN_BIN1_2,LOW);
+  digitalWrite(elbow ? PIN_AIN2_2:PIN_BIN2_2,LOW);
+}
+void MotorControl::publishTimedWrite(uint8_t motor,uint32_t at,int16_t pwm,bounded::OutputReason reason) {
+  const auto i=motorIdToIndex(motor);
+  outputLog_.append(at,actionOrdinal_,motor,pwm,reason);
+  currentSpeed_[i]=pwm;
+  if (motor!=MOTOR_4 || !pwm) targetSpeed_[i]=pwm;
+  enabled_[i]=pwm!=0;
 }
 #endif
 

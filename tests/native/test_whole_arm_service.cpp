@@ -29,10 +29,13 @@ namespace M4GoalService { bool owns() { return false; } }
 
 static unsigned clockMs = 100;
 static unsigned duty[5]{};
+static unsigned halWrites=0;
 static FakeTimer timer{};
 static bool locked = false;
 static int expireOnRead = 0;
 static unsigned firstPinDelayMs = 0;
+static unsigned preemptPwmAtMs = 0, callbackMs = 0;
+static bool preemptAfterUnlock = false;
 
 uint32_t millis() { return clockMs; }
 int64_t esp_timer_get_time() {
@@ -41,7 +44,14 @@ int64_t esp_timer_get_time() {
 }
 SemaphoreHandle_t xSemaphoreCreateMutex() { return &locked; }
 void xSemaphoreTake(SemaphoreHandle_t mutex, int) { assert(!*mutex); *mutex=true; }
-void xSemaphoreGive(SemaphoreHandle_t mutex) { assert(*mutex); *mutex=false; }
+void xSemaphoreGive(SemaphoreHandle_t mutex) {
+  assert(*mutex); *mutex=false;
+  if (preemptAfterUnlock) {
+    preemptAfterUnlock=false;
+    clockMs=callbackMs;timer.callback(nullptr);
+    clockMs+=2;
+  }
+}
 int esp_timer_create(const esp_timer_create_args_t* args, esp_timer_handle_t* handle) {
   timer.callback=args->callback; *handle=&timer; return 0;
 }
@@ -51,7 +61,12 @@ void pinMode(uint8_t, uint8_t) {}
 void digitalWrite(uint8_t, uint8_t) { clockMs+=firstPinDelayMs; firstPinDelayMs=0; }
 void ledcSetup(uint8_t, uint32_t, uint8_t) {}
 void ledcAttachPin(uint8_t, uint8_t) {}
-void ledcWrite(uint8_t channel, uint32_t value) { assert(channel<5 && value<=70); duty[channel]=value; }
+void ledcWrite(uint8_t channel, uint32_t value) {
+  assert(channel<5 && value<=70);++halWrites;duty[channel]=value;
+  if (preemptPwmAtMs && clockMs==preemptPwmAtMs && channel==3 && value==70) {
+    preemptPwmAtMs=0;preemptAfterUnlock=true;
+  }
+}
 
 using whole_arm::Op;
 using whole_arm::Phase;
@@ -61,9 +76,18 @@ static bool apply(Op op, unsigned seq) {
   return WholeArmService::apply({op,Phase::Approach,TRIAL,seq}, WholeArmService::generation(), BOOT);
 }
 
+static void testSetState(SystemState state) {
+#if MOTIONBRAIN_ENABLE_ELBOW_TIMER
+  if (systemState.getState()==SystemState::BOOT) assert(systemState.transitionTo(SystemState::IDLE));
+  assert(systemState.transitionTo(state));
+#else
+  systemState.state=state;
+#endif
+}
+
 static void begin() {
   assert(motorControl.init());
-  systemState.state=SystemState::ARMED;
+  testSetState(SystemState::ARMED);
   shoulderAngleSensor.sample=clockMs; shoulderAngleSensor.angle=220.f;
   assert(apply(Op::Start,1));
   clockMs+=50; shoulderAngleSensor.sample=clockMs;
@@ -112,7 +136,7 @@ static void stopRace() {
 
 static void staleInitialStart() {
   assert(motorControl.init());
-  systemState.state=SystemState::ARMED;
+  testSetState(SystemState::ARMED);
   shoulderAngleSensor.sample=clockMs;
   shoulderAngleSensor.angle=220.f;
   const uint32_t initialGeneration=WholeArmService::generation();
@@ -131,7 +155,7 @@ static bool phaseRequest(Op op, Phase phase, unsigned seq) {
 
 static void finishLower() {
   assert(motorControl.init());
-  systemState.state=SystemState::ARMED;
+  testSetState(SystemState::ARMED);
   shoulderAngleSensor.angle=190.f;
   Phase parsed;
   assert(WholeArmService::parsePhase("lower_correction",parsed) && parsed==Phase::LowerCorrection);
@@ -223,7 +247,7 @@ static void correction(const char* mode, char** wire) {
 
 static void elbowOnce(const char* mode) {
   assert(motorControl.init());
-  systemState.state=SystemState::ARMED;
+  testSetState(SystemState::ARMED);
   shoulderAngleSensor.sample=clockMs;
   Phase parsed;
   const bool supported=WholeArmService::parsePhase("elbow_down_once",parsed);
@@ -317,7 +341,7 @@ static void runStep(Phase phase,unsigned seq) {
 
 static void approachSteps(const char* mode) {
   assert(motorControl.init());
-  systemState.state=SystemState::ARMED;
+  testSetState(SystemState::ARMED);
   shoulderAngleSensor.sample=clockMs;
   shoulderAngleSensor.angle=220.f;
   Phase parsed;
@@ -391,7 +415,7 @@ static void approachSteps(const char* mode) {
 
 static void poseWorkflow(const char* mode) {
   assert(motorControl.init());
-  systemState.state=SystemState::ARMED;
+  testSetState(SystemState::ARMED);
   shoulderAngleSensor.sample=clockMs;
   shoulderAngleSensor.angle=220.f;
   const auto generation=WholeArmService::generation();
@@ -564,7 +588,7 @@ static void elbowWave(const char* mode) {
   assert(bool(strstr(state.c_str(),"\"elbowDownWaveProfile\":\"m3-50-300ms-ledger-v1\""))
          ==bool(MOTIONBRAIN_ENABLE_ELBOW_WAVE));
   if (!strcmp(mode,"wave-disabled")) return;
-  systemState.state=SystemState::ARMED;
+  testSetState(SystemState::ARMED);
   shoulderAngleSensor.angle=220.f;
   shoulderAngleSensor.sample=clockMs;
   const unsigned admitted=clockMs;
@@ -626,9 +650,108 @@ static void elbowWave(const char* mode) {
   }
 }
 
+#if MOTIONBRAIN_ENABLE_ELBOW_TIMER
+static void timerElbow(const char* mode) {
+  assert(motorControl.init());
+  const uint32_t cursor=outputCursor(),gen=WholeArmService::generation();
+  shoulderAngleSensor.sample=clockMs;shoulderAngleSensor.angle=220.f;
+  testSetState(SystemState::ARMED);
+  assert(!stepStart(Phase::ElbowDown350,1,cursor));
+  const bool low=!strcmp(mode,"timer-shadow-215");
+  if (low) shoulderAngleSensor.angle=215.f;
+  const char* probeId="cccccccccccccccccccccccccccccccc";
+  whole_arm::Request probe{Op::Start,Phase::ElbowDown350,probeId,1};
+  assert(!WholeArmService::startElbowTimingProbe(probe,gen,BOOT,cursor));
+  testSetState(SystemState::IDLE);
+  assert(!WholeArmService::startElbowTimingProbe(probe,gen,BOOT,cursor+1));
+  auto start=clockMs;
+  const auto writes=halWrites;
+  assert(WholeArmService::startElbowTimingProbe(probe,gen,BOOT,cursor));
+  assert(!WholeArmService::startElbowTimingProbe(probe,gen,BOOT,cursor));
+  const bool shadowStall=!strcmp(mode,"timer-shadow-stall");
+  for (unsigned t=1;t<=390;t++) {
+    clockMs=start+t;
+    if (t%5==3) timer.callback(nullptr);
+    if (t%13==0 && (t<90 || t>135) && (!shadowStall || t<53)) {
+      shoulderAngleSensor.sample=clockMs;WholeArmService::update();
+    }
+  }
+  shoulderAngleSensor.sample=clockMs;WholeArmService::update();
+  assert(halWrites==writes && outputCursor()==cursor);
+  String state;WholeArmService::status(state);
+  if (shadowStall) {
+    assert(strstr(state.c_str(),"\"status\":\"failed\""));
+    testSetState(SystemState::ARMED);
+    assert(!stepStart(Phase::ElbowDown350,1,cursor));
+    return;
+  }
+  assert(strstr(state.c_str(),"\"status\":\"passed\""));
+  assert(strstr(state.c_str(),"\"offsetsUs\":[53000,113000,173000,233000,283000,353000]"));
+  testSetState(SystemState::ARMED);
+  if (low) {
+    assert(!stepStart(Phase::ElbowDown350,1,cursor) && outputCursor()==cursor && halWrites==writes);
+    assert(stepStart(Phase::ShoulderDown420,1,cursor));
+    return;
+  }
+  assert(!WholeArmService::apply(probe,gen,BOOT,&cursor));
+  assert(stepStart(Phase::ElbowDown350,1,cursor));
+  start=clockMs;
+  const bool ok=!strcmp(mode,"timer-normal");
+  const bool abort=!strcmp(mode,"timer-stop");
+  const bool safety=!strcmp(mode,"timer-safety");
+  const bool noMain=!strcmp(mode,"timer-no-main");
+  const bool timerLate=!strcmp(mode,"timer-late");
+  for (unsigned t=1;t<=395;t++) {
+    clockMs=start+t;
+    if (t%5==3 && !(timerLate && t>103 && t<123)) timer.callback(nullptr);
+    if (t==55) { assert(duty[2]==10);assert(motorControl.getSpeed(3)==10); }
+    if (abort && t==86) motorControl.emergencyStop();
+    if (!strcmp(mode,"timer-direct-disarm") && t==86) {
+      assert(duty[2]==10 && systemState.disarm());
+      assert(!duty[2] && systemState.arm());
+    }
+    if (safety && t==88) { shoulderAngleSensor.angle=224.1f;WholeArmService::update(); }
+    if (t==118 && ok) assert(duty[2]==20); // main loop unavailable across the second edge
+    if (t%13==0 && (t<90 || t>135) && t<340 && (!noMain || t<53)) {
+      shoulderAngleSensor.sample=clockMs;WholeArmService::update();motorControl.update();
+    }
+    if (t==358) assert(!duty[2]);
+  }
+  shoulderAngleSensor.sample=clockMs;WholeArmService::update();
+  WholeArmService::status(state);
+  const auto& log=motorControl.outputLog();
+  for (auto value : duty) assert(!value);
+  if (ok) {
+    assert(strstr(state.c_str(),"\"reason\":\"stopped\"") && outputCursor()==cursor+6);
+    const unsigned offsets[]={53,113,173,233,283,353};
+    for (unsigned i=0;i<6;i++) {
+      const auto* e=log.at(log.count()-6+i);
+      assert(e->atMs==start+offsets[i] && e->motor==3 && e->pwm==(i==5 ? 0:int(10*(i+1))));
+      assert(e->reason==bounded::OutputReason::DriverWrite);
+    }
+    assert(!stepStart(Phase::ElbowDown350,1,outputCursor()));
+    runStep(Phase::ShoulderDown420,2);
+  } else {
+    assert(strstr(state.c_str(),"\"failed\":true") && !strstr(state.c_str(),"\"stepZeroSequence\":"));
+    assert(!stepStart(Phase::ElbowDown350,2,outputCursor()));
+    const auto* firstOff=log.at(cursor+1);
+    assert(firstOff && firstOff->motor==3 && firstOff->pwm==0 && firstOff->reason==bounded::OutputReason::ForcedOff);
+    assert(firstOff->atMs<=start+123);
+  }
+}
+#endif
+
+#if MOTIONBRAIN_ENABLE_ELBOW_TIMER
+#include "shoulder_timer_cases.h"
+#endif
+
 int main(int argc, char** argv) {
   assert(argc == 2 || (argc==8 && !strcmp(argv[1],"correction-trace")));
   if (!strcmp(argv[1],"stalled")) stalledLoop();
+#if MOTIONBRAIN_ENABLE_ELBOW_TIMER
+  else if (!strncmp(argv[1],"shoulder-timer-",15)) shoulderTimer(argv[1]);
+  else if (!strncmp(argv[1],"timer-",6)) timerElbow(argv[1]);
+#endif
   else if (!strncmp(argv[1],"wave-",5)) elbowWave(argv[1]);
   else if (!strncmp(argv[1],"pose-",5)) poseWorkflow(argv[1]);
   else if (!strncmp(argv[1],"steps-",6)) approachSteps(argv[1]);

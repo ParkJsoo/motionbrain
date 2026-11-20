@@ -18,6 +18,11 @@ bool apply(const whole_arm::Request&,uint32_t expectedGeneration,const char* exp
 void update();
 void status(String&,bool includePreparedNonce=false);
 bool parsePhase(const char*,whole_arm::Phase&);
+#if MOTIONBRAIN_ENABLE_ELBOW_TIMER
+bool startElbowTimingProbe(const whole_arm::Request&,uint32_t generation,const char* boot,uint32_t cursor);
+void syncTimedOutputs();
+bool cancelTimedOutput(bool allowShoulderRamp=false);
+#endif
 // All ordinary PWM ramp writes pass through this guard while the experimental
 // build is running. The independent timer can force the owned PWM channel low.
 bool writePwm(uint8_t motor,uint8_t channel,int16_t signedPwm);

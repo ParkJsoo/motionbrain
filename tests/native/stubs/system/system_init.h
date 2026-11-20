@@ -1,4 +1,7 @@
 #pragma once
+#if defined(MOTIONBRAIN_ENABLE_ELBOW_TIMER) && MOTIONBRAIN_ENABLE_ELBOW_TIMER
+#include_next "system/system_init.h"
+#else
 enum class SystemState { BOOT, IDLE, ARMED, FAULT };
 class SystemStateManager {
 public:
@@ -8,3 +11,4 @@ public:
   const char* getStateString() const { return "fake-state"; }
   void resetTimeout() { ++resets; }
 };
+#endif

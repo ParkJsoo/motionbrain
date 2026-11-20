@@ -55,6 +55,23 @@ class WholeArmActionTests(unittest.TestCase):
                         "-DMOTIONBRAIN_ENABLE_BOUNDED_APPROACH=1", "-DMOTIONBRAIN_ENABLE_POSE_GRASP=1",
                         "-DMOTIONBRAIN_ENABLE_ELBOW_WAVE=1", *command[1:-1], str(cls.wave_service)],
                        check=True, timeout=60)
+        cls.timer_service = Path(cls.tmp.name) / "elbow_timer"
+        subprocess.run([command[0], "-DMOTIONBRAIN_ENABLE_ELBOW_DOWN_ONCE=1",
+                        "-DMOTIONBRAIN_ENABLE_BOUNDED_APPROACH=1", "-DMOTIONBRAIN_ENABLE_POSE_GRASP=1",
+                        "-DMOTIONBRAIN_ENABLE_ELBOW_WAVE=1", "-DMOTIONBRAIN_ENABLE_ELBOW_TIMER=1",
+                        str(ROOT / "src/system/system_init.cpp"), *command[1:-1], str(cls.timer_service)], check=True, timeout=60)
+
+    def test_shoulder_timer(self):
+        for case in ("300", "420", "650", "recorded", "stale", "missed", "angle", "stop",
+                     "stop-after-zero", "handoff-race"):
+            with self.subTest(case=case):
+                subprocess.run([str(self.timer_service), "shoulder-timer-"+case], check=True, timeout=5)
+
+    def test_timer_wave(self):
+        for case in ("timer-normal", "timer-shadow-stall", "timer-no-main",
+                     "timer-safety", "timer-late", "timer-stop", "timer-direct-disarm", "timer-shadow-215"):
+            with self.subTest(case=case):
+                subprocess.run([str(self.timer_service),case],check=True,timeout=5)
 
     def test_elbow_wave(self):
         for binary in (self.service, self.elbow_service, self.step_service, self.pose_service):

@@ -16,6 +16,9 @@
 #ifndef MOTIONBRAIN_ENABLE_ELBOW_WAVE
 #define MOTIONBRAIN_ENABLE_ELBOW_WAVE 0
 #endif
+#ifndef MOTIONBRAIN_ENABLE_ELBOW_TIMER
+#define MOTIONBRAIN_ENABLE_ELBOW_TIMER 0
+#endif
 
 namespace whole_arm {
 constexpr uint32_t ELBOW_DOWN_MS=350;
@@ -44,6 +47,9 @@ public:
 #if MOTIONBRAIN_ENABLE_ELBOW_WAVE
   enum class WaveTick { Running, ZeroDue, Fault };
   virtual WaveTick serviceElbowWave() = 0;
+#endif
+#if MOTIONBRAIN_ENABLE_ELBOW_TIMER
+  virtual bool shoulderZeroWritten() const = 0;
 #endif
   virtual void stop(Phase phase) = 0;
   virtual void faultStop(Phase phase) { stop(phase); }

@@ -159,6 +159,11 @@ public:
 #if MOTIONBRAIN_ENABLE_ELBOW_WAVE
   bool writePolicyElbowStep(int16_t pwm);
 #endif
+#if MOTIONBRAIN_ENABLE_ELBOW_TIMER
+  bool prepareTimedElbow();
+  void publishTimedWrite(uint8_t motor,uint32_t writtenAt,int16_t pwm,bounded::OutputReason reason);
+  void clearTimedPins(uint8_t motor);
+#endif
   bool writePolicyCorrection(int16_t pwm);
   bool endPolicyOutput(uint8_t motorId);
   uint8_t pwmChannel(uint8_t motorId) const { return PWM_CHANNELS[motorId-1]; }
@@ -211,7 +216,11 @@ public:
 #endif
     actionOrdinal_ = ordinal;
   }
+#if MOTIONBRAIN_ENABLE_ELBOW_TIMER
+  const bounded::AppliedOutputLog& outputLog() const;
+#else
   const bounded::AppliedOutputLog& outputLog() const { return outputLog_; }
+#endif
   bool hasPendingOutput() const;
   bool beginM4Goal(int16_t pwm);
   void endM4Goal();

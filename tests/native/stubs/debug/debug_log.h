@@ -7,4 +7,6 @@ public:
   static void error(const char*, ...) {}
   static void motor(const char*, ...) {}
   static void safety(const char*, ...) {}
+  static void command(const char*, ...) {}
+  static void stateChange(const char*, ...) {}
 };

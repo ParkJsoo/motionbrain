@@ -2590,9 +2590,10 @@ void MotionBrainWebServer::handleWholeArmAction() {
     const bool hasCursor=server_.hasArg("afterOutputSequence");
     const String op=server_.arg("op");
     const bool preparing=op=="prepare_pose_close" && server_.arg("phase")=="pose_close";
+    const bool probing=MOTIONBRAIN_ENABLE_ELBOW_TIMER && op=="probe_elbow_timing" && server_.arg("phase")=="elbow_down_350";
     const bool startingPose=op=="start" && server_.arg("phase")=="pose_close";
     const auto expectedFields=6+int(hasCursor)+(preparing ? 1 : startingPose ? 3 : 0);
-    if (server_.args()!=expectedFields || ((preparing || startingPose) && (!hasCursor || !server_.hasArg("poseScope"))) ||
+    if (server_.args()!=expectedFields || (probing && !hasCursor) || ((preparing || startingPose) && (!hasCursor || !server_.hasArg("poseScope"))) ||
         (startingPose && (!server_.hasArg("poseObservationNonce") || !server_.hasArg("posePairSha256"))) ||
         !server_.hasArg("controlGeneration") || !server_.hasArg("op") || !server_.hasArg("phase")
         || !server_.hasArg("bootId") || !server_.hasArg("trialId") || !server_.hasArg("seq")) {
@@ -2603,7 +2604,7 @@ void MotionBrainWebServer::handleWholeArmAction() {
     }
     whole_arm::Request r{};
     const String trial=server_.arg("trialId"),seq=server_.arg("seq");
-    if(op=="start" || preparing) r.op=whole_arm::Op::Start;
+    if(op=="start" || preparing || probing) r.op=whole_arm::Op::Start;
     else if(op=="keep") r.op=whole_arm::Op::Keep;
     else if(op=="stop") r.op=whole_arm::Op::Stop;
     else { sendErrorJson(400,"whole_arm_op");return; }
@@ -2625,6 +2626,13 @@ void MotionBrainWebServer::handleWholeArmAction() {
       }
     }
     const String boot=server_.arg("bootId");
+#if MOTIONBRAIN_ENABLE_ELBOW_TIMER
+    if (probing) {
+      if (!WholeArmService::startElbowTimingProbe(r,generation,boot.c_str(),cursor)) {
+        sendErrorJson(409,"whole_arm_timing_probe_rejected");return;
+      }
+    } else
+#endif
     if (preparing) {
       prepared=WholeArmService::preparePoseClose(r,generation,boot.c_str(),cursor,server_.arg("poseScope").c_str());
       if (!prepared) { sendErrorJson(409,"whole_arm_pose_observation_rejected");return; }

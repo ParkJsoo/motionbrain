@@ -1,5 +1,9 @@
 #include "system_init.h"
 #include "debug/debug_log.h"
+#if defined(MOTIONBRAIN_ENABLE_ELBOW_TIMER) && MOTIONBRAIN_ENABLE_ELBOW_TIMER
+#include "control/whole_arm_service.h"
+extern SystemStateManager systemState;
+#endif
 #if defined(MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER) && MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
 #include "motor/motor_driver.h"
 extern MotorControl motorControl;
@@ -68,6 +72,11 @@ bool SystemStateManager::transitionTo(SystemState newState) {
   
   // 3. 상태 전환 실행
   SystemState oldState = currentState_;  // 로그용으로 이전 상태 저장
+#if defined(MOTIONBRAIN_ENABLE_ELBOW_TIMER) && MOTIONBRAIN_ENABLE_ELBOW_TIMER
+  // Revoke the timer task's permission before the observable state changes.
+  // This also invalidates a running non-powered IDLE timing probe on ARM.
+  if (this==&systemState) WholeArmService::cancelTimedOutput();
+#endif
 #if defined(MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER) && MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
   // The driver consults this production singleton. Invalidate synchronously,
   // before the state/log/timeout changes, so DISARM->ARM between ticks cannot

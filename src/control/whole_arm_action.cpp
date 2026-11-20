@@ -85,13 +85,20 @@ void Controller::tick() {
   }
   const auto t=port_.now();
   if (!validInputs(s,phase_)) fail("angle_limit");
-  else if (t-started_>=phaseCapMs(phase_)) fail("phase_timeout");
+  else if (t-started_>=phaseCapMs(phase_) &&
+           !(MOTIONBRAIN_ENABLE_ELBOW_TIMER && (phase_==Phase::ElbowDown350 ||
+             (isApproachStep(phase_) && phaseMotor(phase_)==4)))) fail("phase_timeout");
   else if (t-renewed_>=750) fail("lease_expired");
 #if MOTIONBRAIN_ENABLE_ELBOW_WAVE
   else if (phase_==Phase::ElbowDown350) {
     const auto result=port_.serviceElbowWave();
     if (result==Port::WaveTick::ZeroDue) finish();
     else if (result==Port::WaveTick::Fault) fail("elbow_wave_failed");
+  }
+#endif
+#if MOTIONBRAIN_ENABLE_ELBOW_TIMER
+  else if (isApproachStep(phase_) && phaseMotor(phase_)==4) {
+    if (port_.shoulderZeroWritten()) finish();
   }
 #endif
   else if (stepDurationMs(phase_) && t-started_>=stepDurationMs(phase_)) finish();
