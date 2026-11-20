@@ -301,7 +301,7 @@ static void runStep(Phase phase,unsigned seq) {
     if (e->sequence==outputCursor()) assert(e->pwm==0);
     else { ++powers;assert(e->pwm==powers*10*sign); }
   }
-  assert(powers==(phase==Phase::ShoulderDown420 ? 7:5));
+  assert(powers==((phase==Phase::ShoulderDown420 || phase==Phase::ShoulderDown650) ? 7:5));
   assert(WholeArmService::generation()==generation && WholeArmService::owns());
   assert(!motorControl.hasPendingOutput() && !motorControl.isEnabled());
   for (auto value : duty) assert(value==0);
@@ -389,9 +389,178 @@ static void approachSteps(const char* mode) {
   assert(duty[3]==10 && phaseRequest(Op::Stop,Phase::Lift,8));
 }
 
+static void poseWorkflow(const char* mode) {
+  assert(motorControl.init());
+  systemState.state=SystemState::ARMED;
+  shoulderAngleSensor.sample=clockMs;
+  shoulderAngleSensor.angle=220.f;
+  const auto generation=WholeArmService::generation();
+  const char* scope="two-view-open-grasp-v1";
+  const char* digest="dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+  Phase parsed;
+  assert(WholeArmService::parsePhase("wrist_up_420",parsed)==bool(MOTIONBRAIN_ENABLE_POSE_GRASP));
+  assert(WholeArmService::parsePhase("pose_close",parsed)==bool(MOTIONBRAIN_ENABLE_POSE_GRASP));
+  assert(WholeArmService::parsePhase("shoulder_down_650",parsed)==bool(MOTIONBRAIN_ENABLE_POSE_GRASP));
+  if (!MOTIONBRAIN_ENABLE_POSE_GRASP) {
+    assert(!stepStart(Phase::WristUp420,1,outputCursor()));
+    assert(!stepStart(Phase::PoseClose,1,outputCursor()));
+    assert(!stepStart(Phase::ShoulderDown650,1,outputCursor()));
+    return;
+  }
+  assert(whole_arm::phaseMotor(Phase::WristUp420)==2 && whole_arm::phasePwm(Phase::WristUp420)==50);
+  assert(whole_arm::phaseMotor(Phase::PoseClose)==1 && whole_arm::phasePwm(Phase::PoseClose)==-70);
+  if (!strcmp(mode,"pose-long-step")) {
+    shoulderAngleSensor.angle=208.99f;
+    assert(!stepStart(Phase::ShoulderDown650,1,outputCursor()));
+    shoulderAngleSensor.angle=224.01f;
+    assert(!stepStart(Phase::ShoulderDown650,1,outputCursor()));
+    shoulderAngleSensor.angle=209.f;
+    for (unsigned seq=1;seq<=10;seq++) runStep(Phase::ShoulderDown650,seq);
+    assert(!stepStart(Phase::ShoulderDown420,11,outputCursor()));
+    runStep(Phase::ShoulderDown300,11);
+    assert(!stepStart(Phase::ShoulderDown300,12,outputCursor()));
+    return;
+  }
+  if (!strcmp(mode,"pose-long-stall") || !strcmp(mode,"pose-long-angle")) {
+    assert(stepStart(Phase::ShoulderDown650,1,outputCursor()));
+    for(unsigned i=0;i<12;i++) {
+      clockMs+=50;shoulderAngleSensor.sample=clockMs;WholeArmService::update();motorControl.update();
+    }
+    assert(duty[3]==70);
+    if (!strcmp(mode,"pose-long-angle")) {
+      shoulderAngleSensor.angle=208.9f;WholeArmService::update();
+    } else {
+      clockMs+=62;timer.callback(nullptr);
+      assert(!WholeArmService::writePwm(4,3,-70));WholeArmService::update();
+    }
+    assert(duty[3]==0 && !motorControl.hasPendingOutput());
+    assert(!stepStart(Phase::ShoulderDown300,2,outputCursor()));
+    return;
+  }
+  if (!strcmp(mode,"pose-budgets")) {
+    unsigned seq=0;
+    for(unsigned i=0;i<16;i++) runStep(Phase::ElbowDown350,++seq);
+    assert(!stepStart(Phase::ElbowDown350,seq+1,outputCursor()));
+    for(unsigned i=0;i<4;i++) runStep(Phase::WristUp420,++seq);
+    assert(!stepStart(Phase::WristUp420,seq+1,outputCursor())); // combined: 8015
+    for(unsigned i=0;i<16;i++) runStep(Phase::ShoulderDown420,++seq);
+    assert(!stepStart(Phase::ShoulderDown300,seq+1,outputCursor()));
+    return;
+  }
+  if (!strcmp(mode,"pose-wrist-budget")) {
+    unsigned seq=0;
+    for(unsigned i=0;i<5;i++) runStep(Phase::WristUp420,++seq);
+    assert(!stepStart(Phase::WristUp420,seq+1,outputCursor())); // 2610 exceeds 2600
+    runStep(Phase::ElbowDown350,++seq);
+    return;
+  }
+  if (!strcmp(mode,"pose-wrist-stall")) {
+    assert(stepStart(Phase::WristUp420,1,outputCursor()));
+    for(unsigned i=0;i<8;i++) {
+      clockMs+=50;shoulderAngleSensor.sample=clockMs;WholeArmService::update();motorControl.update();
+    }
+    assert(duty[1]==50);
+    clockMs+=32;timer.callback(nullptr);
+    assert(duty[1]==0 && !WholeArmService::writePwm(2,1,50));WholeArmService::update();
+    assert(!stepStart(Phase::ElbowDown350,2,outputCursor()));
+    return;
+  }
+  shoulderAngleSensor.angle=218.99f;
+  assert(!stepStart(Phase::WristUp420,1,outputCursor()));
+  shoulderAngleSensor.angle=224.01f;
+  assert(!stepStart(Phase::WristUp420,1,outputCursor()));
+  shoulderAngleSensor.angle=224.f;
+  runStep(Phase::WristUp420,1);
+  runStep(Phase::ElbowDown350,2);
+  const whole_arm::Request early{Op::Start,Phase::PoseClose,TRIAL,3};
+  shoulderAngleSensor.angle=205.f;
+  assert(!WholeArmService::preparePoseClose(early,generation,BOOT,outputCursor(),scope));
+  runStep(Phase::ShoulderDown300,3);
+  shoulderAngleSensor.angle=220.f;
+  assert(!stepStart(Phase::ElbowDown350,4,outputCursor()));
+  assert(!stepStart(Phase::WristUp420,4,outputCursor()));
+  const uint32_t off=outputCursor();
+  const whole_arm::Request start{Op::Start,Phase::PoseClose,TRIAL,4};
+  shoulderAngleSensor.angle=194.f;
+  assert(!WholeArmService::preparePoseClose(start,generation,BOOT,off,scope));
+  shoulderAngleSensor.angle=206.01f;
+  assert(!WholeArmService::preparePoseClose(start,generation,BOOT,off,scope));
+  shoulderAngleSensor.angle=206.f;
+  assert(!stepStart(Phase::Close,4,off));
+  assert(!WholeArmService::preparePoseClose(start,generation,BOOT,off+1,scope));
+  assert(!WholeArmService::preparePoseClose(start,generation+1,BOOT,off,scope));
+  assert(!WholeArmService::preparePoseClose(start,generation,BOOT,off,"other"));
+  assert(!stepStart(Phase::PoseClose,4,off));
+  assert(WholeArmService::preparePoseClose(start,generation,BOOT,off,scope));
+  assert(!WholeArmService::preparePoseClose(start,generation,BOOT,off,scope));
+  assert(outputCursor()==off && !motorControl.hasPendingOutput());
+  String state;WholeArmService::status(state);
+  assert(!strstr(state.c_str(),"poseObservationNonce"));
+  WholeArmService::status(state,true);
+  const char* tag="\"poseObservationNonce\":\"";
+  const char* value=strstr(state.c_str(),tag);
+  assert(value);char nonce[33]{};
+  std::memcpy(nonce,value+std::strlen(tag),32);
+  const WholeArmService::PoseObservation good{scope,nonce,digest},wrongNonce{scope,BOOT,digest},
+                                         wrongDigest{scope,nonce,"not_sha256"};
+  assert(!WholeArmService::apply(start,generation,BOOT,&off,&wrongNonce));
+  assert(!WholeArmService::apply(start,generation,BOOT,&off,&wrongDigest));
+  if (!strcmp(mode,"pose-expired")) {
+    clockMs+=4000;shoulderAngleSensor.sample=clockMs;
+    assert(!WholeArmService::apply(start,generation,BOOT,&off,&good));
+    assert(!WholeArmService::preparePoseClose(start,generation,BOOT,off,scope));
+    assert(!motorControl.hasPendingOutput());return;
+  }
+  if (!strcmp(mode,"pose-angle-change")) {
+    shoulderAngleSensor.angle=207.f;
+    assert(!WholeArmService::apply(start,generation,BOOT,&off,&good));
+    shoulderAngleSensor.angle=205.f;
+    assert(!WholeArmService::apply(start,generation,BOOT,&off,&good));
+    assert(!motorControl.hasPendingOutput());return;
+  }
+  assert(WholeArmService::apply(start,generation,BOOT,&off,&good));
+  assert(!WholeArmService::apply(start,generation,BOOT,&off,&good));
+  assert(!phaseRequest(Op::Start,Phase::Lift,5));
+  for(unsigned i=0;i<7;i++) {
+    clockMs+=50;shoulderAngleSensor.sample=clockMs;WholeArmService::update();motorControl.update();
+    assert(duty[0]==10*(i+1));
+  }
+  if (!strcmp(mode,"pose-stall") || !strcmp(mode,"pose-abort")) {
+    if (!strcmp(mode,"pose-stall")) { clockMs+=151;timer.callback(nullptr); }
+    else assert(WholeArmService::beforeLegacy(CommandType::STOP));
+    assert(duty[0]==0);WholeArmService::update();
+    assert(!stepStart(Phase::Lift,5,outputCursor()));return;
+  }
+  if (!strcmp(mode,"pose-close-cap")) {
+    unsigned seq=4;
+    for(unsigned i=1;i<=2600;i++) {
+      ++clockMs;shoulderAngleSensor.sample=clockMs;
+      if(i%300==0) assert(phaseRequest(Op::Keep,Phase::PoseClose,++seq));
+      timer.callback(nullptr);WholeArmService::update();motorControl.update();
+    }
+    assert(duty[0]==70);
+    clockMs+=48;timer.callback(nullptr);WholeArmService::update(); // elapsed 2998
+    assert(duty[0]==0 && !stepStart(Phase::Lift,seq+1,outputCursor()));return;
+  }
+  assert(phaseRequest(Op::Keep,Phase::PoseClose,5));
+  assert(phaseRequest(Op::Stop,Phase::PoseClose,6));
+  WholeArmService::status(state);
+  assert(strstr(state.c_str(),digest) && strstr(state.c_str(),"\"stepZeroWriteOffsetUs\":350000"));
+  assert(strstr(state.c_str(),"\"poseElbowBudgetUsedMs\":365"));
+  assert(strstr(state.c_str(),"\"poseWristBudgetUsedMs\":435"));
+  assert(strstr(state.c_str(),"\"poseShoulderBudgetUsedMs\":315"));
+  assert(!phaseRequest(Op::Start,Phase::Lift,7));
+  assert(!stepStart(Phase::Lift,7,off));
+  assert(stepStart(Phase::Lift,7,outputCursor()));
+  clockMs+=50;shoulderAngleSensor.sample=clockMs;WholeArmService::update();motorControl.update();
+  assert(duty[3]==10);
+  shoulderAngleSensor.angle=208.01f;WholeArmService::update();assert(duty[3]==0);
+}
+
 int main(int argc, char** argv) {
   assert(argc == 2 || (argc==8 && !strcmp(argv[1],"correction-trace")));
   if (!strcmp(argv[1],"stalled")) stalledLoop();
+  else if (!strncmp(argv[1],"pose-",5)) poseWorkflow(argv[1]);
   else if (!strncmp(argv[1],"steps-",6)) approachSteps(argv[1]);
   else if (!strncmp(argv[1],"elbow-",6)) elbowOnce(argv[1]);
   else if (!strcmp(argv[1],"preempt")) preempt();

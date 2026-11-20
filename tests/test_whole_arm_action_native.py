@@ -46,6 +46,20 @@ class WholeArmActionTests(unittest.TestCase):
                         "-DMOTIONBRAIN_ENABLE_BOUNDED_APPROACH=1", *command[1:-1], str(cls.step_service)],
                        check=True, timeout=60)
 
+        cls.pose_service = Path(cls.tmp.name) / "pose_grasp"
+        subprocess.run([command[0], "-DMOTIONBRAIN_ENABLE_ELBOW_DOWN_ONCE=1",
+                        "-DMOTIONBRAIN_ENABLE_BOUNDED_APPROACH=1", "-DMOTIONBRAIN_ENABLE_POSE_GRASP=1",
+                        *command[1:-1], str(cls.pose_service)], check=True, timeout=60)
+
+    def test_pose_grasp(self):
+        for binary in (self.service,self.elbow_service,self.step_service):
+            subprocess.run([str(binary),"pose-disabled"],check=True,timeout=5)
+        for case in ("pose-chain","pose-stall","pose-abort","pose-expired","pose-angle-change",
+                     "pose-close-cap","pose-wrist-stall","pose-budgets","pose-wrist-budget","pose-long-step",
+                     "pose-long-stall","pose-long-angle","elbow-normal"):
+            with self.subTest(case=case):
+                subprocess.run([str(self.pose_service),case],check=True,timeout=5)
+
     def test_bounded_steps(self):
         for binary in (self.service, self.elbow_service):
             subprocess.run([str(binary), "steps-disabled"], check=True, timeout=5)

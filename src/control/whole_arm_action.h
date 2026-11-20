@@ -9,11 +9,15 @@
 #define MOTIONBRAIN_ENABLE_BOUNDED_APPROACH 0
 #endif
 
+#ifndef MOTIONBRAIN_ENABLE_POSE_GRASP
+#define MOTIONBRAIN_ENABLE_POSE_GRASP 0
+#endif
+
 namespace whole_arm {
 constexpr uint32_t ELBOW_DOWN_MS=350;
 constexpr uint32_t ELBOW_DOWN_CUTOFF_MS=365;
 enum class Phase : uint8_t { Approach, Close, Lift, Lower, Release, Retreat, LowerCorrection, ElbowDownOnce,
-                             ShoulderDown300, ShoulderDown420, ElbowDown350 };
+                             ShoulderDown300, ShoulderDown420, ElbowDown350, WristUp420, PoseClose, ShoulderDown650 };
 bool isApproachStep(Phase);
 uint32_t stepDurationMs(Phase);
 enum class Op : uint8_t { Start, Keep, Stop };
@@ -46,10 +50,17 @@ public:
   bool failed() const { return failed_; }
   bool owns() const { return trial_[0] && !failed_ && !done_; }
   uint32_t seq() const { return seq_; }
+#if MOTIONBRAIN_ENABLE_POSE_GRASP
+  uint32_t elbowBudgetMs() const { return elbowBudgetMs_; }
+  uint32_t wristBudgetMs() const { return wristBudgetMs_; }
+  uint32_t shoulderBudgetMs() const { return approachBudgetMs_; }
+#endif
   Phase phase() const { return phase_; }
   const char* trial() const { return trial_; }
   const char* reason() const { return reason_; }
 private:
+  bool canStartStep(Phase) const;
+  void chargeStep(Phase);
   void fail(const char*);
   bool finish();
   Port& port_;
@@ -57,6 +68,9 @@ private:
   uint32_t seq_=0, started_=0, renewed_=0;
   uint8_t nextCorrectionStep_=0;
   uint32_t approachBudgetMs_=0;
+#if MOTIONBRAIN_ENABLE_POSE_GRASP
+  uint32_t elbowBudgetMs_=0,wristBudgetMs_=0;
+#endif
   Phase phase_=Phase::Approach;
   bool active_=false, failed_=false, done_=false;
   const char* reason_="idle";

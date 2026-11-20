@@ -2,6 +2,9 @@
 #if MOTIONBRAIN_ENABLE_WHOLE_ARM_POLICY
 #include <Arduino.h>
 #include <esp_timer.h>
+#if MOTIONBRAIN_ENABLE_POSE_GRASP
+#include <esp_system.h>
+#endif
 #include <cstring>
 #include "control/angle_controller.h"
 #include "control/bounded_action_service.h"
@@ -28,6 +31,8 @@ namespace WholeArmService {
 using whole_arm::Phase;
 static_assert(!MOTIONBRAIN_ENABLE_BOUNDED_APPROACH || MOTIONBRAIN_ENABLE_ELBOW_DOWN_ONCE,
               "bounded approach requires the motor-3 output profile");
+static_assert(!MOTIONBRAIN_ENABLE_POSE_GRASP || MOTIONBRAIN_ENABLE_BOUNDED_APPROACH,
+              "pose grasp requires the bounded approach journal");
 namespace {
 constexpr const char* NAMES[]={"approach","close","held_lift","lower","release","retreat","lower_correction"
 #if MOTIONBRAIN_ENABLE_ELBOW_DOWN_ONCE
@@ -35,6 +40,9 @@ constexpr const char* NAMES[]={"approach","close","held_lift","lower","release",
 #endif
 #if MOTIONBRAIN_ENABLE_BOUNDED_APPROACH
   ,"shoulder_down_300","shoulder_down_420","elbow_down_350"
+#endif
+#if MOTIONBRAIN_ENABLE_POSE_GRASP
+   ,"wrist_up_420","pose_close","shoulder_down_650"
 #endif
 };
 // Arduino HTTP may block the loop while waiting for a partial request. A
@@ -134,7 +142,7 @@ public:
     if (motor==4 && !shoulderAngleController.manualDirectionAllowed(pwm>0)) return false;
     xSemaphoreTake(cutoff.mutex,portMAX_DELAY);
     auto t=esp_timer_get_time();
-    cutoff.timedStep=whole_arm::stepDurationMs(p)!=0;
+    cutoff.timedStep=whole_arm::stepDurationMs(p)!=0 || p==Phase::PoseClose;
     if (cutoff.timedStep) {
       cutoff.admissionUs=t;
       cutoff.firstWriteUs=0;
@@ -149,7 +157,7 @@ public:
     cutoff.phase=t+1000LL*phaseCapMs(p);
     // Leave a complete polling period before the bounded-step receipt limit.
     // RTOS scheduling latency beyond the polling period remains measurable jitter.
-    if (whole_arm::isApproachStep(p)) cutoff.phase-=CUTOFF_PERIOD_US;
+    if (whole_arm::isApproachStep(p) || p==Phase::PoseClose) cutoff.phase-=CUTOFF_PERIOD_US;
     cutoff.awaitingFirstCorrectionWrite=(p==Phase::LowerCorrection);
     if (cutoff.awaitingFirstCorrectionWrite) cutoff.phase=t+1000LL*whole_arm::CORRECTION_LATE_MS;
     cutoff.sensor=sensorDeadline(t);
@@ -180,13 +188,14 @@ public:
       motorControl.hardStop(phaseMotor(p));
       normalStopFailed=true;
     }
-    if (whole_arm::stepDurationMs(p) && cutoff.mutex) {
+    if (cutoff.timedStep && cutoff.mutex) {
       xSemaphoreTake(cutoff.mutex,portMAX_DELAY);
       normalStopFailed |= !cutoff.firstWriteUs || !cutoff.zeroUs
         || cutoff.zeroUs <= cutoff.firstWriteUs
         || cutoff.zeroUs-cutoff.admissionUs >= 1000LL*phaseCapMs(p);
-      if (whole_arm::isApproachStep(p)) {
-        normalStopFailed |= cutoff.zeroUs-cutoff.admissionUs < 1000LL*(whole_arm::stepDurationMs(p)-1);
+      if (whole_arm::isApproachStep(p) || p==Phase::PoseClose) {
+        if (whole_arm::isApproachStep(p))
+          normalStopFailed |= cutoff.zeroUs-cutoff.admissionUs < 1000LL*(whole_arm::stepDurationMs(p)-1);
         const auto& log=motorControl.outputLog();
         const auto* zero=log.count() ? log.at(log.count()-1) : nullptr;
         normalStopFailed |= !zero || zero->motor!=phaseMotor(p) || zero->pwm!=0
@@ -210,6 +219,25 @@ uint32_t epoch=1;
 bool observed=false;
 uint64_t idleEpochs[5]{};
 void advanceEpoch() { if (epoch<UINT32_MAX) ++epoch; }
+uint32_t outputCursor() {
+  const auto& log=motorControl.outputLog();
+  return log.count() ? log.at(log.count()-1)->sequence : 0;
+}
+#if MOTIONBRAIN_ENABLE_POSE_GRASP
+constexpr const char* POSE_SCOPE="two-view-open-grasp-v1";
+constexpr uint32_t POSE_OBSERVATION_MS=4000;
+struct PoseGate {
+  uint32_t seq=0,generation=0,cursor=0,issuedAt=0;
+  char nonce[33]{},acceptedDigest[65]{};
+  bool consumed=false;
+} pose;
+bool validDigest(const char* digest) {
+  if (!digest || strlen(digest)!=64) return false;
+  for (unsigned i=0;i<64;i++)
+    if (!((digest[i]>='0' && digest[i]<='9') || (digest[i]>='a' && digest[i]<='f'))) return false;
+  return true;
+}
+#endif
 }
 
 bool writePwm(uint8_t motor,uint8_t channel,int16_t pwm) {
@@ -259,22 +287,65 @@ uint32_t generation() {
   }
   return epoch;
 }
+bool preparePoseClose(const whole_arm::Request& req,uint32_t expectedGeneration,const char* boot,
+                      uint32_t cursor,const char* scope) {
+#if MOTIONBRAIN_ENABLE_POSE_GRASP
+  controller.tick();
+  const auto input=hardware.inputs();
+  if (req.op!=whole_arm::Op::Start || req.phase!=Phase::PoseClose || !scope || strcmp(scope,POSE_SCOPE) ||
+      !boot || strcmp(boot,BoundedActions::outputBootId()) || generation()!=expectedGeneration || epoch==UINT32_MAX ||
+      !controller.owns() || controller.active() ||
+      (controller.phase()!=Phase::ShoulderDown300 && controller.phase()!=Phase::ShoulderDown420 &&
+       controller.phase()!=Phase::ShoulderDown650) ||
+      !req.trial || strcmp(req.trial,controller.trial()) || controller.seq()==UINT32_MAX || req.seq!=controller.seq()+1 ||
+      !cutoff.stepZeroSequence || cursor!=cutoff.stepZeroSequence || cursor!=outputCursor() ||
+      !input.ready || !input.allOff || !(input.shoulderDeg>194.f && input.shoulderDeg<=206.f) ||
+      pose.seq==req.seq) return false;
+  pose.seq=req.seq;pose.cursor=cursor;pose.generation=expectedGeneration;
+  pose.issuedAt=millis();pose.consumed=false;
+  static constexpr char hexDigits[]="0123456789abcdef";
+  for (unsigned word=0;word<4;word++) {
+    uint32_t random=esp_random();
+    for (unsigned digit=0;digit<8;digit++,random>>=4)
+      pose.nonce[word*8+digit]=hexDigits[random&15];
+  }
+  return true;
+#else
+  (void)req;(void)expectedGeneration;(void)boot;(void)cursor;(void)scope;
+  return false;
+#endif
+}
 bool apply(const whole_arm::Request& req,uint32_t expectedGeneration,const char* expectedBoot,
-           const uint32_t* afterOutputSequence) {
+           const uint32_t* afterOutputSequence,const PoseObservation* observation) {
   if (!expectedBoot || strcmp(expectedBoot,BoundedActions::outputBootId()) ||
       expectedGeneration!=generation() || epoch==UINT32_MAX) return false;
   const bool needsCursor=req.op==whole_arm::Op::Start &&
       (whole_arm::isApproachStep(req.phase) ||
-       (whole_arm::isApproachStep(controller.phase()) && req.phase==Phase::Close));
+       (whole_arm::isApproachStep(controller.phase()) && (req.phase==Phase::Close || req.phase==Phase::PoseClose)) ||
+       (controller.phase()==Phase::PoseClose && req.phase==Phase::Lift));
   if (needsCursor) {
-    const auto& log=motorControl.outputLog();
-    const uint32_t latest=log.count() ? log.at(log.count()-1)->sequence : 0;
+    const uint32_t latest=outputCursor();
     if (!afterOutputSequence || controller.active() || *afterOutputSequence!=latest ||
-        (whole_arm::isApproachStep(controller.phase()) &&
+        ((whole_arm::isApproachStep(controller.phase()) || controller.phase()==Phase::PoseClose) &&
          (!cutoff.stepZeroSequence || cutoff.stepZeroSequence!=latest))) return false;
   } else if (afterOutputSequence) return false;
+  if (req.op==whole_arm::Op::Start && req.phase==Phase::PoseClose) {
+#if MOTIONBRAIN_ENABLE_POSE_GRASP
+    if (!observation || !afterOutputSequence || !req.trial || strcmp(req.trial,controller.trial()) ||
+        !pose.seq || pose.consumed || pose.seq!=req.seq || pose.generation!=expectedGeneration ||
+        pose.cursor!=*afterOutputSequence || millis()-pose.issuedAt>=POSE_OBSERVATION_MS ||
+        !observation->scope || strcmp(observation->scope,POSE_SCOPE) ||
+        !observation->nonce || strcmp(observation->nonce,pose.nonce) || !validDigest(observation->pairSha256)) return false;
+    pose.consumed=true;
+#else
+    return false;
+#endif
+  } else if (observation) return false;
   bool ok=controller.apply(req);
   if (!ok) return false;
+#if MOTIONBRAIN_ENABLE_POSE_GRASP
+  if (observation) strcpy(pose.acceptedDigest,observation->pairSha256);
+#endif
   if (req.op==whole_arm::Op::Keep && !serviceCutoff(true)) {
     controller.abort();
     return false;
@@ -290,7 +361,7 @@ bool beforeLegacy(CommandType c) {
     default:return !owns();
   }
 }
-void status(String& s) {
+void status(String& s,bool includePreparedNonce) {
   s="{\"bootId\":\"";s+=BoundedActions::outputBootId();s+="\",\"trialId\":\"";
   s+=controller.trial();s+="\",\"phase\":\"";s+=NAMES[static_cast<unsigned>(controller.phase())];
   s+="\",\"seq\":";s+=controller.seq();s+=",\"active\":";s+=controller.active()?"true":"false";
@@ -310,7 +381,7 @@ void status(String& s) {
 #endif
 #if MOTIONBRAIN_ENABLE_BOUNDED_APPROACH
   s+=",\"boundedApproachProfile\":\"off-observe-m4-m3-v1\"";
-  if (whole_arm::isApproachStep(controller.phase()) && cutoff.mutex) {
+  if ((whole_arm::isApproachStep(controller.phase()) || controller.phase()==Phase::PoseClose) && cutoff.mutex) {
     xSemaphoreTake(cutoff.mutex,portMAX_DELAY);
     const auto start=cutoff.admissionUs, first=cutoff.firstWriteUs, end=cutoff.zeroUs;
     xSemaphoreGive(cutoff.mutex);
@@ -318,6 +389,22 @@ void status(String& s) {
     if (start && end) { s+=",\"stepZeroWriteOffsetUs\":";s+=static_cast<uint32_t>(end-start); }
     if (cutoff.stepZeroSequence) { s+=",\"stepZeroSequence\":";s+=cutoff.stepZeroSequence; }
   }
+#endif
+#if MOTIONBRAIN_ENABLE_POSE_GRASP
+  s+=",\"poseGraspProfile\":\"wrist50-pose-close-v1\"";
+  s+=",\"poseElbowBudgetUsedMs\":";s+=controller.elbowBudgetMs();
+  s+=",\"poseWristBudgetUsedMs\":";s+=controller.wristBudgetMs();
+  s+=",\"poseShoulderBudgetUsedMs\":";s+=controller.shoulderBudgetMs();
+  const PoseGate& gate=pose;
+  if (includePreparedNonce && gate.seq && !gate.consumed) {
+    s+=",\"poseObservationNonce\":\"";s+=gate.nonce;s+="\",\"poseScope\":\"";
+    s+=POSE_SCOPE;s+="\",\"poseObservationTtlMs\":";s+=POSE_OBSERVATION_MS;
+  }
+  if (gate.acceptedDigest[0]) {
+    s+=",\"posePairSha256\":\"";s+=gate.acceptedDigest;s+="\",\"poseScope\":\"";s+=POSE_SCOPE;s+="\"";
+  }
+#else
+  (void)includePreparedNonce;
 #endif
   s+=",\"reason\":\"";s+=hardware.normalStopFailed?"stop_fault":controller.reason();s+="\",\"rawPwm\":70,\"correctionProfile\":\"demo6_m4_lower_554ms_v1\"}";
 }

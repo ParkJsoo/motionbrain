@@ -2584,10 +2584,17 @@ void MotionBrainWebServer::handleFiniteProfile() {
 
 #if MOTIONBRAIN_ENABLE_WHOLE_ARM_POLICY
 void MotionBrainWebServer::handleWholeArmAction() {
+  bool prepared=false;
   if (server_.method()==HTTP_POST) {
     if (!requireCommandAuth()) return;
     const bool hasCursor=server_.hasArg("afterOutputSequence");
-    if (server_.args()!=(hasCursor ? 7 : 6) || !server_.hasArg("controlGeneration") || !server_.hasArg("op") || !server_.hasArg("phase")
+    const String op=server_.arg("op");
+    const bool preparing=op=="prepare_pose_close" && server_.arg("phase")=="pose_close";
+    const bool startingPose=op=="start" && server_.arg("phase")=="pose_close";
+    const auto expectedFields=6+int(hasCursor)+(preparing ? 1 : startingPose ? 3 : 0);
+    if (server_.args()!=expectedFields || ((preparing || startingPose) && (!hasCursor || !server_.hasArg("poseScope"))) ||
+        (startingPose && (!server_.hasArg("poseObservationNonce") || !server_.hasArg("posePairSha256"))) ||
+        !server_.hasArg("controlGeneration") || !server_.hasArg("op") || !server_.hasArg("phase")
         || !server_.hasArg("bootId") || !server_.hasArg("trialId") || !server_.hasArg("seq")) {
       sendErrorJson(400,"whole_arm_fields");return;
     }
@@ -2595,8 +2602,8 @@ void MotionBrainWebServer::handleWholeArmAction() {
       sendErrorJson(409,"whole_arm_boot_changed");return;
     }
     whole_arm::Request r{};
-    const String op=server_.arg("op"),trial=server_.arg("trialId"),seq=server_.arg("seq");
-    if(op=="start") r.op=whole_arm::Op::Start;
+    const String trial=server_.arg("trialId"),seq=server_.arg("seq");
+    if(op=="start" || preparing) r.op=whole_arm::Op::Start;
     else if(op=="keep") r.op=whole_arm::Op::Keep;
     else if(op=="stop") r.op=whole_arm::Op::Stop;
     else { sendErrorJson(400,"whole_arm_op");return; }
@@ -2617,11 +2624,21 @@ void MotionBrainWebServer::handleWholeArmAction() {
         sendErrorJson(400,"whole_arm_output_cursor");return;
       }
     }
-    if (!WholeArmService::apply(r,generation,server_.arg("bootId").c_str(),hasCursor ? &cursor : nullptr)) { sendErrorJson(409,"whole_arm_rejected");return; }
+    const String boot=server_.arg("bootId");
+    if (preparing) {
+      prepared=WholeArmService::preparePoseClose(r,generation,boot.c_str(),cursor,server_.arg("poseScope").c_str());
+      if (!prepared) { sendErrorJson(409,"whole_arm_pose_observation_rejected");return; }
+    } else {
+      const String scope=server_.arg("poseScope"),nonce=server_.arg("poseObservationNonce"),digest=server_.arg("posePairSha256");
+      const WholeArmService::PoseObservation observation{scope.c_str(),nonce.c_str(),digest.c_str()};
+      if (!WholeArmService::apply(r,generation,boot.c_str(),hasCursor ? &cursor : nullptr,startingPose ? &observation : nullptr)) {
+        sendErrorJson(409,"whole_arm_rejected");return;
+      }
+    }
   }
   WholeArmService::update();
   String body;
-  WholeArmService::status(body);
+  WholeArmService::status(body,prepared);
   sendNoStoreHeaders(server_);
   server_.send(200,"application/json",body);
 }

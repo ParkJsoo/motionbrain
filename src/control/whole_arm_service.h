@@ -11,10 +11,12 @@ namespace WholeArmService {
 bool owns();
 bool beforeLegacy(CommandType);
 uint32_t generation();
+struct PoseObservation { const char* scope; const char* nonce; const char* pairSha256; };
+bool preparePoseClose(const whole_arm::Request&,uint32_t generation,const char* boot,uint32_t cursor,const char* scope);
 bool apply(const whole_arm::Request&,uint32_t expectedGeneration,const char* expectedBoot,
-           const uint32_t* afterOutputSequence=nullptr);
+           const uint32_t* afterOutputSequence=nullptr,const PoseObservation* observation=nullptr);
 void update();
-void status(String&);
+void status(String&,bool includePreparedNonce=false);
 bool parsePhase(const char*,whole_arm::Phase&);
 // All ordinary PWM ramp writes pass through this guard while the experimental
 // build is running. The independent timer can force the owned PWM channel low.

@@ -9,8 +9,8 @@ const CorrectionStep correctionWave[CORRECTION_STEPS] = {
   {347,-40},{403,-30},{453,-20},{503,-10},{554,0}
 };
 namespace {
-constexpr uint32_t CAPS[] = {7000,4000,10000,4000,3000,14000,554+CORRECTION_LATE_MS,ELBOW_DOWN_CUTOFF_MS,315,435,365};
-constexpr float MAX_ANGLE[] = {224,194,208,208,194,224,194,224,224,224,224};
+constexpr uint32_t CAPS[] = {7000,4000,10000,4000,3000,14000,554+CORRECTION_LATE_MS,ELBOW_DOWN_CUTOFF_MS,315,435,365,435,3000,665};
+constexpr float MAX_ANGLE[] = {224,194,208,208,194,224,194,224,224,224,224,224,206,224};
 bool validTrial(const char* id) {
   if (!id || std::strlen(id)!=32) return false;
   for (unsigned i=0;i<32;i++)
@@ -18,29 +18,55 @@ bool validTrial(const char* id) {
   return true;
 }
 bool validInputs(Inputs s, Phase phase) {
-  return s.ready && std::isfinite(s.shoulderDeg) && s.shoulderDeg>=((phase==Phase::ElbowDownOnce || phase==Phase::ElbowDown350) ? 219.f : 187.f)
-      && s.shoulderDeg<=MAX_ANGLE[static_cast<unsigned>(phase)];
+  if (!s.ready || !std::isfinite(s.shoulderDeg) ||
+      s.shoulderDeg>MAX_ANGLE[static_cast<unsigned>(phase)]) return false;
+  if (phase==Phase::PoseClose) return s.shoulderDeg>194.f;
+  if (phase==Phase::ShoulderDown650) return s.shoulderDeg>=209.f;
+  const bool high=phase==Phase::WristUp420 || phase==Phase::ElbowDownOnce || phase==Phase::ElbowDown350;
+  return s.shoulderDeg>=(high ? 219.f : 187.f);
 }
 }
 bool isApproachStep(Phase p) {
   return MOTIONBRAIN_ENABLE_BOUNDED_APPROACH &&
-      (p==Phase::ShoulderDown300 || p==Phase::ShoulderDown420 || p==Phase::ElbowDown350);
+      (p==Phase::ShoulderDown300 || p==Phase::ShoulderDown420 || p==Phase::ElbowDown350 ||
+       (MOTIONBRAIN_ENABLE_POSE_GRASP && (p==Phase::WristUp420 || p==Phase::ShoulderDown650)));
 }
 uint32_t stepDurationMs(Phase p) {
   switch (p) {
     case Phase::ShoulderDown300: return 300;
-    case Phase::ShoulderDown420: return 420;
+    case Phase::ShoulderDown650: return 650;
+    case Phase::ShoulderDown420: case Phase::WristUp420: return 420;
     case Phase::ElbowDown350: case Phase::ElbowDownOnce: return ELBOW_DOWN_MS;
     default: return 0;
   }
 }
 uint32_t phaseCapMs(Phase p) { return CAPS[static_cast<unsigned>(p)]; }
 uint8_t phaseMotor(Phase p) { if (p==Phase::ElbowDownOnce || p==Phase::ElbowDown350) return 3;
-  return p==Phase::Close || p==Phase::Release ? 1 : 4; }
+  if (p==Phase::WristUp420) return 2;
+  return p==Phase::Close || p==Phase::PoseClose || p==Phase::Release ? 1 : 4; }
 int16_t phasePwm(Phase p) {
-  if (p==Phase::ElbowDownOnce || p==Phase::ElbowDown350) return 50;
+  if (p==Phase::WristUp420 || p==Phase::ElbowDownOnce || p==Phase::ElbowDown350) return 50;
   if (p==Phase::LowerCorrection) return -50;
   return p==Phase::Lift || p==Phase::Release || p==Phase::Retreat ? 70 : -70;
+}
+bool Controller::canStartStep(Phase p) const {
+  if (seq_ && !isApproachStep(phase_)) return false;
+  const uint32_t charge=phaseCapMs(p);
+#if MOTIONBRAIN_ENABLE_POSE_GRASP
+  if (p==Phase::ElbowDown350 || p==Phase::WristUp420) {
+    const bool jointBudget=p==Phase::ElbowDown350 ? elbowBudgetMs_+charge<=6200 : wristBudgetMs_+charge<=2600;
+    return !approachBudgetMs_ && jointBudget && elbowBudgetMs_+wristBudgetMs_+charge<=8000;
+  }
+#endif
+  return approachBudgetMs_+charge<=phaseCapMs(Phase::Approach);
+}
+void Controller::chargeStep(Phase p) {
+  const auto charge=phaseCapMs(p);
+#if MOTIONBRAIN_ENABLE_POSE_GRASP
+  if (p==Phase::ElbowDown350) { elbowBudgetMs_+=charge;return; }
+  if (p==Phase::WristUp420) { wristBudgetMs_+=charge;return; }
+#endif
+  approachBudgetMs_+=charge;
 }
 void Controller::fail(const char* reason) {
   if (active_) port_.faultStop(phase_);
@@ -77,7 +103,8 @@ void Controller::tick() {
 bool Controller::apply(const Request& r) {
   tick();
   if (done_ || failed_ || !validTrial(r.trial) ||
-      static_cast<unsigned>(r.phase)>static_cast<unsigned>(MOTIONBRAIN_ENABLE_BOUNDED_APPROACH ? Phase::ElbowDown350 :
+      static_cast<unsigned>(r.phase)>static_cast<unsigned>(MOTIONBRAIN_ENABLE_POSE_GRASP ? Phase::ShoulderDown650 :
+                                   MOTIONBRAIN_ENABLE_BOUNDED_APPROACH ? Phase::ElbowDown350 :
                                    MOTIONBRAIN_ENABLE_ELBOW_DOWN_ONCE ? Phase::ElbowDownOnce : Phase::LowerCorrection) ||
       (trial_[0] && std::strcmp(trial_,r.trial)) ||
       seq_==std::numeric_limits<uint32_t>::max() || r.seq!=seq_+1) return false;
@@ -88,16 +115,17 @@ bool Controller::apply(const Request& r) {
     const bool elbowOnce=MOTIONBRAIN_ENABLE_ELBOW_DOWN_ONCE && !seq_ && r.phase==Phase::ElbowDownOnce;
     bool allowed=r.phase==expected || optionalCorrection || elbowOnce;
     if (isApproachStep(r.phase))
-      allowed=(!seq_ || isApproachStep(phase_)) &&
-          approachBudgetMs_+phaseCapMs(r.phase)<=phaseCapMs(Phase::Approach);
+      allowed=canStartStep(r.phase);
     else if (isApproachStep(phase_))
-      allowed=r.phase==Phase::Close;
+      allowed=r.phase==Phase::Close || (MOTIONBRAIN_ENABLE_POSE_GRASP && r.phase==Phase::PoseClose && approachBudgetMs_);
+    else if (phase_==Phase::PoseClose)
+      allowed=r.phase==Phase::Lift;
     if (active_ || !allowed) return false;
     const Inputs s=port_.inputs();
     if (!s.allOff || !validInputs(s,r.phase)) return false;
     std::strcpy(trial_,r.trial);
     phase_=r.phase;
-    if (isApproachStep(phase_)) approachBudgetMs_+=phaseCapMs(phase_);
+    if (isApproachStep(phase_)) chargeStep(phase_);
     seq_=r.seq;
     started_=renewed_=port_.now();
     nextCorrectionStep_=1;

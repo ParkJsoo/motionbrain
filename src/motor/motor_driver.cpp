@@ -982,7 +982,8 @@ bool MotorControl::beginPolicyOutput(uint8_t motorId,int16_t pwm) {
 #else
   constexpr bool elbowOnce=false;
 #endif
-  if ((!standard && !elbowOnce)
+  const bool wristUp=MOTIONBRAIN_ENABLE_POSE_GRASP && motorId==MOTOR_2 && pwm==50;
+  if ((!standard && !elbowOnce && !wristUp)
       || getDefaultSpeed()!=100 || hasPendingOutput() || !checkSafety("whole arm policy")
       || m4GoalOwned_ || m4_goal::activeWindow() || driverError_[getDriverId(motorId)]) return false;
   uint8_t i=motorIdToIndex(motorId);
