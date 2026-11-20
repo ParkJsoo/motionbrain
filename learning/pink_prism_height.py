@@ -3,6 +3,25 @@
 import cv2
 
 
+def open_scene_prism_candidate(rgb):
+    """Find a single upright pink silhouette for open-jaw observation only.
+
+    The aspect and fill checks describe an unobstructed view of the known
+    prism. The returned envelope is a candidate, not a lift-height reference.
+    """
+    height, width = rgb.shape[:2]
+    mask = cv2.inRange(cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV),
+                       (147, 95, 95), (179, 255, 255))
+    candidates = []
+    for x, y, w, h, area in cv2.connectedComponentsWithStats(mask)[2][1:]:
+        if h < 24 or w < 8 or not 0.22 <= w / h <= 0.41 or area < 0.80 * w * h:
+            continue
+        if x == 0 or y == 0 or x + w == width or y + h == height:
+            return None
+        candidates.append((int(x), int(y), int(w), int(h)))
+    return candidates[0] if len(candidates) == 1 else None
+
+
 def pink_prism_box(rgb, reference_height):
     """Return (x, y, w, h), or None for incomplete or ambiguous silhouettes.
 
