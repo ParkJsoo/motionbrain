@@ -2586,7 +2586,8 @@ void MotionBrainWebServer::handleFiniteProfile() {
 void MotionBrainWebServer::handleWholeArmAction() {
   if (server_.method()==HTTP_POST) {
     if (!requireCommandAuth()) return;
-    if (server_.args()!=6 || !server_.hasArg("controlGeneration") || !server_.hasArg("op") || !server_.hasArg("phase")
+    const bool hasCursor=server_.hasArg("afterOutputSequence");
+    if (server_.args()!=(hasCursor ? 7 : 6) || !server_.hasArg("controlGeneration") || !server_.hasArg("op") || !server_.hasArg("phase")
         || !server_.hasArg("bootId") || !server_.hasArg("trialId") || !server_.hasArg("seq")) {
       sendErrorJson(400,"whole_arm_fields");return;
     }
@@ -2609,7 +2610,14 @@ void MotionBrainWebServer::handleWholeArmAction() {
     if (!collection_http::unsignedArgument(g.c_str(),generation) || g!=String(generation)) {
       sendErrorJson(400,"whole_arm_generation");return;
     }
-    if (!WholeArmService::apply(r,generation,server_.arg("bootId").c_str())) { sendErrorJson(409,"whole_arm_rejected");return; }
+    uint32_t cursor=0;
+    if (hasCursor) {
+      const String raw=server_.arg("afterOutputSequence");
+      if (!collection_http::unsignedArgument(raw.c_str(),cursor) || raw!=String(cursor)) {
+        sendErrorJson(400,"whole_arm_output_cursor");return;
+      }
+    }
+    if (!WholeArmService::apply(r,generation,server_.arg("bootId").c_str(),hasCursor ? &cursor : nullptr)) { sendErrorJson(409,"whole_arm_rejected");return; }
   }
   WholeArmService::update();
   String body;

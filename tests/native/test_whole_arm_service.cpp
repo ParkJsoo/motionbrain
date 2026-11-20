@@ -266,9 +266,133 @@ static void elbowOnce(const char* mode) {
   assert(!WholeArmService::apply({Op::Start,Phase::Approach,TRIAL,2},WholeArmService::generation(),BOOT));
 }
 
+static uint32_t outputCursor() {
+  const auto& log=motorControl.outputLog();
+  return log.count() ? log.at(log.count()-1)->sequence : 0;
+}
+
+static bool stepStart(Phase phase,unsigned seq,uint32_t cursor) {
+  return WholeArmService::apply({Op::Start,phase,TRIAL,seq},WholeArmService::generation(),BOOT,&cursor);
+}
+
+static void runStep(Phase phase,unsigned seq) {
+  const auto cursor=outputCursor();
+  const auto generation=WholeArmService::generation();
+  assert(!stepStart(phase,seq,cursor+1));
+  assert(!phaseRequest(Op::Start,phase,seq));
+  shoulderAngleSensor.sample=clockMs;
+  assert(stepStart(phase,seq,cursor));
+  assert(!stepStart(phase,seq,cursor));
+  assert(!stepStart(phase,seq+1,cursor));
+  assert(!phaseRequest(Op::Keep,phase,seq+1));
+  const uint32_t ms=whole_arm::stepDurationMs(phase);
+  for (unsigned elapsed=1;elapsed<=ms;elapsed++) {
+    ++clockMs; shoulderAngleSensor.sample=clockMs;
+    timer.callback(nullptr);WholeArmService::update();motorControl.update();
+  }
+  const uint8_t motor=whole_arm::phaseMotor(phase);
+  const int sign=whole_arm::phasePwm(phase)>0 ? 1:-1;
+  const auto& log=motorControl.outputLog();
+  int powers=0;
+  for (unsigned i=0;i<log.count();i++) {
+    const auto* e=log.at(i);
+    if (e->sequence<=cursor) continue;
+    assert(e->motor==motor && e->reason==bounded::OutputReason::DriverWrite);
+    if (e->sequence==outputCursor()) assert(e->pwm==0);
+    else { ++powers;assert(e->pwm==powers*10*sign); }
+  }
+  assert(powers==(phase==Phase::ShoulderDown420 ? 7:5));
+  assert(WholeArmService::generation()==generation && WholeArmService::owns());
+  assert(!motorControl.hasPendingOutput() && !motorControl.isEnabled());
+  for (auto value : duty) assert(value==0);
+  String state;WholeArmService::status(state);
+  char field[64];
+  std::snprintf(field,sizeof(field),"\"stepZeroSequence\":%u",outputCursor());
+  assert(strstr(state.c_str(),field));
+  std::snprintf(field,sizeof(field),"\"stepZeroWriteOffsetUs\":%u",ms*1000);
+  assert(strstr(state.c_str(),field) && strstr(state.c_str(),"\"stepFirstWriteOffsetUs\":50000"));
+  assert(strstr(state.c_str(),"\"reason\":\"stopped\"") && strstr(state.c_str(),"\"active\":false"));
+  assert(!stepStart(phase,seq,outputCursor()));
+}
+
+static void approachSteps(const char* mode) {
+  assert(motorControl.init());
+  systemState.state=SystemState::ARMED;
+  shoulderAngleSensor.sample=clockMs;
+  shoulderAngleSensor.angle=220.f;
+  Phase parsed;
+  assert(WholeArmService::parsePhase("shoulder_down_420",parsed)==bool(MOTIONBRAIN_ENABLE_BOUNDED_APPROACH));
+  if (!MOTIONBRAIN_ENABLE_BOUNDED_APPROACH) {
+    assert(!stepStart(Phase::ShoulderDown300,1,outputCursor()));
+    return;
+  }
+  assert(parsed==Phase::ShoulderDown420);
+  assert(WholeArmService::parsePhase("shoulder_down_300",parsed) && parsed==Phase::ShoulderDown300);
+  assert(WholeArmService::parsePhase("elbow_down_350",parsed) && parsed==Phase::ElbowDown350);
+  if (!strcmp(mode,"steps-stall") || !strcmp(mode,"steps-preempt")) {
+    assert(stepStart(Phase::ShoulderDown300,1,outputCursor()));
+    for(unsigned i=0;i<5;i++) {
+      clockMs+=50;shoulderAngleSensor.sample=clockMs;
+      WholeArmService::update();motorControl.update();
+    }
+    assert(duty[3]==50);
+    if (!strcmp(mode,"steps-preempt")) {
+      assert(WholeArmService::beforeLegacy(CommandType::STOP));
+    } else {
+      // Admission is off the periodic timer grid. With no loop servicing the
+      // last ramp, the next callback after the early deadline must zero by cap.
+      clockMs+=57;timer.callback(nullptr); // elapsed 307, first 5ms grid callback
+      assert(duty[3]==50);
+      clockMs+=5;timer.callback(nullptr); // elapsed 312, before the 315ms cap
+      assert(duty[3]==0 && !WholeArmService::writePwm(4,3,-60));
+      WholeArmService::update();
+    }
+    assert(duty[3]==0 && !motorControl.hasPendingOutput());
+    assert(!stepStart(Phase::ShoulderDown420,2,outputCursor()));
+    return;
+  }
+  if (!strcmp(mode,"steps-budget")) {
+    for (unsigned seq=1;seq<=16;seq++) runStep(Phase::ShoulderDown420,seq);
+    assert(!stepStart(Phase::ShoulderDown300,17,outputCursor()));
+    return;
+  }
+  runStep(Phase::ShoulderDown420,1);
+  if (!strcmp(mode,"steps-off-override")) {
+    assert(WholeArmService::beforeLegacy(CommandType::DISARM));
+    assert(!stepStart(Phase::ShoulderDown420,2,outputCursor()));
+    return;
+  }
+  assert(!stepStart(Phase::Close,2,outputCursor())); // close still requires <=194
+  assert(!phaseRequest(Op::Start,Phase::ElbowDownOnce,2));
+  assert(!phaseRequest(Op::Start,Phase::Approach,2));
+  runStep(Phase::ShoulderDown300,2);
+  shoulderAngleSensor.angle=218.f;
+  assert(!stepStart(Phase::ElbowDown350,3,outputCursor()));
+  shoulderAngleSensor.angle=220.f;
+  runStep(Phase::ElbowDown350,3);
+  const auto cursor=outputCursor();
+  assert(!WholeArmService::apply({Op::Start,Phase::ShoulderDown420,TRIAL,4},
+          WholeArmService::generation()+1,BOOT,&cursor));
+  assert(!WholeArmService::apply({Op::Start,Phase::ShoulderDown420,BOOT,4},
+          WholeArmService::generation(),BOOT,&cursor));
+  assert(!stepStart(Phase::ShoulderDown300,4,cursor-1));
+  runStep(Phase::ShoulderDown420,4);
+  shoulderAngleSensor.angle=193.f;
+  assert(!phaseRequest(Op::Start,Phase::Close,5));
+  assert(!stepStart(Phase::Close,5,outputCursor()-1));
+  assert(stepStart(Phase::Close,5,outputCursor()));
+  clockMs+=50;shoulderAngleSensor.sample=clockMs;WholeArmService::update();motorControl.update();
+  assert(duty[0]==10 && phaseRequest(Op::Stop,Phase::Close,6));
+  assert(!stepStart(Phase::ShoulderDown300,7,outputCursor()));
+  assert(phaseRequest(Op::Start,Phase::Lift,7));
+  clockMs+=50;shoulderAngleSensor.sample=clockMs;WholeArmService::update();motorControl.update();
+  assert(duty[3]==10 && phaseRequest(Op::Stop,Phase::Lift,8));
+}
+
 int main(int argc, char** argv) {
   assert(argc == 2 || (argc==8 && !strcmp(argv[1],"correction-trace")));
   if (!strcmp(argv[1],"stalled")) stalledLoop();
+  else if (!strncmp(argv[1],"steps-",6)) approachSteps(argv[1]);
   else if (!strncmp(argv[1],"elbow-",6)) elbowOnce(argv[1]);
   else if (!strcmp(argv[1],"preempt")) preempt();
   else if (!strcmp(argv[1],"first")) staleInitialStart();

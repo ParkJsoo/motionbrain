@@ -5,10 +5,17 @@
 #define MOTIONBRAIN_ENABLE_ELBOW_DOWN_ONCE 0
 #endif
 
+#ifndef MOTIONBRAIN_ENABLE_BOUNDED_APPROACH
+#define MOTIONBRAIN_ENABLE_BOUNDED_APPROACH 0
+#endif
+
 namespace whole_arm {
 constexpr uint32_t ELBOW_DOWN_MS=350;
 constexpr uint32_t ELBOW_DOWN_CUTOFF_MS=365;
-enum class Phase : uint8_t { Approach, Close, Lift, Lower, Release, Retreat, LowerCorrection, ElbowDownOnce };
+enum class Phase : uint8_t { Approach, Close, Lift, Lower, Release, Retreat, LowerCorrection, ElbowDownOnce,
+                             ShoulderDown300, ShoulderDown420, ElbowDown350 };
+bool isApproachStep(Phase);
+uint32_t stepDurationMs(Phase);
 enum class Op : uint8_t { Start, Keep, Stop };
 uint32_t phaseCapMs(Phase);
 uint8_t phaseMotor(Phase);
@@ -49,6 +56,7 @@ private:
   char trial_[33]{};
   uint32_t seq_=0, started_=0, renewed_=0;
   uint8_t nextCorrectionStep_=0;
+  uint32_t approachBudgetMs_=0;
   Phase phase_=Phase::Approach;
   bool active_=false, failed_=false, done_=false;
   const char* reason_="idle";

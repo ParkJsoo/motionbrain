@@ -11,7 +11,8 @@ namespace WholeArmService {
 bool owns();
 bool beforeLegacy(CommandType);
 uint32_t generation();
-bool apply(const whole_arm::Request&,uint32_t expectedGeneration,const char* expectedBoot);
+bool apply(const whole_arm::Request&,uint32_t expectedGeneration,const char* expectedBoot,
+           const uint32_t* afterOutputSequence=nullptr);
 void update();
 void status(String&);
 bool parsePhase(const char*,whole_arm::Phase&);

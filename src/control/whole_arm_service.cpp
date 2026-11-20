@@ -26,16 +26,22 @@ extern TeleopAdapter teleopAdapter;
 extern MotionBrainWebServer webServer;
 namespace WholeArmService {
 using whole_arm::Phase;
+static_assert(!MOTIONBRAIN_ENABLE_BOUNDED_APPROACH || MOTIONBRAIN_ENABLE_ELBOW_DOWN_ONCE,
+              "bounded approach requires the motor-3 output profile");
 namespace {
 constexpr const char* NAMES[]={"approach","close","held_lift","lower","release","retreat","lower_correction"
 #if MOTIONBRAIN_ENABLE_ELBOW_DOWN_ONCE
   ,"elbow_down_once"
+#endif
+#if MOTIONBRAIN_ENABLE_BOUNDED_APPROACH
+  ,"shoulder_down_300","shoulder_down_420","elbow_down_350"
 #endif
 };
 // Arduino HTTP may block the loop while waiting for a partial request. A
 // separate ESP timer task cuts PWM even then. The callback touches neither
 // the HTTP state, motor bookkeeping nor its non-thread-safe output journal.
 // The main loop reconciles the latched fault with hardStop/forced_off.
+constexpr int64_t CUTOFF_PERIOD_US=5000;
 struct Cutoff {
   SemaphoreHandle_t mutex=nullptr;
   esp_timer_handle_t timer=nullptr;
@@ -43,7 +49,9 @@ struct Cutoff {
   int16_t pwm=0;
   bool tripped=false;
   int64_t lease=0,phase=0,sensor=0;
-  int64_t elbowAdmissionUs=0, elbowFirstWriteUs=0, elbowZeroUs=0;
+  bool timedStep=false;
+  int64_t admissionUs=0, firstWriteUs=0, zeroUs=0;
+  uint32_t stepZeroSequence=0;
   int64_t correctionOriginUs=0;
   uint32_t correctionOriginMs=0;
   bool awaitingFirstCorrectionWrite=false;
@@ -53,7 +61,7 @@ void expireLocked(int64_t t) {
   if (cutoff.motor && !cutoff.tripped &&
       (t>=cutoff.lease || t>=cutoff.phase || t>=cutoff.sensor)) {
     ledcWrite(cutoff.channel,0);
-    if (cutoff.motor==3 && !cutoff.elbowZeroUs) cutoff.elbowZeroUs=esp_timer_get_time();
+    if (cutoff.timedStep && !cutoff.zeroUs) cutoff.zeroUs=esp_timer_get_time();
     cutoff.tripped=true;
   }
 }
@@ -69,7 +77,7 @@ bool setupTimer() {
   esp_timer_create_args_t cfg{};
   cfg.callback=timerTick;cfg.name="mb_policy_stop";
   if (esp_timer_create(&cfg,&cutoff.timer)!=ESP_OK) return false;
-  if (esp_timer_start_periodic(cutoff.timer,5000)==ESP_OK) return true;
+  if (esp_timer_start_periodic(cutoff.timer,CUTOFF_PERIOD_US)==ESP_OK) return true;
   esp_timer_delete(cutoff.timer);cutoff.timer=nullptr;
   return false;
 }
@@ -126,13 +134,22 @@ public:
     if (motor==4 && !shoulderAngleController.manualDirectionAllowed(pwm>0)) return false;
     xSemaphoreTake(cutoff.mutex,portMAX_DELAY);
     auto t=esp_timer_get_time();
-    if (p==Phase::ElbowDownOnce) cutoff.elbowAdmissionUs=t;
+    cutoff.timedStep=whole_arm::stepDurationMs(p)!=0;
+    if (cutoff.timedStep) {
+      cutoff.admissionUs=t;
+      cutoff.firstWriteUs=0;
+      cutoff.zeroUs=0;
+      cutoff.stepZeroSequence=0;
+    }
     cutoff.motor=motor;
     cutoff.channel=motorControl.pwmChannel(motor);
     cutoff.pwm=pwm;
     cutoff.tripped=false;
     cutoff.lease=t+750000;
     cutoff.phase=t+1000LL*phaseCapMs(p);
+    // Leave a complete polling period before the bounded-step receipt limit.
+    // RTOS scheduling latency beyond the polling period remains measurable jitter.
+    if (whole_arm::isApproachStep(p)) cutoff.phase-=CUTOFF_PERIOD_US;
     cutoff.awaitingFirstCorrectionWrite=(p==Phase::LowerCorrection);
     if (cutoff.awaitingFirstCorrectionWrite) cutoff.phase=t+1000LL*whole_arm::CORRECTION_LATE_MS;
     cutoff.sensor=sensorDeadline(t);
@@ -163,11 +180,19 @@ public:
       motorControl.hardStop(phaseMotor(p));
       normalStopFailed=true;
     }
-    if (p==Phase::ElbowDownOnce && cutoff.mutex) {
+    if (whole_arm::stepDurationMs(p) && cutoff.mutex) {
       xSemaphoreTake(cutoff.mutex,portMAX_DELAY);
-      normalStopFailed |= !cutoff.elbowFirstWriteUs || !cutoff.elbowZeroUs
-        || cutoff.elbowZeroUs <= cutoff.elbowFirstWriteUs
-        || cutoff.elbowZeroUs-cutoff.elbowAdmissionUs >= 1000LL*whole_arm::ELBOW_DOWN_CUTOFF_MS;
+      normalStopFailed |= !cutoff.firstWriteUs || !cutoff.zeroUs
+        || cutoff.zeroUs <= cutoff.firstWriteUs
+        || cutoff.zeroUs-cutoff.admissionUs >= 1000LL*phaseCapMs(p);
+      if (whole_arm::isApproachStep(p)) {
+        normalStopFailed |= cutoff.zeroUs-cutoff.admissionUs < 1000LL*(whole_arm::stepDurationMs(p)-1);
+        const auto& log=motorControl.outputLog();
+        const auto* zero=log.count() ? log.at(log.count()-1) : nullptr;
+        normalStopFailed |= !zero || zero->motor!=phaseMotor(p) || zero->pwm!=0
+            || zero->reason!=bounded::OutputReason::DriverWrite || !zero->sequence;
+        if (!normalStopFailed) cutoff.stepZeroSequence=zero->sequence;
+      }
       xSemaphoreGive(cutoff.mutex);
     }
     disarmCutoff();
@@ -195,9 +220,9 @@ bool writePwm(uint8_t motor,uint8_t channel,int16_t pwm) {
       (cutoff.pwm>0 ? (pwm>0 && pwm<=cutoff.pwm) : (pwm<0 && pwm>=cutoff.pwm)));
   if (ok) {
     ledcWrite(channel,abs(pwm));
-    if (cutoff.motor==3 && motor==3) {
-      if (pwm && !cutoff.elbowFirstWriteUs) cutoff.elbowFirstWriteUs=esp_timer_get_time();
-      if (!pwm && !cutoff.elbowZeroUs) cutoff.elbowZeroUs=esp_timer_get_time();
+    if (cutoff.timedStep && cutoff.motor && cutoff.motor==motor) {
+      if (pwm && !cutoff.firstWriteUs) cutoff.firstWriteUs=esp_timer_get_time();
+      if (!pwm && !cutoff.zeroUs) cutoff.zeroUs=esp_timer_get_time();
     }
     if (cutoff.awaitingFirstCorrectionWrite && motor==4 && pwm==-10) {
       // Anchor the entire waveform to the confirmed first HAL write. Setup
@@ -234,9 +259,20 @@ uint32_t generation() {
   }
   return epoch;
 }
-bool apply(const whole_arm::Request& req,uint32_t expectedGeneration,const char* expectedBoot) {
+bool apply(const whole_arm::Request& req,uint32_t expectedGeneration,const char* expectedBoot,
+           const uint32_t* afterOutputSequence) {
   if (!expectedBoot || strcmp(expectedBoot,BoundedActions::outputBootId()) ||
       expectedGeneration!=generation() || epoch==UINT32_MAX) return false;
+  const bool needsCursor=req.op==whole_arm::Op::Start &&
+      (whole_arm::isApproachStep(req.phase) ||
+       (whole_arm::isApproachStep(controller.phase()) && req.phase==Phase::Close));
+  if (needsCursor) {
+    const auto& log=motorControl.outputLog();
+    const uint32_t latest=log.count() ? log.at(log.count()-1)->sequence : 0;
+    if (!afterOutputSequence || controller.active() || *afterOutputSequence!=latest ||
+        (whole_arm::isApproachStep(controller.phase()) &&
+         (!cutoff.stepZeroSequence || cutoff.stepZeroSequence!=latest))) return false;
+  } else if (afterOutputSequence) return false;
   bool ok=controller.apply(req);
   if (!ok) return false;
   if (req.op==whole_arm::Op::Keep && !serviceCutoff(true)) {
@@ -262,14 +298,25 @@ void status(String& s) {
   s+=",\"controlGeneration\":";s+=generation();
 #if MOTIONBRAIN_ENABLE_ELBOW_DOWN_ONCE
   s+=",\"elbowDownOnceProfile\":\"m3-down-50-350ms-v1\"";
-  if (cutoff.mutex) {
+  if (controller.phase()==Phase::ElbowDownOnce && cutoff.mutex) {
     xSemaphoreTake(cutoff.mutex,portMAX_DELAY);
-    const auto start=cutoff.elbowAdmissionUs;
-    const auto first=cutoff.elbowFirstWriteUs;
-    const auto end=cutoff.elbowZeroUs;
+    const auto start=cutoff.admissionUs;
+    const auto first=cutoff.firstWriteUs;
+    const auto end=cutoff.zeroUs;
     xSemaphoreGive(cutoff.mutex);
     if (start && first) { s+=",\"elbowFirstWriteOffsetUs\":";s+=static_cast<uint32_t>(first-start); }
     if (start && end) { s+=",\"elbowZeroWriteOffsetUs\":";s+=static_cast<uint32_t>(end-start); }
+  }
+#endif
+#if MOTIONBRAIN_ENABLE_BOUNDED_APPROACH
+  s+=",\"boundedApproachProfile\":\"off-observe-m4-m3-v1\"";
+  if (whole_arm::isApproachStep(controller.phase()) && cutoff.mutex) {
+    xSemaphoreTake(cutoff.mutex,portMAX_DELAY);
+    const auto start=cutoff.admissionUs, first=cutoff.firstWriteUs, end=cutoff.zeroUs;
+    xSemaphoreGive(cutoff.mutex);
+    if (start && first) { s+=",\"stepFirstWriteOffsetUs\":";s+=static_cast<uint32_t>(first-start); }
+    if (start && end) { s+=",\"stepZeroWriteOffsetUs\":";s+=static_cast<uint32_t>(end-start); }
+    if (cutoff.stepZeroSequence) { s+=",\"stepZeroSequence\":";s+=cutoff.stepZeroSequence; }
   }
 #endif
   s+=",\"reason\":\"";s+=hardware.normalStopFailed?"stop_fault":controller.reason();s+="\",\"rawPwm\":70,\"correctionProfile\":\"demo6_m4_lower_554ms_v1\"}";
