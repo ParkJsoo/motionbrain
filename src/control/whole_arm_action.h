@@ -1,8 +1,14 @@
 #pragma once
 #include <stdint.h>
 
+#ifndef MOTIONBRAIN_ENABLE_ELBOW_DOWN_ONCE
+#define MOTIONBRAIN_ENABLE_ELBOW_DOWN_ONCE 0
+#endif
+
 namespace whole_arm {
-enum class Phase : uint8_t { Approach, Close, Lift, Lower, Release, Retreat, LowerCorrection };
+constexpr uint32_t ELBOW_DOWN_MS=350;
+constexpr uint32_t ELBOW_DOWN_CUTOFF_MS=365;
+enum class Phase : uint8_t { Approach, Close, Lift, Lower, Release, Retreat, LowerCorrection, ElbowDownOnce };
 enum class Op : uint8_t { Start, Keep, Stop };
 uint32_t phaseCapMs(Phase);
 uint8_t phaseMotor(Phase);

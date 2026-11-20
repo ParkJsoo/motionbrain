@@ -27,7 +27,11 @@ extern MotionBrainWebServer webServer;
 namespace WholeArmService {
 using whole_arm::Phase;
 namespace {
-constexpr const char* NAMES[]={"approach","close","held_lift","lower","release","retreat","lower_correction"};
+constexpr const char* NAMES[]={"approach","close","held_lift","lower","release","retreat","lower_correction"
+#if MOTIONBRAIN_ENABLE_ELBOW_DOWN_ONCE
+  ,"elbow_down_once"
+#endif
+};
 // Arduino HTTP may block the loop while waiting for a partial request. A
 // separate ESP timer task cuts PWM even then. The callback touches neither
 // the HTTP state, motor bookkeeping nor its non-thread-safe output journal.
@@ -39,6 +43,7 @@ struct Cutoff {
   int16_t pwm=0;
   bool tripped=false;
   int64_t lease=0,phase=0,sensor=0;
+  int64_t elbowAdmissionUs=0, elbowFirstWriteUs=0, elbowZeroUs=0;
   int64_t correctionOriginUs=0;
   uint32_t correctionOriginMs=0;
   bool awaitingFirstCorrectionWrite=false;
@@ -48,6 +53,7 @@ void expireLocked(int64_t t) {
   if (cutoff.motor && !cutoff.tripped &&
       (t>=cutoff.lease || t>=cutoff.phase || t>=cutoff.sensor)) {
     ledcWrite(cutoff.channel,0);
+    if (cutoff.motor==3 && !cutoff.elbowZeroUs) cutoff.elbowZeroUs=esp_timer_get_time();
     cutoff.tripped=true;
   }
 }
@@ -120,6 +126,7 @@ public:
     if (motor==4 && !shoulderAngleController.manualDirectionAllowed(pwm>0)) return false;
     xSemaphoreTake(cutoff.mutex,portMAX_DELAY);
     auto t=esp_timer_get_time();
+    if (p==Phase::ElbowDownOnce) cutoff.elbowAdmissionUs=t;
     cutoff.motor=motor;
     cutoff.channel=motorControl.pwmChannel(motor);
     cutoff.pwm=pwm;
@@ -156,6 +163,13 @@ public:
       motorControl.hardStop(phaseMotor(p));
       normalStopFailed=true;
     }
+    if (p==Phase::ElbowDownOnce && cutoff.mutex) {
+      xSemaphoreTake(cutoff.mutex,portMAX_DELAY);
+      normalStopFailed |= !cutoff.elbowFirstWriteUs || !cutoff.elbowZeroUs
+        || cutoff.elbowZeroUs <= cutoff.elbowFirstWriteUs
+        || cutoff.elbowZeroUs-cutoff.elbowAdmissionUs >= 1000LL*whole_arm::ELBOW_DOWN_CUTOFF_MS;
+      xSemaphoreGive(cutoff.mutex);
+    }
     disarmCutoff();
     remember();
   }
@@ -181,6 +195,10 @@ bool writePwm(uint8_t motor,uint8_t channel,int16_t pwm) {
       (cutoff.pwm>0 ? (pwm>0 && pwm<=cutoff.pwm) : (pwm<0 && pwm>=cutoff.pwm)));
   if (ok) {
     ledcWrite(channel,abs(pwm));
+    if (cutoff.motor==3 && motor==3) {
+      if (pwm && !cutoff.elbowFirstWriteUs) cutoff.elbowFirstWriteUs=esp_timer_get_time();
+      if (!pwm && !cutoff.elbowZeroUs) cutoff.elbowZeroUs=esp_timer_get_time();
+    }
     if (cutoff.awaitingFirstCorrectionWrite && motor==4 && pwm==-10) {
       // Anchor the entire waveform to the confirmed first HAL write. Setup
       // and mutex acquisition before the write are outside this interval.
@@ -242,6 +260,18 @@ void status(String& s) {
   s+="\",\"seq\":";s+=controller.seq();s+=",\"active\":";s+=controller.active()?"true":"false";
   s+=",\"failed\":";s+=(controller.failed()||hardware.normalStopFailed)?"true":"false";
   s+=",\"controlGeneration\":";s+=generation();
+#if MOTIONBRAIN_ENABLE_ELBOW_DOWN_ONCE
+  s+=",\"elbowDownOnceProfile\":\"m3-down-50-350ms-v1\"";
+  if (cutoff.mutex) {
+    xSemaphoreTake(cutoff.mutex,portMAX_DELAY);
+    const auto start=cutoff.elbowAdmissionUs;
+    const auto first=cutoff.elbowFirstWriteUs;
+    const auto end=cutoff.elbowZeroUs;
+    xSemaphoreGive(cutoff.mutex);
+    if (start && first) { s+=",\"elbowFirstWriteOffsetUs\":";s+=static_cast<uint32_t>(first-start); }
+    if (start && end) { s+=",\"elbowZeroWriteOffsetUs\":";s+=static_cast<uint32_t>(end-start); }
+  }
+#endif
   s+=",\"reason\":\"";s+=hardware.normalStopFailed?"stop_fault":controller.reason();s+="\",\"rawPwm\":70,\"correctionProfile\":\"demo6_m4_lower_554ms_v1\"}";
 }
 }

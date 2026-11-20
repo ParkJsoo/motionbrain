@@ -221,9 +221,55 @@ static void correction(const char* mode, char** wire) {
   if (strcmp(mode,"correction-trace")) assert(phaseRequest(Op::Start,Phase::Release,10));
 }
 
+static void elbowOnce(const char* mode) {
+  assert(motorControl.init());
+  systemState.state=SystemState::ARMED;
+  shoulderAngleSensor.sample=clockMs;
+  Phase parsed;
+  const bool supported=WholeArmService::parsePhase("elbow_down_once",parsed);
+  assert(supported==bool(MOTIONBRAIN_ENABLE_ELBOW_DOWN_ONCE));
+  const whole_arm::Request start{Op::Start,Phase::ElbowDownOnce,TRIAL,1};
+  const auto generation=WholeArmService::generation();
+  shoulderAngleSensor.angle=211.f;
+  assert(!WholeArmService::apply(start,generation,BOOT));
+  shoulderAngleSensor.angle=220.f;
+  if (!supported) { assert(!WholeArmService::apply(start,generation,BOOT));return; }
+  assert(WholeArmService::apply(start,generation,BOOT));
+  assert(!WholeArmService::apply(start,generation,BOOT));
+  assert(!WholeArmService::apply({Op::Keep,Phase::ElbowDownOnce,TRIAL,2},generation,BOOT));
+  assert(!WholeArmService::beforeLegacy(CommandType::MOTOR_RUN));
+  for (unsigned i=0;i<6;i++) {
+    clockMs+=50; shoulderAngleSensor.sample=clockMs;
+    WholeArmService::update();motorControl.update();
+    assert(duty[2]==(i<5 ? (i+1)*10 : 50));
+    assert(duty[0]==0 && duty[1]==0 && duty[3]==0 && duty[4]==0);
+  }
+  if (!strcmp(mode,"elbow-stall")) {
+    clockMs+=65; timer.callback(nullptr);
+    assert(duty[2]==0 && !WholeArmService::writePwm(3,2,50));
+    WholeArmService::update();
+  } else if (!strcmp(mode,"elbow-abort")) {
+    assert(WholeArmService::beforeLegacy(CommandType::DISARM));
+  } else {
+    clockMs+=50; shoulderAngleSensor.sample=clockMs;WholeArmService::update();
+  }
+  assert(duty[2]==0 && !motorControl.hasPendingOutput());
+  String state;WholeArmService::status(state);
+  assert(strstr(state.c_str(),"\"elbowFirstWriteOffsetUs\":50000"));
+  if (!strcmp(mode,"elbow-normal")) {
+    assert(strstr(state.c_str(),"\"reason\":\"completed\""));
+    assert(strstr(state.c_str(),"\"elbowZeroWriteOffsetUs\":350000"));
+  } else {
+    assert(strstr(state.c_str(),"\"failed\":true"));
+  }
+  assert(!WholeArmService::apply(start,WholeArmService::generation(),BOOT));
+  assert(!WholeArmService::apply({Op::Start,Phase::Approach,TRIAL,2},WholeArmService::generation(),BOOT));
+}
+
 int main(int argc, char** argv) {
   assert(argc == 2 || (argc==8 && !strcmp(argv[1],"correction-trace")));
   if (!strcmp(argv[1],"stalled")) stalledLoop();
+  else if (!strncmp(argv[1],"elbow-",6)) elbowOnce(argv[1]);
   else if (!strcmp(argv[1],"preempt")) preempt();
   else if (!strcmp(argv[1],"first")) staleInitialStart();
   else if (!strcmp(argv[1],"race")) stopRace();

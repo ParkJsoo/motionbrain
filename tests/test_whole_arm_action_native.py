@@ -31,13 +31,21 @@ class WholeArmActionTests(unittest.TestCase):
         include = []
         for path in ("whole_arm_stubs", "service_stubs", "m4_goal_stubs", "stubs"):
             include.extend(["-I", str(native / path)])
-        subprocess.run(
-            [compiler, "-std=c++11", "-Wall", "-Wextra", "-Werror",
+        command = [compiler, "-std=c++11", "-Wall", "-Wextra", "-Werror",
              "-DMOTIONBRAIN_ENABLE_WHOLE_ARM_POLICY=1", *include, "-I", str(ROOT / "src"),
              str(native / "test_whole_arm_service.cpp"), str(ROOT / "src/motor/motor_driver.cpp"),
              str(ROOT / "src/control/whole_arm_service.cpp"), str(ROOT / "src/control/whole_arm_action.cpp"),
-             "-o", str(cls.service)], check=True, timeout=60,
-        )
+             "-o", str(cls.service)]
+        subprocess.run(command, check=True, timeout=60)
+        cls.elbow_service = Path(cls.tmp.name) / "elbow_once"
+        subprocess.run([command[0], "-DMOTIONBRAIN_ENABLE_ELBOW_DOWN_ONCE=1", *command[1:-1], str(cls.elbow_service)],
+                       check=True, timeout=60)
+
+    def test_elbow_once(self):
+        subprocess.run([str(self.service), "elbow-disabled"], check=True, timeout=5)
+        for case in ("elbow-normal", "elbow-stall", "elbow-abort"):
+            with self.subTest(case=case):
+                subprocess.run([str(self.elbow_service), case], check=True, timeout=5)
 
     def test_independent_timeout_and_disarm(self):
         for case in ("stalled", "preempt", "first", "race", "correction-once", "correction-stall", "correction-abort",

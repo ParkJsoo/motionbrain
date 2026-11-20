@@ -976,7 +976,13 @@ void MotorControl::endM4Goal() {
 
 #if MOTIONBRAIN_ENABLE_WHOLE_ARM_POLICY
 bool MotorControl::beginPolicyOutput(uint8_t motorId,int16_t pwm) {
-  if ((motorId!=MOTOR_1 && motorId!=MOTOR_4) || (pwm!=70 && pwm!=-70)
+  const bool standard=(motorId==MOTOR_1 || motorId==MOTOR_4) && (pwm==70 || pwm==-70);
+#if MOTIONBRAIN_ENABLE_ELBOW_DOWN_ONCE
+  const bool elbowOnce=motorId==MOTOR_3 && pwm==50;
+#else
+  constexpr bool elbowOnce=false;
+#endif
+  if ((!standard && !elbowOnce)
       || getDefaultSpeed()!=100 || hasPendingOutput() || !checkSafety("whole arm policy")
       || m4GoalOwned_ || m4_goal::activeWindow() || driverError_[getDriverId(motorId)]) return false;
   uint8_t i=motorIdToIndex(motorId);
