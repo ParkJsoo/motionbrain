@@ -16,6 +16,8 @@ Of the OWI-535's five DC axes, the shoulder (M4) has direct joint-angle feedback
 
 This Rerun replay shows a recorded pair from a manual grasp demonstration, with the external camera on the left and the gripper camera on the right. Rerun overlays the detected parts on the same image the collector received. Some of the black upper-arm rail remains visible outside the teal mask. [Overlay method and checks across poses (Korean)](docs/live-observation.md#광각-부품-표시-검증)
 
+Across ten shoulder-lowering actions in two held-out-by-turn setups, adding both images, part visibility and planar kinematics reduced mean side-view displacement vector error from 4.74px to 3.23px. The command mean was more accurate in the gripper view. [Offline comparison by episode (Korean)](docs/evidence/2026-11-22-offline-episode-comparison.md)
+
 ![Physical control, visual observation, learning and evaluation in MotionBrain](docs/assets/overview.en.svg)
 
 | Layer | Implemented role | Code and documentation |
