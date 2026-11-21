@@ -14,6 +14,43 @@ def scene():
 
 
 class NearPartOverlayTest(unittest.TestCase):
+    def test_wide_approach_is_opt_in_and_does_not_set_close_geometry(self):
+        rgb = scene()
+        rgb[76:100, 150:173] = 180
+        rgb[40:62, 149:167] = [238, 22, 103]
+        _, old = render_near(rgb)
+        self.assertNotIn('farTarget', old)
+        painted, wide = render_near(rgb, wide_approach=True)
+        obs = wide['farTarget']
+        self.assertEqual(obs['bbox'], [149, 40, 18, 22])
+        self.assertEqual(obs['status'], 'observed')
+        self.assertFalse(obs['controlEligible'])
+        self.assertFalse(wide['parts']['target']['visible'])
+        self.assertIsNone(wide['projectedMargins'])
+        np.testing.assert_array_equal(painted[40, 149], COLORS['target'])
+
+    def test_wide_approach_omits_fragment_ambiguity_and_missing_jaw(self):
+        rgb = scene()
+        rgb[76:100, 150:173] = 180
+        rgb[36:43, 149:167] = [238, 22, 103]
+        for condition in ['fragment', 'multiple', 'missing_jaw', 'off_center', 'closed_scene']:
+            with self.subTest(condition=condition):
+                sample = rgb.copy()
+                expected = 'unresolved'
+                if condition == 'fragment':
+                    expected = 'uncertain_fragment'
+                elif condition == 'multiple':
+                    sample[40:57, 125:140] = [238, 22, 103]
+                elif condition == 'missing_jaw':
+                    sample[:, 218:236] = 180
+                elif condition == 'off_center':
+                    sample[36:43, 149:167] = 180
+                    sample[41:56, 52:70] = [238, 22, 103]
+                else:
+                    sample[76:100, 150:173] = [238, 22, 103]
+                _, info = render_near(sample, wide_approach=True)
+                self.assertEqual(info['farTarget'], dict(status=expected, controlEligible=False))
+
     def test_pixel_masks_holes_and_same_row_edges(self):
         src = scene()
         src[65:75, 86:92] = 180

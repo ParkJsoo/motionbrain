@@ -2,7 +2,7 @@
 import cv2
 import numpy as np
 
-from learning.open_side_approach import _forearm_region, _paired_marker_tip, _single_marker_tip
+from learning.open_side_approach import observe_side_tip
 from learning.pink_prism_height import open_scene_prism_candidate
 
 
@@ -160,7 +160,7 @@ def _attach(labels, name, region, material, min_area):
         labels[np.isin(ids, accepted)] = list(COLORS).index(name)+1
 
 
-def render_side(rgb):
+def render_side(rgb, *, view_id=None):
     """Return a display RGB image and original-pixel metadata for the same frame."""
     if not isinstance(rgb, np.ndarray) or rgb.dtype != np.uint8 or rgb.shape != (1080, 1920, 3):
         raise ValueError('side_1080p_rgb_required')
@@ -196,10 +196,8 @@ def render_side(rgb):
             if elbow is not None:
                 landmarks['elbowHousingCenterEstimate'] = (elbow*2).round().astype(int).tolist()
                 _attach(labels, 'upper_arm', _strip(gold.shape, shoulder, elbow, .16*w), material, .06*w*w)
-    full_hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
     try:
-        region = _forearm_region(full_hsv)
-        tip = _single_marker_tip(rgb, full_hsv) if region is None else _paired_marker_tip(rgb, *region)
+        tip, _ = observe_side_tip(rgb, view_id=view_id)
         landmarks['visibleJawTip'] = list(tip)
     except ValueError:
         tip = None

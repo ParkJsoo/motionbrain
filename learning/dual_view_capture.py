@@ -105,7 +105,8 @@ def load_policy(plan):
     if 'responsePolicy' in plan:
         from learning.relative_response_policy import RelativeResponsePolicy
         ref = plan['responsePolicy']
-        policy = RelativeResponsePolicy(_decode_json(verified(Path(ref['artifact']), ref['sha256'])))
+        policy = RelativeResponsePolicy(_decode_json(verified(Path(ref['artifact']), ref['sha256'])),
+                                        view_id=plan['external']['viewConfigurationId'])
         for label, profile in plan['profiles'].items():
             if label not in policy.responses or profile['command'] != policy.responses[label]['command']:
                 raise ValueError('response_profile_mismatch')

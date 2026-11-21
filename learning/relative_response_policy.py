@@ -6,7 +6,7 @@ import numpy as np
 
 from learning.dual_view_policy import ACTIONS
 from learning.near_gripper_tip_observer import NearGripperTipObserver
-from learning.open_side_approach import observe_open_side
+from learning.open_side_approach import LEGACY_SIDE_VIEW, WIDE_SIDE_VIEW, observe_open_side
 
 SCHEMA = 'motionbrain.relative_response_policy.v1'
 COORDS = ('sx', 'sy', 'nx', 'ny', 'gap')
@@ -74,9 +74,11 @@ def closed_by_controller(receipt):
 
 
 class RelativeResponsePolicy:
-    def __init__(self, artifact):
+    def __init__(self, artifact, *, view_id=LEGACY_SIDE_VIEW):
         if artifact['schema'] != SCHEMA or set(artifact['responses']) != set(ACTIONS):
             raise ValueError('relative_response_schema')
+        self.view_id = view_id
+        self.calibrated_view = artifact.get('sideViewId', LEGACY_SIDE_VIEW)
         self.responses = artifact['responses']
         self.labels = sorted(self.responses)
         self.goals = artifact['closeGoals']
@@ -107,7 +109,7 @@ class RelativeResponsePolicy:
 
     def observe(self, side, near):
         rgb = np.asarray(side.convert('RGB'))
-        observed = observe_open_side(rgb)
+        observed = observe_open_side(rgb, view_id=self.view_id)
         image = cv2.cvtColor(np.asarray(near.convert('RGB')), cv2.COLOR_RGB2BGR)
         ok, encoded = cv2.imencode('.png', image)
         if not ok:
@@ -134,6 +136,14 @@ class RelativeResponsePolicy:
                     viewVotes=details.pop('viewVotes', [None, None]), viewRmse=[None, None], **details)
 
     def decide(self, f, *, close_receipt=None, active_action=None):
+        if not isinstance(self.view_id, str) or not self.view_id or self.calibrated_view != self.view_id:
+            return self.result('hold', 'response_model_view_mismatch', f)
+        if self.view_id == WIDE_SIDE_VIEW:
+            # On steep projections the two physical jaw ends can exchange order.
+            # Preserve measured features for replay until identity is validated.
+            return self.result('hold', 'wide_jaw_identity_observation_only', f)
+        if self.view_id != LEGACY_SIDE_VIEW:
+            return self.result('hold', 'response_model_unregistered_view', f)
         q = normalized(f)
         if not np.isfinite(q).all() or (q < self.bounds[0]).any() or (q > self.bounds[1]).any():
             return self.result('hold', 'outside_demonstrated_visual_extent', f)

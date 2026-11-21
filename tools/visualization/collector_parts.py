@@ -1,4 +1,5 @@
 """수집 원본을 우선 표시하고 같은 프레임에서 계산한 부품 윤곽만 합성한다."""
+from functools import partial
 import hashlib
 import json
 from pathlib import Path
@@ -121,8 +122,15 @@ def render_latest(camera, slots, ready, lock, stop, render):
 
 def monitor_parts(root, rec, rr, stop, single_command=False, on_closing=None):
     from learning.near_part_overlay import render_near
+    from learning.open_side_approach import WIDE_SIDE_VIEW
     from learning.side_part_overlay import render_side
 
+    plan_file = Path(root) / 'plan.json'
+    if not single_command and plan_file.is_file():
+        view_id = json.loads(plan_file.read_bytes()).get('external', {}).get('viewConfigurationId')
+        render_side = partial(render_side, view_id=view_id)
+        if view_id == WIDE_SIDE_VIEW:
+            render_near = partial(render_near, wide_approach=True)
     slots, ready, displayed, annotated = {}, {}, {}, {}
     lock = threading.Lock()
     for camera, render in zip(CAMERAS, (render_side, render_near)):

@@ -3,7 +3,7 @@ import unittest
 import cv2
 import numpy as np
 
-from learning.open_side_approach import observe_open_side
+from learning.open_side_approach import LEGACY_SIDE_VIEW, observe_open_side, observe_side_tip
 
 
 def scene(object_x=849, object_y=662, object_height=206):
@@ -16,6 +16,12 @@ def scene(object_x=849, object_y=662, object_height=206):
 
 
 class OpenSideApproachTest(unittest.TestCase):
+    def test_unknown_view_abstains_even_when_legacy_scene_is_visible(self):
+        frame = scene()
+        self.assertEqual(observe_side_tip(frame), observe_side_tip(frame, view_id=LEGACY_SIDE_VIEW))
+        with self.assertRaisesRegex(ValueError, 'unregistered_side_view'):
+            observe_side_tip(frame, view_id='typo')
+
     def test_target_moves_but_tool_does_not(self):
         for x, y, height in [(350, 635, 177), (849, 662, 206), (1150, 540, 196)]:
             result = observe_open_side(scene(x, y, height))
@@ -79,3 +85,25 @@ class OpenSideApproachTest(unittest.TestCase):
         cv2.circle(frame, (1919, 322), 25, (85, 150, 97), -1)
         with self.assertRaisesRegex(ValueError, 'marker_clipped'):
             observe_open_side(frame)
+
+    def test_wide_wrist_markers_require_connected_unclipped_distal_jaw(self):
+        from learning.open_side_approach import WIDE_SIDE_VIEW, observe_side_tip
+        rgb = np.full((1080, 1920, 3), 220, np.uint8)
+        rgb[469:500, 782:1010] = 48
+        cv2.ellipse(rgb, (940, 480), (13, 8), 0, 0, 360, (141, 87, 121), -1)
+        cv2.ellipse(rgb, (968, 480), (10, 9), 0, 0, 360, (85, 150, 97), -1)
+        tip, mode = observe_side_tip(rgb, view_id=WIDE_SIDE_VIEW)
+        self.assertEqual((tip, mode), ((782, 484), 'wide_wrist_jaw_contour'))
+        with self.assertRaises(ValueError):
+            observe_side_tip(rgb)
+        # Rotation changes the physical digit that forms the leftmost corner.
+        rotated = cv2.warpAffine(rgb, cv2.getRotationMatrix2D((940, 480), 80, 1),
+                                 (1920, 1080), borderValue=(220, 220, 220))
+        with self.assertRaisesRegex(ValueError, 'wide_wrist_jaw'):
+            observe_side_tip(rotated, view_id=WIDE_SIDE_VIEW)
+        clipped = np.roll(rgb, -785, axis=1)
+        with self.assertRaisesRegex(ValueError, 'wide_wrist_jaw'):
+            observe_side_tip(clipped, view_id=WIDE_SIDE_VIEW)
+        rgb[450:510, 904:910] = 220
+        with self.assertRaisesRegex(ValueError, 'wide_wrist_jaw'):
+            observe_side_tip(rgb, view_id=WIDE_SIDE_VIEW)

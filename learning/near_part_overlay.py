@@ -42,7 +42,38 @@ def _projected_margins(masks, center_y):
     return None
 
 
-def render_near(rgb):
+def _far_target(hsv, masks, tips):
+    """Estimate visible color only in the upper approach region of the wide setup."""
+    pink = cv2.inRange(hsv, np.uint8(POLICY['objectHsvLow']), np.uint8(POLICY['objectHsvHigh']))
+    _, labels, stats, centers = cv2.connectedComponentsWithStats(pink)
+    # Count even small fragments before selecting a target. A second plausible
+    # patch makes a single-prism interpretation ambiguous in this view.
+    candidates = [i for i in range(1, len(stats)) if stats[i, cv2.CC_STAT_AREA] >= 32]
+    if len(candidates) != 1:
+        return dict(status='unresolved'), None
+    i = candidates[0]
+    x, y, w, h, area = map(int, stats[i])
+    left, right = tips['leftJaw'], tips['rightJaw']
+    cx, cy = centers[i].tolist()
+    if not (left[0] < x and x+w < right[0] and 0 < y and cy < POLICY['objectRoi'][1]
+            and y+h < min(left[1], right[1])):
+        return dict(status='unresolved'), None
+    mask = np.uint8(labels == i)
+    measured = _projected_margins(dict(masks, target=mask), cy)
+    if measured is None:
+        return dict(status='unresolved'), None
+    # A short stripe of pink can be all that is visible under the gripper
+    # mount. Its center would be the center of a fragment, not of the prism.
+    if not (POLICY['objectWidth'][0] <= w <= POLICY['objectWidth'][1]
+            and POLICY['objectHeight'][0] <= h <= POLICY['objectHeight'][1]
+            and POLICY['objectArea'][0] <= area <= POLICY['objectArea'][1]
+            and h >= .65*w and area >= POLICY['minimumObjectFill']*w*h):
+        return dict(status='uncertain_fragment'), None
+    return dict(status='observed', bbox=[x, y, w, h], pixels=area, center=[cx, cy],
+                centerMinusJawMidPx=[cx-(left[0]+right[0])/2, cy-(left[1]+right[1])/2]), mask
+
+
+def render_near(rgb, *, wide_approach=False):
     """Return an annotated copy and JSON metadata; coordinates refer to the input frame."""
     if not isinstance(rgb, np.ndarray) or rgb.dtype != np.uint8 or rgb.shape != (240, 320, 3):
         raise ValueError('near_overlay_qvga_rgb_required')
@@ -93,4 +124,13 @@ def render_near(rgb):
             cv2.line(canvas, (first, margins['row']), (last, margins['row']), TIP_COLOR, 1)
     for point in tips.values():
         cv2.circle(canvas, tuple(np.rint(point).astype(int)), 2, TIP_COLOR, -1)
-    return canvas, dict(view='gripper', parts=parts, projectedMargins=margins)
+    info = dict(view='gripper', parts=parts, projectedMargins=margins)
+    if wide_approach:
+        far = dict(status='unresolved')
+        if len(tips) == 2 and 'target' not in masks:
+            far, mask = _far_target(hsv, masks, tips)
+            if mask is not None:
+                border = mask - cv2.erode(mask, np.ones((3, 3), np.uint8))
+                canvas[border.astype(bool)] = COLORS['target']
+        info['farTarget'] = dict(far, controlEligible=False)
+    return canvas, info

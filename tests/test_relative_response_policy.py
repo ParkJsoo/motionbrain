@@ -60,3 +60,19 @@ class RelativeResponseTest(unittest.TestCase):
         self.assertEqual(p.decide(features(sy=54,gap=60,ny=6))['action'],'hold')
         self.assertEqual(p.decide(features(),close_receipt={})['action'],'hold')
         self.assertNotEqual(p.decide(features(sy=36,ny=18))['action'],'gripper/close')
+
+    def test_only_matching_registered_view_can_select_action(self):
+        from learning.open_side_approach import WIDE_SIDE_VIEW
+        model = artifact()
+        policy = RelativeResponsePolicy(model, view_id=WIDE_SIDE_VIEW)
+        vote = policy.decide(features())
+        self.assertEqual(vote['reason'], 'response_model_view_mismatch')
+        self.assertEqual(vote['action'], 'hold')
+        model['sideViewId'] = WIDE_SIDE_VIEW
+        self.assertEqual(RelativeResponsePolicy(model, view_id=WIDE_SIDE_VIEW).decide(features())['reason'],
+                         'wide_jaw_identity_observation_only')
+        self.assertEqual(RelativeResponsePolicy(model).decide(features())['action'], 'hold')
+        model['sideViewId'] = 'unregistered'
+        unknown = RelativeResponsePolicy(model, view_id='unregistered')
+        self.assertEqual(unknown.decide(features())['reason'], 'response_model_unregistered_view')
+        self.assertEqual(unknown.decide(features())['action'], 'hold')
