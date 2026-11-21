@@ -36,6 +36,44 @@ class DualViewTest(unittest.TestCase):
             self.assertEqual(policy.predict(images[i], images[i])['action'], label)
             self.assertEqual(policy.predict(images[i-1], images[i])['action'], 'hold')
 
+    def test_synchronized_guard_rechecks_pose_after_independent_new_vote(self):
+        now = [2.15]
+        def latest():
+            seq = 1 if now[0] < 2.18 else 2
+            stamp = 2.05 + .1*(seq-1)
+            return dict(pair('wrist/down', stamp, seq),
+                        previousPair=pair('wrist/down', stamp-.1, seq-1))
+        control = VisualControl(latest, .5, .2, clock=lambda: now[0])
+        checks = []
+        def verify():
+            checks.append(now[0])
+            now[0] += .04
+        def sleep(delta):
+            now[0] += delta
+        admitted = control.dispatch_admission('wrist/down', 1.8, verify, synchronize=True, sleep=sleep)
+        self.assertEqual(len(checks), 1)
+        self.assertGreaterEqual(checks[0], 2.18)
+        self.assertEqual(admitted[1]['frameId'], 'side-2')
+
+    def test_synchronized_guard_rejects_hidden_dissent_or_stalled_camera_before_submit(self):
+        for failure in ('stalled', 'lost', 'hidden', 'during_pose'):
+            with self.subTest(failure=failure):
+                now = [2.15]
+                def latest():
+                    if now[0] < 2.18 or failure == 'stalled':
+                        return dict(pair('wrist/down', 2.05, 1), previousPair=pair('wrist/down', 1.95, 0))
+                    if failure == 'lost':
+                        return {'fault':True}
+                    s = dict(pair('wrist/down', 2.16, 2), previousPair=pair('wrist/down', 2.1, 3))
+                    if failure == 'hidden' or (failure == 'during_pose' and now[0] >= 2.3):
+                        s['lastDissent'] = {'wrist/down':2.11}
+                    return s
+                def sleep(delta):
+                    now[0] += delta
+                control = VisualControl(latest, .5, .2, clock=lambda:now[0])
+                with self.assertRaisesRegex(ValueError,'visual_start_changed|final_admission_expired'):
+                    control.dispatch_admission('wrist/down', 1.8, lambda:sleep(.2), synchronize=True, sleep=sleep)
+
     def test_changes_cancel_all_ten_running_commands_with_driver_off_proof(self):
         self.assertEqual(len(ACTIONS), 10)
         for label, (motor, sign) in ACTIONS.items():

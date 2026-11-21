@@ -89,6 +89,7 @@ python tools/run_dual_view_policy.py --plan "$PLAN" --execute --confirm-plan-sha
 | 필드 | 내용 |
 | --- | --- |
 | `examples` | 각 사람 시연의 `episode`, `episodeSha256`, 1부터 시작하는 `actionIndex` |
+| `syncDispatchToFrame` | 기본값은 `false`다. `true`이면 출력 전 마지막 점검을 시작할 때 같은 행동을 고른 새 양안 쌍을 기다린 뒤 자세와 OFF를 확인하고 전송한다. 관측 만료·판단 변경 시 전송을 중단한다. |
 | `external`, `helper`, `helperSha256` | 촬영 당시의 외부 카메라 설정, 수집 실행 파일 경로와 SHA-256 |
 | `sideSampleFps` (선택) | 측면 원본 수집 목표 속도. 정수 4(기본) 또는 8. 실제 양안 판단 주기는 두 카메라의 새 원본 ID와 판단 시각으로 측정한다. |
 | `gripperUrl`, `gripperBootId`, `scene` | 집게 카메라 주소와 현재 부팅 ID, 촬영 구도·물체·자세 범위·특징점 설명 |

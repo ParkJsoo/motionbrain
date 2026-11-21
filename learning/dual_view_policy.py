@@ -112,6 +112,38 @@ class VisualControl:
             return None
         return first, sample
 
+    def dispatch_admission(self, label, boundary, verify_pose, *, synchronize=False, sleep=time.sleep):
+        """Keep the last pose verification next to submit; optionally align it with a new vote."""
+        clocks = ('extClock', 'nearClock')
+        if synchronize:
+            initial = self.latest()
+            started = self.clock()
+            if not usable(initial, boundary, started, self.age, self.skew) or initial['action'] != label:
+                raise ValueError('visual_start_changed')
+            oldest = min(initial[k]['sourceEarliest'] for k in clocks)
+            # Wait with all outputs OFF, ahead of the final device read. Never extend an
+            # active feedback deadline to compensate for device, camera or disk latency.
+            while self.clock() < started + self.age:
+                sample = self.latest()
+                if (not usable(sample, boundary, self.clock(), self.age, self.skew)
+                        or sample['action'] != label or sample['lastDissent'].get(label, 0) > oldest):
+                    raise ValueError('visual_start_changed')
+                if (all(sample[k]['sourceEarliest'] > initial[k]['sourceEarliest'] for k in clocks)
+                        and all(sample[k] != initial[k] for k in ('frameId', 'nearFrameId'))
+                        and self.admission(sample, boundary)):
+                    break
+                sleep(.01)
+            else:
+                raise ValueError('final_admission_expired')
+        verify_pose()
+        current = self.latest()
+        admitted = self.admission(current, boundary)
+        if (not admitted or current['action'] != label or current.get('fault')
+                or (synchronize and (current['lastDissent'].get(label, 0) > oldest
+                    or any(current[k]['sourceEarliest'] < sample[k]['sourceEarliest'] for k in clocks)))):
+            raise ValueError('visual_start_changed')
+        return admitted
+
     def feedback(self, label, boundary, trace=None, *, admitted_pair=None):
         # Only new evidence can sustain the current command. While the first
         # post-ack pair is in flight the last admitted OFF pair expires normally.
@@ -147,7 +179,7 @@ class VisualControl:
         return check
 
 
-def run_actions(control, catalog, executor, boot, off_pose, max_actions, record, *, sleep=time.sleep, on_active=None):
+def run_actions(control, catalog, executor, boot, off_pose, max_actions, record, *, sleep=time.sleep, on_active=None, sync_dispatch=False):
     """One owner at a time. Each dispatch needs two independent pairs after OFF."""
     for _ in range(max_actions):
         _, boundary = off_pose()
@@ -175,14 +207,13 @@ def run_actions(control, catalog, executor, boot, off_pose, max_actions, record,
 
         def guard(req):
             nonlocal feedback, admission
-            angle, _ = off_pose()
-            if catalog.request(label, angle, boot, cid) != req:
-                raise ValueError('pose_or_profile_changed')
-            current = control.latest()
-            admission = control.admission(current, boundary)
-            if not admission or current['action'] != label:
-                raise ValueError('visual_start_changed')
-            feedback = control.feedback(label, boundary, trace, admitted_pair=current)
+            def verify_pose():
+                angle, _ = off_pose()
+                if catalog.request(label, angle, boot, cid) != req:
+                    raise ValueError('pose_or_profile_changed')
+            admission = control.dispatch_admission(label, boundary, verify_pose,
+                                                   synchronize=sync_dispatch, sleep=sleep)
+            feedback = control.feedback(label, boundary, trace, admitted_pair=admission[1])
 
         published = False
         def during(req, ack):
