@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Run a finite two-camera policy session on the external capture volume."""
+"""Run a finite two-camera policy session on the selected capture volume."""
+from contextlib import contextmanager
 import argparse
 import hashlib
 import json
@@ -45,6 +46,30 @@ class IdlePose:
             raise ValueError('all_off_epoch_unverified')
         self.cursor = cursor
         return SequencePort._shoulder_angle(s), receipt['receivedMonotonic']
+
+
+@contextmanager
+def capture_parent(plan):
+    parent = Path(plan['captureRoot'])
+    storage = plan.get('captureStorage', 'external')
+    if storage == 'local':
+        base = ROOT / '.local'
+        if (base not in parent.parents or parent.resolve(strict=True) != parent
+                or not parent.is_dir() or parent.stat().st_dev != ROOT.stat().st_dev):
+            raise ValueError('local_capture_root_changed')
+        yield parent
+    elif storage == 'external':
+        mount = Path(plan['mount'])
+        fd = _mount_fd(mount, plan['volumeUuid'], ROOT)
+        try:
+            if (not parent.is_relative_to(mount) or parent.resolve(strict=True) != parent
+                    or parent.stat().st_dev != os.fstat(fd).st_dev):
+                raise ValueError('external_capture_root_changed')
+            yield parent
+        finally:
+            os.close(fd)
+    else:
+        raise ValueError('invalid_capture_storage')
 
 
 def main(argv=None):
@@ -93,12 +118,7 @@ def main(argv=None):
     if args.execute and (args.confirm_plan_sha256 != digest or not catalog.profiles
                          or not os.environ.get('MOTIONBRAIN_HTTP_TOKEN')):
         raise ValueError('execution_requires_confirmed_plan_profiles_and_token')
-    mount, parent = Path(p['mount']), Path(p['captureRoot'])
-    fd = _mount_fd(mount, p['volumeUuid'], ROOT)
-    try:
-        if (not parent.is_relative_to(mount) or parent.resolve(strict=True) != parent
-                or parent.stat().st_dev != os.fstat(fd).st_dev):
-            raise ValueError('external_capture_root_changed')
+    with capture_parent(p) as parent:
         session = uuid.uuid4().hex
         root = parent/session
         root.mkdir(mode=0o700)
@@ -178,8 +198,6 @@ def main(argv=None):
             signal.signal(signal.SIGTERM, previous)
         return int(child.exitcode != 0 or viewer_failed or
                    outcome not in ('action_budget', 'hold_or_uncommissioned', 'observation_finished'))
-    finally:
-        os.close(fd)
 
 
 if __name__ == '__main__':

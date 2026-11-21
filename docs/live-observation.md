@@ -62,13 +62,13 @@ M4는 펌웨어의 `angleDeg` 센서 좌표다. 미확인 관절을 측정값으
 
 ## 수동 조작·동작 수집 중 같은 영상 보기
 
-수집기의 새 실행 폴더를 지정한다. `--source`는 `external-stream`과 `gripper`가 생길 상위 폴더이며, 생성 전부터 기다릴 수 있다. 양안 실험에서는 외장 볼륨을 가리키는 해당 실행의 `source` 링크도 사용할 수 있다. 수동 수집에서는 수집기 자체의 출력 폴더를 외장 볼륨에 지정한다.
+수집기의 새 실행 폴더를 지정한다. `--source`는 `external-stream`과 `gripper`가 생길 상위 폴더이며, 생성 전부터 기다릴 수 있다. 양안 실험에서는 외장 볼륨을 가리키는 해당 실행의 `source` 링크도 사용할 수 있다. 수동 수집에서는 수집기가 현재 기록 중인 원본 폴더를 지정한다.
 
 ```bash
 python tools/visualization/collector_live.py --source "$CAPTURE_ROOT" --rerun-url "$RERUN_URL"
 ```
 
-이 프로세스는 카메라 연결 없이 수집 도중 확정된 최신 원장과 그 원본 바이트를 읽는다. 화면용 외부 JPEG와 집게 원본 JPEG를 각각 갱신한다. 집게 영상은 수집기가 실제로 요청한 횟수만큼만 생긴다. 수집이 멈춰 원본 시각 하한이 1.5초 이상 지난 영상은 다음 점검에서 지운다. 표시가 건너뛴 프레임도 외장 저장소의 원장에 남는다. 표준 출력의 프레임 ID·원장 경로·제출 시각과 수집 원장을 비교하면 표시 간격과 건너뛴 수를 계산할 수 있다. 제출 시각은 Mac 단조 시계로 기록하며, 화면에 픽셀이 나타난 시각과 광학적 촬영 시각은 별도 기준 시계로 측정해야 한다.
+이 프로세스는 카메라 연결 없이 수집 도중 확정된 최신 원장과 그 원본 바이트를 읽는다. 화면용 외부 JPEG와 집게 원본 JPEG를 각각 갱신한다. 집게 영상은 수집기가 실제로 요청한 횟수만큼만 생긴다. 수집이 멈춰 원본 시각 하한이 1.5초 이상 지난 영상은 다음 점검에서 지운다. 표시가 건너뛴 프레임도 수집 폴더의 원장에 남는다. 표준 출력의 프레임 ID·원장 경로·제출 시각과 수집 원장을 비교하면 표시 간격과 건너뛴 수를 계산할 수 있다. 제출 시각은 Mac 단조 시계로 기록하며, 화면에 픽셀이 나타난 시각과 광학적 촬영 시각은 별도 기준 시계로 측정해야 한다.
 
 단발 명령 수집기의 `native-camera`·`gripper-camera` 구조에는 같은 명령에 `--single-command`를 추가한다.
 
@@ -101,7 +101,7 @@ python tools/run_dual_view_policy.py --plan "$PLAN" --observe --rerun-url "$RERU
 python tools/run_dual_view_policy.py --plan "$PLAN" --execute --confirm-plan-sha256 "$PLAN_SHA256" --rerun-url "$RERUN_URL"
 ```
 
-첫 명령으로 실제 시연 원본, 시연에 있는 행동, 등록된 구동 프로필과 계획 해시를 확인한다. 두 번째 명령은 카메라와 외장 기록만 사용한다. 세 번째 명령에는 현재 부팅 ID, 이미 ARM 상태인 전용 제어기와 기존 비공개 환경변수 `MOTIONBRAIN_HTTP_TOKEN`이 필요하다. 실행기가 ARM을 전송하지 않는다. 기본 펌웨어와 구분되는 PlatformIO 빌드 환경은 `esp32dev_dual_view_policy`다.
+첫 명령으로 실제 시연 원본, 시연에 있는 행동, 등록된 구동 프로필과 계획 해시를 확인한다. 두 번째 명령은 카메라와 지정한 저장 경로만 사용한다. 세 번째 명령에는 현재 부팅 ID, 이미 ARM 상태인 전용 제어기와 기존 비공개 환경변수 `MOTIONBRAIN_HTTP_TOKEN`이 필요하다. 실행기가 ARM을 전송하지 않는다. 기본 펌웨어와 구분되는 PlatformIO 빌드 환경은 `esp32dev_dual_view_policy`다.
 
 계획 JSON에는 다음 값이 필요하다.
 
@@ -112,7 +112,8 @@ python tools/run_dual_view_policy.py --plan "$PLAN" --execute --confirm-plan-sha
 | `external`, `helper`, `helperSha256` | 촬영 당시의 외부 카메라 설정, 수집 실행 파일 경로와 SHA-256 |
 | `sideSampleFps` (선택) | 측면 원본 수집 목표 속도. 정수 4(기본) 또는 8. 실제 양안 판단 주기는 두 카메라의 새 원본 ID와 판단 시각으로 측정한다. |
 | `gripperUrl`, `gripperBootId`, `scene` | 집게 카메라 주소와 현재 부팅 ID, 촬영 구도·물체·자세 범위·특징점 설명 |
-| `mount`, `volumeUuid`, `captureRoot` | 원본을 저장할 외장 볼륨과 기존 수집 상위 디렉터리 |
+| `captureStorage`, `captureRoot` | 저장 방식과 기존 수집 상위 디렉터리의 절대 경로. 기본값 `external`은 외장 볼륨을 사용한다. `local`은 저장소와 같은 디스크의 `.local/` 하위 디렉터리(예: `.local/live-captures`)에 원본을 기록한다. |
+| `mount`, `volumeUuid` | `external` 방식에서 확인할 외장 볼륨 경로와 UUID |
 | `maxAge`, `maxSkew`, `maxViewRmse` | 영상 나이와 카메라 간 시차의 최대 허용 초, 외부·집게 영상별 정규화 RGB 오차 한도 |
 | `controllerUrl`, `controllerBootId`, `seconds`, `maxActions` | 제어기, 현재 부팅 ID, 수집 시간과 최대 명령 횟수 |
 | `profiles` | 행동별 검증된 `shoulderRangeDeg`와 장치 `command`. 관측 전용은 빈 객체도 허용 |
@@ -121,7 +122,7 @@ python tools/run_dual_view_policy.py --plan "$PLAN" --execute --confirm-plan-sha
 
 다섯 출력의 OFF와 출력 원장의 일련번호를 확인한 뒤 촬영된 연속 두 영상 쌍으로 시작한다. 구동 중에는 별도 수집 프로세스가 계속 추론한다. 실행기는 반대 판단, 영상 불일치 또는 관측 만료 때 진행 중인 명령 ID로 취소한다. 다음 방향과 관절을 선택하려면 종료 기록·드라이버 OFF와 새 영상 쌍이 필요하다. 동시에 출력할 수 있는 관절은 하나다.
 
-외장 실행 폴더의 `decisions.jsonl`에는 원본 프레임 ID와 양쪽 판단, `actions.jsonl`에는 실행기가 소비한 프레임과 판단, 취소·종료 근거가 남는다. 짧은 동작은 새 양안 쌍을 받기 전에 끝날 수 있다. 이 경우 `observedRunningPairs`는 0이다. 이 수치는 호스트의 구동 응답 이후에 얻은 영상 쌍 수이며 모터의 물리적 이동은 영상과 실제 출력 시각을 대조해 판정한다.
+각 실행 폴더의 `decisions.jsonl`에는 원본 프레임 ID와 양쪽 판단, `actions.jsonl`에는 실행기가 소비한 프레임과 판단, 취소·종료 근거가 남는다. 짧은 동작은 새 양안 쌍을 받기 전에 끝날 수 있다. 이 경우 `observedRunningPairs`는 0이다. 이 수치는 호스트의 구동 응답 이후에 얻은 영상 쌍 수이며 모터의 물리적 이동은 영상과 실제 출력 시각을 대조해 판정한다.
 
 ### 학습된 관절 반응으로 행동 선택하기
 
