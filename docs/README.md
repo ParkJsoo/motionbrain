@@ -23,6 +23,7 @@
 | --- | --- |
 | [시각 행동 학습](visual-action-learning.md) | 관측·예측·기구학의 역할과 개발 단계별 평가 |
 | [에피소드별 오프라인 비교](evidence/2026-11-22-offline-episode-comparison.md) | 동일 명령의 양안 반응 예측, 왕복 자료의 관측 범위, 집기·놓기 행동 선택 |
+| [왕복 중간 구간과 닫기 목표 대조](evidence/2026-11-22-sweep-goal-response.md) | 색 표식의 시연 간 회전 전이, 관절별 목표 접근량, 시뮬레이터 대조 |
 | [반복 실험 파이프라인](experiment-pipeline.md) | 단발 수집과 관측·학습 적격 분리, 고정 후 평가·버전 비교와 수동 접촉 탐색 |
 | [관절별 수동 수집](manual-data-collection.md) | 수집 화면·재생, M4 데이터셋 변환·학습·평가 사용법 |
 | [물체·집게 상대 상태](relative-action-selection.md) | 수동 점·등록 특징의 별도 계약, 관절/자세별 모델과 고정 평가·질의 |
