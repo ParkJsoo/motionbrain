@@ -31,7 +31,7 @@ def latest(root, camera, single_command=False):
     return None
 
 
-def read_frame(path, camera, now):
+def read_frame(path, camera, now, *, include_rgb=False):
     receipt = json.loads(path.read_bytes())
     record = receipt if camera == 'external' else receipt['record']
     at = record['sourceEarliest']
@@ -46,29 +46,40 @@ def read_frame(path, camera, now):
         raw = (path.parent / 'esp32-frame.jpg').read_bytes()
     if hashlib.sha256(raw).hexdigest() != receipt['imageSha256']:
         raise ValueError('collector_image_hash_mismatch')
+    rgb = None
     if camera == 'external':
         import cv2
         import numpy as np
         pixels = decode(raw, receipt['rawByteLength'], receipt['pixelSha256'])
         bgra = np.frombuffer(pixels, np.uint8).reshape(receipt['height'], receipt['width'], 4)
+        if include_rgb:
+            rgb = cv2.cvtColor(bgra, cv2.COLOR_BGRA2RGB)
         ok, encoded = cv2.imencode('.jpg', bgra, [cv2.IMWRITE_JPEG_QUALITY, 85])
         if not ok:
             raise ValueError('preview_encoding_failed')
         raw = encoded.tobytes()
-    return at, record.get('frameId') or record['frame']['frameId'], raw
+    elif include_rgb:
+        import cv2
+        import numpy as np
+        bgr = cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_COLOR)
+        if bgr is None:
+            raise ValueError('invalid_gripper_jpeg')
+        rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+    identity = record.get('frameId') or record['frame']['frameId']
+    return (at, identity, raw, rgb) if include_rgb else (at, identity, raw)
 
 
-def watch(root, camera, single_command, slots, lock, stop):
+def watch(root, camera, single_command, slots, lock, stop, include_rgb=False):
     seen = None
     try:
         while not stop.is_set():
             path = latest(root, camera, single_command)
             if path and path != seen:
                 seen = path
-                frame = read_frame(path, camera, time.monotonic)
+                frame = read_frame(path, camera, time.monotonic, include_rgb=include_rgb)
                 with lock:
                     slots[camera] = (path, frame)
-            stop.wait(.1)
+            stop.wait(.025 if include_rgb else .1)
     except Exception as exc:
         with lock:
             slots[camera] = (None, exc)
@@ -122,6 +133,7 @@ def monitor(root, rec, rr, stop, single_command=False, on_closing=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source', required=True, type=Path)
+    parser.add_argument('--part-overlay', action='store_true', help='수집 원본에 부품과 관측점을 겹쳐 표시')
     parser.add_argument('--single-command', action='store_true', help='native-camera 및 gripper-camera 폴더 사용')
     parser.add_argument('--rerun-url', default='rerun+http://127.0.0.1:9876/proxy')
     args = parser.parse_args()
@@ -137,11 +149,21 @@ def main():
     # Native SDK connect/disconnect may block through Python signal handlers.
     signal.alarm(5)
     rec.connect_grpc(args.rerun_url)
-    rec.send_blueprint(bp.Blueprint(bp.Horizontal(
-        bp.Spatial2DView(origin='/cameras/external'), bp.Spatial2DView(origin='/cameras/gripper'))))
+    layout = bp.Horizontal(bp.Spatial2DView(origin='/cameras/external'), bp.Spatial2DView(origin='/cameras/gripper'))
+    if args.part_overlay:
+        from tools.visualization.collector_parts import legend_image
+        layout = bp.Vertical(layout, bp.Horizontal(bp.Spatial2DView(origin='/legend', name='Part colors'),
+                                                    bp.TextDocumentView(origin='/decision', name='Matched decision'),
+                                                    column_shares=[2.7, 1]), row_shares=[6, 1.1])
+        rec.log('legend', rr.Image(legend_image()), static=True)
+    rec.send_blueprint(bp.Blueprint(layout, collapse_panels=args.part_overlay))
     rec.flush(timeout_sec=1.)
     signal.alarm(0)
-    monitor(args.source, rec, rr, stop, args.single_command, lambda: signal.alarm(4))
+    display = monitor
+    if args.part_overlay:
+        from tools.visualization.collector_parts import monitor_parts
+        display = monitor_parts
+    display(args.source, rec, rr, stop, args.single_command, lambda: signal.alarm(4))
     signal.alarm(0)
 
 

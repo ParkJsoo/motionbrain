@@ -55,7 +55,10 @@ def main(argv=None):
     modes.add_argument('--execute', action='store_true')
     parser.add_argument('--confirm-plan-sha256')
     parser.add_argument('--rerun-url', help='display these same collected frames in an existing Rerun viewer')
+    parser.add_argument('--part-overlay', action='store_true', help='show part contours and landmarks in the Rerun viewer')
     args = parser.parse_args(argv)
+    if args.part_overlay and not args.rerun_url:
+        parser.error('--part-overlay requires --rerun-url')
     raw = args.plan.read_bytes()
     digest = hashlib.sha256(raw).hexdigest()
     p = _decode_json(raw)
@@ -126,8 +129,11 @@ def main(argv=None):
             if args.rerun_url:
                 viewer_log = (root/'display.jsonl').open('x')
                 try:
-                    viewer = subprocess.Popen([sys.executable, str(ROOT/'tools/visualization/collector_live.py'),
-                        '--source', str(root), '--rerun-url', args.rerun_url], stdout=viewer_log)
+                    viewer_args = [sys.executable, str(ROOT/'tools/visualization/collector_live.py'),
+                                   '--source', str(root), '--rerun-url', args.rerun_url]
+                    if args.part_overlay:
+                        viewer_args.append('--part-overlay')
+                    viewer = subprocess.Popen(viewer_args, stdout=viewer_log)
                 finally:
                     viewer_log.close()
             child.start()
