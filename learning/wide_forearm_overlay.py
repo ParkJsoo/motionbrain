@@ -84,7 +84,15 @@ def wide_distal_parts(small_rgb, elbow, tip=None):
     if len(candidates) != 1:
         return {}, {}
     attached = labels == candidates[0]
-    masks = {'wrist_body': np.uint8(attached & (forward <= .86*span))*255}
+    masks = {}
+    wrist_pixels = attached & (forward <= .86*span)
+    # A dim wall can join the housing and fill the search window. Require
+    # actual material edges on both sides before displaying a wrist silhouette.
+    rim = wrist_pixels & (np.abs(lateral) >= 1.65*span - 2)
+    rim_support = cv2.dilate(np.uint8(rim), np.ones((5, 5), np.uint8)) != 0
+    continuation = rim_support & (np.abs(lateral) >= 1.65*span) & (material != 0)
+    if np.count_nonzero(continuation) < span:
+        masks['wrist_body'] = np.uint8(wrist_pixels)*255
     landmark = {'wristSurfaceMarker': (2*wrist).tolist()}
     # 판별 가능한 검은 말단이 손목에서 이어질 때만 턱 윤곽을 표시한다.
     # 개별 턱끝의 위치나 양 턱의 식별에는 사용하지 않는다.

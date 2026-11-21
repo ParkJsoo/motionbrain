@@ -192,6 +192,11 @@ def render_side(rgb, *, view_id=None):
         housings = _housing_pair(small, gold, rings, wide=view_id == WIDE_SIDE_VIEW)
         if housings:
             shoulder, elbow = housings
+            wide_rail = view_id == WIDE_SIDE_VIEW and elbow is not None
+            if view_id == WIDE_SIDE_VIEW and elbow is None:
+                # At high poses the original flange pair can still be visible.
+                # Its independent cap and shaft checks must pass on this frame.
+                _, elbow = _housing_pair(small, gold, rings)
             landmarks['shoulderHousingCenterEstimate'] = (shoulder*2).round().astype(int).tolist()
             pad = np.array([1., 0.])*w*.32
             area = _polygon(gold.shape, [shoulder-pad-[0,.18*w], shoulder+pad-[0,.18*w],
@@ -199,7 +204,7 @@ def render_side(rgb, *, view_id=None):
             _attach(labels, 'rotating_base', area, material, .035*w*w)
             if elbow is not None:
                 landmarks['elbowHousingCenterEstimate'] = (elbow*2).round().astype(int).tolist()
-                if view_id == WIDE_SIDE_VIEW:
+                if wide_rail:
                     region = wide_upper_region(small, shoulder, elbow, w)
                     _attach(labels, 'upper_arm', region, dark, .06*w*w)
                 else:

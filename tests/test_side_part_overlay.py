@@ -10,6 +10,16 @@ from learning.open_side_approach import WIDE_SIDE_VIEW
 
 
 class SidePartOverlayTest(unittest.TestCase):
+    def test_wide_view_keeps_verified_flange_pair_when_single_cap_is_hidden(self):
+        frame = np.full((1080, 1920, 3), 35, np.uint8)
+        shoulder, elbow = np.array([450., 360.]), np.array([425., 218.])
+        with patch('learning.side_part_overlay._base_rings', return_value=(360, 425, 160, 36)), \
+             patch('learning.side_part_overlay._housing_pair',
+                   side_effect=[(shoulder, None), (shoulder, elbow)]):
+            _, info = render_side(frame, view_id=WIDE_SIDE_VIEW)
+        self.assertEqual(info['landmarks']['elbowHousingCenterEstimate'], [850, 436])
+        self.assertEqual(info['parts']['upper_arm'], 'estimated_visible')
+
     def test_wide_link_mask_is_displayed_even_when_the_jaw_tip_is_hidden(self):
         frame = np.full((1080, 1920, 3), 210, np.uint8)
         mask = np.zeros((540, 960), np.uint8)

@@ -54,3 +54,9 @@ class WideDistalOverlayTest(unittest.TestCase):
         masks, _ = wide_distal_parts(image, np.array([715.,265.]))
         self.assertNotIn('visible_jaws', masks)
         self.assertIn('wrist_body', masks)
+
+    def test_dim_wall_connected_to_housing_is_not_painted_as_wrist(self):
+        image = self.frame()
+        image[np.all(image == 225, axis=2)] = 115
+        masks, _ = wide_distal_parts(image, np.array([715., 265.]))
+        self.assertNotIn('wrist_body', masks)
