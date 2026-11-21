@@ -2,8 +2,10 @@
 import cv2
 import numpy as np
 
-from learning.open_side_approach import observe_side_tip
+from learning.open_side_approach import WIDE_SIDE_VIEW, observe_side_tip
 from learning.pink_prism_height import open_scene_prism_candidate
+from learning.wide_arm_overlay import wide_elbow, wide_upper_region
+from learning.wide_forearm_overlay import wide_distal_parts
 
 
 COLORS = {
@@ -75,7 +77,7 @@ def _beam_edges(dark, start, end, width):
     return count >= 3
 
 
-def _housing_pair(rgb, gold, rings):
+def _housing_pair(rgb, gold, rings, *, wide=False):
     x, y, w, _ = rings
     components = _components(gold)
     # The near-side gold shoulder housing forms a crescent beside the dark cap.
@@ -91,6 +93,8 @@ def _housing_pair(rgb, gold, rings):
     r = round(.11*w)
     if dark[cy-r:cy+r+1,cx-r:cx+r+1].mean() < .35:
         return None
+    if wide:
+        return shoulder, wide_elbow(rgb, gold, rings, shoulder)
 
     # Seen from this camera, two separate yellow flanges enclose the elbow
     # gearbox. Overlapping dark circular screws used to compete as elbow axes.
@@ -185,7 +189,7 @@ def render_side(rgb, *, view_id=None):
         area = _polygon(gold.shape, [(x-.38*w, y-.20*w), (x+1.16*w, y-.20*w),
                                      (x+1.24*w, y+h+.09*w), (x-.38*w, y+h+.09*w)])
         _attach(labels, 'fixed_base', area, material, .07*w*w)
-        housings = _housing_pair(small, gold, rings)
+        housings = _housing_pair(small, gold, rings, wide=view_id == WIDE_SIDE_VIEW)
         if housings:
             shoulder, elbow = housings
             landmarks['shoulderHousingCenterEstimate'] = (shoulder*2).round().astype(int).tolist()
@@ -195,13 +199,26 @@ def render_side(rgb, *, view_id=None):
             _attach(labels, 'rotating_base', area, material, .035*w*w)
             if elbow is not None:
                 landmarks['elbowHousingCenterEstimate'] = (elbow*2).round().astype(int).tolist()
-                _attach(labels, 'upper_arm', _strip(gold.shape, shoulder, elbow, .16*w), material, .06*w*w)
+                if view_id == WIDE_SIDE_VIEW:
+                    region = wide_upper_region(small, shoulder, elbow, w)
+                    _attach(labels, 'upper_arm', region, dark, .06*w*w)
+                else:
+                    _attach(labels, 'upper_arm', _strip(gold.shape, shoulder, elbow, .16*w), material, .06*w*w)
     try:
         tip, _ = observe_side_tip(rgb, view_id=view_id)
         landmarks['visibleJawTip'] = list(tip)
     except ValueError:
         tip = None
-    if tip is not None:
+    if view_id == WIDE_SIDE_VIEW:
+        masks, distal_landmarks = wide_distal_parts(small, elbow, tip=tip)
+        landmarks.update(distal_landmarks)
+        for name, mask in masks.items():
+            visible = mask != 0
+            if name == 'forearm':
+                # The projected forearm search area may cross the observed upper-arm rail.
+                visible &= labels != list(COLORS).index('upper_arm') + 1
+            labels[visible] = list(COLORS).index(name) + 1
+    elif tip is not None:
         # The compact pink patch physically fixed to the wrist must be visible.
         end = np.array(tip)/2
         violet = cv2.inRange(hsv, (135, 25, 45), (179, 230, 235))

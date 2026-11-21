@@ -1,13 +1,30 @@
 import json
 import unittest
+from unittest.mock import patch
 
 import cv2
 import numpy as np
 
 from learning.side_part_overlay import COLORS, _base_rings, _housing_pair, render_side
+from learning.open_side_approach import WIDE_SIDE_VIEW
 
 
 class SidePartOverlayTest(unittest.TestCase):
+    def test_wide_link_mask_is_displayed_even_when_the_jaw_tip_is_hidden(self):
+        frame = np.full((1080, 1920, 3), 210, np.uint8)
+        mask = np.zeros((540, 960), np.uint8)
+        mask[200:220, 300:330] = 255
+        with patch('learning.side_part_overlay.wide_distal_parts',
+                   return_value=({'forearm': mask}, {})) as detector:
+            out, info = render_side(frame, view_id=WIDE_SIDE_VIEW)
+            self.assertEqual(info['parts']['forearm'], 'estimated_visible')
+            self.assertNotIn('visibleJawTip', info['landmarks'])
+            self.assertFalse(np.array_equal(out[420, 630], frame[420, 630]))
+            self.assertFalse(info['controlEligible'])
+            _, legacy = render_side(frame)
+            self.assertEqual(legacy['parts']['forearm'], 'unresolved')
+            detector.assert_called_once()
+
     def test_target_contour_is_from_current_pixels_and_input_is_unchanged(self):
         rgb = np.full((1080, 1920, 3), 222, np.uint8)
         for x, y in [(320, 650), (810, 500)]:
