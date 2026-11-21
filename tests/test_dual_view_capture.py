@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from PIL import Image
-from learning.dual_view_capture import capture, effective_vote, load_policy
+from learning.dual_view_capture import capture, effective_vote, load_policy, side_sample_fps
 
 
 class DemonstrationBindingTest(unittest.TestCase):
@@ -89,6 +89,31 @@ class DemonstrationBindingTest(unittest.TestCase):
         self.assertEqual(stale['action'],'hold')
         self.assertEqual(stale['modelAction'],'wrist/up')
         self.assertEqual(stale['lastDissent']['wrist/up'],1.3)
+
+    def test_four_and_eight_fps_use_the_corresponding_recording_budget(self):
+        self.assertEqual(side_sample_fps({}), 4)
+        for invalid in (0, 5, True, '8', 8.0):
+            with self.assertRaisesRegex(ValueError, 'invalid_side_sample_fps'):
+                side_sample_fps({'sideSampleFps': invalid})
+        for fps in (4, 8):
+            run = self.root / str(fps)
+            run.mkdir()
+            helper = run / 'helper'
+            helper.write_bytes(b'helper')
+            plan = dict(seconds=2, sideSampleFps=fps, helper=str(helper),
+                        helperSha256=hashlib.sha256(b'helper').hexdigest(),
+                        external={'deviceUniqueId':'id', 'viewConfigurationId':'side'})
+            ctx = multiprocessing.get_context('spawn')
+            with patch('learning.dual_view_capture.ActionRecorder') as recorder, \
+                    patch('learning.dual_view_capture.load_policy'), \
+                    patch('learning.dual_view_capture.time.monotonic', side_effect=[1., 4.]):
+                recorder.return_value.close.return_value = {'status':'partial', 'clockBridge':True}
+                with self.assertRaisesRegex(ValueError, 'no_paired_observations'):
+                    capture(plan, run, 'session', ctx.Event(), ctx.Array('c', 8192))
+            config = recorder.call_args.args[2]
+            self.assertEqual(config['sampleFps'], fps)
+            self.assertEqual(config['maxFrames'], fps * 2 + 20)
+            self.assertEqual(config['maxBytes'], config['maxFrames'] * (1920 * 1080 * 4 + 65536))
 
     def test_expired_warmup_and_failed_clock_close_are_not_successful_observations(self):
         helper = self.root/'helper'

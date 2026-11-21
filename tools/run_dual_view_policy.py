@@ -18,7 +18,7 @@ from learning.action_execution import BoundedActionExecutor
 from learning.action_port import BoundedActionHTTP
 from learning.artifacts import _decode_json
 from learning.device_adapter import _object
-from learning.dual_view_capture import capture, load_policy, publish_active_context, publish_close_context, verified
+from learning.dual_view_capture import capture, load_policy, publish_active_context, publish_close_context, side_sample_fps, verified
 from learning.dual_view_policy import Catalog, VisualControl, run_actions
 from learning.external_media import _mount_fd
 from learning.supervised_transport import SequencePort
@@ -59,6 +59,10 @@ def main(argv=None):
     raw = args.plan.read_bytes()
     digest = hashlib.sha256(raw).hexdigest()
     p = _decode_json(raw)
+    fps = side_sample_fps(p)
+    sync_dispatch = p.get('syncDispatchToFrame', False)
+    if type(sync_dispatch) is not bool:
+        raise ValueError('invalid_dispatch_sync')
     policy = load_policy(p)
     catalog = Catalog(p['profiles'])
     verified(Path(p['helper']), p['helperSha256'])
@@ -79,7 +83,7 @@ def main(argv=None):
         return json.loads(data) if data else None
 
     control = VisualControl(latest, p['maxAge'], p['maxSkew'])
-    print(json.dumps(dict(planSha256=digest, demonstrated=sorted(set(policy.labels)),
+    print(json.dumps(dict(planSha256=digest, sideSampleFps=fps, syncDispatchToFrame=sync_dispatch, demonstrated=sorted(set(policy.labels)),
                           commissioned=sorted(catalog.profiles))), flush=True)
     if not (args.observe or args.execute):
         return 0
@@ -149,7 +153,7 @@ def main(argv=None):
                             publish_close_context(close_context, session, p['controllerBootId'], None)
                         publish_active_context(active_context, session, p['controllerBootId'], req, vote, at)
                     outcome = run_actions(control, catalog, executor, p['controllerBootId'], pose, p['maxActions'],
-                                          record, on_active=on_active if use_response else None)
+                                          record, on_active=on_active if use_response else None, sync_dispatch=sync_dispatch)
             print(outcome, flush=True)
             viewer_failed = viewer is not None and viewer.poll() is not None
         finally:

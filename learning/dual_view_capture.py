@@ -216,6 +216,13 @@ def response_vote(policy, side, near, earliest, active, close):
     return vote
 
 
+def side_sample_fps(plan):
+    fps = plan.get('sideSampleFps', 4)
+    if type(fps) is not int or fps not in (4, 8):
+        raise ValueError('invalid_side_sample_fps')
+    return fps
+
+
 def capture(plan, root, session, stopping, mailbox, context_mailbox=None, active_mailbox=None):
     root = Path(root)
     def publish(value):
@@ -227,13 +234,14 @@ def capture(plan, root, session, stopping, mailbox, context_mailbox=None, active
     try:
         policy = load_policy(plan)
         duration = plan['seconds']
-        frames = 4*duration+20
+        fps = side_sample_fps(plan)
+        frames = fps*duration+20
         config = plan['external']
         helper = Path(plan['helper'])
         verified(helper, plan['helperSha256'])
         camera = ActionRecorder(root/'external-stream', helper, dict(
             deviceId=config['deviceUniqueId'], viewId=config['viewConfigurationId'], sessionId=session,
-            maxFrames=frames, seconds=duration, sampleFps=4, maxBytes=frames*(1920*1080*4+65536)))
+            maxFrames=frames, seconds=duration, sampleFps=fps, maxBytes=frames*(1920*1080*4+65536)))
         until = time.monotonic()+duration
         camera.start()
         camera.wait_ready()
