@@ -33,6 +33,27 @@ class OpenSideApproachTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'jaw_contour'):
             observe_open_side(frame)
 
+    def test_single_forearm_mark_needs_wrist_and_connected_jaw(self):
+        for hidden in ((1154, 353), (1218, 322)):
+            frame = scene()
+            cv2.circle(frame, hidden, 20, (238, 238, 238), -1)
+            with self.assertRaisesRegex(ValueError, 'single_marker_jaw'):
+                observe_open_side(frame)
+            cv2.ellipse(frame, (961, 475), (15, 8), 0, 0, 360, (141, 87, 121), -1)
+            result = observe_open_side(frame)
+            self.assertEqual(result['trackingMode'], 'single_marker_wrist_contour')
+            self.assertEqual(result['toolPoint'], [762, 475.5])
+            frame[452:495, 929:941] = 238
+            with self.assertRaisesRegex(ValueError, 'single_marker_jaw'):
+                observe_open_side(frame)
+
+    def test_unrelated_pink_object_or_disconnected_wrist_cannot_stand_in_for_jaw(self):
+        frame = scene()
+        cv2.circle(frame, (1218, 322), 20, (238, 238, 238), -1)
+        cv2.ellipse(frame, (961, 503), (15, 8), 0, 0, 360, (141, 87, 121), -1)
+        with self.assertRaisesRegex(ValueError, 'single_marker_jaw'):
+            observe_open_side(frame)
+
     def test_missing_target_and_wrong_image_contract(self):
         frame = scene()
         frame[662:870] = 238

@@ -7,9 +7,8 @@ import numpy as np
 from learning.pink_prism_height import open_scene_prism_candidate
 
 
-def _forearm_region(rgb):
+def _forearm_region(hsv):
     # 전완에 붙은 녹색 표식 두 개로 탐색 창의 중심·크기를 정한다.
-    hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
     mask = cv2.inRange(hsv, (45, 24, 50), (90, 180, 230))
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
     _, _, stats, centers = cv2.connectedComponentsWithStats(mask)
@@ -27,6 +26,8 @@ def _forearm_region(rgb):
             if left_clipped or right_clipped:
                 raise ValueError('side_forearm_marker_clipped')
             pairs.append((left, right, span))
+    if not pairs:
+        return None
     if len(pairs) != 1:
         raise ValueError('side_forearm_pair_missing_or_ambiguous')
     left, right, span = pairs[0]
@@ -35,14 +36,7 @@ def _forearm_region(rgb):
     return cx, cy, span
 
 
-def observe_open_side(rgb):
-    """물체 상자와 측면 집게 끝, 물체 중심 X·윗면 Y 대비 집게의 오프셋(px)."""
-    if not isinstance(rgb, np.ndarray) or rgb.shape != (1080, 1920, 3) or rgb.dtype != np.uint8:
-        raise ValueError('side_1080p_rgb_required')
-    box = open_scene_prism_candidate(rgb)
-    if box is None:
-        raise ValueError('side_single_upright_prism_required')
-    cx, cy, span = _forearm_region(rgb)
+def _paired_marker_tip(rgb, cx, cy, span):
     x0, x1 = round(cx - 4.7 * span), round(cx + .8 * span)
     y0, y1 = round(cy - 1.3 * span), round(cy + 3.4 * span)
     if not (0 <= x0 < x1 <= rgb.shape[1] and 0 <= y0 < y1 <= rgb.shape[0]):
@@ -70,9 +64,70 @@ def observe_open_side(rgb):
             candidates.append((tip_x, tip_y))
     if len(candidates) != 1:
         raise ValueError('side_jaw_contour_missing_or_ambiguous')
-    tip_x, tip_y = candidates[0]
+    return candidates[0]
+
+
+def _compact_patches(hsv, lower, upper, limits):
+    mask = cv2.inRange(hsv, lower, upper)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
+    _, labels, stats, centers = cv2.connectedComponentsWithStats(mask)
+    min_w, max_w, min_h, max_h, min_area = limits
+    for label, ((x, y, w, h, area), center) in enumerate(zip(stats[1:], centers[1:]), 1):
+        if (min_w <= w <= max_w and min_h <= h <= max_h and area >= min_area
+                and area >= .49*w*h and x > 0 and y > 0
+                and x+w < mask.shape[1] and y+h < mask.shape[0]):
+            yield center, (x, y, w, h), labels[y:y+h, x:x+w] == label
+
+
+def _single_marker_tip(rgb, hsv):
+    # 표식 하나만으로 팔 방향을 외삽할 수 없다. 전완의 녹색 표식과
+    # 손목에 붙은 작은 분홍 표식을 독립 판독하고 손목에 연결된 턱 윤곽을 찾는다.
+    greens = list(_compact_patches(hsv, (45, 23, 50), (95, 170, 230), (16, 58, 15, 58, 220)))
+    wrists = _compact_patches(hsv, (135, 25, 45), (179, 230, 235), (14, 43, 10, 34, 105))
+    candidates = []
+    for wrist, (x, y, w, h), patch in wrists:
+        if not any(130 < g[0]-wrist[0] < 325 and 50 < wrist[1]-g[1] < 240 for g, _, _ in greens):
+            continue
+        wx, wy = np.rint(wrist).astype(int)
+        x0, x1, y0, y1 = wx-252, wx+54, wy-150, wy+150
+        if x0 < 0 or y0 < 0 or x1 > rgb.shape[1] or y1 > rgb.shape[0]:
+            raise ValueError('side_jaw_search_region_clipped')
+        dark = np.uint8(rgb[y0:y1, x0:x1].max(axis=2) < 90)
+        _, labels, stats, _ = cv2.connectedComponentsWithStats(dark)
+        # 서로 가까이 투영되더라도 별도 물체의 검은 윤곽을 턱으로 쓰지 않는다.
+        rim = np.pad(patch.astype(np.uint8), 1)
+        rim = cv2.dilate(rim, np.ones((3, 3), np.uint8)) > rim
+        around = labels[y-y0-1:y-y0+h+1, x-x0-1:x-x0+w+1][rim]
+        for label, (left, top, width, height, area) in enumerate(stats[1:], 1):
+            if area < 1500 or width < 150 or np.count_nonzero(around == label) < 8:
+                continue
+            ys = np.where(labels[:, left:left+5] == label)[0]
+            if not ys.size:
+                continue
+            if left < 2 or ys.min() == 0 or ys.max() == labels.shape[0]-1:
+                raise ValueError('side_jaw_tip_clipped')
+            tip = (int(x0 + left), float(y0 + np.median(ys)))
+            dx, dy = wrist - tip
+            if 150 <= dx <= 226 and abs(dy) < 114 and 168 <= np.hypot(dx, dy) <= 232:
+                candidates.append(tip)
+    if len(candidates) != 1:
+        raise ValueError('side_single_marker_jaw_missing_or_ambiguous')
+    return candidates[0]
+
+
+def observe_open_side(rgb):
+    """물체 상자와 측면 집게 끝, 물체 중심 X·윗면 Y 대비 집게의 오프셋(px)."""
+    if not isinstance(rgb, np.ndarray) or rgb.shape != (1080, 1920, 3) or rgb.dtype != np.uint8:
+        raise ValueError('side_1080p_rgb_required')
+    box = open_scene_prism_candidate(rgb)
+    if box is None:
+        raise ValueError('side_single_upright_prism_required')
+    hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
+    region = _forearm_region(hsv)
+    tip_x, tip_y = _single_marker_tip(rgb, hsv) if region is None else _paired_marker_tip(rgb, *region)
     bx, by, bw, _ = box
     return dict(box=list(box), toolPoint=[tip_x, tip_y],
+                trackingMode="single_marker_wrist_contour" if region is None else "paired_markers",
                 sideOffsetPx=[tip_x - (bx + bw / 2), tip_y - by])
 
 
