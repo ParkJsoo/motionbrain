@@ -28,7 +28,7 @@ I recorded nine whole-arm teleoperation demonstrations. Reconstructing seven act
 
 ### Which parts of the arm did the camera pipeline locate?
 
-![Part contours overlaid on a physical frame from the manual demonstration](docs/assets/wide-arm-overlay.jpg)
+![A recorded pair in Rerun. The side view shows arm parts and the object, and the gripper view shows both jaws around the object.](docs/assets/rerun-wide-arm-pair.jpg)
 
 With a wider field of view, the old overlay missed the upper arm and forearm even when both were clearly visible. I located the upper arm using the elbow housing and both rail edges, and the forearm using surface markers and the material connecting them to the wrist. On seven frames from a manual grasp, I checked 28 premarked points per part. Correctly colored points rose from zero on each link to 18 on the upper arm and 24 on the forearm. Some boundaries still disappear at high poses. The overlay lets an observer inspect detections. The action model used the two original camera images. [Part-level results and pose limitations (Korean)](docs/live-observation.md#광각-부품-표시-검증) · [Front and rear policy trials and manual demonstrations (Korean)](docs/relative-action-selection.md#2026-11-21-앞뒤-배치와-광각-수동-시연)
 
