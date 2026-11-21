@@ -94,12 +94,20 @@ def released_for_cycle(before, after, baseline, *, decision_at):
 
 
 def fresh_pair_after(pair, boundary, decision_at):
-    """Both exposures must begin after the proven output boundary."""
-    if pair is None or boundary is None:
+    """Both source intervals must begin after the proven output boundary."""
+    def valid_time(value):
+        return type(value) in (int, float) and math.isfinite(value) and value >= 0
+
+    if not isinstance(pair, dict) or not all(map(valid_time, (boundary, decision_at))):
         return False
     for key in ("extClock", "nearClock"):
-        c = pair[key]
-        start, end, available = (c[k] for k in ("sourceEarliest", "sourceLatest", "availableAt"))
+        clock = pair.get(key)
+        if not isinstance(clock, dict):
+            return False
+        times = [clock.get(k) for k in ("sourceEarliest", "sourceLatest", "availableAt")]
+        if not all(map(valid_time, times)):
+            return False
+        start, end, available = times
         if not (boundary < start <= end <= available <= decision_at and decision_at - start <= 3):
             return False
     return True

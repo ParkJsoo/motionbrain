@@ -52,3 +52,19 @@ class ReleaseTests(unittest.TestCase):
                 self.assertIsNone(self.stop(mixed))
         self.assertFalse(fresh_pair_after(current, 4.0, 4.5))
         self.assertFalse(fresh_pair_after(current, 3.0, 7.1))
+
+    def test_post_off_decision_requires_complete_finite_source_bounds(self):
+        for key in ('extClock', 'nearClock'):
+            for field, invalid in (('sourceEarliest', 3.), ('sourceEarliest', 2.99),
+                                   ('sourceEarliest', True), ('sourceLatest', 3.99),
+                                   ('availableAt', 4.01), ('availableAt', 5.), ('sourceLatest', float('nan'))):
+                pair = sample(4., 90)
+                pair[key][field] = invalid
+                with self.subTest(camera=key, field=field, value=invalid):
+                    self.assertFalse(fresh_pair_after(pair, 3., 4.5))
+            pair = sample(4., 90)
+            del pair[key]['sourceLatest']
+            self.assertFalse(fresh_pair_after(pair, 3., 4.5))
+        for boundary in (None, float('-inf'), float('nan'), True):
+            self.assertFalse(fresh_pair_after(sample(4., 90), boundary, 4.5))
+        self.assertTrue(fresh_pair_after(sample(4., 90), 3., 4.5))
