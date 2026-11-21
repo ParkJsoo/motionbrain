@@ -12,6 +12,10 @@ The fifth development trial in a prepared tabletop scene showed **approach → g
 
 Of the OWI-535's five DC axes, the shoulder (M4) has direct joint-angle feedback. An external camera observes the arm and object, while a camera above the gripper observes the jaws relative to the object. The learning and control goal is **observe the current state → predict and compare candidate outcomes → execute one action → reassess from new images**.
 
+![Wide side view of the upper arm in teal, forearm in orange, wrist in purple and jaws in lime approaching the pink object](docs/assets/wide-arm-overlay.jpg)
+
+This frame comes from a manual grasp demonstration. Rerun overlays the detected parts on the same image the collector received. Some of the black upper-arm rail remains visible outside the teal mask. [Overlay method and checks across poses (Korean)](docs/live-observation.md#광각-부품-표시-검증)
+
 ![Physical control, visual observation, learning and evaluation in MotionBrain](docs/assets/overview.en.svg)
 
 | Layer | Implemented role | Code and documentation |

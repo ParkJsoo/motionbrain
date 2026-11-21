@@ -26,6 +26,12 @@ Learning required more than a video of a successful lift: **which observation le
 
 I recorded nine whole-arm teleoperation demonstrations. Reconstructing seven actions in the first demonstration involved grouping 98 keep-alive requests with their original gestures. The first **imitation learning (IL)** experiment used offline Behavior Cloning: a classification task predicting the demonstrator's joint and direction from both views at the moment of a button press. Physical whole-arm execution used the demonstration-pose comparison policy described below.
 
+### Which parts of the arm did the camera pipeline locate?
+
+![Part contours overlaid on a physical frame from the manual demonstration](docs/assets/wide-arm-overlay.jpg)
+
+With a wider field of view, the old overlay missed the upper arm and forearm even when both were clearly visible. I located the upper arm using the elbow housing and both rail edges, and the forearm using surface markers and the material connecting them to the wrist. On seven frames from a manual grasp, I checked 28 premarked points per part. Correctly colored points rose from zero on each link to 18 on the upper arm and 24 on the forearm. Some boundaries still disappear at high poses. The overlay lets an observer inspect detections. The action model used the two original camera images. [Part-level results and pose limitations (Korean)](docs/live-observation.md#광각-부품-표시-검증) · [Front and rear policy trials and manual demonstrations (Korean)](docs/relative-action-selection.md#2026-11-21-앞뒤-배치와-광각-수동-시연)
+
 ## Translating a research idea into action selection and a physical policy
 
 The design principle I drew from Ebert et al.'s *Visual Foresight* was to compare candidate outcomes, execute one action and decide again from a new image. On this arm, I predicted changes in observable states such as object position, arm markers and jaw spacing. Comparing image-and-command models with per-command means and no-change baselines helped assess the information that each state representation added to action selection. [Research and design decisions (Korean)](docs/research/visual-action-learning.md) · [Model and baseline comparison (Korean)](docs/evidence/2026-11-04-m4-action-prediction.md)

@@ -11,6 +11,7 @@
 | 문서 | 역할 |
 | --- | --- |
 | [로봇·학습 시각화 도구](robot-visualization.md) | RViz·Gazebo·MuJoCo의 같은 팔 모델 표시, Rerun의 두 카메라 평가 재생, W&B 지표 기록·게시 |
+| [두 카메라 실시간 표시와 부품 검증](live-observation.md#광각-부품-표시-검증) | 수집 프레임의 색·윤곽 표시, 부품별 검출 빈도와 원본 기준점 비교 |
 | [실물 치수와 관절 기준](arm-calibration.md) | 공통 기하 프로필, 사진 자세 근사, 촬영별 첫 프레임 등록·HTTP 사후 감사, M4 읽기 전용 근사 기준점 후보 |
 | [ROS2 하드웨어 인터페이스](../ros2_ws/src/motionbrain_hardware_interface/README.md) | 추정·실측·확인형 M4 명령의 구현 범위 |
 
