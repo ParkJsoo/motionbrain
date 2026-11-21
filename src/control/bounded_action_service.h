@@ -22,11 +22,14 @@ void tick();
 bool enabled();
 bool active();
 void cancel(bounded::Reason reason);
+#if MOTIONBRAIN_DUAL_VIEW_TIMER
+bool cancelTarget(const bounded::Record& target);
+#endif
 const bounded::Executor* executor();
 const char* outputBootId();
 bounded::SubmitResult submit(const bounded::Request& request);
 void appendStatusJson(String& json);
-void appendRecordJson(String& json, const bounded::Record& record);
+void appendRecordJson(String& json, const bounded::Record& record, const bool* cancelApplied = nullptr);
 void appendOutputJson(String& json, bool paged = false, uint32_t after = 0, size_t limit = 8);
 }
 #endif

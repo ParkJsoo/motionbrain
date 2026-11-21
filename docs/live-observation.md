@@ -71,3 +71,33 @@ python tools/visualization/collector_live.py --source "$CAPTURE_ROOT" --rerun-ur
 이 프로세스는 카메라 연결 없이 수집 도중 확정된 최신 원장과 그 원본 바이트를 읽는다. 화면용 외부 JPEG와 집게 원본 JPEG를 각각 갱신한다. 집게 영상은 수집기가 실제로 요청한 횟수만큼만 생긴다. 수집이 멈춰 원본 시각 하한이 1.5초 이상 지난 영상은 다음 점검에서 지운다. 표시가 건너뛴 프레임도 외장 저장소의 원장에 남는다. 표준 출력의 프레임 ID·원장 경로·제출 시각과 수집 원장을 비교하면 표시 간격과 건너뛴 수를 계산할 수 있다. 제출 시각은 Mac 단조 시계로 기록하며, 화면에 픽셀이 나타난 시각과 광학적 촬영 시각은 별도 기준 시계로 측정해야 한다.
 
 단발 명령 수집기의 `native-camera`·`gripper-camera` 구조에는 같은 명령에 `--single-command`를 추가한다.
+
+## 구동 중 양안 판단
+
+집게 열기·닫기, 손목·팔꿈치·어깨 상하, 베이스 좌우에 같은 실행기를 사용한다. 시연에서 사람이 명령을 누르기 전에 볼 수 있었던 두 영상을 각각 현재 영상과 비교한다. 두 카메라가 같은 동작을 지지하고 각 영상의 오차가 계획의 기준 이내일 때 그 동작을 선택한다. 시연에 없는 방향의 정확도나 새로운 배치에서의 파지 성공률은 별도 평가 대상이다.
+
+```bash
+python tools/run_dual_view_policy.py --plan "$PLAN"
+python tools/run_dual_view_policy.py --plan "$PLAN" --observe --rerun-url "$RERUN_URL"
+python tools/run_dual_view_policy.py --plan "$PLAN" --execute --confirm-plan-sha256 "$PLAN_SHA256" --rerun-url "$RERUN_URL"
+```
+
+첫 명령으로 실제 시연 원본, 시연에 있는 행동, 등록된 구동 프로필과 계획 해시를 확인한다. 두 번째 명령은 카메라와 외장 기록만 사용한다. 세 번째 명령에는 현재 부팅 ID, 이미 ARM 상태인 전용 제어기와 기존 비공개 환경변수 `MOTIONBRAIN_HTTP_TOKEN`이 필요하다. 실행기가 ARM을 전송하지 않는다. 기본 펌웨어와 구분되는 PlatformIO 빌드 환경은 `esp32dev_dual_view_policy`다.
+
+계획 JSON에는 다음 값이 필요하다.
+
+| 필드 | 내용 |
+| --- | --- |
+| `examples` | 각 사람 시연의 `episode`, `episodeSha256`, 1부터 시작하는 `actionIndex` |
+| `external`, `helper`, `helperSha256` | 촬영 당시의 외부 카메라 설정, 수집 실행 파일 경로와 SHA-256 |
+| `gripperUrl`, `gripperBootId`, `scene` | 집게 카메라 주소와 현재 부팅 ID, 촬영 구도·물체·자세 범위·특징점 설명 |
+| `mount`, `volumeUuid`, `captureRoot` | 원본을 저장할 외장 볼륨과 기존 수집 상위 디렉터리 |
+| `maxAge`, `maxSkew`, `maxViewRmse` | 영상 나이와 카메라 간 시차의 최대 허용 초, 외부·집게 영상별 정규화 RGB 오차 한도 |
+| `controllerUrl`, `controllerBootId`, `seconds`, `maxActions` | 제어기, 현재 부팅 ID, 수집 시간과 최대 명령 횟수 |
+| `profiles` | 행동별 검증된 `shoulderRangeDeg`와 장치 `command`. 관측 전용은 빈 객체도 허용 |
+
+프로필 이름은 예를 들어 `elbow/down`이다. 각 `command`에는 `kind`, `motor`, 부호 있는 원시 출력 `pwm`, 장치 기한 `durationMs`, `targetDegrees`, `percent`를 명시한다. 어깨는 절대 각도 목표, 나머지 축은 유한 펄스를 사용한다. 기존 수동 UI의 퍼센트나 가감속 파형을 원시 PWM으로 대체해 검증된 명령으로 취급할 수 없다.
+
+다섯 출력의 OFF와 출력 원장의 일련번호를 확인한 뒤 촬영된 연속 두 영상 쌍으로 시작한다. 구동 중에는 별도 수집 프로세스가 계속 추론한다. 실행기는 반대 판단, 영상 불일치 또는 관측 만료 때 진행 중인 명령 ID로 취소한다. 다음 방향과 관절을 선택하려면 종료 기록·드라이버 OFF와 새 영상 쌍이 필요하다. 동시에 출력할 수 있는 관절은 하나다.
+
+외장 실행 폴더의 `decisions.jsonl`에는 원본 프레임 ID와 양쪽 판단, `actions.jsonl`에는 실행기가 소비한 프레임과 판단, 취소·종료 근거가 남는다. 짧은 동작은 새 양안 쌍을 받기 전에 끝날 수 있다. 이 경우 `observedRunningPairs`는 0이다. 이 수치는 호스트의 구동 응답 이후에 얻은 영상 쌍 수이며 모터의 물리적 이동은 영상과 실제 출력 시각을 대조해 판정한다.

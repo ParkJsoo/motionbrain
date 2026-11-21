@@ -864,6 +864,9 @@ bool MotorControl::setMotorSpeedInternal(uint8_t motorId, int16_t speed) {
   }
 
   // PWM 출력 — PWM_CHANNELS[] 배열 사용 (산술 의존 없음, emergencyStop/update와 동일 패턴)
+#if MOTIONBRAIN_DUAL_VIEW_TIMER
+  if (!writeBoundedPwm(motorId, speed, bounded::OutputReason::DriverWrite)) return false;
+#else
 #if MOTIONBRAIN_ENABLE_WHOLE_ARM_POLICY
   if (!WholeArmService::writePwm(motorId,PWM_CHANNELS[index],speed)) return false;
 #else
@@ -871,6 +874,7 @@ bool MotorControl::setMotorSpeedInternal(uint8_t motorId, int16_t speed) {
   ledcWrite(PWM_CHANNELS[index], pwmValue);
 #endif
   recordActualWrite(motorId, speed, bounded::OutputReason::DriverWrite, actionOrdinal_);
+#endif
   
   // 상태 업데이트
   currentSpeed_[index] = speed;
@@ -903,8 +907,12 @@ void MotorControl::forceMotorOutputOff(uint8_t motorId) {
   enabled_[index] = false;
   lastUpdateTime_[index] = 0;
 
+#if MOTIONBRAIN_DUAL_VIEW_TIMER
+  writeBoundedPwm(motorId, 0, bounded::OutputReason::ForcedOff);
+#else
   ledcWrite(PWM_CHANNELS[index], 0);
   recordActualWrite(motorId, 0, bounded::OutputReason::ForcedOff, actionOrdinal_);
+#endif
 
   uint8_t driverId = getDriverId(motorId);
   uint8_t motorIndex = getMotorIndexInDriver(motorId);

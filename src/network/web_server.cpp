@@ -2429,9 +2429,14 @@ void MotionBrainWebServer::handleActionCancel() {
   if (!executor) { sendErrorJson(503, "action_service_unavailable"); return; }
   const auto result = executor->find(server_.arg("bootId").c_str(), server_.arg("commandId").c_str());
   if (result.code != bounded::LookupCode::Found) { sendErrorJson(409, "action_not_in_this_boot"); return; }
-  if (executor->activeOrdinal() == result.record->ordinal) BoundedActions::cancel(bounded::Reason::Cancelled);
   String json;
+#if MOTIONBRAIN_DUAL_VIEW_TIMER
+  const bool applied = BoundedActions::cancelTarget(*result.record);
+  BoundedActions::appendRecordJson(json, *result.record, &applied);
+#else
+  if (executor->activeOrdinal() == result.record->ordinal) BoundedActions::cancel(bounded::Reason::Cancelled);
   BoundedActions::appendRecordJson(json, *result.record);
+#endif
   server_.send(200, "application/json", json);
 }
 

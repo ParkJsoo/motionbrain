@@ -33,7 +33,7 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 class ReadOnlyHTTP:
     """Only explicitly listed GET endpoints; bounded response body, no retries."""
     PATHS = {
-        "controller": {"/status", "/actions", "/action_outputs"},
+        "controller": {"/status", "/collection_status", "/actions", "/action_outputs"},
         "camera": {"/status", "/capture"},
         "perception": {"/health", "/api/detection", "/api/observation", "/api/vision_frame"},
     }

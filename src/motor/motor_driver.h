@@ -216,7 +216,13 @@ public:
 #endif
     actionOrdinal_ = ordinal;
   }
-#if MOTIONBRAIN_ENABLE_ELBOW_TIMER
+#if MOTIONBRAIN_DUAL_VIEW_TIMER
+  bool initBoundedDeadline();
+  bool armBoundedDeadline(uint8_t motor, uint32_t startMs, uint32_t durationMs);
+  bool serviceBoundedDeadline();
+  void releaseBoundedDeadline();
+#endif
+#if MOTIONBRAIN_ENABLE_ELBOW_TIMER || MOTIONBRAIN_DUAL_VIEW_TIMER
   const bounded::AppliedOutputLog& outputLog() const;
 #else
   const bounded::AppliedOutputLog& outputLog() const { return outputLog_; }
@@ -251,6 +257,10 @@ public:
 #endif
 
 private:
+#if MOTIONBRAIN_DUAL_VIEW_TIMER
+  bool writeBoundedPwm(uint8_t motor, int16_t speed, bounded::OutputReason reason);
+  void publishBoundedCutoff();
+#endif
   bool m4GoalOwned_ = false;
 #if MOTIONBRAIN_ENABLE_FINITE_PROFILE_DRIVER
   bool finiteInitialized_ = false;

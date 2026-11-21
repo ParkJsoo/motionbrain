@@ -27,13 +27,17 @@ class BoundedServiceNativeTest(unittest.TestCase):
             sdk = subprocess.run(["xcrun", "--sdk", "macosx", "--show-sdk-path"],
                                  check=True, capture_output=True, text=True, timeout=30).stdout.strip()
             sdk_flags = ["-isysroot", sdk]
-        for enabled in (False, True, "m2"):
-            binary = Path(cls.temp.name) / ("m2" if enabled == "m2" else "enabled" if enabled else "default")
+        for enabled in (False, True, "m2", "dual"):
+            binary = Path(cls.temp.name) / (str(enabled) if enabled else "default")
             flags = ["-DMOTIONBRAIN_ENABLE_BOUNDED_ACTIONS=1"] if enabled else []
             if enabled == "m2": flags += ["-DMOTIONBRAIN_M2_VISUAL_PILOT=1"]
+            if enabled == "dual": flags += ["-DMOTIONBRAIN_DUAL_VIEW_TIMER=1"]
             command = [compiler, "-std=c++11", "-Wall", "-Wextra", "-Werror", *sdk_flags, *flags]
             for path in ("tests/native/service_stubs", "tests/native/stubs", "src"):
                 command += ["-I", str(ROOT / path)]
+            if enabled == "dual":
+                command += ["-I", str(ROOT/"tests/native/whole_arm_stubs"),
+                            str(ROOT/"src/motor/bounded_pwm_deadline.cpp")]
             command += [str(ROOT / path) for path in (
                 "tests/native/test_bounded_service.cpp", "src/control/bounded_action_service.cpp",
                 "src/control/bounded_action_executor.cpp", "src/motor/motor_driver.cpp")]
@@ -47,6 +51,24 @@ class BoundedServiceNativeTest(unittest.TestCase):
                                 capture_output=True, text=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return [json.loads(line) for line in result.stdout.splitlines()]
+
+    def test_dual_timer_cuts_pwm_without_control_loop_and_owns_stop_reason(self):
+        for motor in range(1, 6):
+            for cause in ("deadline", "stalled", "manual", "cancel"):
+                with self.subTest(motor=motor, cause=cause):
+                    status, record, output = self.run_case(f"dual-{motor}-{cause}", enabled="dual")
+                    self.assertEqual(status["profile"], "dual_view_timer_v1")
+                    self.assertEqual(record["reason"], {
+                        "deadline": "deadline_exceeded", "stalled": "state_changed",
+                        "manual": "operator_override", "cancel": "cancelled"}[cause])
+                    self.assertTrue(record["outputOff"])
+                    if cause in ("deadline", "stalled"):
+                        edges = [e for e in output["entries"] if e["motor"] == motor and
+                                 e["actionOrdinal"] == record["ordinal"]]
+                        self.assertTrue(any(e["pwm"] != 0 for e in edges))
+                        zero = next(i for i, e in enumerate(edges) if e["pwm"] == 0)
+                        self.assertEqual(edges[zero]["atMs"], 100 if cause == "deadline" else 150)
+                        self.assertTrue(all(e["pwm"] == 0 for e in edges[zero:]))
 
     def test_m2_profile_refuses_other_axes_direction_and_excess_budget(self):
         status, record, output = self.run_case("pilot", enabled="m2")

@@ -25,6 +25,10 @@ namespace {
 class HardwarePort : public bounded::Port {
 public:
   bounded::Executor* owner = nullptr;
+#if MOTIONBRAIN_DUAL_VIEW_TIMER
+  uint32_t admissionMs = 0;
+  bool deadlineReady = false;
+#endif
   bool allowed() const override {
     Command command;
     command.type = CommandType::MOTOR_RUN;
@@ -41,6 +45,9 @@ public:
   }
   bool start(const bounded::Request& request) override {
     motorControl.setActionOrdinal(owner->activeOrdinal());
+#if MOTIONBRAIN_DUAL_VIEW_TIMER
+    if (!motorControl.armBoundedDeadline(request.motor, admissionMs, request.durationMs)) return false;
+#endif
     webServer.clearManualControlLeases();
     teleopAdapter.resetOutputCache();
     systemState.resetTimeout();
@@ -56,6 +63,10 @@ public:
       shoulderAngleController.cancel(ShoulderAngleStopReason::MANUAL_STOP, "bounded action ended");
     }
     motorControl.hardStopAll();
+#if MOTIONBRAIN_DUAL_VIEW_TIMER
+    if (!motorControl.hasPendingOutput() && !shoulderAngleController.isActive())
+      motorControl.releaseBoundedDeadline();
+#endif
   }
   uint32_t afterStopTime(uint32_t) const override { return millis(); }
   bool outputIsOff(const bounded::Request&) const override {
@@ -93,7 +104,11 @@ bool beforeLegacyCommand(CommandType type) {
     case CommandType::SEQUENCE_STOP:
     case CommandType::SEQUENCE_CLEAR:
     case CommandType::ROUTINE_ABORT:
+#if MOTIONBRAIN_DUAL_VIEW_TIMER
+      cancel(bounded::Reason::OperatorOverride);
+#else
       cancel(bounded::Reason::Cancelled);
+#endif
       return true; // Unknown must never block the existing emergency stop path.
     default:
       cancel(bounded::Reason::OperatorOverride);
@@ -110,17 +125,40 @@ void init() {
   static bounded::Executor instance(port, bootId);
   core = &instance;
   port.owner = core;
+#if MOTIONBRAIN_DUAL_VIEW_TIMER
+  port.deadlineReady = motorControl.initBoundedDeadline();
+#endif
 }
-bool enabled() { return MOTIONBRAIN_ENABLE_BOUNDED_ACTIONS != 0; }
+bool enabled() {
+#if MOTIONBRAIN_DUAL_VIEW_TIMER
+  return MOTIONBRAIN_ENABLE_BOUNDED_ACTIONS && port.deadlineReady;
+#else
+  return MOTIONBRAIN_ENABLE_BOUNDED_ACTIONS != 0;
+#endif
+}
 bool active() { return core && core->active(); }
 const bounded::Executor* executor() { return core; }
 void cancel(bounded::Reason reason) {
   if (core) core->cancel(millis(), reason);
   clearFinishedContext();
 }
+#if MOTIONBRAIN_DUAL_VIEW_TIMER
+bool cancelTarget(const bounded::Record& target) {
+  if (!core || target.ordinal != core->activeOrdinal()) return false;
+  // Reconcile any deadline, operator or target transition during HTTP I/O.
+  tick();
+  if (target.ordinal != core->activeOrdinal() || target.state != bounded::State::Running) return false;
+  cancel(bounded::Reason::Cancelled);
+  return target.state == bounded::State::Cancelled && target.reason == bounded::Reason::Cancelled && target.outputOff;
+}
+#endif
 void tick() {
   if (!core) return;
-  if (active() && teleopAdapter.isDeadmanHeld()) cancel(bounded::Reason::OperatorOverride);
+  if (active() && teleopAdapter.isDeadmanHeld()) core->cancel(millis(), bounded::Reason::OperatorOverride);
+#if MOTIONBRAIN_DUAL_VIEW_TIMER
+  if (active() && !motorControl.serviceBoundedDeadline())
+    core->cancel(millis(), bounded::Reason::StateChanged);
+#endif
   core->tick(millis());
   clearFinishedContext();
 }
@@ -133,7 +171,11 @@ bounded::SubmitResult submit(const bounded::Request& request) {
       request.pwm <= 0 || request.pwm > 180 || request.durationMs > 1500)
     return {bounded::SubmitCode::SafetyBlocked, nullptr};
 #endif
-  auto result = core->submit(request, millis());
+  const uint32_t now = millis();
+#if MOTIONBRAIN_DUAL_VIEW_TIMER
+  port.admissionMs = now;
+#endif
+  auto result = core->submit(request, now);
   clearFinishedContext();
   return result;
 }
@@ -141,7 +183,11 @@ void appendStatusJson(String& json) {
   json += "{\"schemaVersion\":\"motionbrain.bounded_action.v1\",\"enabled\":";
   json += enabled() ? "true" : "false";
   json += ",\"profile\":\"";
+#if MOTIONBRAIN_DUAL_VIEW_TIMER
+  json += "dual_view_timer_v1";
+#else
   json += MOTIONBRAIN_M2_VISUAL_PILOT ? "m2_up_pwm180_ms1500" : "general";
+#endif
   json += "\"";
   json += ",\"bootId\":\"";
   if (core) json += core->bootId();
@@ -151,7 +197,7 @@ void appendStatusJson(String& json) {
   json += core ? core->registry().count() : 0;
   json += ",\"recordCapacity\":32,\"clockDomain\":\"controller_boot_millis\"}";
 }
-void appendRecordJson(String& json, const bounded::Record& r) {
+void appendRecordJson(String& json, const bounded::Record& r, const bool* cancelApplied) {
   json += "{\"bootId\":\""; json += r.request.bootId;
   json += "\",\"commandId\":\""; json += r.request.commandId;
   json += "\",\"ordinal\":"; json += r.ordinal;
@@ -169,6 +215,7 @@ void appendRecordJson(String& json, const bounded::Record& r) {
   json += ",\"overrunMs\":"; json += r.overrunMs;
   json += ",\"outputOff\":"; json += r.outputOff ? "true" : "false";
   json += ",\"targetReached\":"; json += r.targetReached ? "true" : "false";
+  if (cancelApplied) json += *cancelApplied ? ",\"cancelApplied\":true" : ",\"cancelApplied\":false";
   json += ",\"taskSuccess\":null,\"visuallySettled\":null}";
 }
 void appendOutputJson(String& json, bool paged, uint32_t after, size_t limit) {

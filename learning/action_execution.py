@@ -220,7 +220,7 @@ class BoundedActionExecutor:
                 self.failed = True
                 return self._result(cid, "outcome_unknown", "journal_unavailable")
 
-    def confirm(self, cid, *, confirmed_request, dispatch_guard):
+    def confirm(self, cid, *, confirmed_request, dispatch_guard, motion_feedback=None):
         """Caller must confirm the exact displayed request and supply a fresh gate.
 
         The guard runs after journal reservation and all preflight I/O, immediately
@@ -238,6 +238,8 @@ class BoundedActionExecutor:
                     if row and error in ("unresolved_outcome_unknown", "executor_busy"):
                         return self._save(cid,"not_sent",self._result(cid,"not_sent",error))
                     return self._result(cid, "not_sent", error)
+                if motion_feedback is not None and not callable(motion_feedback):
+                    raise ValueError('motion_feedback_callback_required')
                 r = self.limits.validate(row["request"]["action"])
                 if canonical_request(confirmed_request) != r or not callable(dispatch_guard):
                     raise ValueError("explicit_matching_confirmation_required")
@@ -255,6 +257,8 @@ class BoundedActionExecutor:
                     return self._result(cid, "outcome_unknown", "journal_unavailable")
                 return self._save(cid, "not_sent", self._result(cid, "not_sent", type(exc).__name__))
             started = None
+            visual_cancel = False
+            cancel_applied = False
             try:
                 # Crash after this write is conservatively unknown, even if the
                 # final observation gate later stops the call before transport.
@@ -287,9 +291,32 @@ class BoundedActionExecutor:
                             "outputOffHostBounds": self._bounds(started, received, "terminal_round_trip"),
                             "outputSequenceBounds": {"first": outputs["entries"][0]["sequence"],
                                 "last": outputs["entries"][-1]["sequence"], "evidenceRef": "host-journal:"+cid}}
-                        return self._save(cid, "known_terminal", self._result(cid, "known_terminal", "controller_output_off", True, action=action))
+                        result = self._result(cid, "known_terminal", "controller_output_off", True, action=action)
+                        if visual_cancel:
+                            result.update(cancelAttempted=True, cancelConfirmed=cancel_applied and record['state'] == 'cancelled'
+                                          and record['reason'] == 'cancelled')
+                        return self._save(cid, "known_terminal", result)
                     if record["state"] != "running" or index == self.max_polls or self._now() >= deadline:
                         raise TimeoutError("terminal_not_confirmed")
+                    if motion_feedback is not None:
+                        decision = motion_feedback(copy.deepcopy(r), start_bounds['latest'])
+                        if decision not in ('continue', 'cancel'):
+                            raise ValueError('invalid_motion_feedback')
+                        if decision == 'cancel':
+                            # Reserve this write before transport. A lost response must not
+                            # cause a second cancel from the generic exception handler.
+                            visual_cancel = True
+                            self._save(cid, 'outcome_unknown', self._result(
+                                cid, 'outcome_unknown', 'visual_cancel_reserved', True,
+                                cancelAttempted=True, cancelConfirmed=False))
+                            cancel_reply = self.port.cancel(r)
+                            cancel_applied = cancel_reply.get('cancelApplied') is True
+                            record = checked_record(cancel_reply, r)
+                            received = self._now()
+                            if ((record['ordinal'], record['startedAtMs']) != identity
+                                    or record['state'] not in KNOWN_TERMINAL):
+                                raise ValueError('visual_cancel_unverified')
+                            continue
                     self.clock.sleep(self.poll_interval)
                     previous = received
                     record = checked_record(self.port.lookup(r), r)
@@ -304,7 +331,8 @@ class BoundedActionExecutor:
                     raise
                 attempted = started is not None
                 result = self._save(cid, "outcome_unknown" if attempted else "not_sent",
-                    self._result(cid, "outcome_unknown" if attempted else "not_sent", type(exc).__name__, attempted))
+                    self._result(cid, "outcome_unknown" if attempted else "not_sent", type(exc).__name__, attempted,
+                                 **({"cancelAttempted": True, "cancelConfirmed": False} if visual_cancel else {})))
                 if attempted:
                     # One best-effort targeted cancel, durably reserved first.
                     # Even a cancel acknowledgement never changes this unknown.

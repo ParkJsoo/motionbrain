@@ -23,12 +23,32 @@ MotionBrainWebServer webServer;
 static uint32_t nowMs = 0;
 static uint32_t offDelay = 0;
 static unsigned writes = 0;
+#if MOTIONBRAIN_DUAL_VIEW_TIMER
+#include <esp_timer.h>
+static FakeTimer timer{};
+static bool locked = false;
+static uint32_t duties[5]{};
+SemaphoreHandle_t xSemaphoreCreateMutex() { return &locked; }
+void xSemaphoreTake(SemaphoreHandle_t m, int) { assert(!*m); *m=true; }
+void xSemaphoreGive(SemaphoreHandle_t m) { assert(*m); *m=false; }
+int esp_timer_create(const esp_timer_create_args_t* cfg, esp_timer_handle_t* handle) {
+  timer.callback=cfg->callback; *handle=&timer; return ESP_OK;
+}
+int esp_timer_start_periodic(esp_timer_handle_t t, uint64_t period) { assert(t==&timer && period==1000); return ESP_OK; }
+void esp_timer_delete(esp_timer_handle_t) {}
+#endif
 uint32_t millis() { return nowMs; }
 void pinMode(uint8_t, uint8_t) {}
 void digitalWrite(uint8_t, uint8_t) {}
 void ledcSetup(uint8_t, uint32_t, uint8_t) {}
 void ledcAttachPin(uint8_t, uint8_t) {}
-void ledcWrite(uint8_t, uint32_t duty) { ++writes; if (!duty) nowMs += offDelay; }
+void ledcWrite(uint8_t channel, uint32_t duty) {
+  (void)channel;
+#if MOTIONBRAIN_DUAL_VIEW_TIMER
+  assert(channel<5); duties[channel]=duty;
+#endif
+  ++writes; if (!duty) nowMs += offDelay;
+}
 
 static bounded::Request request(const char* id) {
   bounded::Request r;
@@ -179,6 +199,36 @@ static void m2Pilot() {
   assert(BoundedActions::submit(r).code == bounded::SubmitCode::Duplicate);
   dump(*accepted.record);
 }
+#if MOTIONBRAIN_DUAL_VIEW_TIMER
+static void dual(uint8_t motor, const char* cause) {
+  auto r = request("dual");
+  r.motor=motor;
+  if (motor==4) { r.kind=bounded::Kind::Shoulder; r.pwm=0; r.percent=75; r.targetDegrees=45; }
+  const bool stalled=!strcmp(cause,"stalled");
+  if (stalled) r.durationMs=500;
+  auto accepted=BoundedActions::submit(r);
+  assert(accepted.code==bounded::SubmitCode::Accepted);
+  nowMs=50;
+  // Driver output, no renewal of the bounded executor's control lease.
+  motorControl.update();
+  assert(duties[motor-1]>0);
+  if (!strcmp(cause,"manual") || !strcmp(cause,"cancel")) {
+    if (!strcmp(cause,"manual")) BoundedActions::beforeLegacyCommand(CommandType::STOP);
+    else assert(BoundedActions::cancelTarget(*accepted.record));
+  } else {
+    nowMs=stalled ? 150 : 100;
+    timer.callback(nullptr);  // no main loop tick
+    assert(duties[motor-1]==0 && BoundedActions::active());
+    nowMs+=50;
+    motorControl.update();   // a ramp already queued before deadline must be suppressed
+    assert(duties[motor-1]==0);
+    BoundedActions::tick();
+  }
+  assert(!BoundedActions::active() && !motorControl.hasPendingOutput());
+  assert(!BoundedActions::cancelTarget(*accepted.record)); // repeat, operator stop or deadline
+  dump(*accepted.record);
+}
+#endif
 int main(int argc, char** argv) {
   assert(argc == 2);
   motorControl.init(); systemState.state = SystemState::ARMED;
@@ -186,6 +236,9 @@ int main(int argc, char** argv) {
   if (!strcmp(argv[1], "disabled")) disabled();
   else {
     assert(BoundedActions::enabled());
+#if MOTIONBRAIN_DUAL_VIEW_TIMER
+    if (!strncmp(argv[1], "dual-", 5)) { dual(argv[1][5]-'0', argv[1]+7); return 0; }
+#endif
     if (!strcmp(argv[1], "pilot")) m2Pilot();
     else if (!strcmp(argv[1], "pulse")) pulse();
     else if (!strcmp(argv[1], "guards")) guards();
