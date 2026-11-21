@@ -36,11 +36,11 @@ The [M4 device goal guard (Korean)](docs/m4-device-goal-guard.md) is disabled by
 
 ## Builds
 
-ESP32 uses PlatformIO. Host tests require Python, NumPy, OpenCV and Node.js (CI: Python 3.12 and Node.js 22). Native C++ checks require a C++ compiler and are skipped when it is unavailable. Replace `<...>` placeholders with installation-specific values. Run from the repository root:
+ESP32 uses PlatformIO. Host tests require Python, NumPy, Pillow, OpenCV and Node.js (CI: Python 3.12 and Node.js 22). Native C++ checks require a C++ compiler and are skipped when it is unavailable. Replace `<...>` placeholders with installation-specific values. Run from the repository root:
 
 ```sh
 python3 -m venv .local/venv
-.local/venv/bin/python -m pip install numpy opencv-python-headless
+.local/venv/bin/python -m pip install numpy Pillow opencv-python-headless
 .local/venv/bin/python -m unittest discover -s tests
 pio run
 pio run -d firmware/esp32cam

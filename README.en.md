@@ -45,7 +45,7 @@ Research extensions include **vision-language-action (VLA)** action selection un
 
 ## Getting started without hardware
 
-Host tests use Python 3.12, NumPy, OpenCV, Node.js and a C++ compiler. Optional PyTorch tests may be skipped depending on installed dependencies. Firmware builds use PlatformIO.
+Host tests use Python 3.12, NumPy, Pillow, OpenCV, Node.js and a C++ compiler. Optional PyTorch tests may be skipped depending on installed dependencies. Firmware builds use PlatformIO.
 
 Start with the gripper release check using synthetic observations. It checks jaw opening, the object's table reference position, and fresh observations from both cameras after confirmed motor output.
 

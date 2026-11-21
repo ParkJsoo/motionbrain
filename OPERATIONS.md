@@ -36,11 +36,11 @@
 
 ## 빌드
 
-ESP32는 PlatformIO를 사용한다. 호스트 테스트에는 Python, NumPy, OpenCV와 Node.js(CI: Python 3.12·Node.js 22)가 필요하다. 네이티브 C++ 검사에는 C++ 컴파일러가 필요하며, 없으면 해당 검사는 건너뛴다. 아래 명령은 저장소 루트에서 실행한다. `<...>` 자리표시자는 각 환경의 실제 값으로 바꾼다.
+ESP32는 PlatformIO를 사용한다. 호스트 테스트에는 Python, NumPy, Pillow, OpenCV와 Node.js(CI: Python 3.12·Node.js 22)가 필요하다. 네이티브 C++ 검사에는 C++ 컴파일러가 필요하며, 없으면 해당 검사는 건너뛴다. 아래 명령은 저장소 루트에서 실행한다. `<...>` 자리표시자는 각 환경의 실제 값으로 바꾼다.
 
 ```sh
 python3 -m venv .local/venv
-.local/venv/bin/python -m pip install numpy opencv-python-headless
+.local/venv/bin/python -m pip install numpy Pillow opencv-python-headless
 .local/venv/bin/python -m unittest discover -s tests
 pio run
 pio run -d firmware/esp32cam
