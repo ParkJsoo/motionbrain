@@ -104,6 +104,8 @@ class VisualControl:
             return None
         first = sample.get('previousPair')
         if (not usable(first, after, now, self.age, self.skew) or first['action'] != sample['action']
+                or sample.get('activeCommandId') or first.get('activeCommandId')
+                or sample.get('closeCommandId') != first.get('closeCommandId')
                 or any(first[k] == sample[k] for k in ('frameId', 'nearFrameId'))
                 or any(first[k]['sourceEarliest'] >= sample[k]['sourceEarliest']
                        for k in ('extClock', 'nearClock'))):
@@ -139,12 +141,13 @@ class VisualControl:
                 trace.append(dict(at=now, acknowledged=acknowledged, decision=outcome, reason=reason,
                                   postAckPair=usable(sample, acknowledged, now, self.age, self.skew),
                                   frames=[(sample or {}).get(k) for k in ('frameId', 'nearFrameId')],
-                                  modelAction=(sample or {}).get('action')))
+                                  modelAction=(sample or {}).get('modelAction', (sample or {}).get('action')),
+                                  effectiveAction=(sample or {}).get('action')))
             return outcome
         return check
 
 
-def run_actions(control, catalog, executor, boot, off_pose, max_actions, record, *, sleep=time.sleep):
+def run_actions(control, catalog, executor, boot, off_pose, max_actions, record, *, sleep=time.sleep, on_active=None):
     """One owner at a time. Each dispatch needs two independent pairs after OFF."""
     for _ in range(max_actions):
         _, boundary = off_pose()
@@ -181,8 +184,18 @@ def run_actions(control, catalog, executor, boot, off_pose, max_actions, record,
                 raise ValueError('visual_start_changed')
             feedback = control.feedback(label, boundary, trace, admitted_pair=current)
 
-        result = executor.confirm(cid, confirmed_request=request, dispatch_guard=guard,
-                                  motion_feedback=lambda req, ack: feedback(req, ack))
+        published = False
+        def during(req, ack):
+            nonlocal published
+            if on_active is not None and not published:
+                on_active(req, admission[1], ack)
+                published = True
+            return feedback(req, ack)
+        try:
+            result = executor.confirm(cid, confirmed_request=request, dispatch_guard=guard, motion_feedback=during)
+        finally:
+            if published:
+                on_active(None, None, None)
         unique_pairs = {tuple(row['frames']) for row in trace if row['postAckPair']}
         record(dict(result, observedRunningPairs=len(unique_pairs), motionFeedback=trace, actionLabel=label, offConfirmedAt=boundary,
                     admissionPairs=[[x[k] for k in ('frameId', 'nearFrameId')] for x in (admission or ())]))

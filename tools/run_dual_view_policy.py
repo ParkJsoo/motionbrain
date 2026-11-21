@@ -18,7 +18,7 @@ from learning.action_execution import BoundedActionExecutor
 from learning.action_port import BoundedActionHTTP
 from learning.artifacts import _decode_json
 from learning.device_adapter import _object
-from learning.dual_view_capture import capture, load_policy, verified
+from learning.dual_view_capture import capture, load_policy, publish_active_context, publish_close_context, verified
 from learning.dual_view_policy import Catalog, VisualControl, run_actions
 from learning.external_media import _mount_fd
 from learning.supervised_transport import SequencePort
@@ -98,7 +98,10 @@ def main(argv=None):
         (root/'plan.json').write_bytes(raw)
         print(root, flush=True)
         stop = ctx.Event()
-        child = ctx.Process(target=capture, args=(p, root, session, stop, mailbox))
+        use_response = 'responsePolicy' in p
+        close_context = ctx.Array('c', 8192) if use_response else None
+        active_context = ctx.Array('c', 8192) if use_response else None
+        child = ctx.Process(target=capture, args=(p, root, session, stop, mailbox, close_context, active_context))
         executor = None
         if args.execute:
             port = BoundedActionHTTP(p['controllerUrl'], token_provider=lambda: os.environ['MOTIONBRAIN_HTTP_TOKEN'],
@@ -137,7 +140,16 @@ def main(argv=None):
                         log.flush()
                         if result['executionState'] == 'known_terminal':
                             pose.cursor = result['action']['outputSequenceBounds']['last']
-                    outcome = run_actions(control, catalog, executor, p['controllerBootId'], pose, p['maxActions'], record)
+                            if use_response and result['actionLabel'] == 'gripper/open':
+                                publish_close_context(close_context, session, p['controllerBootId'], None)
+                            if use_response and result['actionLabel'] == 'gripper/close':
+                                publish_close_context(close_context, session, p['controllerBootId'], result)
+                    def on_active(req, vote, at):
+                        if vote and vote['action'] == 'gripper/open':
+                            publish_close_context(close_context, session, p['controllerBootId'], None)
+                        publish_active_context(active_context, session, p['controllerBootId'], req, vote, at)
+                    outcome = run_actions(control, catalog, executor, p['controllerBootId'], pose, p['maxActions'],
+                                          record, on_active=on_active if use_response else None)
             print(outcome, flush=True)
             viewer_failed = viewer is not None and viewer.poll() is not None
         finally:

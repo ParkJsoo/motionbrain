@@ -65,6 +65,16 @@ class DualViewTest(unittest.TestCase):
                 self.assertEqual(log[0]['motionFeedback'][-1]['reason'], 'visual_choice_changed')
                 self.assertTrue(log[0]['action']['record']['outputOff'])
 
+    def test_feedback_trace_distinguishes_raw_vote_from_effective_hold(self):
+        admitted = pair('wrist/up', 1.1, 1)
+        sample = dict(pair('hold', 1.4, 2), modelAction='wrist/up')
+        control = VisualControl(lambda: sample, .5, .2, clock=lambda: 1.5)
+        trace = []
+        check = control.feedback('wrist/up', 1., trace, admitted_pair=admitted)
+        self.assertEqual(check({}, 1.2), 'cancel')
+        self.assertEqual(trace[-1]['modelAction'], 'wrist/up')
+        self.assertEqual(trace[-1]['effectiveAction'], 'hold')
+
     def test_new_joint_needs_new_post_off_pairs_and_own_cancel_ack(self):
         first, second = 'elbow/down', 'gripper/close'
         catalog = Catalog({label: dict(command=command(*ACTIONS[label]), shoulderRangeDeg=[208, 212])

@@ -9,9 +9,9 @@ from pathlib import Path
 from PIL import Image
 
 from learning.action_recorder import ActionRecorder
-from learning.artifacts import ArtifactStore
+from learning.artifacts import ArtifactStore, _decode_json
 from learning.dual_view_policy import ACTIONS, DualViewPolicy, thumbnail, usable
-from learning.action_execution import finite
+from learning.action_execution import canonical_request, checked_record, finite
 from learning.grasp_observation import GripperObservationSource
 from learning.lossless_frame import decode
 
@@ -102,6 +102,14 @@ def policy_example(episode_file, episode, index, plan):
 
 
 def load_policy(plan):
+    if 'responsePolicy' in plan:
+        from learning.relative_response_policy import RelativeResponsePolicy
+        ref = plan['responsePolicy']
+        policy = RelativeResponsePolicy(_decode_json(verified(Path(ref['artifact']), ref['sha256'])))
+        for label, profile in plan['profiles'].items():
+            if label not in policy.responses or profile['command'] != policy.responses[label]['command']:
+                raise ValueError('response_profile_mismatch')
+        return policy
     episodes, examples, seen = {}, [], set()
     for ref in plan['examples']:
         path = Path(ref['episode'])
@@ -129,7 +137,86 @@ def effective_vote(vote, last_dissent, max_age, max_skew):
     vote['lastDissent'] = last_dissent.copy()
 
 
-def capture(plan, root, session, stopping, mailbox):
+def _send_context(mailbox, value):
+    packet = json.dumps(value, allow_nan=False, separators=(',', ':')).encode() if value else b''
+    with mailbox.get_lock():
+        mailbox.get_obj().value = packet
+
+
+def _read_context(mailbox, session, boot):
+    if mailbox is None:
+        return None
+    with mailbox.get_lock():
+        packet = mailbox.get_obj().value
+    if not packet:
+        return None
+    value = _decode_json(packet)
+    if value['session'] != session or value['boot'] != boot:
+        raise ValueError('control_epoch_changed')
+    return value
+
+
+def publish_active_context(mailbox, session, boot, request, start_vote=None, acknowledged_at=None):
+    """Publish only after verified running ACK. Reset at the end of the command."""
+    if request is None:
+        _send_context(mailbox, None)
+        return
+    req = canonical_request(request)
+    label = start_vote['action']
+    motor, sign = ACTIONS[label]
+    if (req['bootId'] != boot or motor != req['motor'] or
+            (motor != 4 and req['pwm'] * sign <= 0) or
+            not finite(acknowledged_at) or not finite(start_vote['decidedAt']) or
+            not 0 <= start_vote['decidedAt'] <= acknowledged_at or
+            not isinstance(start_vote['features'], dict)):
+        raise ValueError('active_context_mismatch')
+    _send_context(mailbox, dict(session=session, boot=boot, commandId=req['commandId'],
+        after=acknowledged_at, action=dict(label=label, startFeatures=start_vote['features'])))
+
+
+def publish_close_context(mailbox, session, boot, result):
+    """Keep evidence of commanded closure separate from visual contact evidence."""
+    if result is None:
+        _send_context(mailbox, None)
+        return
+    a = result['action']
+    req = canonical_request(a['request'])
+    rec = checked_record(a['record'], req)
+    log = a['outputLog']
+    entries = [e for e in log['entries'] if e['motor'] == 1]
+    after = a['outputOffHostBounds']['latest']
+    if (result['executionState'] != 'known_terminal' or req['bootId'] != boot or req['motor'] != 1
+            or req['pwm'] >= 0 or not finite(after) or after <= 0 or not rec['outputOff']
+            or log['bootId'] != boot or log['evidence'] != 'driver_write' or log['dropped'] != 0
+            or not entries or entries[-1]['pwm'] != 0 or not any(e['pwm'] < 0 for e in entries)
+            or any(e['actionOrdinal'] != rec['ordinal'] or not req['pwm'] <= e['pwm'] <= 0 for e in entries)
+            or not (rec['state'] == 'completed' or
+                    (rec['state'] == 'cancelled' and result.get('cancelConfirmed') is True) or
+                    rec['state'] == 'timed_out')):
+        raise ValueError('close_context_unproven')
+    final_power = max(i for i, e in enumerate(entries) if e['pwm'] < 0)
+    if (entries[final_power + 1]['atMs'] - rec['startedAtMs']) % 2**32 > req['durationMs'] + 1:
+        raise ValueError('close_driver_deadline_exceeded')
+    receipt = dict(executionState='known_terminal', commandId=req['commandId'],
+                   action=dict(request=req, record=rec, outputLog=log, outputOffHostBounds=a['outputOffHostBounds']))
+    _send_context(mailbox, dict(session=session, boot=boot, after=after, receipt=receipt))
+
+
+def response_vote(policy, side, near, earliest, active, close):
+    close_ready = close is not None and earliest > close['after']
+    active_ready = active is not None and earliest > active['after']
+    if close is not None and not close_ready:
+        vote = dict(action='hold', reason='await_post_close_pair', viewVotes=['hold', 'hold'], features={})
+    else:
+        vote = policy.predict(side, near, close_receipt=close['receipt'] if close_ready else None,
+                              active_action=active['action'] if active_ready else None)
+    vote.update(activeCommandId=active['commandId'] if active_ready else None,
+                activeAcknowledgedAt=active['after'] if active_ready else None,
+                closeCommandId=close['receipt']['commandId'] if close_ready else None)
+    return vote
+
+
+def capture(plan, root, session, stopping, mailbox, context_mailbox=None, active_mailbox=None):
     root = Path(root)
     def publish(value):
         packet = json.dumps(dict(value, session=session), allow_nan=False).encode()
@@ -180,7 +267,14 @@ def capture(plan, root, session, stopping, mailbox):
                     continue
                 previous = frame['frameIndex']
                 side = side_image(camera.root, frame, config)
-                vote = policy.predict(side, near)
+                if 'responsePolicy' in plan:
+                    earliest = min(frame['sourceEarliest'], item['sourceEarliest'])
+                    boot = plan['controllerBootId']
+                    active = _read_context(active_mailbox, session, boot)
+                    close = _read_context(context_mailbox, session, boot)
+                    vote = response_vote(policy, side, near, earliest, active, close)
+                else:
+                    vote = policy.predict(side, near)
                 vote.update(frameId=frame['frameId'], nearFrameId=item['frame']['frameId'],
                     extClock=dict(sourceEarliest=frame['sourceEarliest'], sourceLatest=frame['sourceLatest'],
                                   availableAt=frame['stdoutReadAt']),
@@ -189,6 +283,8 @@ def capture(plan, root, session, stopping, mailbox):
                 effective_vote(vote, last_dissent, plan['maxAge'], plan['maxSkew'])
                 vote['previousPair'] = previous_pair
                 previous_pair = {key: vote[key] for key in ('action', 'extClock', 'nearClock', 'frameId', 'nearFrameId')}
+                if 'responsePolicy' in plan:
+                    previous_pair.update(activeCommandId=vote['activeCommandId'], closeCommandId=vote['closeCommandId'])
                 log.write(json.dumps(vote, allow_nan=False)+'\n')
                 log.flush()
                 publish(vote)
