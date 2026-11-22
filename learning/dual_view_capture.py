@@ -261,6 +261,10 @@ def side_sample_fps(plan):
 def capture(plan, root, session, stopping, mailbox, context_mailbox=None, active_mailbox=None):
     root = Path(root)
     def publish(value):
+        # Detailed observation-only calibration records stay in decisions.jsonl.
+        # The bounded mailbox carries the vote, not the variable-size evidence table.
+        if 'timedPick' in value:
+            value = {k:v for k,v in value.items() if k != 'timedPick'}
         packet = json.dumps(dict(value, session=session), allow_nan=False).encode()
         with mailbox.get_lock():
             mailbox.get_obj().value = packet

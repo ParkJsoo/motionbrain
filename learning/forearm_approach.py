@@ -7,7 +7,8 @@ import numpy as np
 from learning.action_execution import finite
 from learning.artifacts import _decode_json
 from learning.dual_view_capture import verified
-from learning.near_part_overlay import render_near
+from learning.near_part_overlay import POLICY, render_near
+from learning.near_gripper_tip_observer import _gate
 from learning.open_side_approach import WIDE_SIDE_VIEW, observe_open_side
 from learning.wide_forearm_overlay import _marker_candidates
 
@@ -55,8 +56,14 @@ def near_geometry(near):
     left = parts['leftJaw']['tip'][0]
     right = parts['rightJaw']['tip'][0]
     x, _, width, _ = parts['target']['bbox']
-    return dict(insideJaws=bool(left < x and x+width < right),
-                center=parts['target']['center'], jawGap=right-left)
+    midpoint = np.mean([parts[k]['tip'] for k in ('leftJaw','rightJaw')], axis=0)
+    center = parts['target']['center']
+    left_box, right_box = (parts[k]['bbox'] for k in ('leftJaw','rightJaw'))
+    components = [dict(point=parts[k]['tip'], bbox=parts[k]['bbox']) for k in ('leftJaw','rightJaw')]
+    closing = _gate(POLICY, *components, parts['target'])
+    return dict(insideJaws=bool(left < x and x+width < right), closeVisibility=closing['passed'],
+                center=center, jawGap=right-left, state=[*(np.subtract(center,midpoint).tolist()),right-left],
+                margins=[x-left_box[0]-left_box[2], right_box[0]-x-width])
 
 
 class ForearmApproachObserver:
@@ -75,6 +82,10 @@ class ForearmApproachObserver:
         self.shoulder = ref['shoulderDeg']
         if not finite(self.shoulder) or not finite(self.horizon) or self.horizon not in (.55, 1.5):
             raise ValueError('invalid_forearm_observation_plan')
+        self.timed = None
+        if 'timedEvidence' in ref:
+            from learning.timed_pick_evidence import TimedPickEvidence
+            self.timed = TimedPickEvidence(plan, ref['timedEvidence'])
         self.effects = model['effects'][str(self.horizon)]
         if not self.effects or not self.effects.keys() <= APPROACH_ACTIONS:
             raise ValueError('invalid_forearm_response_actions')
@@ -101,20 +112,35 @@ class ForearmApproachObserver:
                 catalogStartPoseInRange=low <= self.shoulder <= high,
                 trainingShoulderRangeDeg=train, insideTrainingPose=train[0] <= self.shoulder <= train[1] if train else None)
 
-    def predict(self, side, near):
+    def predict(self, side, near, *, close_receipt=None):
+        manual = self._manual_prediction(side, near)
+        if self.timed is None:
+            return manual
+        timed = self.timed.evaluate(manual, close_receipt)
+        return dict(manual, manualAction=manual['action'], manualReason=manual['reason'],
+                    timedPick=timed, action=timed['action'], reason='wide_timed_response_unavailable')
+
+    def _manual_prediction(self, side, near):
         rgb = np.asarray(side.convert('RGB'))
         markers = marks(rgb)
         near_state = near_geometry(near)
         result = dict(action='hold', controlEligible=False, horizonSeconds=self.horizon,
                       commandMode='manual_hold_70_percent_from_press', planShoulderDeg=self.shoulder,
                       support=self.support, near=near_state, nearTargetRegion='standard_object_roi')
-        if markers is None or near_state is None or not near_state['insideJaws']:
+        missing = markers is None or near_state is None or not near_state['insideJaws']
+        if missing and self.timed is None:
             return dict(result, reason='missing_forearm_or_projected_target')
         try:
-            g = observe_open_side(rgb, view_id=WIDE_SIDE_VIEW)
+            g = observe_open_side(rgb, view_id=WIDE_SIDE_VIEW, diagnose_green_core=True)
         except ValueError as exc:
             return dict(result, reason=str(exc))
-        x, y, width, _ = g['box']
+        x, y, width, height = g['box']
+        sx, sy = g['sideOffsetPx']
+        result['sideGeometry'] = dict(box=g['box'], top=y, bottom=y+height, offset=[sx,sy],
+                                      trackingMode=g['trackingMode'],
+                                      overlap=bool(abs(sx) <= width/2 and 0 <= sy < height))
+        if missing:
+            return dict(result, reason='missing_forearm_or_projected_target')
         target = np.array([x+width/2, y])
         tip = target + g['sideOffsetPx']
         if tip[1] >= y-20:

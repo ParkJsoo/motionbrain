@@ -48,7 +48,7 @@ class ForearmApproachTest(unittest.TestCase):
         im = Image.new('RGB', (320, 240))
         with patch('learning.forearm_approach.marks', return_value=self.marks), \
              patch('learning.forearm_approach.near_geometry', return_value={'insideJaws':True}), \
-             patch('learning.forearm_approach.observe_open_side', return_value=dict(box=[0,50,10,20],sideOffsetPx=[0,-31])):
+             patch('learning.forearm_approach.observe_open_side', return_value=dict(box=[0,50,10,20],trackingMode='wide_wrist_jaw_contour',sideOffsetPx=[0,-31])):
             vote = load_policy(self.plan).predict(im,im)
             self.assertEqual(vote['costs'], {'hold':31, 'elbow/down':21})
             self.assertEqual(vote['action'], 'elbow/down')
@@ -65,7 +65,7 @@ class ForearmApproachTest(unittest.TestCase):
              patch('learning.forearm_approach.near_geometry',return_value={'insideJaws':True}):
             for gap in (21,30):
                 with self.subTest(gap=gap), patch('learning.forearm_approach.observe_open_side',
-                        return_value=dict(box=[0,50,10,20],sideOffsetPx=[0,-gap])):
+                        return_value=dict(box=[0,50,10,20],trackingMode='wide_wrist_jaw_contour',sideOffsetPx=[0,-gap])):
                     vote = load_policy(self.plan).predict(im,im)
                     self.assertEqual(vote['blockedByApproachBoundary'], ['elbow/down'])
                     self.assertEqual(vote['action'], 'hold')
