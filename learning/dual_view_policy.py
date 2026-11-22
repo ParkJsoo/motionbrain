@@ -179,7 +179,7 @@ class VisualControl:
         return check
 
 
-def run_actions(control, catalog, executor, boot, off_pose, max_actions, record, *, sleep=time.sleep, on_active=None, sync_dispatch=False):
+def run_actions(control, catalog, executor, boot, off_pose, max_actions, record, *, sleep=time.sleep, on_active=None, sync_dispatch=False, side_stop=None):
     """One owner at a time. Each dispatch needs two independent pairs after OFF."""
     for _ in range(max_actions):
         _, boundary = off_pose()
@@ -213,6 +213,18 @@ def run_actions(control, catalog, executor, boot, off_pose, max_actions, record,
                     raise ValueError('pose_or_profile_changed')
             admission = control.dispatch_admission(label, boundary, verify_pose,
                                                    synchronize=sync_dispatch, sleep=sleep)
+            if side_stop:
+                veto = side_stop.check(label, boundary, admission=True)
+                if veto:
+                    trace.append(dict(sideStop=veto))
+                    raise ValueError('side_stop_before_submit')
+                latest = control.latest()
+                if (not control.admission(latest, boundary) or latest['action'] != label
+                        or not side_stop.covers(latest['frameId'])
+                        or latest['lastDissent'].get(label, 0) > min(
+                            admission[1][key]['sourceEarliest'] for key in ('extClock', 'nearClock'))):
+                    raise ValueError('side_check_outlasted_admission')
+                admission = latest['previousPair'], latest
             feedback = control.feedback(label, boundary, trace, admitted_pair=admission[1])
 
         published = False
@@ -221,13 +233,33 @@ def run_actions(control, catalog, executor, boot, off_pose, max_actions, record,
             if on_active is not None and not published:
                 on_active(req, admission[1], ack)
                 published = True
+            if side_stop:
+                veto = side_stop.check(label, ack)
+                if veto:
+                    trace.append(dict(sideStop=veto, at=control.clock(), acknowledged=ack))
+                    return 'cancel'
             return feedback(req, ack)
         try:
             result = executor.confirm(cid, confirmed_request=request, dispatch_guard=guard, motion_feedback=during)
         finally:
             if published:
                 on_active(None, None, None)
-        unique_pairs = {tuple(row['frames']) for row in trace if row['postAckPair']}
+        if side_stop and result['executionState'] == 'known_terminal' and not any('sideStop' in r for r in trace):
+            # Drain observations through OFF. A late veto stops the episode without another device write.
+            ack = result['action']['startHostBounds']['latest']
+            off = result['action']['outputOffHostBounds']['latest']
+            until = control.clock() + control.age
+            while control.clock() < until:
+                veto = side_stop.check(label, ack)
+                if veto:
+                    trace.append(dict(sideStop=veto, terminalAlreadyObserved=True))
+                    break
+                if side_stop.last_source is not None and side_stop.last_source > off:
+                    break
+                sleep(.01)
+            else:
+                trace.append(dict(sideStop=dict(reason='side_frames_missing_at_off'), terminalAlreadyObserved=True))
+        unique_pairs = {tuple(row['frames']) for row in trace if row.get('postAckPair')}
         record(dict(result, observedRunningPairs=len(unique_pairs), motionFeedback=trace, actionLabel=label, offConfirmedAt=boundary,
                     admissionPairs=[[x[k] for k in ('frameId', 'nearFrameId')] for x in (admission or ())]))
         if result['executionState'] != 'known_terminal':
@@ -235,6 +267,8 @@ def run_actions(control, catalog, executor, boot, off_pose, max_actions, record,
         terminal = result['action']['record']
         if result.get('cancelAttempted') and not result.get('cancelConfirmed'):
             return 'unowned_or_late_cancel'
+        if any('sideStop' in row for row in trace):
+            return 'side_stop'
         if terminal['state'] != 'completed' and not result.get('cancelConfirmed'):
             return 'device_stopped'
     return 'action_budget'

@@ -7,6 +7,7 @@ from PIL import Image
 from learning.action_execution import BoundedActionExecutor
 from learning.dual_view_policy import ACTIONS, Catalog, DualViewPolicy, VisualControl, run_actions, thumbnail
 from tests.test_action_execution import FakeClock, FakePort
+from unittest.mock import Mock
 
 
 def command(motor, sign):
@@ -102,6 +103,36 @@ class DualViewTest(unittest.TestCase):
                 self.assertTrue(log[0]['cancelConfirmed'])
                 self.assertEqual(log[0]['motionFeedback'][-1]['reason'], 'visual_choice_changed')
                 self.assertTrue(log[0]['action']['record']['outputOff'])
+
+    def test_side_guard_rejects_uninspected_admission_and_late_hazard(self):
+        for covered in (False, True):
+            with self.subTest(covered=covered), tempfile.TemporaryDirectory() as tmp:
+                clock = FakeClock()
+                port = VisualPort(clock)
+                label = 'elbow/down'
+                catalog = Catalog({label:dict(command=command(*ACTIONS[label]), shoulderRangeDeg=[208, 212])})
+                core = BoundedActionExecutor(Path(tmp)/'commands.db', port, catalog, clock=clock)
+                def latest():
+                    stamp = clock.monotonic()
+                    return dict(pair(label, stamp, stamp), previousPair=pair(label, stamp-.01, stamp-.01))
+                guard = Mock()
+                guard.covers.return_value = covered
+                guard.check.side_effect = lambda *args, **kwargs: (
+                    dict(reason='tip_missing') if port.reads and port.last_record['state']=='completed' else None)
+                guard.last_source = 0.
+                log = []
+                try:
+                    outcome = run_actions(VisualControl(latest,.5,.4,clock=clock.monotonic), catalog, core,
+                                          'a'*32, lambda:(210,clock.monotonic()), 2, log.append,
+                                          sleep=clock.sleep, side_stop=guard)
+                finally:
+                    core.close()
+                self.assertEqual(len(port.cancels), 0)
+                if covered:
+                    self.assertEqual(outcome, 'side_stop')
+                    self.assertTrue(log[0]['motionFeedback'][-1]['terminalAlreadyObserved'])
+                else:
+                    self.assertFalse(log[0]['dispatchAttempted'])
 
     def test_feedback_trace_distinguishes_raw_vote_from_effective_hold(self):
         admitted = pair('wrist/up', 1.1, 1)

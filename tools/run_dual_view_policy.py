@@ -180,8 +180,12 @@ def main(argv=None):
                         if vote and vote['action'] == 'gripper/open':
                             publish_close_context(close_context, session, p['controllerBootId'], None)
                         publish_active_context(active_context, session, p['controllerBootId'], req, vote, at)
+                    side_stop = None
+                    if p['external']['viewConfigurationId'] == 'wide-side-manual-20261121':
+                        from learning.wide_side_stop import WideSideStop
+                        side_stop = WideSideStop(root, p['external'], p['maxAge'])
                     outcome = run_actions(control, catalog, executor, p['controllerBootId'], pose, p['maxActions'],
-                                          record, on_active=on_active if use_response else None, sync_dispatch=sync_dispatch)
+                                          record, on_active=on_active if use_response else None, sync_dispatch=sync_dispatch, side_stop=side_stop)
             print(outcome, flush=True)
             viewer_failed = viewer is not None and viewer.poll() is not None
         finally:
