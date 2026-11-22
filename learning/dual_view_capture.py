@@ -103,6 +103,11 @@ def policy_example(episode_file, episode, index, plan):
 
 
 def load_policy(plan):
+    if 'forearmApproachObserver' in plan:
+        if any(k in plan for k in ('responsePolicy', 'developmentPick', 'phaseObserver', 'wristHeightProposal', 'examples')):
+            raise ValueError('forearm_observer_requires_standalone_plan')
+        from learning.forearm_approach import ForearmApproachObserver
+        return ForearmApproachObserver(plan)
     if 'responsePolicy' in plan:
         from learning.relative_response_policy import RelativeResponsePolicy
         ref = plan['responsePolicy']

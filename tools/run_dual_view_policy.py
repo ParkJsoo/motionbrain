@@ -87,6 +87,8 @@ def main(argv=None):
     raw = args.plan.read_bytes()
     digest = hashlib.sha256(raw).hexdigest()
     p = _decode_json(raw)
+    if 'forearmApproachObserver' in p and not args.observe:
+        parser.error('forearmApproachObserver requires --observe')
     if 'wristHeightProposal' in p and (not args.observe or 'developmentPick' not in p):
         parser.error('wristHeightProposal requires --observe and developmentPick')
     if 'phaseObserver' in p and 'developmentPick' not in p and not args.observe:
