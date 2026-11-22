@@ -87,6 +87,8 @@ def main(argv=None):
     raw = args.plan.read_bytes()
     digest = hashlib.sha256(raw).hexdigest()
     p = _decode_json(raw)
+    if 'phaseObserver' in p and not args.observe:
+        parser.error('phaseObserver requires --observe')
     fps = side_sample_fps(p)
     sync_dispatch = p.get('syncDispatchToFrame', False)
     if type(sync_dispatch) is not bool:

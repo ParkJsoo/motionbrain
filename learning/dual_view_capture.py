@@ -6,6 +6,7 @@ import re
 import time
 from pathlib import Path
 
+import numpy as np
 from PIL import Image
 
 from learning.action_recorder import ActionRecorder
@@ -217,6 +218,29 @@ def response_vote(policy, side, near, earliest, active, close):
     return vote
 
 
+class WidePhaseObserver:
+    """Score the frozen wide-view RGB exemplars without changing the control vote."""
+
+    def __init__(self, plan):
+        ref = plan['phaseObserver']
+        model = _decode_json(verified(Path(ref['artifact']), ref['sha256']))
+        self.labels = [entry['action'] for entry in model['exemplars']]
+        self.bank = np.asarray([entry['rgb'] for entry in model['exemplars']], dtype=np.float32)
+        if (model['schema'] != 'wide_manual_phase_prototype_v1' or model['controlEligible'] is not False
+                or model['view'] != plan['external']['viewConfigurationId']
+                or not self.labels or self.labels != model['classes'] or not set(self.labels) <= ACTIONS.keys()
+                or self.bank.shape != (len(self.labels), 2 * 24 * 16 * 3)
+                or not np.isfinite(self.bank).all()):
+            raise ValueError('invalid_wide_phase_observer')
+
+    def predict(self, side, near):
+        rgb = np.concatenate([np.asarray(image.convert('RGB').resize((24, 16), Image.Resampling.BOX),
+                                         dtype=np.float32).ravel() for image in (side, near)])
+        errors = np.mean((self.bank - rgb) ** 2, axis=1)
+        best = int(errors.argmin())
+        return dict(action=self.labels[best], meanSquaredError=float(errors[best]))
+
+
 def side_sample_fps(plan):
     fps = plan.get('sideSampleFps', 4)
     if type(fps) is not int or fps not in (4, 8):
@@ -234,6 +258,7 @@ def capture(plan, root, session, stopping, mailbox, context_mailbox=None, active
     emitted = 0
     try:
         policy = load_policy(plan)
+        observer = WidePhaseObserver(plan) if 'phaseObserver' in plan else None
         duration = plan['seconds']
         fps = side_sample_fps(plan)
         frames = fps*duration+20
@@ -284,12 +309,16 @@ def capture(plan, root, session, stopping, mailbox, context_mailbox=None, active
                     vote = response_vote(policy, side, near, earliest, active, close)
                 else:
                     vote = policy.predict(side, near)
+                if observer:
+                    vote['phaseProposal'] = observer.predict(side, near)
                 vote.update(frameId=frame['frameId'], nearFrameId=item['frame']['frameId'],
                     extClock=dict(sourceEarliest=frame['sourceEarliest'], sourceLatest=frame['sourceLatest'],
                                   availableAt=frame['stdoutReadAt']),
                     nearClock=dict(sourceEarliest=item['sourceEarliest'], sourceLatest=item['sourceLatest'],
                                    availableAt=item['persistedAt']), decidedAt=time.monotonic())
                 effective_vote(vote, last_dissent, plan['maxAge'], plan['maxSkew'])
+                if observer:
+                    vote['phaseProposal']['fresh'] = usable(vote, 0, vote['decidedAt'], plan['maxAge'], plan['maxSkew'])
                 vote['previousPair'] = previous_pair
                 previous_pair = {key: vote[key] for key in ('action', 'extClock', 'nearClock', 'frameId', 'nearFrameId')}
                 if 'responsePolicy' in plan:
