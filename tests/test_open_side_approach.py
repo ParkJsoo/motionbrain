@@ -86,6 +86,27 @@ class OpenSideApproachTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'marker_clipped'):
             observe_open_side(frame)
 
+    def test_wide_green_core_diagnostic_still_requires_visible_jaw(self):
+        from learning.open_side_approach import WIDE_SIDE_VIEW
+
+        rgb = np.full((1080, 1920, 3), 220, np.uint8)
+        rgb[469:500, 782:1010] = 48
+        cv2.ellipse(rgb, (940, 480), (13, 8), 0, 0, 360, (141, 87, 121), -1)
+        green = (85, 150, 97)
+        cv2.ellipse(rgb, (968, 480), (10, 9), 0, 0, 360, green, -1)
+        ambiguous = rgb.copy()
+        ambiguous[550:610] = rgb[450:510]
+        with self.assertRaisesRegex(ValueError, 'wide_wrist_jaw'):
+            observe_side_tip(ambiguous, view_id=WIDE_SIDE_VIEW, diagnose_green_core=True)
+        cv2.line(rgb, (975, 475), (986, 466), green, 1)
+        with self.assertRaisesRegex(ValueError, 'wide_wrist_jaw'):
+            observe_side_tip(rgb, view_id=WIDE_SIDE_VIEW)
+        result = observe_side_tip(rgb, view_id=WIDE_SIDE_VIEW, diagnose_green_core=True)
+        self.assertEqual(result, ((782, 484), 'wide_wrist_jaw_green_core'))
+        rgb[450:510, 904:910] = 220
+        with self.assertRaisesRegex(ValueError, 'wide_wrist_jaw'):
+            observe_side_tip(rgb, view_id=WIDE_SIDE_VIEW, diagnose_green_core=True)
+
     def test_wide_wrist_markers_require_connected_unclipped_distal_jaw(self):
         from learning.open_side_approach import WIDE_SIDE_VIEW, observe_side_tip
         rgb = np.full((1080, 1920, 3), 220, np.uint8)

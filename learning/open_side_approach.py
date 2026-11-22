@@ -67,9 +67,12 @@ def _paired_marker_tip(rgb, cx, cy, span):
     return candidates[0]
 
 
-def _compact_patches(hsv, lower, upper, limits):
+def _compact_patches(hsv, lower, upper, limits, *, remove_thin_edges=False):
     mask = cv2.inRange(hsv, lower, upper)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
+    kernel = np.ones((3, 3), np.uint8)
+    if remove_thin_edges:
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
     _, labels, stats, centers = cv2.connectedComponentsWithStats(mask)
     min_w, max_w, min_h, max_h, min_area = limits
     for label, ((x, y, w, h, area), center) in enumerate(zip(stats[1:], centers[1:]), 1):
@@ -119,12 +122,17 @@ LEGACY_SIDE_VIEW = 'held-resume-external-20261118'
 WIDE_SIDE_VIEW = 'wide-side-manual-20261121'
 
 
-def _wide_tip(rgb, hsv):
+class _WideJawMissing(ValueError):
+    """표식과 연결된 유효한 턱끝 후보가 하나도 없는 경우."""
+
+
+def _wide_tip(rgb, hsv, *, green_core=False):
     # 새 측면 구도의 손목에는 작은 분홍·녹색 표식이 나란히 붙어 있다.
     # 두 표식은 탐색 방향·대략적인 투영 크기를 제공한다. 끝점 자체는
     # 매 프레임 손목에 연결된 검은 턱의 실제 말단 픽셀에서 찾는다.
     pink = _compact_patches(hsv, (128, 20, 30), (179, 230, 235), (9, 45, 7, 36, 75))
-    green = list(_compact_patches(hsv, (45, 18, 45), (96, 180, 235), (8, 40, 8, 42, 80)))
+    green = list(_compact_patches(hsv, (45, 18, 45), (96, 180, 235), (8, 40, 8, 42, 80),
+                                  remove_thin_edges=green_core))
     candidates = []
     for wrist, (x, y, w, h), patch in pink:
         for neighbour, _, _ in green:
@@ -186,34 +194,48 @@ def _wide_tip(rgb, hsv):
                             np.median(yy[far])-np.median(yy[edge])) > .65*span:
                     continue
                 candidates.append((tip_x, float(np.median(yy[edge]))))
+    if not candidates:
+        raise _WideJawMissing('wide_wrist_jaw_missing_or_ambiguous')
     if len(candidates) != 1:
         raise ValueError('wide_wrist_jaw_missing_or_ambiguous')
     return candidates[0]
 
 
-def observe_side_tip(rgb, *, view_id=None):
+def observe_side_tip(rgb, *, view_id=None, diagnose_green_core=False):
     """등록한 측면 구도에서 현재 프레임에 보이는 턱끝과 판독 방식을 반환한다."""
     if not isinstance(rgb, np.ndarray) or rgb.shape != (1080, 1920, 3) or rgb.dtype != np.uint8:
         raise ValueError('side_1080p_rgb_required')
     if view_id not in (None, LEGACY_SIDE_VIEW, WIDE_SIDE_VIEW):
         raise ValueError('unregistered_side_view')
+    if diagnose_green_core and view_id != WIDE_SIDE_VIEW:
+        raise ValueError('wide_view_required_for_green_core')
     hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
     if view_id == WIDE_SIDE_VIEW:
-        return _wide_tip(rgb, hsv), 'wide_wrist_jaw_contour'
+        try:
+            return _wide_tip(rgb, hsv), 'wide_wrist_jaw_contour'
+        except _WideJawMissing:
+            if not diagnose_green_core:
+                raise
+        # 진단 요청 시에만 녹색 표식의 가는 돌기를 제거해 같은 프레임을 재검사한다.
+        # 복수 후보는 재검사하지 않고, 검은 턱 윤곽은 두 경로 모두 원본에서 측정한다.
+        return _wide_tip(rgb, hsv, green_core=True), 'wide_wrist_jaw_green_core'
     region = _forearm_region(hsv)
     if region is None:
         return _single_marker_tip(rgb, hsv), 'single_marker_wrist_contour'
     return _paired_marker_tip(rgb, *region), 'paired_markers'
 
 
-def observe_open_side(rgb, *, view_id=None):
+def observe_open_side(rgb, *, view_id=None, diagnose_green_core=False):
     """물체 상자와 측면 집게 끝, 물체 중심 X·윗면 Y 대비 집게의 오프셋(px)."""
     if not isinstance(rgb, np.ndarray) or rgb.shape != (1080, 1920, 3) or rgb.dtype != np.uint8:
         raise ValueError('side_1080p_rgb_required')
     box = open_scene_prism_candidate(rgb)
     if box is None:
         raise ValueError('side_single_upright_prism_required')
-    (tip_x, tip_y), mode = observe_side_tip(rgb, view_id=view_id)
+    if diagnose_green_core:
+        (tip_x, tip_y), mode = observe_side_tip(rgb, view_id=view_id, diagnose_green_core=True)
+    else:
+        (tip_x, tip_y), mode = observe_side_tip(rgb, view_id=view_id)
     bx, by, bw, _ = box
     return dict(box=list(box), toolPoint=[tip_x, tip_y],
                 trackingMode=mode,
