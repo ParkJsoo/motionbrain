@@ -96,17 +96,20 @@ class Esp32CamFirmwareContractTest(unittest.TestCase):
         source = ESP32CAM_MAIN.read_text()
 
         expected_fragments = [
-            "const uint32_t CLIENT_IO_TIMEOUT_MS = 750;",
             "const uint32_t CAPTURE_WRITE_DEADLINE_MS = 2000;",
             "const size_t CLIENT_WRITE_CHUNK_BYTES = 1024;",
             "bool writeClientBuffer(",
-            "writeClientBuffer(client, fb->buf, fb->len, CAPTURE_WRITE_DEADLINE_MS, written)",
+            "::send(socketFd, data, count, MSG_DONTWAIT)",
+            "static_cast<size_t>(headerLength), responseStartedAt, headerWritten)",
+            "writeClientBuffer(socketFd, fb->buf, fb->len, responseStartedAt, written)",
             "stream disabled; use /capture",
             "cameraStats.clientWriteFailures++;",
         ]
         for fragment in expected_fragments:
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, source)
+        capture = source.split("void handleCapture()", 1)[1].split("void handleStream()", 1)[0]
+        self.assertNotIn("client.printf(", capture)
 
     def test_stream_endpoint_is_disabled_for_single_threaded_webserver(self):
         source = ESP32CAM_MAIN.read_text()

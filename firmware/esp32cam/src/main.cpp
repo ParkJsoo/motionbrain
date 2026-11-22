@@ -4,11 +4,13 @@
 #include <ESPmDNS.h>
 #include <Preferences.h>
 #include <lwip/sockets.h>
+#include <errno.h>
 #include "esp_camera.h"
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "source_frame_metadata.h"
 #include "fresh_capture.h"
+#include "bounded_response_write.h"
 
 #ifndef MOTIONBRAIN_REGISTER_DIAGNOSTIC
 #define MOTIONBRAIN_REGISTER_DIAGNOSTIC 0
@@ -52,7 +54,6 @@ const uint32_t WIFI_CONNECT_TIMEOUT_MS = 30000;
 const uint32_t CAMERA_RECOVERY_SETTLE_MS = 150;
 const uint32_t CAMERA_RECOVERY_COOLDOWN_MS = 10000;
 const uint32_t CAPTURE_SLOW_RECOVERY_MS = 2500;
-const uint32_t CLIENT_IO_TIMEOUT_MS = 750;
 const uint32_t CAPTURE_WRITE_DEADLINE_MS = 2000;
 const uint32_t HTTP_REQUEST_STALL_RESTART_MS = 6000;
 const uint32_t LOOP_HEARTBEAT_STALL_RESTART_MS = 9000;
@@ -247,28 +248,18 @@ void startHttpSupervisorTask() {
 }
 
 bool writeClientBuffer(
-    WiFiClient& client,
+    int socketFd,
     const uint8_t* data,
     size_t length,
-    uint32_t deadlineMs,
+    uint32_t startedAt,
     size_t& written) {
-  written = 0;
-  const uint32_t startedAt = millis();
-  while (written < length && client.connected()) {
-    if (millis() - startedAt > deadlineMs) {
-      return false;
-    }
-    const size_t remaining = length - written;
-    const size_t chunk = remaining > CLIENT_WRITE_CHUNK_BYTES ? CLIENT_WRITE_CHUNK_BYTES : remaining;
-    const size_t justWritten = client.write(data + written, chunk);
-    if (justWritten == 0) {
-      delay(1);
-      continue;
-    }
-    written += justWritten;
-    delay(0);
-  }
-  return written == length;
+  return camera_http::writeBounded(data, length, CLIENT_WRITE_CHUNK_BYTES,
+      startedAt, CAPTURE_WRITE_DEADLINE_MS, written,
+      [socketFd](const uint8_t* data, size_t count) -> camera_http::SendResult {
+        const int sent = ::send(socketFd, data, count, MSG_DONTWAIT);
+        if (sent > 0) return {static_cast<size_t>(sent), false};
+        return {0, sent < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)};
+      }, []() { return millis(); }, []() { delay(1); });
 }
 
 const CameraProfileOption* findCameraProfile(framesize_t frameSize) {
@@ -825,15 +816,6 @@ void handleCapture() {
   cameraStats.lastFrameBytes = fb->len;
 
   WiFiClient client = server.client();
-  // WiFiClient::setTimeout takes seconds in Arduino-ESP32 2.x, unlike Stream.
-  // Configure both the Stream and socket timeouts explicitly in milliseconds.
-  client.Stream::setTimeout(CLIENT_IO_TIMEOUT_MS);
-  const timeval ioTimeout{
-      static_cast<time_t>(CLIENT_IO_TIMEOUT_MS / 1000),
-      static_cast<suseconds_t>((CLIENT_IO_TIMEOUT_MS % 1000) * 1000)};
-  const bool timeoutOk =
-      client.setSocketOption(SOL_SOCKET, SO_RCVTIMEO, &ioTimeout, sizeof(ioTimeout)) == 0 &&
-      client.setSocketOption(SOL_SOCKET, SO_SNDTIMEO, &ioTimeout, sizeof(ioTimeout)) == 0;
   client.setNoDelay(true);
   const auto source = camera_source::identify(cameraBootId, fb->timestamp.tv_sec,
                                                fb->timestamp.tv_usec, esp_timer_get_time());
@@ -843,24 +825,31 @@ void handleCapture() {
   const bool freshOk = !fresh || (source.valid &&
       source.capturedUs > static_cast<uint64_t>(requestedUs) &&
       camera_fresh::headers(requestedUs, selection.discarded, freshHeaders, sizeof(freshHeaders)) > 0);
-  const bool headerOk = freshOk && timeoutOk && client.connected() &&
-                        client.printf("HTTP/1.1 200 OK\r\n"
+  char responseHeader[896];
+  const int headerLength = snprintf(responseHeader, sizeof(responseHeader), "HTTP/1.1 200 OK\r\n"
                                       "Content-Type: image/jpeg\r\n"
                                       "Content-Length: %u\r\n"
                                       "Cache-Control: no-store\r\n"
                                       "%s%s"
                                       "Connection: close\r\n\r\n",
-                                      static_cast<unsigned>(fb->len), sourceHeaders, freshHeaders) > 0;
+                                      static_cast<unsigned>(fb->len), sourceHeaders, freshHeaders);
+  const int socketFd = client.fd();
+  const uint32_t responseStartedAt = millis();
+  size_t headerWritten = 0;
+  const bool headerOk = freshOk && socketFd >= 0 && headerLength > 0 &&
+                        static_cast<size_t>(headerLength) < sizeof(responseHeader) &&
+                        writeClientBuffer(socketFd, reinterpret_cast<const uint8_t*>(responseHeader),
+                                          static_cast<size_t>(headerLength), responseStartedAt, headerWritten);
   size_t written = 0;
   const uint32_t writeStartedAt = millis();
-  const bool bodyOk = headerOk && client.connected() &&
-                      writeClientBuffer(client, fb->buf, fb->len, CAPTURE_WRITE_DEADLINE_MS, written);
+  const bool bodyOk = headerOk &&
+                      writeClientBuffer(socketFd, fb->buf, fb->len, responseStartedAt, written);
   const uint32_t writeMs = millis() - writeStartedAt;
   cameraStats.lastWriteMs = writeMs;
   if (writeMs > cameraStats.maxWriteMs) {
     cameraStats.maxWriteMs = writeMs;
   }
-  if (writeMs > CAPTURE_WRITE_DEADLINE_MS) {
+  if (millis() - responseStartedAt >= CAPTURE_WRITE_DEADLINE_MS) {
     cameraStats.slowClientWrites++;
   }
   if (!headerOk || !bodyOk || written != fb->len) {
