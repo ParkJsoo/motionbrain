@@ -9,7 +9,7 @@ from PIL import Image
 from learning.action_execution import BoundedActionExecutor
 from learning.dual_view_policy import (ACTIONS, Catalog, DualViewPolicy, GripperDispatchGate,
                                        VisualControl, run_actions, thumbnail)
-from tests.test_action_execution import FakeClock, FakePort
+from tests.test_action_execution import FakeClock, FakePort, LookupWorkerFixture
 from unittest.mock import Mock
 
 
@@ -32,6 +32,39 @@ class VisualPort(FakePort):
 
 
 class DualViewTest(unittest.TestCase):
+    def test_model_hold_cancels_with_status_lookup_outstanding(self):
+        clock = FakeClock()
+        port = VisualPort(clock)
+        label = 'wrist/down'
+        catalog = Catalog({label:dict(command=command(*ACTIONS[label]),shoulderRangeDeg=[208,212])})
+        active_at = []
+        def active(req,vote,ack):
+            if req is not None:
+                active_at.append(ack)
+        def latest():
+            now = clock.monotonic()
+            choice = 'hold' if active_at and now-active_at[0] >= .06 else label
+            return dict(pair(choice,now,now),previousPair=pair(label,now-.01,now-.01))
+        never_ready = Mock()
+        never_ready.done.return_value = False
+        worker = LookupWorkerFixture(lambda _:never_ready)
+        control = VisualControl(latest,.5,.4,clock=clock.monotonic)
+        log = []
+        with tempfile.TemporaryDirectory() as tmp:
+            core = BoundedActionExecutor(Path(tmp)/'commands.db',port,catalog,clock=clock)
+            try:
+                outcome = run_actions(control,catalog,core,'a'*32,lambda:(210,clock.monotonic()),
+                                      1,log.append,sleep=clock.sleep,on_active=active,lookup_worker=worker)
+            finally:
+                core.close()
+        self.assertEqual(outcome,'action_budget')
+        self.assertEqual(port.posts,port.cancels)
+        self.assertEqual(len(port.posts),1)
+        self.assertTrue(log[0]['cancelConfirmed'])
+        self.assertTrue(log[0]['lookupOutstandingAtCancel'])
+        self.assertEqual(log[0]['motionFeedback'][-1]['modelAction'],'hold')
+        never_ready.result.assert_not_called()
+
     def test_gripper_request_waits_for_release_and_stops_if_session_ends(self):
         for interrupted in (False, True):
             with self.subTest(interrupted=interrupted):

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Run a finite two-camera policy session on the selected capture volume."""
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import argparse
 import hashlib
 import json
@@ -16,6 +16,7 @@ import uuid
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from learning.action_execution import BoundedActionExecutor
+from learning.action_lookup_worker import ActionLookupWorker
 from learning.action_port import BoundedActionHTTP
 from learning.artifacts import _decode_json
 from learning.device_adapter import _object
@@ -104,6 +105,9 @@ def main(argv=None):
     ack_aligned_capture = p.get('ackAlignedGripperCapture', False)
     if type(ack_aligned_capture) is not bool or (ack_aligned_capture and sync_dispatch):
         raise ValueError('invalid_gripper_dispatch_alignment')
+    async_lookup = p.get('asyncActionLookup', False)
+    if type(async_lookup) is not bool:
+        raise ValueError('invalid_async_action_lookup')
     policy = load_policy(p)
     catalog = Catalog(p['profiles'])
     verified(Path(p['helper']), p['helperSha256'])
@@ -125,7 +129,8 @@ def main(argv=None):
 
     control = VisualControl(latest, p['maxAge'], p['maxSkew'])
     print(json.dumps(dict(planSha256=digest, sideSampleFps=fps, syncDispatchToFrame=sync_dispatch,
-                          ackAlignedGripperCapture=ack_aligned_capture, demonstrated=sorted(set(policy.labels)),
+                          ackAlignedGripperCapture=ack_aligned_capture, asyncActionLookup=async_lookup,
+                          demonstrated=sorted(set(policy.labels)),
                           commissioned=sorted(catalog.profiles))), flush=True)
     if not (args.observe or args.execute):
         return 0
@@ -181,7 +186,8 @@ def main(argv=None):
                 until = time.monotonic()+20
                 while child.is_alive() and latest() is None and time.monotonic() < until:
                     time.sleep(.05)
-                with (root/'actions.jsonl').open('x') as log:
+                lookup_context = ActionLookupWorker(p['controllerUrl']) if async_lookup else nullcontext()
+                with lookup_context as lookup_worker, (root/'actions.jsonl').open('x') as log:
                     def record(result):
                         log.write(json.dumps(result)+'\n')
                         log.flush()
@@ -203,7 +209,8 @@ def main(argv=None):
                     outcome = run_actions(control, catalog, executor, p['controllerBootId'], pose, p['maxActions'],
                                           record, on_active=on_active if use_response else None, sync_dispatch=sync_dispatch,
                                           gripper_gate=gripper_gate, side_stop=side_stop,
-                                          finish_after='elbow/up' if 'developmentPick' in p else None)
+                                          finish_after='elbow/up' if 'developmentPick' in p else None,
+                                          lookup_worker=lookup_worker)
             if outcome == 'observe_after_lift':
                 # Retain fresh OFF observations for scoring without issuing further commands.
                 child.join(timeout=3)

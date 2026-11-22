@@ -214,7 +214,8 @@ class VisualControl:
 
 
 def run_actions(control, catalog, executor, boot, off_pose, max_actions, record, *, sleep=time.sleep,
-                on_active=None, sync_dispatch=False, gripper_gate=None, side_stop=None, finish_after=None):
+                on_active=None, sync_dispatch=False, gripper_gate=None, side_stop=None, finish_after=None,
+                lookup_worker=None):
     """One owner at a time. Each dispatch needs two independent pairs after OFF."""
     for _ in range(max_actions):
         _, boundary = off_pose()
@@ -281,7 +282,8 @@ def run_actions(control, catalog, executor, boot, off_pose, max_actions, record,
                     return 'cancel'
             return feedback(req, ack)
         try:
-            result = executor.confirm(cid, confirmed_request=request, dispatch_guard=guard, motion_feedback=during)
+            result = executor.confirm(cid, confirmed_request=request, dispatch_guard=guard,
+                                      motion_feedback=during, lookup_worker=lookup_worker)
         finally:
             if gripper_gate is not None:
                 gripper_gate.resume()

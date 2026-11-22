@@ -317,6 +317,7 @@ class BoundedActionExecutor:
             started = None
             visual_cancel = False
             cancel_applied = False
+            cancel_timing = {}
             try:
                 # Crash after this write is conservatively unknown, even if the
                 # final observation gate later stops the call before transport.
@@ -358,7 +359,7 @@ class BoundedActionExecutor:
                         result = self._result(cid, "known_terminal", "controller_output_off", True, action=action)
                         if visual_cancel:
                             result.update(cancelAttempted=True, cancelConfirmed=cancel_applied and record['state'] == 'cancelled'
-                                          and record['reason'] == 'cancelled')
+                                          and record['reason'] == 'cancelled', **cancel_timing)
                         return self._save(cid, "known_terminal", result)
                     if (record["state"] != "running" or self._now() >= deadline
                             or (pending_lookup is None and lookup_count >= self.max_polls)):
@@ -374,11 +375,14 @@ class BoundedActionExecutor:
                             self._save(cid, 'outcome_unknown', self._result(
                                 cid, 'outcome_unknown', 'visual_cancel_reserved', True,
                                 cancelAttempted=True, cancelConfirmed=False, **baseline_evidence))
+                            cancel_timing['lookupOutstandingAtCancel'] = pending_lookup is not None
+                            cancel_started = self._now()
                             cancel_reply = self.port.cancel(r)
+                            received = self._now()
+                            cancel_timing['cancelHostBounds'] = self._bounds(cancel_started, received, "cancel_round_trip")
                             cancel_applied = cancel_reply.get('cancelApplied') is True
                             record = checked_record(cancel_reply, r)
-                            received = self._now()
-                            if ((record['ordinal'], record['startedAtMs']) != identity
+                            if (received < cancel_started or (record['ordinal'], record['startedAtMs']) != identity
                                     or record['state'] not in KNOWN_TERMINAL):
                                 raise ValueError('visual_cancel_unverified')
                             continue
@@ -408,7 +412,7 @@ class BoundedActionExecutor:
                 result = self._save(cid, "outcome_unknown" if attempted else "not_sent",
                     self._result(cid, "outcome_unknown" if attempted else "not_sent", type(exc).__name__, attempted,
                                  **({"cancelAttempted": True, "cancelConfirmed": False} if visual_cancel else {}),
-                                 **(baseline_evidence if attempted else {})))
+                                 **(baseline_evidence if attempted else {}), **cancel_timing))
                 if attempted:
                     # One best-effort targeted cancel, durably reserved first.
                     # Even a cancel acknowledgement never changes this unknown.

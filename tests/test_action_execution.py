@@ -222,6 +222,11 @@ class ActionExecutionTest(unittest.TestCase):
                                     motion_feedback=feedback, lookup_worker=worker)
         self.assertTrue(outcome['cancelConfirmed'])
         self.assertLess(observed[-1], .061)
+        self.assertTrue(outcome['lookupOutstandingAtCancel'])
+        timing = outcome['cancelHostBounds']
+        self.assertEqual(timing['method'], 'cancel_round_trip')
+        self.assertAlmostEqual(timing['earliest']-started, observed[-1])
+        self.assertGreaterEqual(timing['latest'],timing['earliest'])
         self.assertEqual(submitted_reads, [r])
         self.assertEqual(self.port.posts, [r])
         self.assertEqual(self.port.cancels, [r])
