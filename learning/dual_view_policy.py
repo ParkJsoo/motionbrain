@@ -77,6 +77,35 @@ class Catalog:
         return self.validate(dict(command, bootId=boot, commandId=cid))
 
 
+class GripperDispatchGate:
+    """Pause between GETs, then let the capture process request its next frame."""
+
+    def __init__(self, requested, paused):
+        self.requested, self.paused = requested, paused
+
+    def request_pause(self):
+        if self.requested.is_set() or self.paused.is_set():
+            raise ValueError('gripper_pause_already_pending')
+        self.requested.set()
+
+    def resume(self):
+        self.requested.clear()
+
+    def before_capture(self, stopping, until, *, check, clock=time.monotonic):
+        check()
+        if self.requested.is_set():
+            self.paused.set()
+            try:
+                while self.requested.is_set():
+                    if clock() >= until or stopping.wait(.005):
+                        return False
+                    check()
+            finally:
+                self.paused.clear()
+            check()
+        return not stopping.is_set() and clock() < until
+
+
 def usable(sample, boundary, now, max_age, max_skew):
     if not fresh_pair_after(sample, boundary, now):
         return False
@@ -112,15 +141,18 @@ class VisualControl:
             return None
         return first, sample
 
-    def dispatch_admission(self, label, boundary, verify_pose, *, synchronize=False, sleep=time.sleep):
+    def dispatch_admission(self, label, boundary, verify_pose, *, synchronize=False,
+                           gripper_gate=None, sleep=time.sleep):
         """Keep the last pose verification next to submit; optionally align it with a new vote."""
         clocks = ('extClock', 'nearClock')
-        if synchronize:
+        if synchronize or gripper_gate is not None:
             initial = self.latest()
             started = self.clock()
             if not usable(initial, boundary, started, self.age, self.skew) or initial['action'] != label:
                 raise ValueError('visual_start_changed')
             oldest = min(initial[k]['sourceEarliest'] for k in clocks)
+            if gripper_gate is not None:
+                gripper_gate.request_pause()
             # Wait with all outputs OFF, ahead of the final device read. Never extend an
             # active feedback deadline to compensate for device, camera or disk latency.
             while self.clock() < started + self.age:
@@ -128,9 +160,10 @@ class VisualControl:
                 if (not usable(sample, boundary, self.clock(), self.age, self.skew)
                         or sample['action'] != label or sample['lastDissent'].get(label, 0) > oldest):
                     raise ValueError('visual_start_changed')
-                if (all(sample[k]['sourceEarliest'] > initial[k]['sourceEarliest'] for k in clocks)
-                        and all(sample[k] != initial[k] for k in ('frameId', 'nearFrameId'))
-                        and self.admission(sample, boundary)):
+                ready = (gripper_gate.paused.is_set() if gripper_gate is not None else
+                         all(sample[k]['sourceEarliest'] > initial[k]['sourceEarliest'] for k in clocks)
+                         and all(sample[k] != initial[k] for k in ('frameId', 'nearFrameId')))
+                if ready and self.admission(sample, boundary):
                     break
                 sleep(.01)
             else:
@@ -139,7 +172,8 @@ class VisualControl:
         current = self.latest()
         admitted = self.admission(current, boundary)
         if (not admitted or current['action'] != label or current.get('fault')
-                or (synchronize and (current['lastDissent'].get(label, 0) > oldest
+                or (gripper_gate is not None and not gripper_gate.paused.is_set())
+                or ((synchronize or gripper_gate is not None) and (current['lastDissent'].get(label, 0) > oldest
                     or any(current[k]['sourceEarliest'] < sample[k]['sourceEarliest'] for k in clocks)))):
             raise ValueError('visual_start_changed')
         return admitted
@@ -179,7 +213,8 @@ class VisualControl:
         return check
 
 
-def run_actions(control, catalog, executor, boot, off_pose, max_actions, record, *, sleep=time.sleep, on_active=None, sync_dispatch=False, side_stop=None, finish_after=None):
+def run_actions(control, catalog, executor, boot, off_pose, max_actions, record, *, sleep=time.sleep,
+                on_active=None, sync_dispatch=False, gripper_gate=None, side_stop=None, finish_after=None):
     """One owner at a time. Each dispatch needs two independent pairs after OFF."""
     for _ in range(max_actions):
         _, boundary = off_pose()
@@ -204,6 +239,7 @@ def run_actions(control, catalog, executor, boot, off_pose, max_actions, record,
         executor.propose(request)
         feedback = None
         trace = []
+        gate_timing = {}
 
         def guard(req):
             nonlocal feedback, admission
@@ -212,7 +248,9 @@ def run_actions(control, catalog, executor, boot, off_pose, max_actions, record,
                 if catalog.request(label, angle, boot, cid) != req:
                     raise ValueError('pose_or_profile_changed')
             admission = control.dispatch_admission(label, boundary, verify_pose,
-                                                   synchronize=sync_dispatch, sleep=sleep)
+                                                   synchronize=sync_dispatch, gripper_gate=gripper_gate, sleep=sleep)
+            if gripper_gate is not None:
+                gate_timing['gripperPauseConfirmedAt'] = control.clock()
             if side_stop:
                 veto = side_stop.check(label, boundary, admission=True)
                 if veto:
@@ -233,6 +271,9 @@ def run_actions(control, catalog, executor, boot, off_pose, max_actions, record,
             if on_active is not None and not published:
                 on_active(req, admission[1], ack)
                 published = True
+            if gripper_gate is not None and 'gripperReleaseAfterAckAt' not in gate_timing:
+                gate_timing['gripperReleaseAfterAckAt'] = control.clock()
+                gripper_gate.resume()
             if side_stop:
                 veto = side_stop.check(label, ack)
                 if veto:
@@ -242,6 +283,8 @@ def run_actions(control, catalog, executor, boot, off_pose, max_actions, record,
         try:
             result = executor.confirm(cid, confirmed_request=request, dispatch_guard=guard, motion_feedback=during)
         finally:
+            if gripper_gate is not None:
+                gripper_gate.resume()
             if published:
                 on_active(None, None, None)
         if side_stop and result['executionState'] == 'known_terminal' and not any('sideStop' in r for r in trace):
@@ -261,7 +304,8 @@ def run_actions(control, catalog, executor, boot, off_pose, max_actions, record,
                 trace.append(dict(sideStop=dict(reason='side_frames_missing_at_off'), terminalAlreadyObserved=True))
         unique_pairs = {tuple(row['frames']) for row in trace if row.get('postAckPair')}
         record(dict(result, observedRunningPairs=len(unique_pairs), motionFeedback=trace, actionLabel=label, offConfirmedAt=boundary,
-                    admissionPairs=[[x[k] for k in ('frameId', 'nearFrameId')] for x in (admission or ())]))
+                    admissionPairs=[[x[k] for k in ('frameId', 'nearFrameId')] for x in (admission or ())],
+                    **gate_timing))
         if result['executionState'] != 'known_terminal':
             return result['executionState']
         terminal = result['action']['record']

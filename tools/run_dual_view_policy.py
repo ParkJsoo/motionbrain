@@ -20,7 +20,7 @@ from learning.action_port import BoundedActionHTTP
 from learning.artifacts import _decode_json
 from learning.device_adapter import _object
 from learning.dual_view_capture import capture, load_policy, publish_active_context, publish_close_context, side_sample_fps, verified
-from learning.dual_view_policy import Catalog, VisualControl, run_actions
+from learning.dual_view_policy import Catalog, GripperDispatchGate, VisualControl, run_actions
 from learning.external_media import _mount_fd
 from learning.supervised_transport import SequencePort
 
@@ -101,6 +101,9 @@ def main(argv=None):
     sync_dispatch = p.get('syncDispatchToFrame', False)
     if type(sync_dispatch) is not bool:
         raise ValueError('invalid_dispatch_sync')
+    ack_aligned_capture = p.get('ackAlignedGripperCapture', False)
+    if type(ack_aligned_capture) is not bool or (ack_aligned_capture and sync_dispatch):
+        raise ValueError('invalid_gripper_dispatch_alignment')
     policy = load_policy(p)
     catalog = Catalog(p['profiles'])
     verified(Path(p['helper']), p['helperSha256'])
@@ -121,7 +124,8 @@ def main(argv=None):
         return json.loads(data) if data else None
 
     control = VisualControl(latest, p['maxAge'], p['maxSkew'])
-    print(json.dumps(dict(planSha256=digest, sideSampleFps=fps, syncDispatchToFrame=sync_dispatch, demonstrated=sorted(set(policy.labels)),
+    print(json.dumps(dict(planSha256=digest, sideSampleFps=fps, syncDispatchToFrame=sync_dispatch,
+                          ackAlignedGripperCapture=ack_aligned_capture, demonstrated=sorted(set(policy.labels)),
                           commissioned=sorted(catalog.profiles))), flush=True)
     if not (args.observe or args.execute):
         return 0
@@ -138,8 +142,9 @@ def main(argv=None):
         use_response = 'responsePolicy' in p
         close_context = ctx.Array('c', 8192) if use_response else None
         active_context = ctx.Array('c', 8192) if use_response else None
+        gripper_gate = GripperDispatchGate(ctx.Event(), ctx.Event()) if args.execute and ack_aligned_capture else None
         child = ctx.Process(target=capture, args=(p, root, session, stop, mailbox, close_context, active_context),
-                            kwargs={'allow_observation_stop':True} if args.allow_observation_stop else {})
+                            kwargs={'allow_observation_stop':args.allow_observation_stop,'gripper_gate':gripper_gate})
         executor = None
         if args.execute:
             port = BoundedActionHTTP(p['controllerUrl'], token_provider=lambda: os.environ['MOTIONBRAIN_HTTP_TOKEN'],
@@ -189,13 +194,15 @@ def main(argv=None):
                     def on_active(req, vote, at):
                         if vote and vote['action'] == 'gripper/open':
                             publish_close_context(close_context, session, p['controllerBootId'], None)
-                        publish_active_context(active_context, session, p['controllerBootId'], req, vote, at)
+                        publish_active_context(active_context, session, p['controllerBootId'], req, vote, at,
+                                               max_age=control.age if gripper_gate is not None else None)
                     side_stop = None
                     if p['external']['viewConfigurationId'] == 'wide-side-manual-20261121':
                         from learning.wide_side_stop import WideSideStop
                         side_stop = WideSideStop(root, p['external'], p['maxAge'])
                     outcome = run_actions(control, catalog, executor, p['controllerBootId'], pose, p['maxActions'],
-                                          record, on_active=on_active if use_response else None, sync_dispatch=sync_dispatch, side_stop=side_stop,
+                                          record, on_active=on_active if use_response else None, sync_dispatch=sync_dispatch,
+                                          gripper_gate=gripper_gate, side_stop=side_stop,
                                           finish_after='elbow/up' if 'developmentPick' in p else None)
             if outcome == 'observe_after_lift':
                 # Retain fresh OFF observations for scoring without issuing further commands.

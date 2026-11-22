@@ -7,10 +7,29 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from PIL import Image
-from learning.dual_view_capture import capture, effective_vote, load_policy, side_sample_fps
+from learning.dual_view_capture import _side_for_gripper, capture, effective_vote, load_policy, side_sample_fps
 
 
 class DemonstrationBindingTest(unittest.TestCase):
+    def test_post_ack_gripper_pair_can_wait_for_one_new_side_frame(self):
+        from contextlib import nullcontext
+        for delivered in (True, False):
+            with self.subTest(delivered=delivered):
+                before = {'sourceEarliest':9.9,'frameId':'side-old'}
+                after = {'sourceEarliest':10.01,'frameId':'side-fresh'}
+                camera = Mock(lock=nullcontext(), frames=[before])
+                now = [10.02]
+                stop = Mock()
+                def wait(seconds):
+                    now[0] += seconds
+                    if delivered:
+                        camera.frames.append(after)
+                    return False
+                stop.wait.side_effect = wait
+                chosen = _side_for_gripper(camera,stop,10.,10.04,clock=lambda:now[0])
+                self.assertEqual(chosen, after if delivered else before)
+                self.assertLessEqual(now[0],10.04)
+
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)

@@ -1,11 +1,14 @@
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 
 from PIL import Image
 
 from learning.action_execution import BoundedActionExecutor
-from learning.dual_view_policy import ACTIONS, Catalog, DualViewPolicy, VisualControl, run_actions, thumbnail
+from learning.dual_view_policy import (ACTIONS, Catalog, DualViewPolicy, GripperDispatchGate,
+                                       VisualControl, run_actions, thumbnail)
 from tests.test_action_execution import FakeClock, FakePort
 from unittest.mock import Mock
 
@@ -29,6 +32,88 @@ class VisualPort(FakePort):
 
 
 class DualViewTest(unittest.TestCase):
+    def test_gripper_request_waits_for_release_and_stops_if_session_ends(self):
+        for interrupted in (False, True):
+            with self.subTest(interrupted=interrupted):
+                gate = GripperDispatchGate(threading.Event(), threading.Event())
+                stop = threading.Event()
+                gate.request_pause()
+                may_capture = []
+                child = threading.Thread(target=lambda:may_capture.append(
+                    gate.before_capture(stop, time.monotonic()+2.,check=lambda:None)), daemon=True)
+                child.start()
+                try:
+                    self.assertTrue(gate.paused.wait(1.))
+                    self.assertFalse(may_capture)
+                    if interrupted:
+                        stop.set()
+                    else:
+                        gate.resume()
+                    child.join(1.)
+                    self.assertEqual(may_capture, [not interrupted])
+                    self.assertFalse(gate.paused.is_set())
+                finally:
+                    stop.set()
+                    gate.resume()
+                    child.join(1.)
+
+    def test_gripper_pause_detects_external_camera_failure(self):
+        gate = GripperDispatchGate(threading.Event(), threading.Event())
+        gate.request_pause()
+        check = Mock(side_effect=[None, ValueError('external_camera_lost')])
+        with self.assertRaisesRegex(ValueError,'external_camera_lost'):
+            gate.before_capture(threading.Event(),time.monotonic()+1.,check=check)
+        self.assertFalse(gate.paused.is_set())
+
+    def test_ack_alignment_holds_gripper_through_submit_and_releases_on_ack(self):
+        for pause_available in (True, False):
+            with self.subTest(pause_available=pause_available), tempfile.TemporaryDirectory() as tmp:
+                clock = FakeClock()
+                port = VisualPort(clock)
+                port.running_reads = 3
+                gate = GripperDispatchGate(threading.Event(), threading.Event())
+                label = 'wrist/down'
+                catalog = Catalog({label:dict(command=command(*ACTIONS[label]),shoulderRangeDeg=[208,212])})
+                core = BoundedActionExecutor(Path(tmp)/'commands.db', port, catalog, clock=clock)
+                ack = []
+                def before_submit():
+                    self.assertTrue(gate.requested.is_set())
+                    self.assertTrue(gate.paused.is_set())
+                    self.assertFalse(ack)
+                port.before_submit = before_submit
+                def active(req, vote, at):
+                    if req is not None:
+                        self.assertTrue(gate.requested.is_set())
+                        ack.append(at)
+                def next_sample():
+                    now = clock.monotonic()
+                    if ack and not gate.requested.is_set() and now >= ack[0]+.02:
+                        return pair(label,ack[0]+.02,3)
+                    return dict(pair(label,100.01,2),previousPair=pair(label,100.005,1))
+                def sleep(delta):
+                    clock.sleep(delta)
+                    if pause_available and gate.requested.is_set():
+                        gate.paused.set()
+                    else:
+                        gate.paused.clear()
+                control = VisualControl(next_sample,.5,.4,clock=clock.monotonic)
+                log = []
+                try:
+                    outcome = run_actions(control,catalog,core,'a'*32,lambda:(210,100. if not port.posts else clock.monotonic()),
+                                          1,log.append,sleep=sleep,gripper_gate=gate,on_active=active)
+                finally:
+                    core.close()
+                self.assertFalse(gate.requested.is_set())
+                self.assertEqual(len(port.posts), int(pause_available))
+                if pause_available:
+                    self.assertEqual(outcome,'action_budget')
+                    self.assertGreaterEqual(log[0]['gripperReleaseAfterAckAt'],ack[0])
+                    self.assertEqual(log[0]['observedRunningPairs'],1)
+                    self.assertFalse(port.cancels)
+                else:
+                    self.assertEqual(outcome,'not_sent')
+                    self.assertFalse(ack)
+
     def test_two_views_must_agree_on_demonstrated_action(self):
         images = [Image.new('RGB', (32, 24), (20*i, 50, 220-20*i)) for i in range(10)]
         examples = [(label, thumbnail(im), thumbnail(im)) for label, im in zip(ACTIONS, images)]

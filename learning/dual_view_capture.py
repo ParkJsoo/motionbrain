@@ -169,7 +169,8 @@ def _read_context(mailbox, session, boot):
     return value
 
 
-def publish_active_context(mailbox, session, boot, request, start_vote=None, acknowledged_at=None):
+def publish_active_context(mailbox, session, boot, request, start_vote=None, acknowledged_at=None, *,
+                           max_age=None):
     """Publish only after verified running ACK. Reset at the end of the command."""
     if request is None:
         _send_context(mailbox, None)
@@ -183,8 +184,12 @@ def publish_active_context(mailbox, session, boot, request, start_vote=None, ack
             not 0 <= start_vote['decidedAt'] <= acknowledged_at or
             not isinstance(start_vote['features'], dict)):
         raise ValueError('active_context_mismatch')
-    _send_context(mailbox, dict(session=session, boot=boot, commandId=req['commandId'],
-        after=acknowledged_at, action=dict(label=label, startFeatures=start_vote['features'])))
+    context = dict(session=session, boot=boot, commandId=req['commandId'],
+        after=acknowledged_at, action=dict(label=label, startFeatures=start_vote['features']))
+    if max_age is not None:
+        context['firstPairDeadline'] = (min(start_vote[k]['sourceEarliest'] for k in ('extClock','nearClock'))
+                                        + max_age)
+    _send_context(mailbox, context)
 
 
 def publish_close_context(mailbox, session, boot, result):
@@ -269,7 +274,20 @@ def observation_stop_requested(root):
     return True
 
 
-def capture(plan, root, session, stopping, mailbox, context_mailbox=None, active_mailbox=None, *, allow_observation_stop=False):
+def _side_for_gripper(camera, stopping, boundary, deadline, *, clock=time.monotonic):
+    """Let a fresh gripper frame meet a pending post-ACK side frame once."""
+    while True:
+        with camera.lock:
+            frame = camera.frames[-1].copy()
+        if boundary is None or frame['sourceEarliest'] > boundary or clock() >= deadline:
+            return frame
+        if stopping.wait(min(.005,max(0.,deadline-clock()))):
+            return frame
+        camera.check()
+
+
+def capture(plan, root, session, stopping, mailbox, context_mailbox=None, active_mailbox=None, *,
+            allow_observation_stop=False, gripper_gate=None):
     root = Path(root)
     def publish(value):
         # Detailed observation-only calibration records stay in decisions.jsonl.
@@ -318,15 +336,24 @@ def capture(plan, root, session, stopping, mailbox, context_mailbox=None, active
                     # The directory rotates, but device time and the camera boot continue.
                     gripper.previous_capture_us = previous_capture_us
                     gripper.start(deadline=time.monotonic()+2.)
-                camera.check()
+                if gripper_gate is None:
+                    camera.check()
+                elif not gripper_gate.before_capture(stopping, until, check=camera.check):
+                    break
                 item = gripper.capture(deadline=time.monotonic()+2.)
                 gripper.verify(item)
                 previous_capture_us = gripper.previous_capture_us
                 binding = gripper._bindings[item['frame']['frameId']]
                 near = gripper_image(gripper.store.root/binding['folder'], binding)
-                # Consume the newest durable side frame once. Never queue old scenes.
-                with camera.lock:
-                    frame = camera.frames[-1].copy()
+                # A fast post-ACK gripper GET can beat the side recorder's
+                # ingress. Retain this single pair for at most one side interval.
+                active = (_read_context(active_mailbox, session, plan['controllerBootId'])
+                          if gripper_gate is not None and active_mailbox is not None else None)
+                boundary = active['after'] if active and item['sourceEarliest'] > active['after'] else None
+                side_deadline = (min(until,time.monotonic()+1/fps,item['sourceEarliest']+plan['maxAge'],
+                                     active.get('firstPairDeadline',boundary))
+                                 if boundary is not None else 0.)
+                frame = _side_for_gripper(camera, stopping, boundary, side_deadline)
                 if frame['frameIndex'] <= previous:
                     continue
                 previous = frame['frameIndex']
