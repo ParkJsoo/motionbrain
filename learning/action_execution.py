@@ -14,6 +14,7 @@ import re
 import struct
 import threading
 import time
+from contextlib import ExitStack
 from pathlib import Path
 
 from learning.runner import _action_matches, KNOWN_TERMINAL
@@ -220,14 +221,17 @@ class BoundedActionExecutor:
                 self.failed = True
                 return self._result(cid, "outcome_unknown", "journal_unavailable")
 
-    def confirm(self, cid, *, confirmed_request, dispatch_guard, motion_feedback=None):
+    def confirm(self, cid, *, confirmed_request, dispatch_guard, motion_feedback=None, lookup_worker=None):
         """Caller must confirm the exact displayed request and supply a fresh gate.
 
         The guard runs after journal reservation and all preflight I/O, immediately
         before the submit callback. It must revalidate observation/M4 freshness and
         persistence, raising on failure. The finite pilot CLI supplies this guard.
+        An optional prestarted read-only worker grants an exclusive per-action lease.
+        While that GET is pending the owner continues checking motion feedback;
+        only this owner may submit, cancel or update the command journal.
         """
-        with self.lock:
+        with self.lock, ExitStack() as leases:
             if self.failed:
                 return self._result(cid, "outcome_unknown", "journal_unavailable")
             try:
@@ -240,6 +244,8 @@ class BoundedActionExecutor:
                     return self._result(cid, "not_sent", error)
                 if motion_feedback is not None and not callable(motion_feedback):
                     raise ValueError('motion_feedback_callback_required')
+                if lookup_worker is not None and motion_feedback is None:
+                    raise ValueError('asynchronous_lookup_requires_active_monitor')
                 r = self.limits.validate(row["request"]["action"])
                 if canonical_request(confirmed_request) != r or not callable(dispatch_guard):
                     raise ValueError("explicit_matching_confirmation_required")
@@ -249,6 +255,10 @@ class BoundedActionExecutor:
                     if not row["request"]["createdMonotonic"] <= self._now() < row["expiresAt"]:
                         raise ValueError("confirmation_expired_or_clock_regressed")
                 fresh()
+                lookup = None
+                if lookup_worker is not None:
+                    origin = self.port.transport.bases['controller']
+                    lookup = leases.enter_context(lookup_worker.reserve(r,origin))
                 baseline = self.port.preflight(r)
                 fresh()
             except Exception as exc:
@@ -265,6 +275,8 @@ class BoundedActionExecutor:
                 self._save(cid, "dispatching", self._result(cid, "outcome_unknown", "dispatch_reserved", True))
                 fresh()
                 dispatch_guard(copy.deepcopy(r))
+                if lookup is not None:
+                    lookup.check_ready(self.port.transport.bases['controller'])
                 fresh()
                 started = self._now()
                 ack = self.port.submit(r)
@@ -281,7 +293,9 @@ class BoundedActionExecutor:
                 identity = (record["ordinal"], record["startedAtMs"])
                 start_bounds = self._bounds(started, received, "submit_round_trip")
                 deadline = started + r["durationMs"]/1000 + 1.0
-                for index in range(self.max_polls+1):
+                pending_lookup = None
+                lookup_count = 0
+                while True:
                     if self.stop_requested.is_set():
                         raise InterruptedError("operator_stop_requested")
                     if record["state"] in KNOWN_TERMINAL:
@@ -296,7 +310,8 @@ class BoundedActionExecutor:
                             result.update(cancelAttempted=True, cancelConfirmed=cancel_applied and record['state'] == 'cancelled'
                                           and record['reason'] == 'cancelled')
                         return self._save(cid, "known_terminal", result)
-                    if record["state"] != "running" or index == self.max_polls or self._now() >= deadline:
+                    if (record["state"] != "running" or self._now() >= deadline
+                            or (pending_lookup is None and lookup_count >= self.max_polls)):
                         raise TimeoutError("terminal_not_confirmed")
                     if motion_feedback is not None:
                         decision = motion_feedback(copy.deepcopy(r), start_bounds['latest'])
@@ -319,13 +334,23 @@ class BoundedActionExecutor:
                             continue
                     self.clock.sleep(self.poll_interval)
                     previous = received
-                    record = checked_record(self.port.lookup(r), r)
+                    if lookup is None:
+                        lookup_count += 1
+                        observed = self.port.lookup(r)
+                    else:
+                        if pending_lookup is None:
+                            lookup_count += 1
+                            pending_lookup = lookup.begin()
+                        if not pending_lookup.done():
+                            continue
+                        observed = pending_lookup.result(timeout=0)
+                        pending_lookup = None
+                    record = checked_record(observed, r)
                     if (record["ordinal"], record["startedAtMs"]) != identity:
                         raise ValueError("action_identity_changed")
                     received = self._now()
                     if received < previous:
                         raise ValueError("clock_regressed")
-                raise AssertionError("unreachable")
             except BaseException as exc:
                 if self.failed:
                     raise

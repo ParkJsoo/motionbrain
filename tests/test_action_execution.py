@@ -1,4 +1,6 @@
 """Host journal + bounded API contract tests. No real devices or motor outputs."""
+from types import SimpleNamespace
+from contextlib import contextmanager
 import copy
 import json
 from pathlib import Path
@@ -10,6 +12,28 @@ from learning.action_execution import ActionLimits, BoundedActionExecutor, canon
 from learning.dry_run import SyntheticAdapter
 from learning.artifacts import ArtifactStore
 from learning.runner import CaptureRunner, audit_run
+
+
+class LookupWorkerFixture:
+    def __init__(self, begin):
+        self.start = begin
+        self.request = None
+        self.pending = None
+
+    @contextmanager
+    def reserve(self, request, owner_origin):
+        if self.pending is not None and not self.pending.done():
+            raise ValueError('previous_get_in_flight')
+        self.request = request
+        yield self
+
+    def check_ready(self, owner_origin):
+        if self.request is None:
+            raise ValueError('no_lease')
+
+    def begin(self):
+        self.pending = self.start(self.request)
+        return self.pending
 
 
 class FakeClock:
@@ -25,6 +49,7 @@ class FakePort:
     host_clock_id = "test-clock"
     def __init__(self, clock):
         self.clock = clock
+        self.transport = SimpleNamespace(bases={'controller':'http://unused.invalid'})
         self.posts, self.cancels, self.reads = [], [], 0
         self.failure = None
         self.running_reads = 0
@@ -165,6 +190,86 @@ class ActionExecutionTest(unittest.TestCase):
         self.port.running_reads=100
         result=self.run_action();self.assertEqual(result['executionState'],'outcome_unknown')
         self.assertEqual(self.port.reads,20);self.assertEqual(len(self.port.cancels),1)
+    def test_visual_cancel_while_slow_get_is_pending(self):
+        self.core.close()
+        self.core = self.make(poll_interval=.008,max_polls=1)
+        started = self.clock.now
+        submitted_reads = []
+
+        class SlowGet:
+            def done(inner):
+                return self.clock.now - started >= .13121
+            def result(inner, *, timeout):
+                self.fail('veto should have preceded GET completion')
+
+        def begin(req):
+            submitted_reads.append(req)
+            return SlowGet()
+
+        def cancel(req):
+            return dict(FakePort.cancel(self.port, req), cancelApplied=True)
+
+        self.port.cancel = cancel
+        observed = []
+        def feedback(req, ack):
+            observed.append(self.clock.now - ack)
+            return 'cancel' if self.clock.now - ack >= .052 else 'continue'
+
+        r = request()
+        self.core.propose(r)
+        worker = LookupWorkerFixture(begin)
+        outcome = self.core.confirm(r['commandId'], confirmed_request=r, dispatch_guard=lambda _:None,
+                                    motion_feedback=feedback, lookup_worker=worker)
+        self.assertTrue(outcome['cancelConfirmed'])
+        self.assertLess(observed[-1], .061)
+        self.assertEqual(submitted_reads, [r])
+        self.assertEqual(self.port.posts, [r])
+        self.assertEqual(self.port.cancels, [r])
+        self.assertEqual(self.port.reads, 0)
+        other = request('second')
+        self.core.propose(other)
+        refused = self.core.confirm('second', confirmed_request=other, dispatch_guard=lambda _:None,
+                                    motion_feedback=feedback, lookup_worker=worker)
+        self.assertEqual(refused['executionState'], 'not_sent')
+        self.assertEqual(self.port.posts, [r])
+
+    def test_worker_origin_mismatch_refuses_before_post(self):
+        from learning.action_lookup_worker import ActionLookupWorker
+        r = request()
+        self.core.propose(r)
+        with ActionLookupWorker('http://different.invalid') as worker:
+            outcome = self.core.confirm(r['commandId'], confirmed_request=r, dispatch_guard=lambda _:None,
+                                        motion_feedback=lambda r,ack:'continue', lookup_worker=worker)
+        self.assertEqual(outcome['executionState'], 'not_sent')
+        self.assertEqual(self.port.posts, [])
+        self.assertEqual(self.port.cancels, [])
+
+    def test_async_read_failure_preserves_unknown_and_one_cancel(self):
+        from concurrent.futures import Future
+        r = request()
+        self.core.propose(r)
+        failed = Future()
+        failed.set_exception(TimeoutError())
+        outcome = self.core.confirm(r['commandId'], confirmed_request=r, dispatch_guard=lambda _:None,
+                                    motion_feedback=lambda r,ack:'continue', lookup_worker=LookupWorkerFixture(lambda _:failed))
+        self.assertEqual(outcome['executionState'], 'outcome_unknown')
+        self.assertEqual(self.port.posts, [r])
+        self.assertEqual(self.port.cancels, [r])
+
+    def test_async_terminal_uses_identity_and_output_validation(self):
+        from concurrent.futures import Future
+        r = request()
+        self.core.propose(r)
+        def begin(req):
+            future = Future()
+            future.set_result(self.port.lookup(req))
+            return future
+        outcome = self.core.confirm(r['commandId'], confirmed_request=r, dispatch_guard=lambda _:None,
+                                    motion_feedback=lambda r,ack:'continue', lookup_worker=LookupWorkerFixture(begin))
+        self.assertEqual(outcome['executionState'], 'known_terminal')
+        self.assertEqual(outcome['action']['record']['state'], 'completed')
+        self.assertEqual(self.port.cancels, [])
+
     def test_stop_signal_cancels_without_needing_executor_lock(self):
         self.port.before_submit=self.core.request_stop
         result=self.run_action();self.assertEqual(result['executionState'],'outcome_unknown')
