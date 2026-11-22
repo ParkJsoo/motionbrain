@@ -123,7 +123,7 @@ def _wide_tip(rgb, hsv):
     # 새 측면 구도의 손목에는 작은 분홍·녹색 표식이 나란히 붙어 있다.
     # 두 표식은 탐색 방향·대략적인 투영 크기를 제공한다. 끝점 자체는
     # 매 프레임 손목에 연결된 검은 턱의 실제 말단 픽셀에서 찾는다.
-    pink = _compact_patches(hsv, (128, 20, 30), (179, 230, 235), (9, 41, 7, 36, 75))
+    pink = _compact_patches(hsv, (128, 20, 30), (179, 230, 235), (9, 45, 7, 36, 75))
     green = list(_compact_patches(hsv, (45, 18, 45), (96, 180, 235), (8, 40, 8, 42, 80)))
     candidates = []
     for wrist, (x, y, w, h), patch in pink:

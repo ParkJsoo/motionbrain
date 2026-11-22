@@ -101,6 +101,13 @@ class OpenSideApproachTest(unittest.TestCase):
                                  (1920, 1080), borderValue=(220, 220, 220))
         with self.assertRaisesRegex(ValueError, 'wide_wrist_jaw'):
             observe_side_tip(rotated, view_id=WIDE_SIDE_VIEW)
+        # A 45-pixel wrist patch occurs in the stationary wide near-object view.
+        wide_patch = rgb.copy()
+        cv2.ellipse(wide_patch, (940, 480), (22, 8), 0, 0, 360, (141, 87, 121), -1)
+        self.assertEqual(observe_side_tip(wide_patch, view_id=WIDE_SIDE_VIEW), (tip, mode))
+        wide_patch[450:510, 904:910] = 220
+        with self.assertRaisesRegex(ValueError, 'wide_wrist_jaw'):
+            observe_side_tip(wide_patch, view_id=WIDE_SIDE_VIEW)
         clipped = np.roll(rgb, -785, axis=1)
         with self.assertRaisesRegex(ValueError, 'wide_wrist_jaw'):
             observe_side_tip(clipped, view_id=WIDE_SIDE_VIEW)
