@@ -30,6 +30,10 @@ class ActionHTTPTest(unittest.TestCase):
         self.clock=FakeClock();self.fake=FakePort(self.clock)
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
         self.requests=[];self.redirect=False;self.bad_json=False;self.enabled=True;self.state=status()
+        self.baseline = self.fake.log('a'*32, [])
+        self.collection = dict(schemaVersion='collection.v1',state='ARMED',motorEnabled=False,
+            motors=self.state['motors'],outputProof=dict(schemaVersion='driver_cursor.v1',
+                bootId='a'*32,stable=True,sequenceBefore=0,sequenceAfter=0))
         outer=self
         class Handler(BaseHTTPRequestHandler):
             def log_message(self,*args):pass
@@ -41,13 +45,14 @@ class ActionHTTPTest(unittest.TestCase):
                 path=urllib.parse.urlsplit(self.path);q=dict(urllib.parse.parse_qsl(path.query))
                 outer.requests.append(('GET',self.path,{}))
                 if path.path=='/status':self.send(outer.state)
+                elif path.path=='/collection_status':self.send(outer.collection)
                 elif path.path=='/actions' and not q:
                     self.send(dict(schemaVersion='motionbrain.bounded_action.v1',clockDomain='controller_boot_millis',
                                    bootId='a'*32,enabled=outer.enabled,active=False,recordCount=0,recordCapacity=32))
                 elif path.path=='/actions':
                     self.send(outer.fake.lookup(request(q['commandId'])))
                 elif path.path=='/action_outputs':
-                    self.send(outer.fake.outputs() if outer.fake.last_record else outer.fake.log('a'*32,[]))
+                    self.send(outer.fake.outputs() if outer.fake.last_record else outer.baseline)
                 else:self.send({},404)
             def do_POST(self):
                 payload=dict(urllib.parse.parse_qsl(self.rfile.read(int(self.headers.get('Content-Length',0))).decode()))
@@ -118,6 +123,65 @@ class ActionHTTPTest(unittest.TestCase):
         self.assertEqual(posts[0][2]['X-Motionbrain-Token'],TOKEN)
         self.assertNotIn(TOKEN,json.dumps(core.journal.records()))
         self.assertNotIn(TOKEN,path.read_bytes().decode(errors='replace'))
+
+    def prepare_rolled_history(self):
+        entries = [dict(sequence=seq, actionOrdinal=0, motor=1, pwm=0, atMs=0, reason='driver_write')
+                   for seq in range(188, 316)]
+        self.baseline.update(dropped=187, entries=entries)
+        self.collection['outputProof'].update(sequenceBefore=315, sequenceAfter=315)
+        self.fake.first_sequence = 316
+        action_outputs = self.fake.outputs
+
+        def rolled_outputs():
+            result = action_outputs()
+            result['dropped'] = 189
+            result['entries'] = entries[2:] + result['entries']
+            return result
+
+        self.fake.outputs = rolled_outputs
+
+    def test_rolled_history_still_proves_the_entire_new_action(self):
+        self.prepare_rolled_history()
+        with self.assertRaisesRegex(DeviceReadError, 'output_history_dropped'):
+            self.port().preflight(request())
+        port = self.port(allow_rolled_history=True)
+        core = BoundedActionExecutor(Path(self.temp.name)/'rolled.sqlite',port,limits(),clock=self.clock)
+        self.addCleanup(core.close)
+        core.propose(request())
+        result = core.confirm('first',confirmed_request=request(),dispatch_guard=lambda _:None)
+        self.assertEqual(result['executionState'],'known_terminal',result)
+        log = result['action']['outputLog']
+        self.assertEqual([e['sequence'] for e in log['entries']], [316, 317])
+        self.assertEqual((log['dropped'], log['historicalDropped']), (0, 189))
+
+    def test_rolled_history_needs_a_matching_stable_off_cursor(self):
+        self.prepare_rolled_history()
+        port = self.port(allow_rolled_history=True)
+        for mutation in ({'sequenceAfter':316}, {'stable':False}, {'bootId':'b'*32}):
+            with self.subTest(mutation=mutation):
+                proof = self.collection['outputProof']
+                prior = proof.copy()
+                proof.update(mutation)
+                with self.assertRaisesRegex(DeviceReadError, 'off_output_cursor_unverified'):
+                    port.preflight(request())
+                proof.update(prior)
+        self.assertFalse(any(method=='POST' for method,_,_ in self.requests))
+
+    def test_rolled_history_does_not_accept_a_missing_action_write(self):
+        self.prepare_rolled_history()
+        exact_outputs = self.fake.outputs
+        def overwritten_outputs():
+            result = exact_outputs()
+            result.update(dropped=316, entries=result['entries'][-1:])
+            return result
+        self.fake.outputs = overwritten_outputs
+        port = self.port(allow_rolled_history=True)
+        core = BoundedActionExecutor(Path(self.temp.name)/'gap.sqlite',port,limits(),clock=self.clock)
+        self.addCleanup(core.close)
+        core.propose(request())
+        result = core.confirm('first',confirmed_request=request(),dispatch_guard=lambda _:None)
+        self.assertEqual(result['executionState'],'outcome_unknown',result)
+        self.assertEqual(result['outputBaseline'], {'verifiedOffSequence':315,'dropped':187})
     def test_redirect_never_forwards_credentials_or_request(self):
         port=self.port();port.preflight(request());self.redirect=True
         with self.assertRaises(DeviceReadError):port.submit(request())

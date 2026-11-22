@@ -36,7 +36,10 @@ def validate_row(row):
 
 
 def validate_evidence(row, evidence):
-    from learning.action_execution import checked_record, finite, selected_outputs
+    from learning.action_execution import (checked_record, finite, output_snapshot_cursor,
+                                           selected_outputs, selected_output_window)
+    from learning.action_port import BoundedActionHTTP
+    from learning.device_adapter import DeviceReadError
     from learning.runner import KNOWN_TERMINAL
     request=validate_row(row)
     if (row['phase']!='outcome_unknown' or evidence.get('schemaVersion')!=EVIDENCE_SCHEMA
@@ -61,6 +64,19 @@ def validate_evidence(row, evidence):
             or any(sensor.get(k) is not False for k in ('simulated','faultLatched','blocked'))
             or teleop.get('deadman') is not False or teleop.get('controlActive') is not False):
         raise ValueError('fresh_idle_off_safety_required')
+    output_baseline = (row.get('result') or {}).get('outputBaseline')
+    if output_baseline is not None:
+        if not isinstance(output_baseline, dict):
+            raise ValueError('invalid_output_baseline')
+        cursor = output_snapshot_cursor(outputs)
+        try:
+            BoundedActionHTTP.verify_off_cursor(evidence.get('outputStatus',{}), request['bootId'],
+                                               cursor, state='IDLE')
+        except DeviceReadError as exc:
+            raise ValueError('resolution_off_output_cursor_unverified') from exc
+        selected_output_window(outputs, record, output_baseline.get('verifiedOffSequence'),
+                               output_baseline.get('dropped'))
+        return record
     if outputs.get('bootId')!=request['bootId'] or outputs.get('dropped')!=0:
         raise ValueError('complete_same_boot_outputs_required')
     entries=outputs.get('entries',[]);latest={};previous=0
@@ -87,10 +103,12 @@ def observe_resolution(row, reader, *, clock=time):
     record=reader.lookup(request)
     status=reader.status()
     outputs=reader.outputs()
+    output_status = ({"outputStatus":reader.output_status()}
+                     if (row.get('result') or {}).get('outputBaseline') is not None else {})
     capability=reader.capability()
     evidence=dict(schemaVersion=EVIDENCE_SCHEMA,commandId=row['commandId'],originalRowSha256=digest(row),
                   request=request,terminalRecord=record,status=status,outputs=outputs,initialCapability=initial_capability,capability=capability,
-                  readDurationSeconds=clock.monotonic()-start)
+                  readDurationSeconds=clock.monotonic()-start, **output_status)
     evidence['terminalRecord']=validate_evidence(row,evidence)
     return evidence
 
@@ -178,6 +196,10 @@ class ResolutionReader:
     def outputs(self):return self._port.outputs()
     def status(self):
         with self._port._deadline():return self._port.reader.status()
+    def output_status(self):
+        from learning.device_adapter import _object
+        with self._port._deadline():
+            return _object(self._port.transport.get('controller','/collection_status')[0])
     def capability(self):
         with self._port._deadline():return self._port.reader.capability()
 

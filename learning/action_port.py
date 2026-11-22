@@ -10,16 +10,19 @@ import urllib.parse
 import urllib.request
 from contextlib import nullcontext
 
-from learning.action_execution import canonical_request, finite
+from learning.action_execution import canonical_request, finite, output_snapshot_cursor
 from learning.artifacts import _decode_json
-from learning.device_adapter import DeviceReadAdapter, DeviceReadError, ReadOnlyHTTP, _NoRedirect
+from learning.device_adapter import DeviceReadAdapter, DeviceReadError, ReadOnlyHTTP, _NoRedirect, _object
 
 
 class BoundedActionHTTP:
     def __init__(self, controller_url, *, token_provider=None, writes_enabled=False, timeout=1.0, clock=None,
-                 camera_url=None, perception_url=None, required_profile=None, total_deadline=False):
+                 camera_url=None, perception_url=None, required_profile=None, total_deadline=False,
+                 allow_rolled_history=False):
         if type(writes_enabled) is not bool:
             raise ValueError("writes_enabled_must_be_boolean")
+        if type(allow_rolled_history) is not bool:
+            raise ValueError("allow_rolled_history_must_be_boolean")
         options = {} if clock is None else {"clock": clock}
         self.transport = ReadOnlyHTTP(controller_url=controller_url, camera_url=camera_url or controller_url,
                                       perception_url=perception_url or controller_url, timeout=timeout, **options)
@@ -27,6 +30,7 @@ class BoundedActionHTTP:
         self.clock, self.host_clock_id = self.transport.clock, self.transport.host_clock_id
         self.writes_enabled, self.token_provider = writes_enabled, token_provider
         self.required_profile = required_profile
+        self.allow_rolled_history = allow_rolled_history
         if type(total_deadline) is not bool:
             raise ValueError("total_deadline_must_be_boolean")
         self.total_deadline = total_deadline
@@ -35,7 +39,7 @@ class BoundedActionHTTP:
         self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
 
     def preflight(self, request):
-        with self._deadline(3):
+        with self._deadline(4 if self.allow_rolled_history else 3):
             return self._preflight(request)
 
     def _deadline(self, requests=1):
@@ -81,11 +85,32 @@ class BoundedActionHTTP:
                     or not m4["softMinDeg"] <= r["targetDegrees"] <= m4["softMaxDeg"]):
                 raise DeviceReadError("m4_state_unverified")
         output = self.reader.outputs()
-        if output["dropped"] != 0:
+        if self.allow_rolled_history:
+            cursor = output_snapshot_cursor(output)
+            receipt, _ = self.transport.get("controller", "/collection_status")
+            self.verify_off_cursor(_object(receipt), r["bootId"], cursor, state="ARMED")
+            output = {**output, "verifiedOffSequence": cursor}
+        elif output["dropped"] != 0:
             raise DeviceReadError("output_history_dropped")
         self._prepared = (r, prepared)
         self._prepared_cancel = (r, prepared_cancel)
         return output
+
+    @staticmethod
+    def verify_off_cursor(status, boot, cursor, *, state):
+        if not isinstance(status, dict):
+            raise DeviceReadError("off_output_cursor_unverified")
+        proof, motors = status.get("outputProof", {}), status.get("motors", {})
+        if (status.get("schemaVersion") != "collection.v1" or status.get("state") != state
+                or status.get("motorEnabled") is not False or not isinstance(proof, dict)
+                or proof.get("schemaVersion") != "driver_cursor.v1" or proof.get("bootId") != boot
+                or proof.get("stable") is not True or not isinstance(motors, dict)
+                or any(type(proof.get(k)) is not int or proof[k] != cursor
+                       for k in ("sequenceBefore", "sequenceAfter"))
+                or set(motors) != {f"M{i}" for i in range(1, 6)}
+                or any(not isinstance(m, dict) or m.get("enabled") is not False
+                       or type(m.get("speed")) is not int or m["speed"] != 0 for m in motors.values())):
+            raise DeviceReadError("off_output_cursor_unverified")
 
     def _token(self):
         token = self.token_provider() if callable(self.token_provider) else None

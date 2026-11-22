@@ -143,7 +143,8 @@ def main(argv=None):
         executor = None
         if args.execute:
             port = BoundedActionHTTP(p['controllerUrl'], token_provider=lambda: os.environ['MOTIONBRAIN_HTTP_TOKEN'],
-                                     writes_enabled=True, required_profile='dual_view_timer_v1', timeout=.6, total_deadline=True)
+                                     writes_enabled=True, required_profile='dual_view_timer_v1', timeout=.6,
+                                     total_deadline=True, allow_rolled_history=True)
             with port._deadline():
                 capability = port.reader.capability()
             if (capability['bootId'] != p['controllerBootId'] or not capability['enabled']

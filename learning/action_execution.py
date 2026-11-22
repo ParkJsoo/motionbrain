@@ -120,15 +120,53 @@ def checked_record(record, request):
     return {k: record[k] for k in keys}
 
 
-def selected_outputs(log, record, baseline):
+def output_snapshot_cursor(log):
+    """Validate the retained interval of a full controller output snapshot."""
+    if not isinstance(log, dict):
+        raise ValueError("output_snapshot_interval_unverified")
+    dropped, entries = log.get("dropped"), log.get("entries")
+    if (type(dropped) is not int or not 0 <= dropped < 2**32
+            or not isinstance(entries, list) or (dropped and not entries)
+            or dropped + len(entries) >= 2**32
+            or any(not isinstance(e, dict) or type(e.get("sequence")) is not int or e["sequence"] != seq
+                   for seq, e in enumerate(entries, dropped + 1))):
+        raise ValueError("output_snapshot_interval_unverified")
+    return dropped + len(entries)
+
+
+def selected_outputs(log, record, baseline, *, allow_rolled_history=False):
     if (not isinstance(log, dict) or log.get("bootId") != record["bootId"]
             or log.get("clockDomain") != "controller_boot_millis" or log.get("evidence") != "driver_write"
-            or type(log.get("dropped")) is not int or log["dropped"] != 0 or not isinstance(log.get("entries"), list)):
+            or type(log.get("dropped")) is not int or log["dropped"] < 0 or not isinstance(log.get("entries"), list)):
         raise ValueError("output_log_unverified")
     if (not isinstance(baseline, dict) or baseline.get("bootId") != record["bootId"]
-            or baseline.get("dropped") != 0 or not isinstance(baseline.get("entries"), list)):
+            or type(baseline.get("dropped")) is not int or baseline["dropped"] < 0
+            or not isinstance(baseline.get("entries"), list)):
         raise ValueError("baseline_outputs_unverified")
-    baseline_last = baseline["entries"][-1]["sequence"] if baseline["entries"] else 0
+    if allow_rolled_history:
+        baseline_last = output_snapshot_cursor(baseline)
+        off_cursor = baseline.get("verifiedOffSequence")
+        if type(off_cursor) is not int or off_cursor != baseline_last:
+            raise ValueError("output_window_unverified")
+        return selected_output_window(log, record, off_cursor, baseline["dropped"])
+    elif baseline["dropped"] or log["dropped"]:
+        raise ValueError("output_log_unverified")
+    else:
+        baseline_last = baseline["entries"][-1]["sequence"] if baseline["entries"] else 0
+    return _select_action_outputs(log, record, baseline_last)
+
+
+def selected_output_window(log, record, off_cursor, previous_dropped):
+    if (not isinstance(log, dict) or log.get("bootId") != record["bootId"]
+            or log.get("clockDomain") != "controller_boot_millis"
+            or log.get("evidence") != "driver_write" or type(off_cursor) is not int
+            or type(previous_dropped) is not int or type(log.get("dropped")) is not int
+            or not 0 <= previous_dropped <= log["dropped"] <= off_cursor):
+        raise ValueError("output_window_unverified")
+    return _select_action_outputs(log, record, off_cursor, terminal_cursor=output_snapshot_cursor(log))
+
+
+def _select_action_outputs(log, record, baseline_last, *, terminal_cursor=None):
     entries, previous, previous_offset = [], 0, 0
     for entry in log["entries"]:
         if (not isinstance(entry, dict) or type(entry.get("sequence")) is not int
@@ -149,10 +187,14 @@ def selected_outputs(log, record, baseline):
             previous_offset = offset
             entries.append(copy.deepcopy(entry))
     if (not entries or entries[0]["sequence"] != baseline_last+1 or any(b["sequence"] != a["sequence"]+1 for a,b in zip(entries,entries[1:]))
+            or (terminal_cursor is not None and entries[-1]["sequence"] != terminal_cursor)
             or not any(e["motor"] == record["motor"] and e["pwm"] == 0 for e in entries)
             or next(e for e in reversed(entries) if e["motor"] == record["motor"])["pwm"] != 0):
         raise ValueError("output_coverage_unverified")
-    return {**{k: log[k] for k in ("bootId", "clockDomain", "evidence", "dropped")}, "entries": entries}
+    window = {**{k: log[k] for k in ("bootId", "clockDomain", "evidence")}, "dropped": 0, "entries": entries}
+    if log["dropped"]:
+        window["historicalDropped"] = log["dropped"]
+    return window
 
 
 class BoundedActionExecutor:
@@ -174,9 +216,11 @@ class BoundedActionExecutor:
                     raise ValueError("journal_protocol_mismatch")
             for row in self.journal.interrupted():
                 dispatched = row["phase"] == "dispatching"
+                evidence = ({"outputBaseline": row["result"]["outputBaseline"]}
+                            if dispatched and "outputBaseline" in (row.get("result") or {}) else {})
                 self._save(row["commandId"], "outcome_unknown" if dispatched else "not_sent",
                            self._result(row["commandId"], "outcome_unknown" if dispatched else "not_sent",
-                                        "executor_restarted", dispatched))
+                                        "executor_restarted", dispatched, **evidence))
         except BaseException:
             self.journal.close()
             raise
@@ -260,6 +304,10 @@ class BoundedActionExecutor:
                     origin = self.port.transport.bases['controller']
                     lookup = leases.enter_context(lookup_worker.reserve(r,origin))
                 baseline = self.port.preflight(r)
+                rolled_history = getattr(self.port, "allow_rolled_history", False)
+                baseline_evidence = ({"outputBaseline": {
+                    "verifiedOffSequence": baseline["verifiedOffSequence"], "dropped": baseline["dropped"]}}
+                    if rolled_history else {})
                 fresh()
             except Exception as exc:
                 if 'row' not in locals() or row is None:
@@ -272,7 +320,8 @@ class BoundedActionExecutor:
             try:
                 # Crash after this write is conservatively unknown, even if the
                 # final observation gate later stops the call before transport.
-                self._save(cid, "dispatching", self._result(cid, "outcome_unknown", "dispatch_reserved", True))
+                self._save(cid, "dispatching", self._result(cid, "outcome_unknown", "dispatch_reserved", True,
+                                                           **baseline_evidence))
                 fresh()
                 dispatch_guard(copy.deepcopy(r))
                 if lookup is not None:
@@ -299,7 +348,8 @@ class BoundedActionExecutor:
                     if self.stop_requested.is_set():
                         raise InterruptedError("operator_stop_requested")
                     if record["state"] in KNOWN_TERMINAL:
-                        outputs = selected_outputs(self.port.outputs(), record, baseline)
+                        outputs = selected_outputs(self.port.outputs(), record, baseline,
+                            allow_rolled_history=rolled_history)
                         action = {"request": r, "record": record, "outputLog": outputs,
                             "startHostBounds": start_bounds,
                             "outputOffHostBounds": self._bounds(started, received, "terminal_round_trip"),
@@ -323,7 +373,7 @@ class BoundedActionExecutor:
                             visual_cancel = True
                             self._save(cid, 'outcome_unknown', self._result(
                                 cid, 'outcome_unknown', 'visual_cancel_reserved', True,
-                                cancelAttempted=True, cancelConfirmed=False))
+                                cancelAttempted=True, cancelConfirmed=False, **baseline_evidence))
                             cancel_reply = self.port.cancel(r)
                             cancel_applied = cancel_reply.get('cancelApplied') is True
                             record = checked_record(cancel_reply, r)
@@ -357,7 +407,8 @@ class BoundedActionExecutor:
                 attempted = started is not None
                 result = self._save(cid, "outcome_unknown" if attempted else "not_sent",
                     self._result(cid, "outcome_unknown" if attempted else "not_sent", type(exc).__name__, attempted,
-                                 **({"cancelAttempted": True, "cancelConfirmed": False} if visual_cancel else {})))
+                                 **({"cancelAttempted": True, "cancelConfirmed": False} if visual_cancel else {}),
+                                 **(baseline_evidence if attempted else {})))
                 if attempted:
                     # One best-effort targeted cancel, durably reserved first.
                     # Even a cancel acknowledgement never changes this unknown.

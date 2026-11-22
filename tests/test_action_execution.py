@@ -278,9 +278,12 @@ class ActionExecutionTest(unittest.TestCase):
         self.core.propose(request());self.core.close();self.core=self.make()
         self.assertEqual(self.core.result('first')['executionState'],'not_sent')
         r=request('second');self.core.propose(r)
-        self.core.journal.save('second','dispatching',self.core._result('second','outcome_unknown','reserved',True))
+        baseline = {'dropped':187,'verifiedOffSequence':315}
+        self.core.journal.save('second','dispatching',
+            self.core._result('second','outcome_unknown','reserved',True,outputBaseline=baseline))
         self.core.close();self.core=self.make()
         self.assertEqual(self.core.result('second')['executionState'],'outcome_unknown')
+        self.assertEqual(self.core.result('second')['outputBaseline'],baseline)
         self.core.confirm('second',confirmed_request=r,dispatch_guard=lambda r:None)
         self.assertFalse(self.port.posts)
     def test_inspection_does_not_unlock_unknown(self):

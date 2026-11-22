@@ -123,6 +123,33 @@ class JournalTest(unittest.TestCase):
         self.reader.outputs=outputs
         with self.assertRaisesRegex(ValueError,'unchanged_last_action'):self.evidence()
         self.assertFalse(self.core.journal.readiness()['ready'])
+
+    def test_rolled_resolution_requires_durable_baseline_and_current_idle_cursor(self):
+        row = copy.deepcopy(self.original)
+        row['result']['outputBaseline'] = {'verifiedOffSequence':315,'dropped':187}
+        output = self.reader.outputs_value
+        output['dropped'] = 310
+        for entry in output['entries']:
+            entry['sequence'] += 310
+        after = dict(schemaVersion='collection.v1',state='IDLE',motorEnabled=False,
+            motors=self.reader.status_value['motors'],outputProof=dict(schemaVersion='driver_cursor.v1',
+                bootId='a'*32,stable=True,sequenceBefore=321,sequenceAfter=321))
+        self.reader.output_status = lambda:copy.deepcopy(after)
+        evidence = observe_resolution(row,self.reader,clock=self.clock)
+        self.assertEqual(validate_evidence(row,evidence)['state'],self.reader.record['state'])
+        for change in ('missing_action_start', 'wrong_off_cursor', 'extra_write_after_off'):
+            bad = copy.deepcopy(evidence)
+            if change=='missing_action_start':
+                bad['outputs']['entries'] = bad['outputs']['entries'][6:]
+                bad['outputs']['dropped'] = 316
+            elif change=='wrong_off_cursor':
+                bad['outputStatus']['outputProof'].update(sequenceBefore=322,sequenceAfter=322)
+            else:
+                bad['outputs']['entries'].append({**bad['outputs']['entries'][-1],
+                                                   'sequence':322,'actionOrdinal':0})
+                bad['outputStatus']['outputProof'].update(sequenceBefore=322,sequenceAfter=322)
+            with self.subTest(change=change),self.assertRaises(ValueError):
+                validate_evidence(row,bad)
     def test_cumulative_read_deadline_and_transport_error_block(self):
         original=self.reader.capability
         def slow():self.clock.now+=4.1;return original()
