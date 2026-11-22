@@ -134,6 +134,7 @@ python tools/run_dual_view_policy.py --plan "$PLAN" --execute --confirm-plan-sha
 | `syncDispatchToFrame` | 기본값은 `false`다. `true`이면 출력 전 마지막 점검을 시작할 때 같은 행동을 고른 새 양안 쌍을 기다린 뒤 자세와 OFF를 확인하고 전송한다. 관측 만료·판단 변경 시 전송을 중단한다. |
 | `ackAlignedGripperCapture` | 기본값은 `false`다. 시험 실행에서 `true`이면 집게 카메라가 진행 중인 요청을 마치고 다음 요청을 기다리는 상태를 확인한 뒤 전송한다. 구동 승인 응답을 받으면 다음 요청을 시작하도록 신호를 보낸다. 상대반응 정책에서 새 집게 영상이 먼저 도착하면 기존 유효시간 안에서 측면 프레임 최대 한 주기를 기다린다. 기존 정지 기준을 적용하며 `syncDispatchToFrame`과 함께 켤 수 없다. |
 | `asyncActionLookup` | 기본값은 `false`다. 시험 실행에서 `true`이면 상태 조회를 읽기 전용 작업자에 맡기고, 조회 중에도 제어기가 같은 명령의 영상 취소를 검사한다. 취소 요청의 왕복 시각과 당시 조회 대기 여부를 기록한다. |
+| `refreshExpiredDispatch` | 기본값은 `false`다. 전송 전 영상이 만료되면 5축 OFF와 시작 자세를 다시 확인하고, 그 확인 뒤 촬영한 독립 양안 두 쌍을 최대 3초간 한 번 기다린다. 두 쌍에서 예약된 행동이 다시 선택되고 기존 최종 검사를 통과해야 전송한다. |
 | `external`, `helper`, `helperSha256` | 촬영 당시의 외부 카메라 설정, 수집 실행 파일 경로와 SHA-256 |
 | `sideSampleFps` (선택) | 측면 원본 수집 목표 속도. 정수 4(기본) 또는 8. 실제 양안 판단 주기는 두 카메라의 새 원본 ID와 판단 시각으로 측정한다. |
 | `gripperUrl`, `gripperBootId`, `scene` | 집게 카메라 주소와 현재 부팅 ID, 촬영 구도·물체·자세 범위·특징점 설명 |

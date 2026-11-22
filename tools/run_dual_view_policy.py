@@ -108,6 +108,9 @@ def main(argv=None):
     async_lookup = p.get('asyncActionLookup', False)
     if type(async_lookup) is not bool:
         raise ValueError('invalid_async_action_lookup')
+    refresh_expired_dispatch = p.get('refreshExpiredDispatch', False)
+    if type(refresh_expired_dispatch) is not bool:
+        raise ValueError('invalid_dispatch_refresh')
     policy = load_policy(p)
     catalog = Catalog(p['profiles'])
     verified(Path(p['helper']), p['helperSha256'])
@@ -130,6 +133,7 @@ def main(argv=None):
     control = VisualControl(latest, p['maxAge'], p['maxSkew'])
     print(json.dumps(dict(planSha256=digest, sideSampleFps=fps, syncDispatchToFrame=sync_dispatch,
                           ackAlignedGripperCapture=ack_aligned_capture, asyncActionLookup=async_lookup,
+                          refreshExpiredDispatch=refresh_expired_dispatch,
                           demonstrated=sorted(set(policy.labels)),
                           commissioned=sorted(catalog.profiles))), flush=True)
     if not (args.observe or args.execute):
@@ -210,7 +214,7 @@ def main(argv=None):
                                           record, on_active=on_active if use_response else None, sync_dispatch=sync_dispatch,
                                           gripper_gate=gripper_gate, side_stop=side_stop,
                                           finish_after='elbow/up' if 'developmentPick' in p else None,
-                                          lookup_worker=lookup_worker)
+                                          lookup_worker=lookup_worker, refresh_expired_dispatch=refresh_expired_dispatch)
             if outcome == 'observe_after_lift':
                 # Retain fresh OFF observations for scoring without issuing further commands.
                 child.join(timeout=3)

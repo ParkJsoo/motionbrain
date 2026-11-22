@@ -115,6 +115,10 @@ def usable(sample, boundary, now, max_age, max_skew):
     return now-earliest <= max_age and skew <= max_skew
 
 
+class DispatchObservationExpired(ValueError):
+    pass
+
+
 class VisualControl:
     def __init__(self, latest, max_age, max_skew, *, clock=time.monotonic):
         if not all(finite(x) and 0 < x <= .69 for x in (max_age, max_skew)):
@@ -132,14 +136,46 @@ class VisualControl:
         if not usable(sample, after, now, self.age, self.skew):
             return None
         first = sample.get('previousPair')
-        if (not usable(first, after, now, self.age, self.skew) or first['action'] != sample['action']
-                or sample.get('activeCommandId') or first.get('activeCommandId')
-                or sample.get('closeCommandId') != first.get('closeCommandId')
-                or any(first[k] == sample[k] for k in ('frameId', 'nearFrameId'))
-                or any(first[k]['sourceEarliest'] >= sample[k]['sourceEarliest']
-                       for k in ('extClock', 'nearClock'))):
+        if (not usable(first, after, now, self.age, self.skew)
+                or first['action'] != sample['action'] or not self._independent(first, sample)):
             return None
         return first, sample
+
+    @staticmethod
+    def _independent(first, sample):
+        return (not sample.get('activeCommandId') and not first.get('activeCommandId')
+                and sample.get('closeCommandId') == first.get('closeCommandId')
+                and all(first[k] != sample[k] for k in ('frameId','nearFrameId'))
+                and all(first[k]['sourceEarliest'] < sample[k]['sourceEarliest']
+                        for k in ('extClock','nearClock')))
+
+    def _check_dispatch_vote(self, sample, label, boundary, now, *, oldest=None):
+        if (not isinstance(sample, dict) or sample.get('fault')
+                or sample.get('modelAction',sample.get('action')) != label
+                or (oldest is not None and sample['lastDissent'].get(label,0) > oldest)):
+            raise ValueError('visual_start_changed')
+        if not usable(sample,boundary,now,self.age,self.skew):
+            # Diagnose age on this same snapshot, never use the wider test to admit a vote.
+            if usable(sample,boundary,now,3.,self.skew):
+                raise DispatchObservationExpired('dispatch_observation_expired')
+            raise ValueError('visual_start_changed')
+        if sample['action'] != label:
+            raise ValueError('visual_start_changed')
+
+    def wait_for_fresh_admission(self, label, boundary, *, sleep):
+        """A reserved request can proceed only if two new pairs still select it."""
+        deadline = self.clock() + 3.
+        while self.clock() < deadline:
+            sample = self.latest()
+            if sample and sample.get('fault'):
+                raise ValueError('camera_stopped_during_admission_refresh')
+            pairs = self.admission(sample, boundary)
+            if pairs:
+                if sample['action'] != label:
+                    raise ValueError('model_choice_changed_during_admission_refresh')
+                return pairs
+            sleep(.02)
+        raise ValueError('fresh_pair_timeout_during_admission_refresh')
 
     def dispatch_admission(self, label, boundary, verify_pose, *, synchronize=False,
                            gripper_gate=None, sleep=time.sleep):
@@ -148,8 +184,7 @@ class VisualControl:
         if synchronize or gripper_gate is not None:
             initial = self.latest()
             started = self.clock()
-            if not usable(initial, boundary, started, self.age, self.skew) or initial['action'] != label:
-                raise ValueError('visual_start_changed')
+            self._check_dispatch_vote(initial,label,boundary,started)
             oldest = min(initial[k]['sourceEarliest'] for k in clocks)
             if gripper_gate is not None:
                 gripper_gate.request_pause()
@@ -157,9 +192,7 @@ class VisualControl:
             # active feedback deadline to compensate for device, camera or disk latency.
             while self.clock() < started + self.age:
                 sample = self.latest()
-                if (not usable(sample, boundary, self.clock(), self.age, self.skew)
-                        or sample['action'] != label or sample['lastDissent'].get(label, 0) > oldest):
-                    raise ValueError('visual_start_changed')
+                self._check_dispatch_vote(sample,label,boundary,self.clock(),oldest=oldest)
                 ready = (gripper_gate.paused.is_set() if gripper_gate is not None else
                          all(sample[k]['sourceEarliest'] > initial[k]['sourceEarliest'] for k in clocks)
                          and all(sample[k] != initial[k] for k in ('frameId', 'nearFrameId')))
@@ -170,13 +203,18 @@ class VisualControl:
                 raise ValueError('final_admission_expired')
         verify_pose()
         current = self.latest()
-        admitted = self.admission(current, boundary)
-        if (not admitted or current['action'] != label or current.get('fault')
+        now = self.clock()
+        aligned = synchronize or gripper_gate is not None
+        first = current.get('previousPair') if isinstance(current,dict) else None
+        if (not usable(first,boundary,now,3.,self.skew) or not usable(current,boundary,now,3.,self.skew)
+                or not self._independent(first,current)
+                or first['action'] != label or first.get('fault')
                 or (gripper_gate is not None and not gripper_gate.paused.is_set())
-                or ((synchronize or gripper_gate is not None) and (current['lastDissent'].get(label, 0) > oldest
-                    or any(current[k]['sourceEarliest'] < sample[k]['sourceEarliest'] for k in clocks)))):
+                or (aligned and any(current[k]['sourceEarliest'] < sample[k]['sourceEarliest'] for k in clocks))):
             raise ValueError('visual_start_changed')
-        return admitted
+        self._check_dispatch_vote(current,label,boundary,now,oldest=oldest if aligned else None)
+        self._check_dispatch_vote(first,label,boundary,now)
+        return first,current
 
     def feedback(self, label, boundary, trace=None, *, admitted_pair=None):
         # Only new evidence can sustain the current command. While the first
@@ -215,7 +253,7 @@ class VisualControl:
 
 def run_actions(control, catalog, executor, boot, off_pose, max_actions, record, *, sleep=time.sleep,
                 on_active=None, sync_dispatch=False, gripper_gate=None, side_stop=None, finish_after=None,
-                lookup_worker=None):
+                lookup_worker=None, refresh_expired_dispatch=False):
     """One owner at a time. Each dispatch needs two independent pairs after OFF."""
     for _ in range(max_actions):
         _, boundary = off_pose()
@@ -241,30 +279,53 @@ def run_actions(control, catalog, executor, boot, off_pose, max_actions, record,
         feedback = None
         trace = []
         gate_timing = {}
+        final_boundary = boundary
 
         def guard(req):
-            nonlocal feedback, admission
+            nonlocal feedback, admission, final_boundary
             def verify_pose():
-                angle, _ = off_pose()
+                angle, proved_at = off_pose()
                 if catalog.request(label, angle, boot, cid) != req:
                     raise ValueError('pose_or_profile_changed')
-            admission = control.dispatch_admission(label, boundary, verify_pose,
-                                                   synchronize=sync_dispatch, gripper_gate=gripper_gate, sleep=sleep)
+                return proved_at
+            def check_admission():
+                return control.dispatch_admission(label, final_boundary, verify_pose,
+                    synchronize=sync_dispatch, gripper_gate=gripper_gate, sleep=sleep)
+            try:
+                admission = check_admission()
+            except ValueError as exc:
+                if not refresh_expired_dispatch or not isinstance(exc,DispatchObservationExpired):
+                    gate_timing['finalAdmissionError'] = str(exc)
+                    raise
+                if gripper_gate is not None:
+                    gripper_gate.resume()
+                refresh = gate_timing['dispatchRefresh'] = {
+                    'expiredPairs': [[x[k] for k in ('frameId','nearFrameId')] for x in admission]}
+                admission = None
+                try:
+                    final_boundary = verify_pose()
+                    refresh['offConfirmedAt'] = final_boundary
+                    fresh = control.wait_for_fresh_admission(label, final_boundary, sleep=sleep)
+                    refresh['pairs'] = [[x[k] for k in ('frameId','nearFrameId')] for x in fresh]
+                    admission = check_admission()
+                except ValueError as retry_error:
+                    refresh['reason'] = str(retry_error)
+                    raise
             if gripper_gate is not None:
                 gate_timing['gripperPauseConfirmedAt'] = control.clock()
             if side_stop:
-                veto = side_stop.check(label, boundary, admission=True)
+                veto = side_stop.check(label, final_boundary, admission=True)
                 if veto:
                     trace.append(dict(sideStop=veto))
                     raise ValueError('side_stop_before_submit')
                 latest = control.latest()
-                if (not control.admission(latest, boundary) or latest['action'] != label
+                if (not control.admission(latest, final_boundary) or latest['action'] != label
                         or not side_stop.covers(latest['frameId'])
                         or latest['lastDissent'].get(label, 0) > min(
                             admission[1][key]['sourceEarliest'] for key in ('extClock', 'nearClock'))):
                     raise ValueError('side_check_outlasted_admission')
                 admission = latest['previousPair'], latest
-            feedback = control.feedback(label, boundary, trace, admitted_pair=admission[1])
+            feedback = control.feedback(label, final_boundary, trace, admitted_pair=admission[1])
 
         published = False
         def during(req, ack):
@@ -305,7 +366,7 @@ def run_actions(control, catalog, executor, boot, off_pose, max_actions, record,
             else:
                 trace.append(dict(sideStop=dict(reason='side_frames_missing_at_off'), terminalAlreadyObserved=True))
         unique_pairs = {tuple(row['frames']) for row in trace if row.get('postAckPair')}
-        record(dict(result, observedRunningPairs=len(unique_pairs), motionFeedback=trace, actionLabel=label, offConfirmedAt=boundary,
+        record(dict(result, observedRunningPairs=len(unique_pairs), motionFeedback=trace, actionLabel=label, offConfirmedAt=final_boundary,
                     admissionPairs=[[x[k] for k in ('frameId', 'nearFrameId')] for x in (admission or ())],
                     **gate_timing))
         if result['executionState'] != 'known_terminal':

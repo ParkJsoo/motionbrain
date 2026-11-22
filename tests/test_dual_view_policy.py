@@ -32,6 +32,52 @@ class VisualPort(FakePort):
 
 
 class DualViewTest(unittest.TestCase):
+    def test_expired_final_pair_refreshes_once_while_off(self):
+        for case in ('same_choice', 'changed_choice', 'camera_fault', 'disabled'):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as tmp:
+                clock = FakeClock()
+                label = 'wrist/down'
+                catalog = Catalog({label:dict(command=command(*ACTIONS[label]),shoulderRangeDeg=[208,212])})
+                after_preflight = []
+                class SlowPreflight(VisualPort):
+                    def preflight(self, req):
+                        baseline = super().preflight(req)
+                        clock.sleep(.70)
+                        after_preflight.append(clock.monotonic())
+                        return baseline
+                port = SlowPreflight(clock)
+                def latest():
+                    now = clock.monotonic()
+                    if after_preflight and now >= after_preflight[0]+.06:
+                        if case == 'camera_fault':
+                            return {'fault':True}
+                        choice = 'elbow/down' if case == 'changed_choice' else label
+                        t = after_preflight[0]+.04
+                        return dict(pair(choice,t,4),previousPair=pair(choice,t-.01,3))
+                    return dict(pair(label,100.013,2),previousPair=pair(label,100.005,1))
+                control = VisualControl(latest,.69,.69,clock=clock.monotonic)
+                logs = []
+                core = BoundedActionExecutor(Path(tmp)/'commands.db',port,catalog,clock=clock)
+                try:
+                    outcome = run_actions(control,catalog,core,'a'*32,lambda:(210,clock.monotonic()),
+                        1,logs.append,sleep=clock.sleep,refresh_expired_dispatch=case != 'disabled')
+                finally:
+                    core.close()
+                self.assertEqual(len(port.posts),int(case == 'same_choice'))
+                self.assertEqual(outcome,'action_budget' if case == 'same_choice' else 'not_sent')
+                refresh = logs[0].get('dispatchRefresh')
+                if case == 'same_choice':
+                    self.assertEqual(refresh['offConfirmedAt'],after_preflight[0])
+                    self.assertEqual(logs[0]['admissionPairs'],[['side-3','near-3'],['side-4','near-4']])
+                elif case == 'changed_choice':
+                    self.assertEqual(refresh['reason'],'model_choice_changed_during_admission_refresh')
+                    self.assertEqual(logs[0]['admissionPairs'],[])
+                elif case == 'camera_fault':
+                    self.assertEqual(refresh['reason'],'camera_stopped_during_admission_refresh')
+                    self.assertEqual(logs[0]['admissionPairs'],[])
+                else:
+                    self.assertIsNone(refresh)
+
     def test_model_hold_cancels_with_status_lookup_outstanding(self):
         clock = FakeClock()
         port = VisualPort(clock)
@@ -190,7 +236,7 @@ class DualViewTest(unittest.TestCase):
                 def sleep(delta):
                     now[0] += delta
                 control = VisualControl(latest, .5, .2, clock=lambda:now[0])
-                with self.assertRaisesRegex(ValueError,'visual_start_changed|final_admission_expired'):
+                with self.assertRaisesRegex(ValueError,'visual_start_changed|final_admission_expired|dispatch_observation_expired'):
                     control.dispatch_admission('wrist/down', 1.8, lambda:sleep(.2), synchronize=True, sleep=sleep)
 
     def test_changes_cancel_all_ten_running_commands_with_driver_off_proof(self):
