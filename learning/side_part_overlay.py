@@ -2,7 +2,7 @@
 import cv2
 import numpy as np
 
-from learning.open_side_approach import WIDE_SIDE_VIEW, observe_side_tip
+from learning.open_side_approach import LEGACY_SIDE_VIEW, WIDE_SIDE_VIEW, observe_side_tip
 from learning.pink_prism_height import open_scene_prism_candidate
 from learning.wide_arm_overlay import wide_elbow, wide_upper_region
 from learning.wide_forearm_overlay import wide_distal_parts
@@ -197,6 +197,10 @@ def render_side(rgb, *, view_id=None):
                 # At high poses the original flange pair can still be visible.
                 # Its independent cap and shaft checks must pass on this frame.
                 _, elbow = _housing_pair(small, gold, rings)
+            elif view_id == LEGACY_SIDE_VIEW and elbow is None:
+                # A single exposed cap can verify the rail when the two flanges merge.
+                elbow = wide_elbow(small, gold, rings, shoulder)
+                wide_rail = elbow is not None
             landmarks['shoulderHousingCenterEstimate'] = (shoulder*2).round().astype(int).tolist()
             pad = np.array([1., 0.])*w*.32
             area = _polygon(gold.shape, [shoulder-pad-[0,.18*w], shoulder+pad-[0,.18*w],
@@ -240,13 +244,19 @@ def render_side(rgb, *, view_id=None):
             landmarks['wristSurfaceMarker'] = (2*wrist).tolist()
             direction = (wrist-end)/np.linalg.norm(wrist-end)
             joint = wrist+direction*42
-            if elbow is not None and 145 <= np.linalg.norm(elbow-joint) <= 325:
+            if elbow is not None and not wide_rail and 145 <= np.linalg.norm(elbow-joint) <= 325:
                 _attach(labels,'forearm',_strip(gold.shape,joint,elbow,35),material,750)
             # The surface patch lies below the centerline of the wrist housing.
             normal = np.array([direction[1], -direction[0]])
             root = end+.54*(wrist-end)
             _attach(labels,'wrist_body',_strip(gold.shape,root+normal*10,joint+normal*10,23),material,385)
             _attach(labels,'visible_jaws',_strip(gold.shape,end-direction*2,root,16),dark,155)
+    forearm_label = list(COLORS).index('forearm') + 1
+    if view_id == LEGACY_SIDE_VIEW and elbow is not None and not np.any(labels == forearm_label):
+        # Recover only the missing link. Keep the narrow view's jaw and wrist observations.
+        masks, _ = wide_distal_parts(small, elbow, remove_thin_green_edges=True)
+        if 'forearm' in masks:
+            labels[(masks['forearm'] != 0) & (labels == 0)] = forearm_label
     box = open_scene_prism_candidate(rgb)
     if box:
         x,y,w,h=box

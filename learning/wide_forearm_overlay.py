@@ -7,10 +7,11 @@ import numpy as np
 from learning.open_side_approach import _compact_patches
 
 
-def _marker_candidates(hsv):
+def _marker_candidates(hsv, *, remove_thin_green_edges=False):
     # 전완의 큰 녹색 점 두 개와 손목 몸체의 작은 분홍 점을 구분한다.
     green = [c for c, _, _ in _compact_patches(
-        hsv, (45, 18, 45), (96, 180, 235), (8, 29, 7, 28, 53))]
+        hsv, (45, 18, 45), (96, 180, 235), (8, 29, 7, 28, 53),
+        remove_thin_edges=remove_thin_green_edges)]
     pink = [c for c, _, _ in _compact_patches(
         hsv, (128, 20, 30), (179, 230, 235), (4, 22, 4, 20, 18))]
     matches = []
@@ -47,10 +48,10 @@ def _single_marker_wrist(green, pink, full_tip):
     return candidates[0] if len(candidates) == 1 else None
 
 
-def wide_distal_parts(small_rgb, elbow, tip=None):
+def wide_distal_parts(small_rgb, elbow, tip=None, *, remove_thin_green_edges=False):
     """Return half-resolution visible material masks and full-resolution marker metadata."""
     hsv = cv2.cvtColor(small_rgb, cv2.COLOR_RGB2HSV)
-    matches, green, pink = _marker_candidates(hsv)
+    matches, green, pink = _marker_candidates(hsv, remove_thin_green_edges=remove_thin_green_edges)
     if len(matches) == 1:
         markers = matches[0]
         near, far, wrist, span = markers

@@ -6,7 +6,7 @@ import cv2
 import numpy as np
 
 from learning.side_part_overlay import COLORS, _base_rings, _housing_pair, render_side
-from learning.open_side_approach import WIDE_SIDE_VIEW
+from learning.open_side_approach import LEGACY_SIDE_VIEW, WIDE_SIDE_VIEW
 
 
 class SidePartOverlayTest(unittest.TestCase):
@@ -34,6 +34,29 @@ class SidePartOverlayTest(unittest.TestCase):
             _, legacy = render_side(frame)
             self.assertEqual(legacy['parts']['forearm'], 'unresolved')
             detector.assert_called_once()
+
+    def test_narrow_rail_and_forearm_fallback_preserve_the_narrow_tip(self):
+        frame = np.full((1080, 1920, 3), 35, np.uint8)
+        shoulder, elbow = np.array([450., 360.]), np.array([425., 218.])
+        mask = np.zeros((540, 960), np.uint8)
+        mask[210:226, 300:360] = 255
+        rail = np.zeros_like(mask)
+        rail[225:350, 415:451] = 255
+        with patch('learning.side_part_overlay._base_rings', return_value=(360, 425, 160, 36)), \
+             patch('learning.side_part_overlay._housing_pair', return_value=(shoulder, None)), \
+             patch('learning.side_part_overlay.wide_elbow', return_value=elbow), \
+             patch('learning.side_part_overlay.wide_upper_region', return_value=rail), \
+             patch('learning.side_part_overlay.observe_side_tip', return_value=((520, 490), None)) as tip, \
+             patch('learning.side_part_overlay.wide_distal_parts',
+                   return_value=({'forearm': mask}, {'wristSurfaceMarker': [1, 1]})) as distal:
+            _, info = render_side(frame, view_id=LEGACY_SIDE_VIEW)
+        self.assertEqual(info['landmarks']['visibleJawTip'], [520, 490])
+        self.assertNotIn('wristSurfaceMarker', info['landmarks'])
+        self.assertEqual(info['parts']['upper_arm'], 'estimated_visible')
+        self.assertEqual(info['parts']['forearm'], 'estimated_visible')
+        self.assertFalse(info['controlEligible'])
+        self.assertEqual(tip.call_args.kwargs, {'view_id': LEGACY_SIDE_VIEW})
+        self.assertEqual(distal.call_args.kwargs, {'remove_thin_green_edges': True})
 
     def test_target_contour_is_from_current_pixels_and_input_is_unchanged(self):
         rgb = np.full((1080, 1920, 3), 222, np.uint8)

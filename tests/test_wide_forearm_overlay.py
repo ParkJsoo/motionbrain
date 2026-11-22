@@ -39,6 +39,18 @@ class WideDistalOverlayTest(unittest.TestCase):
         cv2.circle(image, (633, 265), 13, (45,45,45), -1)
         self.assertEqual(wide_distal_parts(image, None), ({}, {}))
 
+    def test_thin_green_edge_can_be_removed_without_inventing_a_marker(self):
+        image = self.frame()
+        elbow = np.array([715., 265.])
+        cv2.line(image, (577, 265), (619, 265), (74, 115, 89), 1)
+        masks, _ = wide_distal_parts(image, elbow)
+        self.assertNotIn('forearm', masks)
+        masks, _ = wide_distal_parts(image, elbow, remove_thin_green_edges=True)
+        self.assertTrue(masks['forearm'][265, 605])
+        cv2.circle(image, (633, 265), 9, (45, 45, 45), -1)
+        masks, _ = wide_distal_parts(image, elbow, remove_thin_green_edges=True)
+        self.assertNotIn('forearm', masks)
+
     def test_one_green_with_measured_tip_preserves_wrist_and_jaws(self):
         image = self.frame()
         cv2.circle(image, (633, 265), 13, (45,45,45), -1)
