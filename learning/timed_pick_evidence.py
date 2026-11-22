@@ -94,3 +94,88 @@ class TimedPickEvidence:
             candidates[label] = dict(evidence=bank, nearIfMedianTransferred=reference,
                 predictedWideSideDelta=None, predictedObjectRise=None, reasons=reasons)
         return dict(action='hold', controlEligible=False, channels=CHANNELS, candidates=candidates)
+
+
+APPROACH_LABELS = ('shoulder/down', 'elbow/down')
+SIDE_RESPONSE_SCHEMA = 'motionbrain.native_timed_approach.v1'
+
+
+def _native_point(value):
+    return isinstance(value, list) and len(value) == 2 and all(finite(v) for v in value)
+
+
+class NativeTimedApproach:
+    """Rank exact approach commands on the native tip-minus-object measurement only."""
+
+    def __init__(self, plan, reference):
+        from learning.open_side_approach import WIDE_SIDE_VIEW
+        artifact = _decode_json(verified(Path(reference['artifact']), reference['sha256']))
+        view = plan['external']['viewConfigurationId']
+        if (artifact['schema'] != SIDE_RESPONSE_SCHEMA or artifact['controlEligible'] is not False
+                or view not in (LEGACY_SIDE_VIEW, WIDE_SIDE_VIEW)
+                or plan['scene']['physicalView'] != view or plan['scene']['object'] != 'pink-prism'
+                or artifact['external'] != plan['external'] or artifact['scene'] != plan['scene']
+                or artifact['gripperBootId'] != plan['gripperBootId']):
+            raise ValueError('native_timed_camera_contract_changed')
+        self.samples = defaultdict(list)
+        episodes = set()
+        for row in artifact['samples']:
+            label = row['label']
+            posts = row['afterOffsets']
+            if (label not in APPROACH_LABELS or label not in plan['profiles']
+                    or row['command'] != plan['profiles'][label]['command']
+                    or not row['episode'] or row['episode'] in episodes
+                    or not finite(row['shoulderDeg']) or not _native_point(row['beforeOffset'])
+                    or not isinstance(posts,list) or len(posts)<2 or not all(map(_native_point,posts))
+                    or not row['trackingMode'] or not row['sourceRole']
+                    or row['terminal'] not in ('completed','timed_out')):
+                raise ValueError('invalid_native_timed_sample')
+            episodes.add(row['episode'])
+            self.samples[label].append(row)
+
+    def evaluate(self, observed, close_receipt=None):
+        geometry = observed.get('sideGeometry')
+        near = observed.get('near')
+        offset = geometry.get('offset') if geometry else None
+        current = np.array(offset) if _native_point(offset) else None
+        hold_cost = float(np.linalg.norm(current)) if current is not None else None
+        costs = {'hold':hold_cost}
+        candidates = {}
+        choice = 'hold'
+        for label in APPROACH_LABELS:
+            reasons = []
+            rows = self.samples.get(label, [])
+            support = observed['support'].get(label, {})
+            if not support.get('allowed') or not support.get('catalogStartPoseInRange'):
+                reasons.append('outside_allowed_action_or_catalog_pose')
+            if close_receipt is not None:
+                reasons.append('unbound_close_receipt')
+            if not near or near.get('insideJaws') is not True:
+                reasons.append('near_target_outside_jaws')
+            if current is None or current[1] >= -20:
+                reasons.append('missing_side_or_approach_stop_band')
+            local = [r for r in rows if r['shoulderDeg']==observed['planShoulderDeg']
+                     and r['beforeOffset'][1] < -20 and geometry
+                     and r['trackingMode']==geometry.get('trackingMode')]
+            prediction = None
+            outside_start_box = None
+            if not local or current is None:
+                reasons.append('no_matching_native_pose_or_tracking_mode')
+            else:
+                starts = np.array([r['beforeOffset'] for r in local])
+                # Camera offset also varies with object placement. Extrapolated translations
+                # remain observation-only predictions, even at a matching shoulder angle.
+                outside_start_box = bool(np.any(current < starts.min(axis=0))
+                                         or np.any(current > starts.max(axis=0)))
+                deltas = [np.array(r['afterOffsets'])-r['beforeOffset'] for r in local]
+                prediction = current + np.median([np.median(d,axis=0) for d in deltas],axis=0)
+                costs[label] = float(np.linalg.norm(prediction))
+                if any(np.any(current[1]+d[:,1]>=-20) for d in deltas):
+                    reasons.append('predicted_approach_stop_band')
+                if not reasons and costs[label] < costs[choice]:
+                    choice = label
+            candidates[label] = dict(reasons=reasons, episodes=[r['episode'] for r in local],
+                outsideObservedSideStartBox=outside_start_box,
+                predictedSideOffset=prediction.tolist() if prediction is not None else None)
+        return dict(action=choice, reason='native_timed_approach_cost', controlEligible=False,
+                    candidates=candidates,costs=costs)

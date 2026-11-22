@@ -59,6 +59,38 @@ class ForearmApproachTest(unittest.TestCase):
             self.ref['allowedActions'] = []
             self.assertEqual(load_policy(self.plan).predict(im,im)['action'], 'hold')
 
+    def test_native_timed_model_ranks_independently_of_manual_projection(self):
+        from learning.timed_pick_evidence import SIDE_RESPONSE_SCHEMA
+        im = Image.new('RGB', (320,240))
+        self.plan['gripperBootId'] = 'camera'
+        self.ref['shoulderDeg'] = 216
+        command = dict(motor=3,kind='pulse',pwm=95,durationMs=550,percent=0,targetDegrees=0)
+        self.plan['profiles']['elbow/down']['command'] = command
+        row = dict(label='elbow/down',episode='fit',command=command,sourceRole='development',
+                   terminal='timed_out',shoulderDeg=216,beforeOffset=[0,-41],
+                   afterOffsets=[[0,-29],[0,-31]],trackingMode='wide_wrist_jaw_contour')
+        artifact = dict(schema=SIDE_RESPONSE_SCHEMA,controlEligible=False,samples=[row],
+                        **{k:self.plan[k] for k in ('external','scene','gripperBootId')})
+        path = self.root/'native.json'
+        path.write_text(json.dumps(artifact))
+        self.ref['nativeTimedApproach'] = dict(artifact=str(path),sha256=hashlib.sha256(path.read_bytes()).hexdigest())
+        with patch('learning.forearm_approach.marks',return_value=self.marks), \
+             patch('learning.forearm_approach.near_geometry',return_value={'insideJaws':True}), \
+             patch('learning.forearm_approach.observe_open_side',return_value=dict(
+                 box=[0,50,10,20],trackingMode='wide_wrist_jaw_contour',sideOffsetPx=[0,-44])):
+            policy=load_policy(self.plan)
+            vote=policy.predict(im,im)
+            self.assertEqual(vote['reason'],'native_timed_approach_cost')
+            self.assertEqual(vote['action'],'elbow/down')
+            self.assertEqual(vote['nativeTimedApproach']['costs']['elbow/down'],33)
+            self.assertEqual(vote['costs']['elbow/down'],33)
+            self.assertEqual(vote['manualPrediction']['costs']['elbow/down'],34)
+            self.assertEqual(vote['commandMode'],'native_bounded_command_response')
+            self.assertNotIn('projected',vote)
+            self.assertNotIn('horizonSeconds',vote)
+            self.assertFalse(vote['controlEligible'])
+            self.assertEqual(policy.predict(im,im,close_receipt={})['action'],'hold')
+
     def test_projected_tip_on_or_past_stop_boundary_is_excluded_but_logged(self):
         im = Image.new('RGB',(320,240))
         with patch('learning.forearm_approach.marks',return_value=self.marks), \

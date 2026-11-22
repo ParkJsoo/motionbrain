@@ -86,6 +86,10 @@ class ForearmApproachObserver:
         if 'timedEvidence' in ref:
             from learning.timed_pick_evidence import TimedPickEvidence
             self.timed = TimedPickEvidence(plan, ref['timedEvidence'])
+        self.native_timed = None
+        if 'nativeTimedApproach' in ref:
+            from learning.timed_pick_evidence import NativeTimedApproach
+            self.native_timed = NativeTimedApproach(plan, ref['nativeTimedApproach'])
         self.effects = model['effects'][str(self.horizon)]
         if not self.effects or not self.effects.keys() <= APPROACH_ACTIONS:
             raise ValueError('invalid_forearm_response_actions')
@@ -114,6 +118,14 @@ class ForearmApproachObserver:
 
     def predict(self, side, near, *, close_receipt=None):
         manual = self._manual_prediction(side, near)
+        if self.native_timed is not None:
+            native = self.native_timed.evaluate(manual, close_receipt)
+            result = {k:manual[k] for k in ('planShoulderDeg','near','support','sideGeometry') if k in manual}
+            result.update(native, manualPrediction=manual, nativeTimedApproach=native,
+                          commandMode='native_bounded_command_response')
+            if self.timed is not None:
+                result['timedPick'] = self.timed.evaluate(manual, close_receipt)
+            return result
         if self.timed is None:
             return manual
         timed = self.timed.evaluate(manual, close_receipt)
@@ -128,7 +140,7 @@ class ForearmApproachObserver:
                       commandMode='manual_hold_70_percent_from_press', planShoulderDeg=self.shoulder,
                       support=self.support, near=near_state, nearTargetRegion='standard_object_roi')
         missing = markers is None or near_state is None or not near_state['insideJaws']
-        if missing and self.timed is None:
+        if missing and self.timed is None and self.native_timed is None:
             return dict(result, reason='missing_forearm_or_projected_target')
         try:
             g = observe_open_side(rgb, view_id=WIDE_SIDE_VIEW, diagnose_green_core=True)

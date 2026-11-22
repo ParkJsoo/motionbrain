@@ -21,7 +21,7 @@ def complete(g):
     return all(g.get(k) is not None for k in ('sideToolPx','sideObjectBox','nearObjectCenterPx','nearJawMidPx'))
 
 
-def campaign(folder):
+def campaign(folder, *, expected_view=LEGACY_SIDE_VIEW):
     for path in sorted(folder.glob('metrics-trial-*.json')):
         m = read(path)
         trial = read(path.with_name(path.name.removeprefix('metrics-')))
@@ -51,7 +51,7 @@ def campaign(folder):
                    command=profile, configuration=contract_hash, startShoulderDeg=trial['initial']['shoulderAngle']['angleDeg'],
                    peakPwm=max((w['pwm'] for w in drive),key=abs), driverMs=m['driverWindowDurationMs'],
                    before=[q['frameId'],q['nearFrameId']], view=plan['external']['viewConfigurationId'])
-        if row['view'] != LEGACY_SIDE_VIEW:
+        if row['view'] != expected_view:
             raise ValueError('unexpected field camera')
         afters = m['geometryBursts']['lateOff']
         row['completePostPairs'] = sum(complete(o) for o in afters)
