@@ -78,10 +78,14 @@ def main(argv=None):
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument('--observe', action='store_true')
     modes.add_argument('--execute', action='store_true')
+    parser.add_argument('--allow-observation-stop', action='store_true',
+                        help='allow an empty stop-observation file in this capture directory to finish --observe')
     parser.add_argument('--confirm-plan-sha256')
     parser.add_argument('--rerun-url', help='display these same collected frames in an existing Rerun viewer')
     parser.add_argument('--part-overlay', action='store_true', help='show part contours and landmarks in the Rerun viewer')
     args = parser.parse_args(argv)
+    if args.allow_observation_stop and not args.observe:
+        parser.error('--allow-observation-stop requires --observe')
     if args.part_overlay and not args.rerun_url:
         parser.error('--part-overlay requires --rerun-url')
     raw = args.plan.read_bytes()
@@ -134,7 +138,8 @@ def main(argv=None):
         use_response = 'responsePolicy' in p
         close_context = ctx.Array('c', 8192) if use_response else None
         active_context = ctx.Array('c', 8192) if use_response else None
-        child = ctx.Process(target=capture, args=(p, root, session, stop, mailbox, close_context, active_context))
+        child = ctx.Process(target=capture, args=(p, root, session, stop, mailbox, close_context, active_context),
+                            kwargs={'allow_observation_stop':True} if args.allow_observation_stop else {})
         executor = None
         if args.execute:
             port = BoundedActionHTTP(p['controllerUrl'], token_provider=lambda: os.environ['MOTIONBRAIN_HTTP_TOKEN'],
@@ -165,7 +170,7 @@ def main(argv=None):
             child.start()
             if args.observe:
                 child.join()
-                outcome = 'observation_finished'
+                outcome = 'observation_failed' if args.allow_observation_stop and child.exitcode != 0 else 'observation_finished'
             else:
                 until = time.monotonic()+20
                 while child.is_alive() and latest() is None and time.monotonic() < until:

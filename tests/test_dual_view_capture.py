@@ -136,3 +136,64 @@ class DemonstrationBindingTest(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError,message):
                         capture(plan,run,'session',ctx.Event(),mailbox)
                 self.assertTrue(json.loads(mailbox.value)['fault'])
+
+    def test_observe_only_stop_finishes_current_pair_without_masking_timeout(self):
+        from contextlib import ExitStack, nullcontext
+        import time
+        from tools.run_dual_view_policy import main
+        with self.assertRaises(SystemExit):
+            main(['--plan',str(self.root/'absent'),'--execute','--allow-observation-stop'])
+        for failure in (None,'body deadline','recording_source_stall','recording_ended'):
+            run=self.root/(failure or 'ok')
+            run.mkdir()
+            helper=run/'helper'
+            helper.write_bytes(b'camera')
+            plan=dict(seconds=8,external={'deviceUniqueId':'id','viewConfigurationId':'wide'},
+                      helper=str(helper),helperSha256=hashlib.sha256(b'camera').hexdigest(),
+                      gripperUrl='http://unused',gripperBootId='b'*32,scene={},maxAge=.5,maxSkew=.5)
+            camera=Mock()
+            camera.lock=nullcontext()
+            camera.close.return_value={'status':'partial','clockBridge':True}
+            near=Mock()
+            near.count=0
+            near.max_captures=100
+            near.store.root=run
+            near._bindings={}
+            def take(**_):
+                near.count+=1
+                i=near.count
+                if i==4:
+                    (run/'stop-observation').touch()
+                    if failure=='body deadline':
+                        raise TimeoutError('body deadline')
+                if i>4:
+                    self.fail('started another GET after stop marker')
+                t=time.monotonic()
+                key='near:'+str(i)
+                camera.frames=[dict(frameIndex=i,frameId='side:'+str(i),
+                                    sourceEarliest=t,sourceLatest=t,stdoutReadAt=t)]
+                near._bindings[key]={'folder':str(i)}
+                return dict(frame={'frameId':key},sourceEarliest=t,sourceLatest=t,persistedAt=t)
+            def check_camera():
+                if near.count==4 and failure in ('recording_source_stall','recording_ended'):
+                    raise ValueError(failure)
+            camera.check.side_effect=check_camera
+            near.capture.side_effect=take
+            ctx=multiprocessing.get_context('spawn')
+            with ExitStack() as mocks:
+                for name,obj in [('ActionRecorder',camera),('GripperObservationSource',near)]:
+                    mocks.enter_context(patch('learning.dual_view_capture.'+name,return_value=obj))
+                for name in ('side_image','gripper_image'):
+                    mocks.enter_context(patch('learning.dual_view_capture.'+name))
+                policy=mocks.enter_context(patch('learning.dual_view_capture.load_policy'))
+                policy.return_value.predict.side_effect=lambda *_: {'action':'hold'}
+                expectation=nullcontext()
+                if failure is not None:
+                    error=TimeoutError if failure=='body deadline' else ValueError
+                    expectation=self.assertRaisesRegex(error,failure)
+                with expectation:
+                    capture(plan,run,'test',ctx.Event(),ctx.Array('c',8192),allow_observation_stop=True)
+            rows=(run/'decisions.jsonl').read_text().splitlines()
+            self.assertEqual(len(rows),3 if failure=='body deadline' else 4)
+            camera.close.assert_called_once()
+            near.close.assert_called_once()

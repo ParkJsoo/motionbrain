@@ -3,6 +3,7 @@ import hashlib
 import io
 import json
 import re
+import stat
 import time
 from pathlib import Path
 
@@ -258,7 +259,17 @@ def side_sample_fps(plan):
     return fps
 
 
-def capture(plan, root, session, stopping, mailbox, context_mailbox=None, active_mailbox=None):
+def observation_stop_requested(root):
+    try:
+        marker = (root/'stop-observation').lstat()
+    except FileNotFoundError:
+        return False
+    if not stat.S_ISREG(marker.st_mode) or marker.st_size != 0:
+        raise ValueError('invalid_observation_stop_marker')
+    return True
+
+
+def capture(plan, root, session, stopping, mailbox, context_mailbox=None, active_mailbox=None, *, allow_observation_stop=False):
     root = Path(root)
     def publish(value):
         # Detailed observation-only calibration records stay in decisions.jsonl.
@@ -292,6 +303,11 @@ def capture(plan, root, session, stopping, mailbox, context_mailbox=None, active
         previous_capture_us = None
         with (root/'decisions.jsonl').open('x') as log:
             while not stopping.is_set() and time.monotonic() < until:
+                # Finish the current GET and persist its full result before checking.
+                # A capture or recorder failure keeps its original unsuccessful exit.
+                if allow_observation_stop and observation_stop_requested(root):
+                    camera.check()
+                    break
                 if gripper is None or gripper.count == gripper.max_captures:
                     if gripper is not None:
                         gripper.close()
