@@ -17,6 +17,10 @@ class WidePickDevelopment:
                 or plan['scene']['object'] != 'pink-prism' or plan['scene']['physicalView'] != WIDE_SIDE_VIEW
                 or plan['developmentPick'] != 'pink-prism-pick-and-lift-v1'):
             raise ValueError('unsupported_development_pick')
+        self.height = None
+        if 'wristHeightProposal' in plan:
+            from learning.wide_wrist_height import WideWristHeight
+            self.height = WideWristHeight(plan)
         self.proposer = proposer
         self.near = NearGripperTipObserver(policy_version=3)
 
@@ -24,6 +28,8 @@ class WidePickDevelopment:
         proposal = self.proposer.predict(side, near)
         action = proposal['action']
         vote = dict(action='hold', phaseProposal=proposal, reason='geometry_unavailable', features={})
+        if self.height and close_receipt is None:
+            vote['wristHeightProposal'] = self.height.predict(side)
         try:
             side_state = observe_open_side(np.asarray(side.convert('RGB')), view_id=WIDE_SIDE_VIEW)
             box = side_state['box']
