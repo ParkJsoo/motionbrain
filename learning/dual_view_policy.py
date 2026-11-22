@@ -179,7 +179,7 @@ class VisualControl:
         return check
 
 
-def run_actions(control, catalog, executor, boot, off_pose, max_actions, record, *, sleep=time.sleep, on_active=None, sync_dispatch=False, side_stop=None):
+def run_actions(control, catalog, executor, boot, off_pose, max_actions, record, *, sleep=time.sleep, on_active=None, sync_dispatch=False, side_stop=None, finish_after=None):
     """One owner at a time. Each dispatch needs two independent pairs after OFF."""
     for _ in range(max_actions):
         _, boundary = off_pose()
@@ -271,4 +271,6 @@ def run_actions(control, catalog, executor, boot, off_pose, max_actions, record,
             return 'side_stop'
         if terminal['state'] != 'completed' and not result.get('cancelConfirmed'):
             return 'device_stopped'
+        if label == finish_after:
+            return 'observe_after_lift'
     return 'action_budget'

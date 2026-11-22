@@ -134,6 +134,25 @@ class DualViewTest(unittest.TestCase):
                 else:
                     self.assertFalse(log[0]['dispatchAttempted'])
 
+    def test_finish_after_first_lift(self):
+        clock = FakeClock()
+        port = VisualPort(clock)
+        label = 'elbow/up'
+        catalog = Catalog({label:dict(command=command(*ACTIONS[label]), shoulderRangeDeg=[208, 212])})
+        def latest():
+            t = clock.monotonic()
+            return dict(pair(label,t,t), previousPair=pair(label,t-.01,t-.01))
+        with tempfile.TemporaryDirectory() as tmp:
+            core = BoundedActionExecutor(Path(tmp)/'commands.db', port, catalog, clock=clock)
+            try:
+                outcome = run_actions(VisualControl(latest,.5,.4,clock=clock.monotonic),catalog,core,
+                                      'a'*32,lambda:(210,clock.monotonic()),3,lambda r:None,
+                                      sleep=clock.sleep,finish_after=label)
+            finally:
+                core.close()
+        self.assertEqual(outcome,'observe_after_lift')
+        self.assertEqual(len(port.posts),1)
+
     def test_feedback_trace_distinguishes_raw_vote_from_effective_hold(self):
         admitted = pair('wrist/up', 1.1, 1)
         sample = dict(pair('hold', 1.4, 2), modelAction='wrist/up')

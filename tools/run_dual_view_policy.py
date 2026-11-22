@@ -87,7 +87,7 @@ def main(argv=None):
     raw = args.plan.read_bytes()
     digest = hashlib.sha256(raw).hexdigest()
     p = _decode_json(raw)
-    if 'phaseObserver' in p and not args.observe:
+    if 'phaseObserver' in p and 'developmentPick' not in p and not args.observe:
         parser.error('phaseObserver requires --observe')
     fps = side_sample_fps(p)
     sync_dispatch = p.get('syncDispatchToFrame', False)
@@ -185,7 +185,11 @@ def main(argv=None):
                         from learning.wide_side_stop import WideSideStop
                         side_stop = WideSideStop(root, p['external'], p['maxAge'])
                     outcome = run_actions(control, catalog, executor, p['controllerBootId'], pose, p['maxActions'],
-                                          record, on_active=on_active if use_response else None, sync_dispatch=sync_dispatch, side_stop=side_stop)
+                                          record, on_active=on_active if use_response else None, sync_dispatch=sync_dispatch, side_stop=side_stop,
+                                          finish_after='elbow/up' if 'developmentPick' in p else None)
+            if outcome == 'observe_after_lift':
+                # Retain fresh OFF observations for scoring without issuing further commands.
+                child.join(timeout=3)
             print(outcome, flush=True)
             viewer_failed = viewer is not None and viewer.poll() is not None
         finally:
@@ -203,7 +207,7 @@ def main(argv=None):
                 executor.close()
             signal.signal(signal.SIGTERM, previous)
         return int(child.exitcode != 0 or viewer_failed or
-                   outcome not in ('action_budget', 'hold_or_uncommissioned', 'observation_finished'))
+                   outcome not in ('action_budget', 'hold_or_uncommissioned', 'observation_finished', 'observe_after_lift'))
 
 
 if __name__ == '__main__':

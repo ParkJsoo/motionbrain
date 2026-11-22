@@ -111,7 +111,12 @@ def load_policy(plan):
         for label, profile in plan['profiles'].items():
             if label not in policy.responses or profile['command'] != policy.responses[label]['command']:
                 raise ValueError('response_profile_mismatch')
+        if 'developmentPick' in plan:
+            from learning.wide_pick import WidePickDevelopment
+            return WidePickDevelopment(WidePhaseObserver(plan), plan)
         return policy
+    if 'developmentPick' in plan:
+        raise ValueError('development_pick_requires_verified_profiles')
     episodes, examples, seen = {}, [], set()
     for ref in plan['examples']:
         path = Path(ref['episode'])
@@ -258,7 +263,7 @@ def capture(plan, root, session, stopping, mailbox, context_mailbox=None, active
     emitted = 0
     try:
         policy = load_policy(plan)
-        observer = WidePhaseObserver(plan) if 'phaseObserver' in plan else None
+        observer = WidePhaseObserver(plan) if 'phaseObserver' in plan and 'developmentPick' not in plan else None
         duration = plan['seconds']
         fps = side_sample_fps(plan)
         frames = fps*duration+20
@@ -317,7 +322,7 @@ def capture(plan, root, session, stopping, mailbox, context_mailbox=None, active
                     nearClock=dict(sourceEarliest=item['sourceEarliest'], sourceLatest=item['sourceLatest'],
                                    availableAt=item['persistedAt']), decidedAt=time.monotonic())
                 effective_vote(vote, last_dissent, plan['maxAge'], plan['maxSkew'])
-                if observer:
+                if 'phaseProposal' in vote:
                     vote['phaseProposal']['fresh'] = usable(vote, 0, vote['decidedAt'], plan['maxAge'], plan['maxSkew'])
                 vote['previousPair'] = previous_pair
                 previous_pair = {key: vote[key] for key in ('action', 'extClock', 'nearClock', 'frameId', 'nearFrameId')}
