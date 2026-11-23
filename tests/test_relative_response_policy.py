@@ -1,6 +1,10 @@
 import unittest
 
+import cv2
+import numpy as np
+
 from learning.dual_view_policy import ACTIONS
+from learning.near_gripper_tip_observer import shallow_color_core_height
 from learning.relative_response_policy import SCHEMA, RelativeResponsePolicy
 
 
@@ -61,6 +65,30 @@ class RelativeResponseTest(unittest.TestCase):
         f['ny'] = 18.
         self.assertEqual(policy.decide(f)['action'], 'gripper/close')
         self.assertEqual(policy.decide(f, eligible=['wrist/down'])['reason'], 'no_executable_close')
+
+    def test_shallow_color_core_checks_same_top_and_width_across_thresholds(self):
+        field = np.zeros((240, 320, 3), np.uint8)
+        field[91:134, 138:179] = [170, 145, 180]
+        field[134:144, 138:179] = [170, 121, 170]
+        image = cv2.cvtColor(field, cv2.COLOR_HSV2BGR)
+        self.assertEqual(shallow_color_core_height(image, (138, 91, 41, 53)), 43)
+        self.assertIsNone(shallow_color_core_height(image, (138, 87, 41, 53)))
+        self.assertIsNone(shallow_color_core_height(image, (138, 91, 41, 120)))
+        field[91:134, 185:226] = [170, 145, 180]
+        image = cv2.cvtColor(field, cv2.COLOR_HSV2BGR)
+        self.assertIsNone(shallow_color_core_height(image, (138, 91, 41, 53)))
+
+    def test_color_core_is_opt_in_and_preserves_other_close_checks(self):
+        data = artifact()
+        baseline = RelativeResponsePolicy(data)
+        verification = RelativeResponsePolicy(data, check_shallow_color_core=True)
+        f = dict(features(sx=6, sy=32, nx=0, ny=18), distalDepth=[55, 55, 55],
+                 objectHeight=53, shallowColorCoreHeight=43)
+        self.assertNotEqual(baseline.decide(f)['action'], 'gripper/close')
+        self.assertEqual(verification.decide(f)['action'], 'gripper/close')
+        self.assertNotEqual(verification.decide(dict(f, objectHeight=120))['action'], 'gripper/close')
+        self.assertNotEqual(verification.decide(dict(f, leftMargin=18))['action'], 'gripper/close')
+        self.assertNotEqual(verification.decide(dict(f, distalDepth=None))['action'], 'gripper/close')
 
     def test_ranks_executable_approach_instead_of_replacing_the_model_choice(self):
         model = artifact()

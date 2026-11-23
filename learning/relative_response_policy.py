@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 
 from learning.dual_view_policy import ACTIONS
-from learning.near_gripper_tip_observer import NearGripperTipObserver
+from learning.near_gripper_tip_observer import NearGripperTipObserver, shallow_color_core_height
 from learning.open_side_approach import LEGACY_SIDE_VIEW, WIDE_SIDE_VIEW, observe_open_side
 
 SCHEMA = 'motionbrain.relative_response_policy.v1'
@@ -31,7 +31,7 @@ def distal_depth(rgb, box):
     return depths if max(depths)-min(depths) <= 4 else None
 
 
-def optical_profile(f):
+def optical_profile(f, *, use_shallow_color_core=False):
     """Reproduce the separate shallow and deep pre-contact geometry windows."""
     sx, sy, nx, ny, gap = (f[k] for k in COORDS)
     depths = f['distalDepth']
@@ -39,10 +39,13 @@ def optical_profile(f):
             or not 8 <= min(depths)-sy or max(depths)-sy > 35):
         return None
     margin = min(f['leftMargin'], f['rightMargin'])
+    shallow_height = f['objectHeight']
+    if use_shallow_color_core and 50 < shallow_height <= 53:
+        shallow_height = f.get('shallowColorCoreHeight', shallow_height)
     if (42 <= min(depths) <= max(depths) <= 61 and max(depths)-min(depths) <= 2
             and f['height']-max(depths)-4 >= 100 and abs(sx) <= f['width']/2-2
             and 20 <= sy <= 42 and 14 <= ny <= 44 and 110 <= gap <= 135 and margin >= 20
-            and -8 <= f['nearTop'] <= 21 and 38 <= f['objectWidth'] <= 52 and 38 <= f['objectHeight'] <= 50):
+            and -8 <= f['nearTop'] <= 21 and 38 <= f['objectWidth'] <= 52 and 38 <= shallow_height <= 50):
         return 'observed_shallow'
     if (70 <= depths[1] <= 97 and -6 <= sx <= 35 and 22 <= sy <= 82
             and 8 <= ny <= 44 and 110 <= gap <= 145 and margin >= 12):
@@ -93,10 +96,12 @@ def closed_by_controller(receipt):
 
 
 class RelativeResponsePolicy:
-    def __init__(self, artifact, *, view_id=LEGACY_SIDE_VIEW, approach_evaluation="demonstrated_goal"):
+    def __init__(self, artifact, *, view_id=LEGACY_SIDE_VIEW, approach_evaluation="demonstrated_goal",
+                 check_shallow_color_core=False):
         if approach_evaluation not in ("demonstrated_goal", "close_coordinates"):
             raise ValueError("invalid_approach_evaluation")
         self.approach_evaluation = approach_evaluation
+        self.check_shallow_color_core = check_shallow_color_core
         if artifact['schema'] != SCHEMA or set(artifact['responses']) != set(ACTIONS):
             raise ValueError('relative_response_schema')
         self.view_id = view_id
@@ -140,10 +145,15 @@ class RelativeResponsePolicy:
         left, right = (g['components'][k]['bbox'] for k in ('left', 'right'))
         bx, by, bw, bh = g['object']['bbox']
         box = observed['box']
-        return dict(zip(COORDS, [*observed['sideOffsetPx'], *g['state']]),
+        features = dict(zip(COORDS, [*observed['sideOffsetPx'], *g['state']]),
                     width=box[2], height=box[3], sideBox=box, objectWidth=bw, objectHeight=bh,
                     leftMargin=bx-left[0]-left[2], rightMargin=right[0]-bx-bw,
                     nearTop=by-max(left[1]+left[3], right[1]+right[3]), distalDepth=distal_depth(rgb, box))
+        if self.check_shallow_color_core and 50 < bh <= 53:
+            height = shallow_color_core_height(image, (bx, by, bw, bh))
+            if height is not None:
+                features['shallowColorCoreHeight'] = height
+        return features
 
     def predict(self, side, near, *, close_receipt=None, active_action=None, eligible=None):
         try:
@@ -197,7 +207,7 @@ class RelativeResponsePolicy:
             return self.result('hold', 'unsupported_open_jaw_gap', f)
         # Close is eligible only in a separately witnessed optical profile. Keep
         # actual successful targets separate rather than averaging disconnected poses.
-        close_profile = optical_profile(f)
+        close_profile = optical_profile(f, use_shallow_color_core=self.check_shallow_color_core)
         distances = np.array([np.linalg.norm((q-row['point'])/[.65,.22,.10,.24]) for row in self.goals])
         for i in np.argsort(distances):
             if close_profile == self.goals[i]['profile'] and distances[i] <= 1:

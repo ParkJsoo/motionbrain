@@ -187,6 +187,29 @@ def _object(hsv, policy):
     return candidates[0]
 
 
+def shallow_color_core_height(image, full_box):
+    """Find a consistent inner color boundary when the lower pink edge flickers."""
+    x, y, width, height = full_box
+    # The raw height was at most 53 px in the measured boundary flicker.
+    if not 50 < height <= 53:
+        return None
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    policy = observer_policy(version=3)
+    heights = []
+    for saturation in (125, 130):
+        policy['objectHsvLow'][1] = saturation
+        try:
+            (core, _) = _object(hsv, policy)
+        except ValueError:
+            return None
+        cx, cy, cw, ch = core['bbox']
+        if (not 38 <= cw <= 52 or not 38 <= ch <= 50 or abs(cy-y) > 1
+                or abs(cx-x) > 2 or abs(cx+cw-x-width) > 2):
+            return None
+        heights.append(ch)
+    return heights[0]
+
+
 class NearGripperTipObserver:
     def __init__(self, *, policy_version=1):
         self.policy = observer_policy(version=policy_version); self.binding = digest(self.policy)

@@ -117,7 +117,8 @@ def load_policy(plan):
             raise ValueError('close_coordinate_evaluation_requires_relative_response_policy')
         policy = RelativeResponsePolicy(_decode_json(verified(Path(ref['artifact']), ref['sha256'])),
                                         view_id=plan['external']['viewConfigurationId'],
-                                        approach_evaluation=evaluation)
+                                        approach_evaluation=evaluation,
+                                        check_shallow_color_core=plan.get('terminalPickVerification') is True)
         for label, profile in plan['profiles'].items():
             if label not in policy.responses or profile['command'] != policy.responses[label]['command']:
                 raise ValueError('response_profile_mismatch')
