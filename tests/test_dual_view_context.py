@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import Mock
 
 from learning.dual_view_capture import (_read_context, publish_active_context,
-                                        publish_close_context, response_vote)
+                                        publish_candidates, publish_close_context, response_vote)
 from learning.dual_view_policy import VisualControl
 from tests.test_dual_view_policy import command, pair
 
@@ -28,6 +28,33 @@ class DualViewContextTest(unittest.TestCase):
             self.assertEqual(bool(policy.predict.call_args.kwargs['active_action']), expected is not None)
         publish_active_context(self.slot, 's', self.boot, None)
         self.assertIsNone(_read_context(self.slot, 's', self.boot))
+
+    def test_model_gets_candidates_only_on_pair_after_verified_pose(self):
+        publish_candidates(self.slot, 's', self.boot, ['shoulder/down'], 2.)
+        candidates = _read_context(self.slot, 's', self.boot)
+        model = Mock()
+        self.assertEqual(response_vote(model, None, None, 2., None, None, candidates=candidates,
+                                       require_candidates=True)['action'], 'hold')
+        model.predict.assert_not_called()
+        model.predict.return_value = dict(action='shoulder/down')
+        vote = response_vote(model, None, None, 2.1, None, None, candidates=candidates, require_candidates=True)
+        self.assertEqual(vote['action'], 'shoulder/down')
+        self.assertEqual(model.predict.call_args.kwargs['eligible'], ['shoulder/down'])
+        self.assertEqual(vote['candidateVerifiedOffAt'], 2.)
+        model.predict.return_value = dict(action='wrist/down')
+        active = dict(after=2.2, action={'label': 'shoulder/down'}, commandId='cid')
+        running = response_vote(model, None, None, 2.3, active, None,
+                                candidates=candidates, require_candidates=True)
+        self.assertEqual(running['action'], 'wrist/down')
+        self.assertNotIn('eligible', model.predict.call_args.kwargs)
+
+    def test_candidate_epoch_cannot_mix_independent_pairs(self):
+        old = pair('shoulder/down', 2.1, 1)
+        new = dict(pair('shoulder/down', 2.2, 2), candidateVerifiedOffAt=2., previousPair=old)
+        control = VisualControl(lambda: new, .6, .3, clock=lambda: 2.3)
+        self.assertIsNone(control.admission(new, 2.))
+        old['candidateVerifiedOffAt'] = 2.
+        self.assertTrue(control.admission(new, 2.))
 
     def test_close_requires_real_negative_driver_write_and_post_off_pair(self):
         rec = {k:v for k,v in self.req.items() if k != 'pwm'}

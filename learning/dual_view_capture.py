@@ -169,6 +169,10 @@ def _read_context(mailbox, session, boot):
     return value
 
 
+def publish_candidates(mailbox, session, boot, labels, verified_off_at):
+    _send_context(mailbox, dict(session=session, boot=boot, labels=labels, after=verified_off_at))
+
+
 def publish_active_context(mailbox, session, boot, request, start_vote=None, acknowledged_at=None, *,
                            max_age=None):
     """Publish only after verified running ACK. Reset at the end of the command."""
@@ -220,17 +224,26 @@ def publish_close_context(mailbox, session, boot, result):
     _send_context(mailbox, dict(session=session, boot=boot, after=after, receipt=receipt))
 
 
-def response_vote(policy, side, near, earliest, active, close, *, measure=False):
+def response_vote(policy, side, near, earliest, active, close, *, measure=False, candidates=None,
+                  require_candidates=False):
     close_ready = close is not None and earliest > close['after']
     active_ready = active is not None and earliest > active['after']
-    if close is not None and not close_ready:
+    if require_candidates and (candidates is None or earliest <= candidates['after']):
+        vote = dict(action='hold', reason='await_pair_after_candidate_readback', viewVotes=['hold', 'hold'], features={})
+    elif close is not None and not close_ready:
         vote = dict(action='hold', reason='await_post_close_pair', viewVotes=['hold', 'hold'], features={})
     else:
+        # The OFF pose only describes admission. During motion keep the
+        # unrestricted model's ability to change its vote and request a stop.
+        kwargs = {'eligible': candidates['labels']} if candidates is not None and active is None else {}
         vote = policy.predict(side, near, close_receipt=close['receipt'] if close_ready else None,
-                              active_action=active['action'] if active_ready and not measure else None)
+                              active_action=active['action'] if active_ready and not measure else None, **kwargs)
     vote.update(activeCommandId=active['commandId'] if active_ready else None,
                 activeAcknowledgedAt=active['after'] if active_ready else None,
                 closeCommandId=close['receipt']['commandId'] if close_ready else None)
+    if candidates is not None:
+        vote['eligibleActions'] = candidates['labels']
+        vote['candidateVerifiedOffAt'] = candidates['after']
     return vote
 
 
@@ -287,7 +300,7 @@ def _side_for_gripper(camera, stopping, boundary, deadline, *, clock=time.monoto
 
 
 def capture(plan, root, session, stopping, mailbox, context_mailbox=None, active_mailbox=None, *,
-            allow_observation_stop=False, gripper_gate=None, shoulder_entry=False):
+            allow_observation_stop=False, gripper_gate=None, shoulder_entry=False, candidate_mailbox=None):
     root = Path(root)
     def publish(value):
         # Detailed observation-only calibration records stay in decisions.jsonl.
@@ -364,7 +377,9 @@ def capture(plan, root, session, stopping, mailbox, context_mailbox=None, active
                     boot = plan['controllerBootId']
                     active = _read_context(active_mailbox, session, boot)
                     close = _read_context(context_mailbox, session, boot)
-                    vote = response_vote(policy, side, near, earliest, active, close, measure=shoulder_entry)
+                    candidates = _read_context(candidate_mailbox, session, boot)
+                    vote = response_vote(policy, side, near, earliest, active, close, measure=shoulder_entry,
+                                         candidates=candidates, require_candidates=candidate_mailbox is not None)
                 else:
                     vote = policy.predict(side, near)
                 if observer:
@@ -388,6 +403,8 @@ def capture(plan, root, session, stopping, mailbox, context_mailbox=None, active
                 previous_pair = {key: vote[key] for key in ('action', 'extClock', 'nearClock', 'frameId', 'nearFrameId')}
                 if 'responsePolicy' in plan:
                     previous_pair.update(activeCommandId=vote['activeCommandId'], closeCommandId=vote['closeCommandId'])
+                if candidate_mailbox is not None:
+                    previous_pair['candidateVerifiedOffAt'] = vote.get('candidateVerifiedOffAt')
                 log.write(json.dumps(vote, allow_nan=False)+'\n')
                 log.flush()
                 publish(vote)

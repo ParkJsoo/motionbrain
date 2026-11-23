@@ -25,6 +25,16 @@ def fixture():
 
 
 class RelativeResponseTest(unittest.TestCase):
+    def test_ranks_executable_approach_instead_of_replacing_the_model_choice(self):
+        model = artifact()
+        model['responses']['shoulder/down']['delta'] = [0, 10, 0, 4, 0]
+        policy = RelativeResponsePolicy(model)
+        self.assertEqual(policy.decide(features())['action'], 'wrist/down')
+        self.assertEqual(policy.decide(features(), eligible=['shoulder/down'])['action'], 'shoulder/down')
+        vote = policy.decide(features(), eligible=['shoulder/up'])
+        self.assertEqual(vote['action'], 'hold')
+        self.assertEqual(vote['reason'], 'no_executable_approach')
+
     def test_invalid_progress_and_goals_fail_before_observation(self):
         for channels in [[-1], [5], [1, 1], [0], [True]]:
             with self.subTest(channels=channels):

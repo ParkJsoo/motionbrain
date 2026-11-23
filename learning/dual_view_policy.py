@@ -80,6 +80,9 @@ class Catalog:
             raise OutsideDemonstratedStartPose('outside_demonstrated_start_pose')
         return self.validate(dict(command, bootId=boot, commandId=cid))
 
+    def eligible_at(self, angle):
+        return [label for label, (_, lo, hi) in self.profiles.items() if finite(angle) and lo <= angle <= hi]
+
 
 class GripperDispatchGate:
     """Pause between GETs, then let the capture process request its next frame."""
@@ -159,6 +162,7 @@ class VisualControl:
     def _independent(first, sample):
         return (not sample.get('activeCommandId') and not first.get('activeCommandId')
                 and sample.get('closeCommandId') == first.get('closeCommandId')
+                and sample.get('candidateVerifiedOffAt') == first.get('candidateVerifiedOffAt')
                 and all(first[k] != sample[k] for k in ('frameId','nearFrameId'))
                 and all(first[k]['sourceEarliest'] < sample[k]['sourceEarliest']
                         for k in ('extClock','nearClock')))
@@ -273,16 +277,19 @@ class VisualControl:
 
 def run_actions(control, catalog, executor, boot, off_pose, max_actions, record, *, sleep=time.sleep,
                 on_active=None, sync_dispatch=False, gripper_gate=None, side_stop=None, finish_after=None,
-                lookup_worker=None, refresh_expired_dispatch=False):
+                lookup_worker=None, refresh_expired_dispatch=False, on_off_pose=None):
     """One owner at a time. Each dispatch needs two independent pairs after OFF."""
     for _ in range(max_actions):
-        _, boundary = off_pose()
+        starting_angle, boundary = off_pose()
+        if on_off_pose is not None:
+            on_off_pose(catalog.eligible_at(starting_angle), boundary)
         deadline = control.clock() + 3
         while control.clock() < deadline:
             sample = control.latest()
             if sample and sample.get('fault'):
                 return 'camera_stopped'
-            if usable(sample, boundary, control.clock(), control.age, control.skew):
+            if (usable(sample, boundary, control.clock(), control.age, control.skew)
+                    and (on_off_pose is None or sample.get('candidateVerifiedOffAt') == boundary)):
                 label = sample['action']
                 if label not in catalog.profiles:
                     return 'hold_or_uncommissioned'

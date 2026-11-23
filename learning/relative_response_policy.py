@@ -123,19 +123,19 @@ class RelativeResponsePolicy:
                     leftMargin=bx-left[0]-left[2], rightMargin=right[0]-bx-bw,
                     nearTop=by-max(left[1]+left[3], right[1]+right[3]), distalDepth=distal_depth(rgb, box))
 
-    def predict(self, side, near, *, close_receipt=None, active_action=None):
+    def predict(self, side, near, *, close_receipt=None, active_action=None, eligible=None):
         try:
             features = self.observe(side, near)
         except (ValueError, cv2.error) as exc:
             return self.result('hold', 'two_view_landmarks_unavailable', None, detail=str(exc))
-        return self.decide(features, close_receipt=close_receipt, active_action=active_action)
+        return self.decide(features, close_receipt=close_receipt, active_action=active_action, eligible=eligible)
 
     @staticmethod
     def result(action, reason, features, **details):
         return dict(action=action, reason=reason, features=features,
                     viewVotes=details.pop('viewVotes', [None, None]), viewRmse=[None, None], **details)
 
-    def decide(self, f, *, close_receipt=None, active_action=None):
+    def decide(self, f, *, close_receipt=None, active_action=None, eligible=None):
         if not isinstance(self.view_id, str) or not self.view_id or self.calibrated_view != self.view_id:
             return self.result('hold', 'response_model_view_mismatch', f)
         if self.view_id == WIDE_SIDE_VIEW:
@@ -166,6 +166,8 @@ class RelativeResponsePolicy:
             matches = [row for row in self.held if abs(f['gap']-row['gap']) <= 5 and
                        np.linalg.norm((q-row['point']) / np.array([.35,.18,.12,.20])) <= 1]
             if matches and f['leftMargin'] <= 2 and f['rightMargin'] <= 2:
+                if eligible is not None and 'shoulder/up' not in eligible:
+                    return self.result('hold', 'no_executable_lift', f)
                 return self.result('shoulder/up', 'post_close_lift_example', f,
                                    source=matches[0]['source'], forceVerified=False)
             return self.result('hold', 'contact_geometry_unsupported', f)
@@ -177,12 +179,17 @@ class RelativeResponsePolicy:
         distances = np.array([np.linalg.norm((q-row['point'])/[.65,.22,.10,.24]) for row in self.goals])
         for i in np.argsort(distances):
             if close_profile == self.goals[i]['profile'] and distances[i] <= 1:
+                if eligible is not None and 'gripper/close' not in eligible:
+                    return self.result('hold', 'no_executable_close', f)
                 return self.result('gripper/close', 'preclose_dual_view_match', f,
                                    source=self.goals[i]['source'], profile=close_profile, forceVerified=False)
         if abs(f['nx']) > self.center_band:
             if f['sy'] >= 0 or min(f['leftMargin'], f['rightMargin']) < 3:
                 return self.result('hold', 'lateral_sweep_clearance_unverified', f)
-            label = min(('base/left','base/right'), key=lambda a: abs(f['nx']+self.responses[a]['delta'][2]))
+            lateral = [label for label in ('base/left','base/right') if eligible is None or label in eligible]
+            if not lateral:
+                return self.result('hold', 'no_executable_centering', f)
+            label = min(lateral, key=lambda a: abs(f['nx']+self.responses[a]['delta'][2]))
             if abs(f['nx']+self.responses[label]['delta'][2]) < abs(f['nx']):
                 return self.result(label, 'predicted_centering_improvement', f)
             return self.result('hold', 'no_centering_gain', f)
@@ -196,13 +203,15 @@ class RelativeResponsePolicy:
         current = (q-target)/weights
         scores = {}
         for label in APPROACH:
+            if eligible is not None and label not in eligible:
+                continue
             delta = np.asarray(self.responses[label]['delta'][:4])
             estimate = current+delta/scale/weights
             if f['sy']+delta[1] > .45*f['height']:
                 continue
             scores[label] = [float(np.dot(estimate[:2],estimate[:2])), float(np.dot(estimate[2:],estimate[2:]))]
         if not scores:
-            return self.result('hold', 'no_supported_approach', f)
+            return self.result('hold', 'no_executable_approach' if eligible is not None else 'no_supported_approach', f)
         best = min(scores, key=lambda label: sum(scores[label]))
         if np.dot(current,current)-sum(scores[best]) <= .025:
             return self.result('hold', 'no_predicted_two_view_gain', f)

@@ -20,7 +20,8 @@ from learning.action_lookup_worker import ActionLookupWorker
 from learning.action_port import BoundedActionHTTP
 from learning.artifacts import _decode_json
 from learning.device_adapter import _object
-from learning.dual_view_capture import capture, load_policy, publish_active_context, publish_close_context, side_sample_fps, verified
+from learning.dual_view_capture import (capture, load_policy, publish_active_context, publish_candidates,
+                                        publish_close_context, side_sample_fps, verified)
 from learning.dual_view_policy import Catalog, GripperDispatchGate, VisualControl, run_actions
 from learning.external_media import _mount_fd
 from learning import shoulder_entry_measurement
@@ -28,9 +29,10 @@ from learning.supervised_transport import SequencePort
 
 
 class IdlePose:
-    def __init__(self, port, boot, *, shoulder_entry=False):
+    def __init__(self, port, boot, *, shoulder_entry=False, state='ARMED'):
         self.port, self.boot, self.cursor = port, boot, None
         self.shoulder_entry = shoulder_entry
+        self.state = state
 
     def __call__(self):
         if self.shoulder_entry:
@@ -46,7 +48,7 @@ class IdlePose:
         s = _object(receipt)
         proof, motors = s.get('outputProof', {}), s.get('motors', {})
         cursor = proof.get('sequenceAfter')
-        if (s.get('schemaVersion') != 'collection.v1' or s.get('state') != 'ARMED'
+        if (s.get('schemaVersion') != 'collection.v1' or s.get('state') != self.state
                 or proof.get('bootId') != self.boot or proof.get('schemaVersion') != 'driver_cursor.v1'
                 or proof.get('stable') is not True or type(cursor) is not int or not 0 <= cursor < 2**32
                 or type(proof.get('sequenceBefore')) is not int or proof['sequenceBefore'] != cursor
@@ -107,6 +109,10 @@ def main(argv=None):
     if args.measure_shoulder_entry != ('shoulderEntryMeasurement' in p):
         raise ValueError('shoulder_entry_measurement_requires_explicit_mode_and_plan')
     profiles = shoulder_entry_measurement.validate_plan(p) if args.measure_shoulder_entry else p['profiles']
+    pose_aware = p.get('poseAwareCandidates', False)
+    if type(pose_aware) is not bool or (pose_aware and (
+            args.measure_shoulder_entry or 'responsePolicy' not in p or 'developmentPick' in p)):
+        raise ValueError('invalid_pose_aware_candidates')
     if 'forearmApproachObserver' in p and not args.observe:
         parser.error('forearmApproachObserver requires --observe')
     if 'wristHeightProposal' in p and (not args.observe or 'developmentPick' not in p):
@@ -170,10 +176,18 @@ def main(argv=None):
         use_response = 'responsePolicy' in p
         close_context = ctx.Array('c', 8192) if use_response else None
         active_context = ctx.Array('c', 8192) if use_response else None
+        candidate_context = ctx.Array('c', 8192) if pose_aware else None
+        def on_off_pose(labels, verified_off_at):
+            publish_candidates(candidate_context, session, p['controllerBootId'], labels, verified_off_at)
+        if pose_aware and args.observe:
+            read_port = BoundedActionHTTP(p['controllerUrl'], timeout=.6, total_deadline=True)
+            read_pose = IdlePose(read_port, p['controllerBootId'], state='IDLE')
+            angle, checked_at = read_pose()
+            on_off_pose(catalog.eligible_at(angle), checked_at)
         gripper_gate = GripperDispatchGate(ctx.Event(), ctx.Event()) if args.execute and ack_aligned_capture else None
         child = ctx.Process(target=capture, args=(p, root, session, stop, mailbox, close_context, active_context),
                             kwargs={'allow_observation_stop':args.allow_observation_stop,'gripper_gate':gripper_gate,
-                                    'shoulder_entry':args.measure_shoulder_entry})
+                                    'shoulder_entry':args.measure_shoulder_entry,'candidate_mailbox':candidate_context})
         executor = None
         if args.execute:
             port = BoundedActionHTTP(p['controllerUrl'], token_provider=lambda: os.environ['MOTIONBRAIN_HTTP_TOKEN'],
@@ -247,7 +261,8 @@ def main(argv=None):
                                           record, on_active=on_active if use_response else None, sync_dispatch=sync_dispatch,
                                           gripper_gate=gripper_gate, side_stop=side_stop,
                                           finish_after='elbow/up' if 'developmentPick' in p else None,
-                                          lookup_worker=lookup_worker, refresh_expired_dispatch=refresh_expired_dispatch)
+                                          lookup_worker=lookup_worker, refresh_expired_dispatch=refresh_expired_dispatch,
+                                          on_off_pose=on_off_pose if pose_aware else None)
                 if measurement_status is not None and outcome in ('action_budget', 'device_stopped'):
                     outcome = measurement_status
             if outcome == 'observe_after_lift':
