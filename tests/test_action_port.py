@@ -113,6 +113,9 @@ class ActionHTTPTest(unittest.TestCase):
         with self.assertRaises(DeviceReadError):port.preflight(r)
         self.state=status()
         with self.assertRaises(DeviceReadError):port.preflight({**r,'targetDegrees':250})
+        self.state['shoulderAngle']['angleDeg']=229.9
+        with self.assertRaisesRegex(DeviceReadError, 'm4_state_unverified'):
+            port.preflight(r)
     def test_exact_post_then_result_and_output_collection_no_token_in_journal(self):
         port=self.port();path=Path(self.temp.name)/'journal.sqlite'
         core=BoundedActionExecutor(path,port,limits(),clock=self.clock);self.addCleanup(core.close)

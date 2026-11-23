@@ -8,7 +8,7 @@ from PIL import Image
 
 from learning.action_execution import BoundedActionExecutor
 from learning.dual_view_policy import (ACTIONS, Catalog, DualViewPolicy, GripperDispatchGate,
-                                       VisualControl, run_actions, thumbnail, usable)
+                                       PoseRejected, VisualControl, run_actions, thumbnail, usable)
 from tests.test_action_execution import FakeClock, FakePort, LookupWorkerFixture
 from unittest.mock import Mock
 
@@ -32,6 +32,18 @@ class VisualPort(FakePort):
 
 
 class DualViewTest(unittest.TestCase):
+    def test_profile_without_calibration_envelope_checks_actual_shoulder_direction(self):
+        down = dict(command(4, -1), targetDegrees=213)
+        catalog = Catalog({'shoulder/down': {'command': down},
+                           'wrist/down': {'command': command(*ACTIONS['wrist/down'])}})
+        boot = 'a'*32
+        self.assertEqual(catalog.request('shoulder/down', 214.27, boot, 'move')['targetDegrees'], 213)
+        self.assertEqual(catalog.eligible_at(212.95), ['wrist/down'])
+        with self.assertRaisesRegex(PoseRejected, 'shoulder_target_direction_mismatch'):
+            catalog.request('shoulder/down', 213, boot, 'move')
+        with self.assertRaisesRegex(PoseRejected, 'invalid_measured_start_pose'):
+            catalog.request('wrist/down', float('nan'), boot, 'move')
+
     def test_visual_dispatch_reserve_refuses_valid_but_old_pair_before_submit(self):
         clock = FakeClock()
         port = VisualPort(clock)

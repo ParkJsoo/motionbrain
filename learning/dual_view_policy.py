@@ -44,12 +44,16 @@ class DualViewPolicy:
                     viewVotes=votes, viewRmse=errors)
 
 
-class OutsideDemonstratedStartPose(ValueError):
+class PoseRejected(ValueError):
+    pass
+
+
+class OutsideDemonstratedStartPose(PoseRejected):
     pass
 
 
 class Catalog:
-    """Bind semantic predictions to exact finite commands and measured starting envelopes."""
+    """Bind semantic predictions to exact finite commands with optional calibration envelopes."""
     def __init__(self, profiles):
         self.profiles = {}
         for label, profile in profiles.items():
@@ -58,11 +62,15 @@ class Catalog:
             if set(command) != FIELDS - {'bootId', 'commandId'}:
                 raise ValueError('invalid_command_fields')
             r = canonical_request(dict(command, commandId='validate', bootId='0'*32))
-            lo, hi = profile['shoulderRangeDeg']
-            if not (finite(lo) and finite(hi) and 0 <= lo <= hi < 360 and r['motor'] == motor):
-                raise ValueError('invalid_start_envelope')
+            lo = hi = None
+            if 'shoulderRangeDeg' in profile:
+                lo, hi = profile['shoulderRangeDeg']
+                if not (finite(lo) and finite(hi) and 0 <= lo <= hi < 360):
+                    raise ValueError('invalid_start_envelope')
+            if r['motor'] != motor:
+                raise ValueError('action_motor_mismatch')
             if motor == 4:
-                if sign * (r['targetDegrees'] - (hi if sign > 0 else lo)) <= 0:
+                if lo is not None and sign * (r['targetDegrees'] - (hi if sign > 0 else lo)) <= 0:
                     raise ValueError('shoulder_target_direction_mismatch')
             elif sign * r['pwm'] <= 0:
                 raise ValueError('motor_direction_mismatch')
@@ -75,13 +83,29 @@ class Catalog:
         return r
 
     def request(self, label, angle, boot, cid):
-        command, lo, hi = self.profiles[label]
-        if not finite(angle) or not lo <= angle <= hi:
-            raise OutsideDemonstratedStartPose('outside_demonstrated_start_pose')
+        command = self._command_at(label, angle)
         return self.validate(dict(command, bootId=boot, commandId=cid))
 
+    def _command_at(self, label, angle):
+        command, lo, hi = self.profiles[label]
+        if not finite(angle) or not 0 <= angle < 360:
+            raise PoseRejected('invalid_measured_start_pose')
+        if lo is not None and not lo <= angle <= hi:
+            raise OutsideDemonstratedStartPose('outside_demonstrated_start_pose')
+        motor, sign = ACTIONS[label]
+        if motor == 4 and sign * (command['targetDegrees'] - angle) <= 0:
+            raise PoseRejected('shoulder_target_direction_mismatch')
+        return command
+
     def eligible_at(self, angle):
-        return [label for label, (_, lo, hi) in self.profiles.items() if finite(angle) and lo <= angle <= hi]
+        labels = []
+        for label in self.profiles:
+            try:
+                self._command_at(label, angle)
+            except PoseRejected:
+                continue
+            labels.append(label)
+        return labels
 
 
 class GripperDispatchGate:
@@ -314,12 +338,13 @@ def run_actions(control, catalog, executor, boot, off_pose, max_actions, record,
         cid = uuid.uuid4().hex
         try:
             request = catalog.request(label, angle, boot, cid)
-        except OutsideDemonstratedStartPose as exc:
+        except PoseRejected as exc:
             record(dict(schemaVersion=ACTION_RESULT_SCHEMA, commandId=cid, executionState='not_sent',
                         reason=str(exc), dispatchAttempted=False,
                         automaticRetry=False, physicalArrivalVerified=False, trainingEligible=False,
                         observedRunningPairs=0, motionFeedback=[], actionLabel=label, offConfirmedAt=boundary,
-                        admissionPairs=pair_ids(admission), shoulderRangeDeg=[lo, hi], startPoseChecks=pose_checks))
+                        admissionPairs=pair_ids(admission), shoulderRangeDeg=[lo, hi] if lo is not None else None,
+                        startPoseChecks=pose_checks))
             return str(exc)
         executor.propose(request)
         feedback = None
@@ -421,7 +446,8 @@ def run_actions(control, catalog, executor, boot, off_pose, max_actions, record,
                 trace.append(dict(sideStop=dict(reason='side_frames_missing_at_off'), terminalAlreadyObserved=True))
         unique_pairs = {tuple(row['frames']) for row in trace if row.get('postAckPair')}
         record(dict(result, observedRunningPairs=len(unique_pairs), motionFeedback=trace, actionLabel=label, offConfirmedAt=final_boundary,
-                    admissionPairs=pair_ids(admission), shoulderRangeDeg=[lo, hi], startPoseChecks=pose_checks,
+                    admissionPairs=pair_ids(admission), shoulderRangeDeg=[lo, hi] if lo is not None else None,
+                    startPoseChecks=pose_checks,
                     **gate_timing))
         if result['executionState'] != 'known_terminal':
             return result['executionState']

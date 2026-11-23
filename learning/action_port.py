@@ -82,6 +82,7 @@ class BoundedActionHTTP:
             if (any(m4.get(k) is not True for k in ("available", "sensorConnected", "sensorFresh", "sensorReady"))
                     or m4.get("active") is not False or not finite(m4.get("ageMs")) or not 0 <= m4["ageMs"] <= 20
                     or not finite(m4.get("angleDeg")) or not finite(m4.get("softMinDeg")) or not finite(m4.get("softMaxDeg"))
+                    or not m4["softMinDeg"] <= m4["angleDeg"] <= m4["softMaxDeg"]
                     or not m4["softMinDeg"] <= r["targetDegrees"] <= m4["softMaxDeg"]):
                 raise DeviceReadError("m4_state_unverified")
         output = self.reader.outputs()
