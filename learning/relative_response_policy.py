@@ -167,6 +167,33 @@ class RelativeResponsePolicy:
         return dict(action=action, reason=reason, features=features,
                     viewVotes=details.pop('viewVotes', [None, None]), viewRmse=[None, None], **details)
 
+    def held_matches(self, f, q):
+        if not (f['leftMargin'] <= 2 and f['rightMargin'] <= 2):
+            return []
+        return [row for row in self.held if abs(f['gap']-row['gap']) <= 5 and
+                np.linalg.norm((q-row['point']) / np.array([.35,.18,.12,.20])) <= 1]
+
+    def close_feedback(self, f, start, q):
+        """Evaluate the live close using retention geometry and the stationary object."""
+        if self.held_matches(f, q):
+            return self.result('hold', 'close_stop_held_geometry_observed', f, motionDecision='stop')
+        if abs(f['nx']) > 8 or f['gap'] > start['gap']+5:
+            return self.result('hold', 'close_stop_alignment_or_direction_changed', f, motionDecision='stop')
+        if f['gap'] < min(row['gap'] for row in self.held)-5:
+            return self.result('hold', 'close_stop_below_held_gap', f, motionDecision='stop')
+        # Closing in the registered side view moves the visible jaw down and
+        # toward the prism. Include the admitted deep profile's initial overhang.
+        side_half_width = max(f['width']/2, abs(start['sx']))
+        if abs(f['sx']) > side_half_width+4 or not start['sy']-4 <= f['sy'] <= f['height']:
+            return self.result('hold', 'close_stop_side_overlap_lost', f, motionDecision='stop')
+        start_box = start['sideBox']
+        box = f['sideBox']
+        offsets = np.array([box[0]+box[2]/2, box[1], box[1]+box[3]]) - np.array([
+            start_box[0]+start_box[2]/2, start_box[1], start_box[1]+start_box[3]])
+        if np.max(np.abs(offsets)) > 4:
+            return self.result('hold', 'close_stop_object_moved', f, motionDecision='stop')
+        return self.result('gripper/close', 'close_continue_object_aligned', f, motionDecision='continue')
+
     def decide(self, f, *, close_receipt=None, active_action=None, eligible=None, compare_goal_set=False):
         if not isinstance(self.view_id, str) or not self.view_id or self.calibrated_view != self.view_id:
             return self.result('hold', 'response_model_view_mismatch', f)
@@ -182,6 +209,8 @@ class RelativeResponsePolicy:
         if active_action is not None:
             label = active_action['label']
             start = active_action['startFeatures']
+            if label == 'gripper/close':
+                return self.close_feedback(f, start, q)
             movement = feature_vector(f)-feature_vector(start)
             model = self.responses[label]
             delta = np.array(model['delta'])
@@ -195,9 +224,8 @@ class RelativeResponsePolicy:
                 return self.result('hold', 'unverified_close_output', f)
             # Narrowed jaws around a visible object and compatible side overlap, as
             # observed immediately before verified lifts. This cannot establish force.
-            matches = [row for row in self.held if abs(f['gap']-row['gap']) <= 5 and
-                       np.linalg.norm((q-row['point']) / np.array([.35,.18,.12,.20])) <= 1]
-            if matches and f['leftMargin'] <= 2 and f['rightMargin'] <= 2:
+            matches = self.held_matches(f, q)
+            if matches:
                 if eligible is not None and 'shoulder/up' not in eligible:
                     return self.result('hold', 'no_executable_lift', f)
                 return self.result('shoulder/up', 'post_close_lift_example', f,

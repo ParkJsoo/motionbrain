@@ -123,6 +123,31 @@ class RelativeResponseTest(unittest.TestCase):
         self.assertEqual(p.decide(features(sy=-113),active_action=ctx)['action'],'wrist/down')
         self.assertEqual(p.decide(features(sy=-113,ny=-15),active_action=ctx)['reason'],'learned_step_observed')
 
+    def test_active_close_does_not_reapply_open_jaw_admission(self):
+        policy = RelativeResponsePolicy(artifact(), check_shallow_color_core=True)
+        start = dict(features(sx=6, sy=32, ny=18), distalDepth=[55, 55, 55],
+                     sideBox=[783, 655, 60, 180])
+        self.assertEqual(policy.decide(start)['action'], 'gripper/close')
+        ctx = dict(label='gripper/close', startFeatures=start)
+        closing = dict(start, ny=8, nearTop=-13, gap=90)
+        self.assertEqual(policy.decide(closing)['reason'], 'unsupported_open_jaw_gap')
+        self.assertEqual(policy.decide(closing, active_action=ctx)['action'], 'gripper/close')
+        held = dict(start, sx=0, sy=54, ny=6, gap=60, leftMargin=0, rightMargin=0)
+        cases = [
+            (held, 'close_stop_held_geometry_observed'),
+            (dict(closing, nx=9), 'close_stop_alignment_or_direction_changed'),
+            (dict(closing, gap=126), 'close_stop_alignment_or_direction_changed'),
+            (dict(closing, gap=54), 'close_stop_below_held_gap'),
+            (dict(closing, sideBox=[783, 649, 60, 180]), 'close_stop_object_moved'),
+            (dict(closing, sx=55), 'close_stop_side_overlap_lost'),
+            (dict(closing, sy=-80), 'close_stop_side_overlap_lost'),
+            (dict(closing, sx=1e4), 'outside_demonstrated_visual_extent'),
+        ]
+        for observed, reason in cases:
+            with self.subTest(reason=reason):
+                vote = policy.decide(observed, active_action=ctx)
+                self.assertEqual((vote['action'],vote['reason']), ('hold', reason))
+
     def test_centering_is_signed_and_requires_visible_sweep_clearance(self):
         p=fixture()
         self.assertEqual(p.decide(features(nx=-10))['action'],'base/left')

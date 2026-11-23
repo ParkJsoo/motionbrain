@@ -294,7 +294,8 @@ class VisualControl:
                                   frames=[(sample or {}).get(k) for k in ('frameId', 'nearFrameId')],
                                   modelAction=(sample or {}).get('policyAction',
                                       (sample or {}).get('modelAction', (sample or {}).get('action'))),
-                                  effectiveAction=(sample or {}).get('action')))
+                                  effectiveAction=(sample or {}).get('action'),
+                                  modelReason=(sample or {}).get('reason')))
             return outcome
         return check
 

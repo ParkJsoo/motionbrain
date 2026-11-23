@@ -491,13 +491,14 @@ class DualViewTest(unittest.TestCase):
 
     def test_feedback_trace_distinguishes_raw_vote_from_effective_hold(self):
         admitted = pair('wrist/up', 1.1, 1)
-        sample = dict(pair('hold', 1.4, 2), modelAction='wrist/up')
+        sample = dict(pair('hold', 1.4, 2), modelAction='wrist/up', reason='two_view_landmarks_unavailable')
         control = VisualControl(lambda: sample, .5, .2, clock=lambda: 1.5)
         trace = []
         check = control.feedback('wrist/up', 1., trace, admitted_pair=admitted)
         self.assertEqual(check({}, 1.2), 'cancel')
         self.assertEqual(trace[-1]['modelAction'], 'wrist/up')
         self.assertEqual(trace[-1]['effectiveAction'], 'hold')
+        self.assertEqual(trace[-1]['modelReason'], 'two_view_landmarks_unavailable')
 
     def test_new_joint_needs_new_post_off_pairs_and_own_cancel_ack(self):
         first, second = 'elbow/down', 'gripper/close'
