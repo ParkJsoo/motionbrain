@@ -218,7 +218,8 @@ def main(argv=None):
                             if args.measure_shoulder_entry:
                                 with (root/'shoulder-entry-measurement.json').open('x') as evidence:
                                     try:
-                                        measurement = shoulder_entry_measurement.observe_entry(control, pose, result)
+                                        measurement = shoulder_entry_measurement.observe_entry(
+                                            control, pose, result, profiles[shoulder_entry_measurement.LABEL]['command'])
                                     except Exception as exc:
                                         json.dump(dict(commandId=result['commandId'], status='post_off_unverified',
                                                        reason=str(exc)), evidence)

@@ -317,6 +317,7 @@ def capture(plan, root, session, stopping, mailbox, context_mailbox=None, active
         previous = -1
         block = 0
         last_dissent = {}
+        close_dissent = 0.
         previous_pair = None
         previous_capture_us = None
         with (root/'decisions.jsonl').open('x') as log:
@@ -374,8 +375,12 @@ def capture(plan, root, session, stopping, mailbox, context_mailbox=None, active
                     nearClock=dict(sourceEarliest=item['sourceEarliest'], sourceLatest=item['sourceLatest'],
                                    availableAt=item['persistedAt']), decidedAt=time.monotonic())
                 if shoulder_entry:
-                    from learning.shoulder_entry_measurement import measurement_vote
+                    from learning.shoulder_entry_measurement import measurement_vote, supports_close
                     measurement_vote(vote)
+                    if (not supports_close(vote) or
+                            not usable(vote, 0, vote['decidedAt'], plan['maxAge'], plan['maxSkew'])):
+                        close_dissent = max(close_dissent, min(frame['sourceEarliest'], item['sourceEarliest']))
+                    vote['closeDissentAt'] = close_dissent
                 effective_vote(vote, last_dissent, plan['maxAge'], plan['maxSkew'])
                 if 'phaseProposal' in vote:
                     vote['phaseProposal']['fresh'] = usable(vote, 0, vote['decidedAt'], plan['maxAge'], plan['maxSkew'])
