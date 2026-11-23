@@ -49,8 +49,9 @@ class SidePartOverlayTest(unittest.TestCase):
              patch('learning.side_part_overlay.observe_side_tip', return_value=((520, 490), None)) as tip, \
              patch('learning.side_part_overlay.wide_distal_parts',
                    return_value=({'forearm': mask}, {'wristSurfaceMarker': [1, 1]})) as distal:
-            _, info = render_side(frame, view_id=LEGACY_SIDE_VIEW)
+            overlay, info = render_side(frame, view_id=LEGACY_SIDE_VIEW)
         self.assertEqual(info['landmarks']['visibleJawTip'], [520, 490])
+        np.testing.assert_array_equal(overlay[436, 857], COLORS['upper_arm'])
         self.assertNotIn('wristSurfaceMarker', info['landmarks'])
         self.assertEqual(info['parts']['upper_arm'], 'estimated_visible')
         self.assertEqual(info['parts']['forearm'], 'estimated_visible')

@@ -3,10 +3,20 @@ import unittest
 import cv2
 import numpy as np
 
-from learning.wide_arm_overlay import wide_elbow, wide_upper_region
+from learning.wide_arm_overlay import _shaft_edges, wide_elbow, wide_upper_region
 
 
 class WideElbowTest(unittest.TestCase):
+    def test_pixel_quantization_does_not_drop_rail_at_upper_span(self):
+        shoulder, elbow = np.array([160., 230.]), np.array([160., 80.])
+        dark = np.zeros((280, 320), dtype=bool)
+        dark[80:231, 122:199] = True
+        for base_width in (160, 161):
+            with self.subTest(base_width=base_width):
+                self.assertEqual(len(_shaft_edges(dark, shoulder, elbow, base_width)), 4)
+        dark[80:231, 199] = True
+        self.assertEqual(_shaft_edges(dark, shoulder, elbow, 160), [])
+
     def test_requires_exposed_flange_dark_cap_and_distinct_shaft_edges(self):
         shoulder = np.array([280., 260.])
         elbow = (247, 126)

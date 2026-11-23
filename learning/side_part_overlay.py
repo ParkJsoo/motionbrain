@@ -280,5 +280,7 @@ def render_side(rgb, *, view_id=None):
         cv2.drawContours(out,[c*2 for c in contours],-1,color,2,cv2.LINE_AA)
     if tip is not None:
         cv2.circle(out,tuple(np.rint(tip).astype(int)),6,(255,216,76),-1,cv2.LINE_AA)
+    if elbow is not None:
+        cv2.circle(out, tuple(landmarks['elbowHousingCenterEstimate']), 7, COLORS['upper_arm'], 2, cv2.LINE_AA)
     return out, {'parts':info,'landmarks':landmarks,'method':'frame_local_material_and_geometry',
                  'controlEligible':False}

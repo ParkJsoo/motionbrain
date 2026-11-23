@@ -7,6 +7,7 @@ def _shaft_edges(dark, shoulder, elbow, width):
     axis = (elbow - shoulder) / np.linalg.norm(elbow - shoulder)
     normal = np.array([-axis[1], axis[0]])
     offsets = np.arange(-round(.40 * width), round(.40 * width) + 1)
+    max_span = round(.48 * width)
     edges = []
     for t in (.32, .45, .58, .70):
         points = np.rint(shoulder + t * (elbow - shoulder) + offsets[:, None] * normal).astype(int)
@@ -22,7 +23,8 @@ def _shaft_edges(dark, shoulder, elbow, width):
         if not left.size or not right.size:
             continue
         span = center + right[0] - left[-1] - 1
-        if .14 * width < span < .48 * width:
+        # The span is counted in sampled pixels, so compare to a rounded pixel bound.
+        if .14 * width < span <= max_span:
             edges.append((t, offsets[left[-1]+1], offsets[center+right[0]-1]))
     return edges
 
