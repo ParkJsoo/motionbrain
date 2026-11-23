@@ -39,6 +39,18 @@ class OpenSideApproachTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'jaw_contour'):
             observe_open_side(frame)
 
+    def test_endpoint_near_marker_boundary_still_requires_unique_contour(self):
+        frame = scene()
+        frame[460:492, 762:854] = 238
+        self.assertEqual(observe_open_side(frame)['toolPoint'], [854, 475.5])
+        frame[526:549, 855:1035] = 35
+        with self.assertRaisesRegex(ValueError, 'jaw_contour'):
+            observe_open_side(frame)
+        frame[526:549, 855:1035] = 238
+        frame[460:492, 854:858] = 238
+        with self.assertRaisesRegex(ValueError, 'jaw_contour'):
+            observe_open_side(frame)
+
     def test_single_forearm_mark_needs_wrist_and_connected_jaw(self):
         for hidden in ((1154, 353), (1218, 322)):
             frame = scene()

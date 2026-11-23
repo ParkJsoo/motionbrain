@@ -56,7 +56,9 @@ def _paired_marker_tip(rgb, cx, cy, span):
         tip_y = float(y0 + np.median(ys))
         if x < 2 and -.9 * span < tip_y - cy < 2.8 * span:
             raise ValueError('side_jaw_tip_clipped')
-        if not 1.9 * span < cx - tip_x < 4.45 * span:
+        # Forearm marker pixels can move the estimated center by a few pixels
+        # while the same visible jaw edge stays fixed near this boundary.
+        if not 1.85 * span < cx - tip_x < 4.45 * span:
             continue
         if ys.min() == 0 or ys.max() == mask.shape[0] - 1:
             raise ValueError('side_jaw_tip_clipped')
