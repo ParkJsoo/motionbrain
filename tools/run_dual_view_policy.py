@@ -29,10 +29,11 @@ from learning.supervised_transport import SequencePort
 
 
 class IdlePose:
-    def __init__(self, port, boot, *, shoulder_entry=False, state='ARMED'):
+    def __init__(self, port, boot, *, shoulder_entry=False, state='ARMED', boundary_margin=4):
         self.port, self.boot, self.cursor = port, boot, None
         self.shoulder_entry = shoulder_entry
         self.state = state
+        self.boundary_margin = boundary_margin
 
     def __call__(self):
         if self.shoulder_entry:
@@ -58,7 +59,24 @@ class IdlePose:
                        or m['speed'] != 0 for m in motors.values())):
             raise ValueError('all_off_epoch_unverified')
         self.cursor = cursor
-        return SequencePort._shoulder_angle(s), receipt['receivedMonotonic']
+        return SequencePort._shoulder_angle(s, boundary_margin=self.boundary_margin), receipt['receivedMonotonic']
+
+
+def execution_profiles(plan, *, shoulder_measurement=False):
+    device_pose_only = plan.get('useDevicePoseLimits', False)
+    if type(device_pose_only) is not bool or (device_pose_only and (
+            shoulder_measurement or 'responsePolicy' not in plan or 'developmentPick' in plan
+            or plan.get('poseAwareCandidates'))):
+        raise ValueError('invalid_device_pose_limits_mode')
+    if shoulder_measurement:
+        return shoulder_entry_measurement.validate_plan(plan)
+    if device_pose_only:
+        # Old pick plans can still carry start ranges recorded for calibration.
+        # The model uses the exact learned command; only actual device limits
+        # and the live submission guards apply during an ordinary pick.
+        return {label: {key: value for key, value in profile.items() if key != 'shoulderRangeDeg'}
+                for label, profile in plan['profiles'].items()}
+    return plan['profiles']
 
 
 @contextmanager
@@ -108,7 +126,8 @@ def main(argv=None):
     p = _decode_json(raw)
     if args.measure_shoulder_entry != ('shoulderEntryMeasurement' in p):
         raise ValueError('shoulder_entry_measurement_requires_explicit_mode_and_plan')
-    profiles = shoulder_entry_measurement.validate_plan(p) if args.measure_shoulder_entry else p['profiles']
+    profiles = execution_profiles(p, shoulder_measurement=args.measure_shoulder_entry)
+    boundary_margin = 0 if p.get('useDevicePoseLimits') else 4
     pose_aware = p.get('poseAwareCandidates', False)
     if type(pose_aware) is not bool or (pose_aware and (
             args.measure_shoulder_entry or 'responsePolicy' not in p or 'developmentPick' in p)):
@@ -198,7 +217,8 @@ def main(argv=None):
             if (capability['bootId'] != p['controllerBootId'] or not capability['enabled']
                     or capability['active'] or capability.get('profile') != 'dual_view_timer_v1'):
                 raise ValueError('dual_view_timer_owner_unavailable')
-            pose = IdlePose(port, p['controllerBootId'], shoulder_entry=args.measure_shoulder_entry)
+            pose = IdlePose(port, p['controllerBootId'], shoulder_entry=args.measure_shoulder_entry,
+                            boundary_margin=boundary_margin)
             pose()
             executor = BoundedActionExecutor(ROOT/'.local'/'dual-view-actions.sqlite', port, catalog, max_polls=200)
         def interrupt(signum, frame):

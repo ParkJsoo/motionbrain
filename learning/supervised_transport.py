@@ -491,7 +491,7 @@ class SequencePort:
                 raise ValueError('m4_observed_change_exceeded')
 
     @staticmethod
-    def _shoulder_angle(status):
+    def _shoulder_angle(status, *, boundary_margin=4):
         shoulder = status.get('shoulderAngle', {})
         if (any(shoulder.get(k) is not True for k in
                 ('available', 'sensorConnected', 'sensorFresh', 'sensorReady'))
@@ -501,7 +501,9 @@ class SequencePort:
                 or not finite_number(shoulder.get('angleDeg'))
                 or not finite_number(shoulder.get('manualDownBoundaryDeg'))
                 or not finite_number(shoulder.get('manualUpBoundaryDeg'))
-                or not shoulder['manualDownBoundaryDeg'] + 4 < shoulder['angleDeg'] < shoulder['manualUpBoundaryDeg'] - 4):
+                or not (shoulder['manualDownBoundaryDeg'] + boundary_margin
+                        < shoulder['angleDeg']
+                        < shoulder['manualUpBoundaryDeg'] - boundary_margin)):
             raise ValueError('m4_feedback_not_ready')
         return shoulder['angleDeg']
 
