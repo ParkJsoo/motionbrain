@@ -418,6 +418,58 @@ class DualViewTest(unittest.TestCase):
                 else:
                     self.assertFalse(log[0]['dispatchAttempted'])
 
+    def test_terminal_pick_requires_verified_close_and_never_repeats_timed_pulse(self):
+        for after, binding, valid_trace, swapped, expected, commands in (
+            ('shoulder/up', True, True, False, 'observe_after_lift', [1, 4]),
+            ('shoulder/up', False, True, False, 'terminal_pick_context_mismatch', [1]),
+            ('gripper/close', True, True, False, 'terminal_pick_context_mismatch', [1]),
+            ('shoulder/up', True, False, False, 'terminal_pick_close_unverified', [1]),
+            ('shoulder/up', True, True, True, 'not_sent', [1]),
+        ):
+            with self.subTest(after=after, binding=binding, valid_trace=valid_trace, swapped=swapped):
+                clock = FakeClock()
+                submitted, logged = [], []
+                replace_binding = False
+                labels = ('gripper/close', 'shoulder/up')
+                catalog = Catalog({label: dict(command=command(*ACTIONS[label])) for label in labels})
+
+                def latest():
+                    closing = not logged
+                    action = 'gripper/close' if closing else after
+                    bound = logged[0]['commandId'] if not closing and binding else None
+                    if replace_binding:
+                        bound = 'different-close'
+                    stamp = clock.monotonic()
+                    first = dict(pair(action, stamp-.01, 1), closeCommandId=bound)
+                    return dict(pair(action, stamp-.005, 2), closeCommandId=bound, previousPair=first)
+
+                def confirm(cid, *, confirmed_request, dispatch_guard, **_):
+                    nonlocal replace_binding
+                    req = confirmed_request
+                    closing = req['motor'] == 1
+                    replace_binding = swapped and not closing
+                    try:
+                        dispatch_guard(req)
+                    except ValueError as exc:
+                        return dict(executionState='not_sent', commandId=cid, reason=str(exc))
+                    submitted.append(req['motor'])
+                    output = {'entries': [dict(actionOrdinal=1, motor=1, pwm=-30),
+                                          dict(actionOrdinal=1, motor=1, pwm=0)]} if valid_trace else {'entries': []}
+                    return dict(executionState='known_terminal', commandId=cid, action=dict(
+                        request=req, outputLog=output, record=dict(
+                            commandId=cid, bootId=req['bootId'], motor=req['motor'], ordinal=1, outputOff=True,
+                            state='timed_out' if closing else 'completed',
+                            reason='deadline_exceeded' if closing else 'target_reached')))
+
+                executor = Mock(confirm=confirm)
+                status = run_actions(VisualControl(latest,.69,.69,clock=clock.monotonic), catalog,
+                                     executor, 'a'*32, lambda:(210,clock.monotonic()), 2, logged.append,
+                                     sleep=clock.sleep, finish_after='shoulder/up', terminal_pick=True)
+                self.assertEqual(status, expected)
+                self.assertEqual(submitted, commands)
+                if swapped:
+                    self.assertEqual(logged[-1]['reason'], 'terminal_pick_context_changed')
+
     def test_finish_after_first_lift(self):
         clock = FakeClock()
         port = VisualPort(clock)

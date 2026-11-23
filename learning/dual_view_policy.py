@@ -301,8 +301,9 @@ class VisualControl:
 
 def run_actions(control, catalog, executor, boot, off_pose, max_actions, record, *, sleep=time.sleep,
                 on_active=None, sync_dispatch=False, gripper_gate=None, side_stop=None, finish_after=None,
-                lookup_worker=None, refresh_expired_dispatch=False, on_off_pose=None):
+                lookup_worker=None, refresh_expired_dispatch=False, on_off_pose=None, terminal_pick=False):
     """One owner at a time. Each dispatch needs two independent pairs after OFF."""
+    close_id = None
     for _ in range(max_actions):
         starting_angle, boundary = off_pose()
         if on_off_pose is not None:
@@ -317,6 +318,10 @@ def run_actions(control, catalog, executor, boot, off_pose, max_actions, record,
                 label = sample['action']
                 if label not in catalog.profiles:
                     return 'hold_or_uncommissioned'
+                if terminal_pick:
+                    expected = 'gripper/close' if close_id is None else 'shoulder/up'
+                    if label != expected or sample.get('closeCommandId') != close_id:
+                        return 'terminal_pick_context_mismatch'
                 admission = control.admission(sample, boundary)
                 if admission:
                     break
@@ -366,6 +371,8 @@ def run_actions(control, catalog, executor, boot, off_pose, max_actions, record,
                 checked = control.dispatch_admission(label, final_boundary, verify_pose,
                     synchronize=sync_dispatch, gripper_gate=gripper_gate, sleep=sleep,
                     before_aligned_pose=remember_aligned_pose)
+                if terminal_pick and any(pair.get('closeCommandId') != close_id for pair in checked):
+                    raise ValueError('terminal_pick_context_changed')
                 if side_stop:
                     veto = side_stop.check(label, final_boundary, admission=True)
                     if veto:
@@ -456,6 +463,14 @@ def run_actions(control, catalog, executor, boot, off_pose, max_actions, record,
             return 'unowned_or_late_cancel'
         if any('sideStop' in row for row in trace):
             return 'side_stop'
+        if terminal_pick and label == 'gripper/close':
+            from learning.relative_response_policy import closed_by_controller
+            # The timer reaching the end of a pulse proves output, not grip.
+            # The next vote must use this receipt and fresh images after OFF.
+            if not closed_by_controller(result):
+                return 'terminal_pick_close_unverified'
+            close_id = result['commandId']
+            continue
         if terminal['state'] != 'completed' and not result.get('cancelConfirmed'):
             return 'device_stopped'
         if label == finish_after:

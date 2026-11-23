@@ -151,6 +151,13 @@ def main(argv=None):
     if type(pose_aware) is not bool or (pose_aware and (
             args.measure_shoulder_entry or 'responsePolicy' not in p or 'developmentPick' in p)):
         raise ValueError('invalid_pose_aware_candidates')
+    terminal_pick = p.get('terminalPickVerification', False)
+    if type(terminal_pick) is not bool or (terminal_pick and (
+            not pose_aware or not p.get('useDevicePoseLimits') or set(profiles) != {'gripper/close', 'shoulder/up'}
+            or p['maxActions'] != 2 or short_joint or args.measure_shoulder_entry or compare_goals
+            or any(p.get(key) is not True for key in
+                   ('ackAlignedGripperCapture', 'asyncActionLookup', 'refreshExpiredDispatch')))):
+        raise ValueError('terminal_pick_requires_close_lift_plan')
     if 'forearmApproachObserver' in p and not args.observe:
         parser.error('forearmApproachObserver requires --observe')
     if 'wristHeightProposal' in p and (not args.observe or 'developmentPick' not in p):
@@ -307,9 +314,10 @@ def main(argv=None):
                     outcome = run_actions(control, catalog, executor, p['controllerBootId'], pose, p['maxActions'],
                                           record, on_active=on_active if use_response else None, sync_dispatch=sync_dispatch,
                                           gripper_gate=gripper_gate, side_stop=side_stop,
-                                          finish_after='elbow/up' if 'developmentPick' in p else None,
+                                          finish_after=('shoulder/up' if terminal_pick else
+                                                        'elbow/up' if 'developmentPick' in p else None),
                                           lookup_worker=lookup_worker, refresh_expired_dispatch=refresh_expired_dispatch,
-                                          on_off_pose=on_off_pose if pose_aware else None)
+                                          on_off_pose=on_off_pose if pose_aware else None, terminal_pick=terminal_pick)
                 if measurement_status is not None and outcome in ('action_budget', 'device_stopped'):
                     outcome = measurement_status
             if outcome == 'observe_after_lift':
