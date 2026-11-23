@@ -252,7 +252,8 @@ class VisualControl:
                 trace.append(dict(at=now, acknowledged=acknowledged, decision=outcome, reason=reason,
                                   postAckPair=usable(sample, acknowledged, now, self.age, self.skew),
                                   frames=[(sample or {}).get(k) for k in ('frameId', 'nearFrameId')],
-                                  modelAction=(sample or {}).get('modelAction', (sample or {}).get('action')),
+                                  modelAction=(sample or {}).get('policyAction',
+                                      (sample or {}).get('modelAction', (sample or {}).get('action'))),
                                   effectiveAction=(sample or {}).get('action')))
             return outcome
         return check

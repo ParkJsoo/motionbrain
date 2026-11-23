@@ -220,14 +220,14 @@ def publish_close_context(mailbox, session, boot, result):
     _send_context(mailbox, dict(session=session, boot=boot, after=after, receipt=receipt))
 
 
-def response_vote(policy, side, near, earliest, active, close):
+def response_vote(policy, side, near, earliest, active, close, *, measure=False):
     close_ready = close is not None and earliest > close['after']
     active_ready = active is not None and earliest > active['after']
     if close is not None and not close_ready:
         vote = dict(action='hold', reason='await_post_close_pair', viewVotes=['hold', 'hold'], features={})
     else:
         vote = policy.predict(side, near, close_receipt=close['receipt'] if close_ready else None,
-                              active_action=active['action'] if active_ready else None)
+                              active_action=active['action'] if active_ready and not measure else None)
     vote.update(activeCommandId=active['commandId'] if active_ready else None,
                 activeAcknowledgedAt=active['after'] if active_ready else None,
                 closeCommandId=close['receipt']['commandId'] if close_ready else None)
@@ -287,7 +287,7 @@ def _side_for_gripper(camera, stopping, boundary, deadline, *, clock=time.monoto
 
 
 def capture(plan, root, session, stopping, mailbox, context_mailbox=None, active_mailbox=None, *,
-            allow_observation_stop=False, gripper_gate=None):
+            allow_observation_stop=False, gripper_gate=None, shoulder_entry=False):
     root = Path(root)
     def publish(value):
         # Detailed observation-only calibration records stay in decisions.jsonl.
@@ -363,7 +363,7 @@ def capture(plan, root, session, stopping, mailbox, context_mailbox=None, active
                     boot = plan['controllerBootId']
                     active = _read_context(active_mailbox, session, boot)
                     close = _read_context(context_mailbox, session, boot)
-                    vote = response_vote(policy, side, near, earliest, active, close)
+                    vote = response_vote(policy, side, near, earliest, active, close, measure=shoulder_entry)
                 else:
                     vote = policy.predict(side, near)
                 if observer:
@@ -373,6 +373,9 @@ def capture(plan, root, session, stopping, mailbox, context_mailbox=None, active
                                   availableAt=frame['stdoutReadAt']),
                     nearClock=dict(sourceEarliest=item['sourceEarliest'], sourceLatest=item['sourceLatest'],
                                    availableAt=item['persistedAt']), decidedAt=time.monotonic())
+                if shoulder_entry:
+                    from learning.shoulder_entry_measurement import measurement_vote
+                    measurement_vote(vote)
                 effective_vote(vote, last_dissent, plan['maxAge'], plan['maxSkew'])
                 if 'phaseProposal' in vote:
                     vote['phaseProposal']['fresh'] = usable(vote, 0, vote['decidedAt'], plan['maxAge'], plan['maxSkew'])

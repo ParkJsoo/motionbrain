@@ -23,14 +23,24 @@ from learning.device_adapter import _object
 from learning.dual_view_capture import capture, load_policy, publish_active_context, publish_close_context, side_sample_fps, verified
 from learning.dual_view_policy import Catalog, GripperDispatchGate, VisualControl, run_actions
 from learning.external_media import _mount_fd
+from learning import shoulder_entry_measurement
 from learning.supervised_transport import SequencePort
 
 
 class IdlePose:
-    def __init__(self, port, boot):
+    def __init__(self, port, boot, *, shoulder_entry=False):
         self.port, self.boot, self.cursor = port, boot, None
+        self.shoulder_entry = shoulder_entry
 
     def __call__(self):
+        if self.shoulder_entry:
+            with self.port._deadline():
+                status = _object(self.port.transport.get('controller', '/status')[0])
+            shoulder = status['shoulderAngle']
+            if (shoulder.get('motorDefaultSpeed') != shoulder_entry_measurement.DEFAULT_SPEED
+                    or shoulder.get('boundedDownCorrectionEnabled') is not False
+                    or shoulder.get('manualCalibrationUnlock') is not False):
+                raise ValueError('shoulder_measurement_output_limit_unverified')
         with self.port._deadline():
             receipt, _ = self.port.transport.get('controller', '/collection_status')
         s = _object(receipt)
@@ -82,6 +92,8 @@ def main(argv=None):
     parser.add_argument('--allow-observation-stop', action='store_true',
                         help='allow an empty stop-observation file in this capture directory to finish --observe')
     parser.add_argument('--confirm-plan-sha256')
+    parser.add_argument('--measure-shoulder-entry', action='store_true',
+                        help='use the separately gated single shoulder calibration step')
     parser.add_argument('--rerun-url', help='display these same collected frames in an existing Rerun viewer')
     parser.add_argument('--part-overlay', action='store_true', help='show part contours and landmarks in the Rerun viewer')
     args = parser.parse_args(argv)
@@ -92,6 +104,9 @@ def main(argv=None):
     raw = args.plan.read_bytes()
     digest = hashlib.sha256(raw).hexdigest()
     p = _decode_json(raw)
+    if args.measure_shoulder_entry != ('shoulderEntryMeasurement' in p):
+        raise ValueError('shoulder_entry_measurement_requires_explicit_mode_and_plan')
+    profiles = shoulder_entry_measurement.validate_plan(p) if args.measure_shoulder_entry else p['profiles']
     if 'forearmApproachObserver' in p and not args.observe:
         parser.error('forearmApproachObserver requires --observe')
     if 'wristHeightProposal' in p and (not args.observe or 'developmentPick' not in p):
@@ -112,7 +127,7 @@ def main(argv=None):
     if type(refresh_expired_dispatch) is not bool:
         raise ValueError('invalid_dispatch_refresh')
     policy = load_policy(p)
-    catalog = Catalog(p['profiles'])
+    catalog = Catalog(profiles)
     verified(Path(p['helper']), p['helperSha256'])
     if (type(p['seconds']) is not int or not 2 <= p['seconds'] <= 120 or
             type(p['maxActions']) is not int or not 1 <= p['maxActions'] <= 32):
@@ -153,7 +168,8 @@ def main(argv=None):
         active_context = ctx.Array('c', 8192) if use_response else None
         gripper_gate = GripperDispatchGate(ctx.Event(), ctx.Event()) if args.execute and ack_aligned_capture else None
         child = ctx.Process(target=capture, args=(p, root, session, stop, mailbox, close_context, active_context),
-                            kwargs={'allow_observation_stop':args.allow_observation_stop,'gripper_gate':gripper_gate})
+                            kwargs={'allow_observation_stop':args.allow_observation_stop,'gripper_gate':gripper_gate,
+                                    'shoulder_entry':args.measure_shoulder_entry})
         executor = None
         if args.execute:
             port = BoundedActionHTTP(p['controllerUrl'], token_provider=lambda: os.environ['MOTIONBRAIN_HTTP_TOKEN'],
@@ -164,7 +180,7 @@ def main(argv=None):
             if (capability['bootId'] != p['controllerBootId'] or not capability['enabled']
                     or capability['active'] or capability.get('profile') != 'dual_view_timer_v1'):
                 raise ValueError('dual_view_timer_owner_unavailable')
-            pose = IdlePose(port, p['controllerBootId'])
+            pose = IdlePose(port, p['controllerBootId'], shoulder_entry=args.measure_shoulder_entry)
             pose()
             executor = BoundedActionExecutor(ROOT/'.local'/'dual-view-actions.sqlite', port, catalog, max_polls=200)
         def interrupt(signum, frame):
@@ -187,16 +203,28 @@ def main(argv=None):
                 child.join()
                 outcome = 'observation_failed' if args.allow_observation_stop and child.exitcode != 0 else 'observation_finished'
             else:
+                measurement_status = None
                 until = time.monotonic()+20
                 while child.is_alive() and latest() is None and time.monotonic() < until:
                     time.sleep(.05)
                 lookup_context = ActionLookupWorker(p['controllerUrl']) if async_lookup else nullcontext()
                 with lookup_context as lookup_worker, (root/'actions.jsonl').open('x') as log:
                     def record(result):
+                        nonlocal measurement_status
                         log.write(json.dumps(result)+'\n')
                         log.flush()
                         if result['executionState'] == 'known_terminal':
                             pose.cursor = result['action']['outputSequenceBounds']['last']
+                            if args.measure_shoulder_entry:
+                                with (root/'shoulder-entry-measurement.json').open('x') as evidence:
+                                    try:
+                                        measurement = shoulder_entry_measurement.observe_entry(control, pose, result)
+                                    except Exception as exc:
+                                        json.dump(dict(commandId=result['commandId'], status='post_off_unverified',
+                                                       reason=str(exc)), evidence)
+                                        raise
+                                    json.dump(measurement, evidence, allow_nan=False)
+                                    measurement_status = measurement['status']
                             if use_response and result['actionLabel'] == 'gripper/open':
                                 publish_close_context(close_context, session, p['controllerBootId'], None)
                             if use_response and result['actionLabel'] == 'gripper/close':
@@ -215,6 +243,8 @@ def main(argv=None):
                                           gripper_gate=gripper_gate, side_stop=side_stop,
                                           finish_after='elbow/up' if 'developmentPick' in p else None,
                                           lookup_worker=lookup_worker, refresh_expired_dispatch=refresh_expired_dispatch)
+                if measurement_status is not None and outcome in ('action_budget', 'device_stopped'):
+                    outcome = measurement_status
             if outcome == 'observe_after_lift':
                 # Retain fresh OFF observations for scoring without issuing further commands.
                 child.join(timeout=3)
@@ -235,7 +265,9 @@ def main(argv=None):
                 executor.close()
             signal.signal(signal.SIGTERM, previous)
         return int(child.exitcode != 0 or viewer_failed or
-                   outcome not in ('action_budget', 'hold_or_uncommissioned', 'observation_finished', 'observe_after_lift'))
+                   (args.execute and args.measure_shoulder_entry and outcome != 'measured_in_close_range') or
+                   outcome not in ('action_budget', 'hold_or_uncommissioned', 'observation_finished', 'observe_after_lift',
+                                   'measured_in_close_range'))
 
 
 if __name__ == '__main__':
