@@ -24,7 +24,7 @@ from learning.dual_view_capture import (capture, load_policy, publish_active_con
                                         publish_close_context, side_sample_fps, verified)
 from learning.dual_view_policy import Catalog, GripperDispatchGate, VisualControl, run_actions
 from learning.external_media import _mount_fd
-from learning import shoulder_entry_measurement
+from learning import shoulder_entry_measurement, wrist_response_measurement
 from learning.supervised_transport import SequencePort
 
 
@@ -113,6 +113,8 @@ def main(argv=None):
     parser.add_argument('--confirm-plan-sha256')
     parser.add_argument('--measure-shoulder-entry', action='store_true',
                         help='use the separately gated single shoulder calibration step')
+    parser.add_argument('--measure-wrist-response', action='store_true',
+                        help='use one separately gated short wrist calibration step')
     parser.add_argument('--rerun-url', help='display these same collected frames in an existing Rerun viewer')
     parser.add_argument('--part-overlay', action='store_true', help='show part contours and landmarks in the Rerun viewer')
     args = parser.parse_args(argv)
@@ -125,10 +127,16 @@ def main(argv=None):
     p = _decode_json(raw)
     if args.measure_shoulder_entry != ('shoulderEntryMeasurement' in p):
         raise ValueError('shoulder_entry_measurement_requires_explicit_mode_and_plan')
+    if (args.measure_wrist_response != ('wristResponseMeasurement' in p)
+            or (args.measure_wrist_response and args.measure_shoulder_entry)):
+        raise ValueError('wrist_response_measurement_requires_explicit_mode_and_plan')
     profiles = execution_profiles(p, shoulder_measurement=args.measure_shoulder_entry)
+    if args.measure_wrist_response:
+        profiles = wrist_response_measurement.profiles(p)
     compare_goals = p.get('compareApproachGoals', False)
     if type(compare_goals) is not bool or (compare_goals and (
-            not args.observe or args.measure_shoulder_entry or 'responsePolicy' not in p or 'developmentPick' in p)):
+            not args.observe or args.measure_shoulder_entry or args.measure_wrist_response
+            or 'responsePolicy' not in p or 'developmentPick' in p)):
         raise ValueError('approach_goal_comparison_requires_observation')
     boundary_margin = 0 if p.get('useDevicePoseLimits') else 4
     pose_aware = p.get('poseAwareCandidates', False)
@@ -210,7 +218,8 @@ def main(argv=None):
         gripper_gate = GripperDispatchGate(ctx.Event(), ctx.Event()) if args.execute and ack_aligned_capture else None
         child = ctx.Process(target=capture, args=(p, root, session, stop, mailbox, close_context, active_context),
                             kwargs={'allow_observation_stop':args.allow_observation_stop,'gripper_gate':gripper_gate,
-                                    'shoulder_entry':args.measure_shoulder_entry,'candidate_mailbox':candidate_context})
+                                    'shoulder_entry':args.measure_shoulder_entry,'candidate_mailbox':candidate_context,
+                                    'wrist_measurement':args.measure_wrist_response})
         executor = None
         if args.execute:
             port = BoundedActionHTTP(p['controllerUrl'], token_provider=lambda: os.environ['MOTIONBRAIN_HTTP_TOKEN'],
@@ -268,6 +277,11 @@ def main(argv=None):
                                         raise
                                     json.dump(measurement, evidence, allow_nan=False)
                                     measurement_status = measurement['status']
+                            if args.measure_wrist_response:
+                                with (root/'wrist-response-measurement.json').open('x') as evidence:
+                                    measurement = wrist_response_measurement.observe_after_off(control, pose, result)
+                                    json.dump(measurement, evidence, allow_nan=False)
+                                    measurement_status = measurement['status']
                             if use_response and result['actionLabel'] == 'gripper/open':
                                 publish_close_context(close_context, session, p['controllerBootId'], None)
                             if use_response and result['actionLabel'] == 'gripper/close':
@@ -310,8 +324,9 @@ def main(argv=None):
             signal.signal(signal.SIGTERM, previous)
         return int(child.exitcode != 0 or viewer_failed or
                    (args.execute and args.measure_shoulder_entry and outcome != 'measured_in_close_range') or
+                   (args.execute and args.measure_wrist_response and outcome != 'wrist_response_measured') or
                    outcome not in ('action_budget', 'hold_or_uncommissioned', 'observation_finished', 'observe_after_lift',
-                                   'measured_in_close_range'))
+                                   'measured_in_close_range', 'wrist_response_measured'))
 
 
 if __name__ == '__main__':
