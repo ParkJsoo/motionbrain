@@ -301,7 +301,7 @@ def _side_for_gripper(camera, stopping, boundary, deadline, *, clock=time.monoto
 
 def capture(plan, root, session, stopping, mailbox, context_mailbox=None, active_mailbox=None, *,
             allow_observation_stop=False, gripper_gate=None, shoulder_entry=False, candidate_mailbox=None,
-            wrist_measurement=False):
+            short_measurement=None):
     root = Path(root)
     def publish(value):
         # Detailed observation-only calibration records stay in decisions.jsonl.
@@ -380,7 +380,7 @@ def capture(plan, root, session, stopping, mailbox, context_mailbox=None, active
                     close = _read_context(context_mailbox, session, boot)
                     candidates = _read_context(candidate_mailbox, session, boot)
                     vote = response_vote(policy, side, near, earliest, active, close,
-                                         measure=shoulder_entry or wrist_measurement,
+                                         measure=shoulder_entry or short_measurement == 'wrist',
                                          candidates=candidates, require_candidates=candidate_mailbox is not None)
                     if plan.get('compareApproachGoals') and vote.get('features'):
                         comparison = policy.decide(vote['features'], compare_goal_set=True,
@@ -402,9 +402,9 @@ def capture(plan, root, session, stopping, mailbox, context_mailbox=None, active
                             not usable(vote, 0, vote['decidedAt'], plan['maxAge'], plan['maxSkew'])):
                         close_dissent = max(close_dissent, min(frame['sourceEarliest'], item['sourceEarliest']))
                     vote['closeDissentAt'] = close_dissent
-                if wrist_measurement:
+                if short_measurement:
                     from learning.wrist_response_measurement import measurement_vote
-                    measurement_vote(vote, policy, plan['profiles'])
+                    measurement_vote(vote, policy, plan['profiles'], elbow=short_measurement == 'elbow')
                 effective_vote(vote, last_dissent, plan['maxAge'], plan['maxSkew'])
                 if 'phaseProposal' in vote:
                     vote['phaseProposal']['fresh'] = usable(vote, 0, vote['decidedAt'], plan['maxAge'], plan['maxSkew'])

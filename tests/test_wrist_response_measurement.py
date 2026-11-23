@@ -3,7 +3,8 @@ from unittest.mock import Mock
 
 from learning.dual_view_policy import VisualControl
 from learning.open_side_approach import LEGACY_SIDE_VIEW
-from learning.wrist_response_measurement import COMMAND, LABEL, measurement_vote, observe_after_off, profiles
+from learning.wrist_response_measurement import (COMMAND, ELBOW_COMMAND, ELBOW_LABEL, LABEL,
+                                                 measurement_vote, observe_after_off, profiles)
 from tests.test_action_execution import FakeClock
 from tests.test_dual_view_policy import pair
 
@@ -36,6 +37,44 @@ class WristResponseMeasurementTest(unittest.TestCase):
                 measurement_vote(vote, policy, [LABEL])
                 self.assertEqual(vote['policyAction'], 'hold')
                 self.assertEqual(vote['action'], expected)
+
+    def test_elbow_calibration_chooses_short_pulse_from_demonstrated_direction(self):
+        plan = dict(elbowResponseMeasurement=ELBOW_COMMAND,
+                    profiles={ELBOW_LABEL: {'command': dict(ELBOW_COMMAND, durationMs=550)}},
+                    external={'viewConfigurationId': LEGACY_SIDE_VIEW}, maxActions=1, seconds=15,
+                    useDevicePoseLimits=True, responsePolicy={}, ackAlignedGripperCapture=True,
+                    asyncActionLookup=True, refreshExpiredDispatch=True)
+        self.assertEqual(profiles(plan, elbow=True), {ELBOW_LABEL: {'command': ELBOW_COMMAND}})
+        plan['elbowResponseMeasurement'] = dict(ELBOW_COMMAND, pwm=-95)
+        with self.assertRaisesRegex(ValueError, 'invalid_elbow_response_measurement_plan'):
+            profiles(plan, elbow=True)
+
+        model = Mock(responses={ELBOW_LABEL: {'delta': [8, 31, 2.84, 8.11, 0]}})
+        features = dict(sy=-19, nx=2, ny=43, gap=133, height=175, leftMargin=44, rightMargin=35,
+                        objectWidth=40, objectHeight=60)
+        for reason, labels, state, expected in (
+            ('no_predicted_two_view_gain', [ELBOW_LABEL], features, ELBOW_LABEL),
+            ('no_predicted_two_view_gain', [], features, 'hold'),
+            ('learned_step_observed', [ELBOW_LABEL], features, 'hold'),
+            ('no_predicted_two_view_gain', [ELBOW_LABEL], dict(features, sy=-14), 'hold'),
+        ):
+            vote = dict(action='hold', reason=reason, features=state)
+            measurement_vote(vote, model, labels, elbow=True)
+            self.assertEqual(vote['action'], expected)
+            self.assertEqual(vote['policyReason'], reason)
+        model.responses[ELBOW_LABEL]['delta'][1] = 124
+        vote = dict(action='hold', reason='no_predicted_two_view_gain', features=features)
+        measurement_vote(vote, model, [ELBOW_LABEL], elbow=True)
+        self.assertEqual(vote['action'], 'hold')
+
+    def test_elbow_rejects_reverse_output(self):
+        result = dict(commandId='m3-test', action=dict(
+            request=ELBOW_COMMAND, record=dict(outputOff=True, startedAtMs=200),
+            outputLog={'entries': [dict(motor=3, pwm=-60, atMs=250), dict(motor=3, pwm=0, atMs=600)]},
+        ))
+        report = observe_after_off(None, None, result, elbow=True)
+        self.assertFalse(report['outputVerified'])
+        self.assertEqual(report['pairs'], [])
 
     def test_expected_timer_stop_is_a_measurement_only_with_complete_fresh_features(self):
         for feature_loss, late_cancel, expected in (
