@@ -124,10 +124,20 @@ class DispatchObservationExpired(ValueError):
 
 
 class VisualControl:
-    def __init__(self, latest, max_age, max_skew, *, clock=time.monotonic):
+    def __init__(self, latest, max_age, max_skew, *, clock=time.monotonic, dispatch_reserve=0.):
         if not all(finite(x) and 0 < x <= .69 for x in (max_age, max_skew)):
             raise ValueError('invalid_visual_time_budget')
+        if not finite(dispatch_reserve) or not 0 <= dispatch_reserve < max_age:
+            raise ValueError('invalid_dispatch_visual_reserve')
         self.latest, self.age, self.skew, self.clock = latest, max_age, max_skew, clock
+        self.dispatch_reserve = dispatch_reserve
+
+    def require_dispatch_reserve(self, sample, now):
+        earliest = min(sample[key]['sourceEarliest'] for key in ('extClock', 'nearClock'))
+        remaining = earliest + self.age - now
+        if remaining < self.dispatch_reserve:
+            raise DispatchObservationExpired('insufficient_visual_time_before_submit')
+        return remaining
 
     def decision(self, after):
         sample = self.latest()
@@ -221,6 +231,8 @@ class VisualControl:
             raise ValueError('visual_start_changed')
         self._check_dispatch_vote(current,label,boundary,now,oldest=oldest if aligned else None)
         self._check_dispatch_vote(first,label,boundary,now)
+        if self.dispatch_reserve:
+            self.require_dispatch_reserve(current, now)
         return first,current
 
     def feedback(self, label, boundary, trace=None, *, admitted_pair=None):
@@ -319,9 +331,25 @@ def run_actions(control, catalog, executor, boot, off_pose, max_actions, record,
                 def remember_aligned_pose(pairs):
                     gate_timing.setdefault('alignedPoseAdmissions', []).append(pair_ids(pairs))
 
-                return control.dispatch_admission(label, final_boundary, verify_pose,
+                checked = control.dispatch_admission(label, final_boundary, verify_pose,
                     synchronize=sync_dispatch, gripper_gate=gripper_gate, sleep=sleep,
                     before_aligned_pose=remember_aligned_pose)
+                if side_stop:
+                    veto = side_stop.check(label, final_boundary, admission=True)
+                    if veto:
+                        trace.append(dict(sideStop=veto))
+                        raise ValueError('side_stop_before_submit')
+                    latest = control.latest()
+                    if (not control.admission(latest, final_boundary) or latest['action'] != label
+                            or not side_stop.covers(latest['frameId'])
+                            or latest['lastDissent'].get(label, 0) > min(
+                                checked[1][key]['sourceEarliest'] for key in ('extClock', 'nearClock'))):
+                        raise ValueError('side_check_outlasted_admission')
+                    checked = latest['previousPair'], latest
+                if control.dispatch_reserve:
+                    gate_timing['dispatchVisualRemainingMs'] = 1000 * control.require_dispatch_reserve(
+                        checked[1], control.clock())
+                return checked
             try:
                 admission = check_admission()
             except ValueError as exc:
@@ -344,18 +372,6 @@ def run_actions(control, catalog, executor, boot, off_pose, max_actions, record,
                     raise
             if gripper_gate is not None:
                 gate_timing['gripperPauseConfirmedAt'] = control.clock()
-            if side_stop:
-                veto = side_stop.check(label, final_boundary, admission=True)
-                if veto:
-                    trace.append(dict(sideStop=veto))
-                    raise ValueError('side_stop_before_submit')
-                latest = control.latest()
-                if (not control.admission(latest, final_boundary) or latest['action'] != label
-                        or not side_stop.covers(latest['frameId'])
-                        or latest['lastDissent'].get(label, 0) > min(
-                            admission[1][key]['sourceEarliest'] for key in ('extClock', 'nearClock'))):
-                    raise ValueError('side_check_outlasted_admission')
-                admission = latest['previousPair'], latest
             feedback = control.feedback(label, final_boundary, trace, admitted_pair=admission[1])
 
         published = False

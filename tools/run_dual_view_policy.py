@@ -126,6 +126,9 @@ def main(argv=None):
     refresh_expired_dispatch = p.get('refreshExpiredDispatch', False)
     if type(refresh_expired_dispatch) is not bool:
         raise ValueError('invalid_dispatch_refresh')
+    dispatch_reserve = p.get('minDispatchVisualReserve', 0.)
+    if dispatch_reserve and not ack_aligned_capture:
+        raise ValueError('dispatch_visual_reserve_requires_ack_alignment')
     policy = load_policy(p)
     catalog = Catalog(profiles)
     verified(Path(p['helper']), p['helperSha256'])
@@ -145,10 +148,11 @@ def main(argv=None):
             lock.release()
         return json.loads(data) if data else None
 
-    control = VisualControl(latest, p['maxAge'], p['maxSkew'])
+    control = VisualControl(latest, p['maxAge'], p['maxSkew'], dispatch_reserve=dispatch_reserve)
     print(json.dumps(dict(planSha256=digest, sideSampleFps=fps, syncDispatchToFrame=sync_dispatch,
                           ackAlignedGripperCapture=ack_aligned_capture, asyncActionLookup=async_lookup,
                           refreshExpiredDispatch=refresh_expired_dispatch,
+                          minDispatchVisualReserve=control.dispatch_reserve,
                           demonstrated=sorted(set(policy.labels)),
                           commissioned=sorted(catalog.profiles))), flush=True)
     if not (args.observe or args.execute):

@@ -8,7 +8,7 @@ from PIL import Image
 
 from learning.action_execution import BoundedActionExecutor
 from learning.dual_view_policy import (ACTIONS, Catalog, DualViewPolicy, GripperDispatchGate,
-                                       VisualControl, run_actions, thumbnail)
+                                       VisualControl, run_actions, thumbnail, usable)
 from tests.test_action_execution import FakeClock, FakePort, LookupWorkerFixture
 from unittest.mock import Mock
 
@@ -32,6 +32,77 @@ class VisualPort(FakePort):
 
 
 class DualViewTest(unittest.TestCase):
+    def test_visual_dispatch_reserve_refuses_valid_but_old_pair_before_submit(self):
+        clock = FakeClock()
+        port = VisualPort(clock)
+        label = 'wrist/down'
+        catalog = Catalog({label:dict(command=command(*ACTIONS[label]), shoulderRangeDeg=[208,212])})
+        first = pair(label, 100.005, 1)
+        sample = dict(pair(label, 100.013, 2), previousPair=first)
+        control = VisualControl(lambda: sample, .69, .69, clock=clock.monotonic, dispatch_reserve=.62)
+        reads = 0
+
+        def off_pose():
+            nonlocal reads
+            reads += 1
+            if reads == 3:
+                clock.sleep(.15)
+            return 210, clock.monotonic()
+
+        rows = []
+        with tempfile.TemporaryDirectory() as tmp:
+            core = BoundedActionExecutor(Path(tmp)/'commands.db', port, catalog, clock=clock)
+            try:
+                outcome = run_actions(control, catalog, core, 'a'*32, off_pose, 1, rows.append, sleep=clock.sleep)
+            finally:
+                core.close()
+        self.assertEqual(outcome, 'not_sent')
+        self.assertTrue(usable(sample, 100, clock.monotonic(), .69, .69))
+        self.assertEqual(rows[0]['finalAdmissionError'], 'insufficient_visual_time_before_submit')
+        self.assertFalse(rows[0]['dispatchAttempted'])
+        self.assertEqual(port.posts, [])
+
+    def test_side_check_consuming_reserve_is_repeated_after_off_refresh(self):
+        clock = FakeClock()
+        port = VisualPort(clock)
+        label = 'wrist/down'
+        catalog = Catalog({label:dict(command=command(*ACTIONS[label]), shoulderRangeDeg=[208,212])})
+        first_check_ended = []
+
+        def latest():
+            if first_check_ended and clock.monotonic() >= first_check_ended[0]+.06:
+                stamp = first_check_ended[0]+.05
+                return dict(pair(label, stamp, 4), previousPair=pair(label, stamp-.01, 3))
+            return dict(pair(label, 100.013, 2), previousPair=pair(label, 100.005, 1))
+
+        side_checks = []
+
+        def check(_label, boundary, *, admission=False):
+            if admission:
+                side_checks.append(boundary)
+                if len(side_checks) == 1:
+                    clock.sleep(.34)
+                    first_check_ended.append(clock.monotonic())
+            return None
+
+        side = Mock(check=Mock(side_effect=check), last_source=float('inf'))
+        side.covers.return_value = True
+        control = VisualControl(latest, .69, .69, clock=clock.monotonic, dispatch_reserve=.40)
+        rows = []
+        with tempfile.TemporaryDirectory() as tmp:
+            core = BoundedActionExecutor(Path(tmp)/'commands.db', port, catalog, clock=clock)
+            try:
+                outcome = run_actions(control, catalog, core, 'a'*32, lambda:(210,clock.monotonic()), 1,
+                                      rows.append, sleep=clock.sleep, side_stop=side, refresh_expired_dispatch=True)
+            finally:
+                core.close()
+        self.assertEqual(outcome, 'action_budget')
+        self.assertEqual(len(port.posts), 1)
+        self.assertEqual(len(side_checks), 2)
+        self.assertGreater(side_checks[1], side_checks[0])
+        self.assertEqual(rows[0]['admissionPairs'], [['side-3','near-3'], ['side-4','near-4']])
+        self.assertGreaterEqual(rows[0]['dispatchVisualRemainingMs'], 400)
+
     def test_outside_start_pose_records_model_choice_without_submission(self):
         for angles, sync in (((210, 213), False), ((210, 210, 213), False), ((210, 210, 213), True)):
             with self.subTest(angles=angles, sync=sync), tempfile.TemporaryDirectory() as tmp:
