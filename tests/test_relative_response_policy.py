@@ -38,6 +38,30 @@ class RelativeResponseTest(unittest.TestCase):
         self.assertEqual(policy.decide(f, compare_goal_set=True)['action'], 'wrist/down')
         self.assertEqual(policy.decide(f, eligible=['shoulder/up'], compare_goal_set=True)['action'], 'hold')
 
+    def test_close_coordinate_approach_prefers_progress_to_both_view_windows(self):
+        data = artifact()
+        data['responses']['wrist/down']['delta'] = [6, 29, 0, 12, 0]
+        data['responses']['elbow/down']['delta'] = [0, 22, 0, 1, 0]
+        data['responses']['shoulder/down']['delta'] = [0, 120, 0, 0, 0]
+        policy = RelativeResponsePolicy(data, approach_evaluation='close_coordinates')
+        f = features(sx=20, sy=-18, nx=2, ny=42, gap=133)
+        vote = policy.decide(f)
+        self.assertEqual(vote['action'], 'elbow/down')
+        self.assertEqual(vote['closeCoordinateCandidates']['elbow/down'],
+                         {'profile': 'observed_shallow', 'side': 16., 'near': 0.})
+        self.assertNotIn('shoulder/down', vote['closeCoordinateCandidates'])
+        self.assertEqual(policy.decide(f, eligible=['wrist/down'])['action'], 'wrist/down')
+        self.assertEqual(policy.decide(f, eligible=['shoulder/down'])['action'], 'hold')
+
+    def test_predicted_close_coordinates_do_not_authorize_closing(self):
+        policy = RelativeResponsePolicy(artifact(), approach_evaluation='close_coordinates')
+        f = features(sx=6, sy=32, nx=0, ny=18)
+        self.assertEqual(policy.decide(f)['action'], 'hold')
+        f['distalDepth'] = [55, 55, 55]
+        f['ny'] = 18.
+        self.assertEqual(policy.decide(f)['action'], 'gripper/close')
+        self.assertEqual(policy.decide(f, eligible=['wrist/down'])['reason'], 'no_executable_close')
+
     def test_ranks_executable_approach_instead_of_replacing_the_model_choice(self):
         model = artifact()
         model['responses']['shoulder/down']['delta'] = [0, 10, 0, 4, 0]

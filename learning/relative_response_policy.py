@@ -50,6 +50,25 @@ def optical_profile(f):
     return None
 
 
+def close_coordinate_errors(f, delta=(0, 0, 0, 0, 0)):
+    """Estimate distance to necessary image coordinates for each observed close profile."""
+    sx, sy, nx, ny, gap = feature_vector(f) + delta
+
+    def outside(value, low, high):
+        return max(low-value, value-high, 0.)
+
+    def errors(x_range, y_range, near_y_range, gap_range):
+        side = outside(sx, *x_range) + outside(sy, *y_range)
+        near = outside(nx, -8, 8) + outside(ny, *near_y_range) + outside(gap, *gap_range)
+        return float(side), float(near)
+
+    half = f['width']/2-2
+    return {
+        'observed_shallow': errors((-half, half), (20, 42), (14, 44), (110, 135)),
+        'observed_deep': errors((-6, 35), (22, 82), (8, 44), (110, 145)),
+    }
+
+
 def feature_vector(f):
     return np.array([f[k] for k in COORDS], dtype=float)
 
@@ -74,7 +93,10 @@ def closed_by_controller(receipt):
 
 
 class RelativeResponsePolicy:
-    def __init__(self, artifact, *, view_id=LEGACY_SIDE_VIEW):
+    def __init__(self, artifact, *, view_id=LEGACY_SIDE_VIEW, approach_evaluation="demonstrated_goal"):
+        if approach_evaluation not in ("demonstrated_goal", "close_coordinates"):
+            raise ValueError("invalid_approach_evaluation")
+        self.approach_evaluation = approach_evaluation
         if artifact['schema'] != SCHEMA or set(artifact['responses']) != set(ACTIONS):
             raise ValueError('relative_response_schema')
         self.view_id = view_id
@@ -195,6 +217,8 @@ class RelativeResponsePolicy:
             return self.result('hold', 'no_centering_gain', f)
         if f['sy'] >= f['height']*.45:
             return self.result('hold', 'approach_depth_limit', f)
+        if self.approach_evaluation == 'close_coordinates' and not compare_goal_set:
+            return self.close_approach(f, eligible)
         # Score the next *measured* displacement against an individual successful
         # pre-close state. Re-observation resolves accumulated kinematic error.
         target = np.asarray(self.goals[int(np.argmin(distances))]['point'])
@@ -220,3 +244,29 @@ class RelativeResponsePolicy:
             return self.result('hold', 'no_predicted_two_view_gain', f)
         return self.result(best, 'two_view_response_improvement', f, predictedDelta=self.responses[best]['delta'],
                            viewVotes=[min(scores,key=lambda a:scores[a][i]) for i in (0,1)])
+
+    def close_approach(self, f, eligible):
+        profiles = {goal['profile'] for goal in self.goals}
+        before = close_coordinate_errors(f)
+        initial = min(sum(before[profile]) for profile in profiles)
+        scores = {}
+        for label in APPROACH:
+            if eligible is not None and label not in eligible:
+                continue
+            delta = self.responses[label]['delta']
+            if f['sy']+delta[1] > .45*f['height']:
+                continue
+            coordinates = close_coordinate_errors(f, delta)
+            profile = min(sorted(profiles), key=lambda key: sum(coordinates[key]))
+            scores[label] = dict(profile=profile, side=coordinates[profile][0], near=coordinates[profile][1])
+        if not scores:
+            return self.result('hold', 'no_executable_approach' if eligible is not None else 'no_supported_approach', f)
+        ranked = sorted(scores, key=lambda label: (scores[label]['side']+scores[label]['near'],
+                                                  max(scores[label]['side'], scores[label]['near'])))
+        best = ranked[0]
+        evidence = dict(closeCoordinateBefore=before, closeCoordinateCandidates=scores)
+        if initial-scores[best]['side']-scores[best]['near'] <= 1.:
+            return self.result('hold', 'no_predicted_close_coordinate_gain', f, **evidence)
+        return self.result(best, 'predicted_close_coordinate_gain', f, predictedDelta=self.responses[best]['delta'],
+                           viewVotes=[min(scores, key=lambda label: scores[label][view]) for view in ('side','near')],
+                           **evidence)
