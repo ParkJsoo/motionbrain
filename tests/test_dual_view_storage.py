@@ -29,6 +29,8 @@ class CaptureStorageTest(unittest.TestCase):
         self.assertEqual(runner.execution_profiles(plan), plan['profiles'])
         self.assertEqual(runner.execution_profiles(dict(plan, useDevicePoseLimits=True)),
                          {'shoulder/down': {'command': {'motor': 4}}})
+        self.assertEqual(runner.execution_profiles(dict(plan, useDevicePoseLimits=True, poseAwareCandidates=True)),
+                         {'shoulder/down': {'command': {'motor': 4}}})
         self.assertEqual(profile['shoulderRangeDeg'], [214.97, 215.15])
         with self.assertRaisesRegex(ValueError, 'invalid_device_pose_limits_mode'):
             runner.execution_profiles(dict(plan, developmentPick={}, useDevicePoseLimits=True))

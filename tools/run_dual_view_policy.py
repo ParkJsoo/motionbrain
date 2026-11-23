@@ -65,8 +65,7 @@ class IdlePose:
 def execution_profiles(plan, *, shoulder_measurement=False):
     device_pose_only = plan.get('useDevicePoseLimits', False)
     if type(device_pose_only) is not bool or (device_pose_only and (
-            shoulder_measurement or 'responsePolicy' not in plan or 'developmentPick' in plan
-            or plan.get('poseAwareCandidates'))):
+            shoulder_measurement or 'responsePolicy' not in plan or 'developmentPick' in plan)):
         raise ValueError('invalid_device_pose_limits_mode')
     if shoulder_measurement:
         return shoulder_entry_measurement.validate_plan(plan)
@@ -200,7 +199,8 @@ def main(argv=None):
             publish_candidates(candidate_context, session, p['controllerBootId'], labels, verified_off_at)
         if pose_aware and args.observe:
             read_port = BoundedActionHTTP(p['controllerUrl'], timeout=.6, total_deadline=True)
-            read_pose = IdlePose(read_port, p['controllerBootId'], state='IDLE')
+            read_pose = IdlePose(read_port, p['controllerBootId'], state='IDLE',
+                                boundary_margin=boundary_margin)
             angle, checked_at = read_pose()
             on_off_pose(catalog.eligible_at(angle), checked_at)
         gripper_gate = GripperDispatchGate(ctx.Event(), ctx.Event()) if args.execute and ack_aligned_capture else None
