@@ -5,7 +5,7 @@ import uuid
 import numpy as np
 from PIL import Image
 
-from learning.action_execution import FIELDS, canonical_request, finite
+from learning.action_execution import FIELDS, SCHEMA as ACTION_RESULT_SCHEMA, canonical_request, finite
 from learning.supervised_transport import JOINTS
 from learning.whole_arm_release import fresh_pair_after
 
@@ -44,6 +44,10 @@ class DualViewPolicy:
                     viewVotes=votes, viewRmse=errors)
 
 
+class OutsideDemonstratedStartPose(ValueError):
+    pass
+
+
 class Catalog:
     """Bind semantic predictions to exact finite commands and measured starting envelopes."""
     def __init__(self, profiles):
@@ -73,7 +77,7 @@ class Catalog:
     def request(self, label, angle, boot, cid):
         command, lo, hi = self.profiles[label]
         if not finite(angle) or not lo <= angle <= hi:
-            raise ValueError('outside_demonstrated_start_pose')
+            raise OutsideDemonstratedStartPose('outside_demonstrated_start_pose')
         return self.validate(dict(command, bootId=boot, commandId=cid))
 
 
@@ -178,7 +182,7 @@ class VisualControl:
         raise ValueError('fresh_pair_timeout_during_admission_refresh')
 
     def dispatch_admission(self, label, boundary, verify_pose, *, synchronize=False,
-                           gripper_gate=None, sleep=time.sleep):
+                           gripper_gate=None, sleep=time.sleep, before_aligned_pose=None):
         """Keep the last pose verification next to submit; optionally align it with a new vote."""
         clocks = ('extClock', 'nearClock')
         if synchronize or gripper_gate is not None:
@@ -196,7 +200,10 @@ class VisualControl:
                 ready = (gripper_gate.paused.is_set() if gripper_gate is not None else
                          all(sample[k]['sourceEarliest'] > initial[k]['sourceEarliest'] for k in clocks)
                          and all(sample[k] != initial[k] for k in ('frameId', 'nearFrameId')))
-                if ready and self.admission(sample, boundary):
+                pairs = self.admission(sample, boundary) if ready else None
+                if pairs:
+                    if before_aligned_pose is not None:
+                        before_aligned_pose(pairs)
                     break
                 sleep(.01)
             else:
@@ -272,9 +279,28 @@ def run_actions(control, catalog, executor, boot, off_pose, max_actions, record,
             sleep(.02)
         else:
             return 'fresh_pair_timeout'
-        angle, _ = off_pose()
+        _, lo, hi = catalog.profiles[label]
+        pose_checks = []
+
+        def read_start_pose():
+            angle, proved_at = off_pose()
+            pose_checks.append(dict(shoulderDeg=angle, offConfirmedAt=proved_at))
+            return angle, proved_at
+
+        def pair_ids(pairs):
+            return [[x['frameId'], x['nearFrameId']] for x in (pairs or ())]
+
+        angle, _ = read_start_pose()
         cid = uuid.uuid4().hex
-        request = catalog.request(label, angle, boot, cid)
+        try:
+            request = catalog.request(label, angle, boot, cid)
+        except OutsideDemonstratedStartPose as exc:
+            record(dict(schemaVersion=ACTION_RESULT_SCHEMA, commandId=cid, executionState='not_sent',
+                        reason=str(exc), dispatchAttempted=False,
+                        automaticRetry=False, physicalArrivalVerified=False, trainingEligible=False,
+                        observedRunningPairs=0, motionFeedback=[], actionLabel=label, offConfirmedAt=boundary,
+                        admissionPairs=pair_ids(admission), shoulderRangeDeg=[lo, hi], startPoseChecks=pose_checks))
+            return str(exc)
         executor.propose(request)
         feedback = None
         trace = []
@@ -284,13 +310,17 @@ def run_actions(control, catalog, executor, boot, off_pose, max_actions, record,
         def guard(req):
             nonlocal feedback, admission, final_boundary
             def verify_pose():
-                angle, proved_at = off_pose()
+                angle, proved_at = read_start_pose()
                 if catalog.request(label, angle, boot, cid) != req:
                     raise ValueError('pose_or_profile_changed')
                 return proved_at
             def check_admission():
+                def remember_aligned_pose(pairs):
+                    gate_timing.setdefault('alignedPoseAdmissions', []).append(pair_ids(pairs))
+
                 return control.dispatch_admission(label, final_boundary, verify_pose,
-                    synchronize=sync_dispatch, gripper_gate=gripper_gate, sleep=sleep)
+                    synchronize=sync_dispatch, gripper_gate=gripper_gate, sleep=sleep,
+                    before_aligned_pose=remember_aligned_pose)
             try:
                 admission = check_admission()
             except ValueError as exc:
@@ -367,7 +397,7 @@ def run_actions(control, catalog, executor, boot, off_pose, max_actions, record,
                 trace.append(dict(sideStop=dict(reason='side_frames_missing_at_off'), terminalAlreadyObserved=True))
         unique_pairs = {tuple(row['frames']) for row in trace if row.get('postAckPair')}
         record(dict(result, observedRunningPairs=len(unique_pairs), motionFeedback=trace, actionLabel=label, offConfirmedAt=final_boundary,
-                    admissionPairs=[[x[k] for k in ('frameId', 'nearFrameId')] for x in (admission or ())],
+                    admissionPairs=pair_ids(admission), shoulderRangeDeg=[lo, hi], startPoseChecks=pose_checks,
                     **gate_timing))
         if result['executionState'] != 'known_terminal':
             return result['executionState']

@@ -32,6 +32,43 @@ class VisualPort(FakePort):
 
 
 class DualViewTest(unittest.TestCase):
+    def test_outside_start_pose_records_model_choice_without_submission(self):
+        for angles, sync in (((210, 213), False), ((210, 210, 213), False), ((210, 210, 213), True)):
+            with self.subTest(angles=angles, sync=sync), tempfile.TemporaryDirectory() as tmp:
+                clock = FakeClock()
+                label = 'wrist/down'
+                catalog = Catalog({label: dict(command=command(*ACTIONS[label]), shoulderRangeDeg=[208, 212])})
+                port = VisualPort(clock)
+                readings = iter(angles)
+                def latest():
+                    if sync and clock.monotonic() >= 100.05:
+                        return dict(pair(label, 100.04, 3), previousPair=pair(label, 100.013, 2))
+                    return dict(pair(label, 100.013, 2), previousPair=pair(label, 100.005, 1))
+                control = VisualControl(latest, .69, .69, clock=clock.monotonic)
+                logs = []
+                core = BoundedActionExecutor(Path(tmp)/'commands.db', port, catalog, clock=clock)
+                try:
+                    outcome = run_actions(control, catalog, core, 'a'*32,
+                                          lambda: (next(readings), clock.monotonic()),
+                                          1, logs.append, sleep=clock.sleep, sync_dispatch=sync)
+                finally:
+                    core.close()
+                initial_block = len(angles) == 2
+                self.assertEqual(outcome, 'outside_demonstrated_start_pose' if initial_block else 'not_sent')
+                self.assertEqual(port.posts, [])
+                self.assertEqual(len(logs), 1)
+                row = logs[0]
+                self.assertEqual(row['executionState'], 'not_sent')
+                self.assertFalse(row['dispatchAttempted'])
+                self.assertEqual(row['reason' if initial_block else 'finalAdmissionError'],
+                                 'outside_demonstrated_start_pose')
+                self.assertEqual(row['actionLabel'], label)
+                self.assertEqual(row['admissionPairs'], [['side-1', 'near-1'], ['side-2', 'near-2']])
+                if sync:
+                    self.assertEqual(row['alignedPoseAdmissions'], [[['side-2', 'near-2'], ['side-3', 'near-3']]])
+                self.assertEqual(row['shoulderRangeDeg'], [208, 212])
+                self.assertEqual([p['shoulderDeg'] for p in row['startPoseChecks']], list(angles[1:]))
+
     def test_expired_final_pair_refreshes_once_while_off(self):
         for case in ('same_choice', 'changed_choice', 'camera_fault', 'disabled'):
             with self.subTest(case=case), tempfile.TemporaryDirectory() as tmp:
