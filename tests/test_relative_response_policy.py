@@ -25,6 +25,19 @@ def fixture():
 
 
 class RelativeResponseTest(unittest.TestCase):
+    def test_goal_set_compares_best_cost_before_and_after(self):
+        model = artifact()
+        model['closeGoals'] = [
+            dict(point=[.38,.17,-.017,.268], source='shallow', profile='observed_shallow'),
+            dict(point=[.53,.27,0,.307], source='deep', profile='observed_deep'),
+        ]
+        model['responses']['wrist/down']['delta'] = [6,30,0,12,0]
+        policy = RelativeResponsePolicy(model)
+        f = dict(features(sx=30, sy=-24, nx=2, ny=40, gap=133), width=52, height=175)
+        self.assertEqual(policy.decide(f)['action'], 'hold')
+        self.assertEqual(policy.decide(f, compare_goal_set=True)['action'], 'wrist/down')
+        self.assertEqual(policy.decide(f, eligible=['shoulder/up'], compare_goal_set=True)['action'], 'hold')
+
     def test_ranks_executable_approach_instead_of_replacing_the_model_choice(self):
         model = artifact()
         model['responses']['shoulder/down']['delta'] = [0, 10, 0, 4, 0]

@@ -126,6 +126,10 @@ def main(argv=None):
     if args.measure_shoulder_entry != ('shoulderEntryMeasurement' in p):
         raise ValueError('shoulder_entry_measurement_requires_explicit_mode_and_plan')
     profiles = execution_profiles(p, shoulder_measurement=args.measure_shoulder_entry)
+    compare_goals = p.get('compareApproachGoals', False)
+    if type(compare_goals) is not bool or (compare_goals and (
+            not args.observe or args.measure_shoulder_entry or 'responsePolicy' not in p or 'developmentPick' in p)):
+        raise ValueError('approach_goal_comparison_requires_observation')
     boundary_margin = 0 if p.get('useDevicePoseLimits') else 4
     pose_aware = p.get('poseAwareCandidates', False)
     if type(pose_aware) is not bool or (pose_aware and (

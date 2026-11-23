@@ -135,7 +135,7 @@ class RelativeResponsePolicy:
         return dict(action=action, reason=reason, features=features,
                     viewVotes=details.pop('viewVotes', [None, None]), viewRmse=[None, None], **details)
 
-    def decide(self, f, *, close_receipt=None, active_action=None, eligible=None):
+    def decide(self, f, *, close_receipt=None, active_action=None, eligible=None, compare_goal_set=False):
         if not isinstance(self.view_id, str) or not self.view_id or self.calibrated_view != self.view_id:
             return self.result('hold', 'response_model_view_mismatch', f)
         if self.view_id == WIDE_SIDE_VIEW:
@@ -200,7 +200,9 @@ class RelativeResponsePolicy:
         target = np.asarray(self.goals[int(np.argmin(distances))]['point'])
         scale = np.array([f['width'], f['height'], f['gap'], f['gap']])
         weights = np.array([.85,.55,.10,.22])
-        current = (q-target)/weights
+        targets = np.stack([goal['point'] for goal in self.goals]) if compare_goal_set else target[None, :]
+        current = (q-targets)/weights
+        current_error = float(np.min(np.sum(current**2, axis=1)))
         scores = {}
         for label in APPROACH:
             if eligible is not None and label not in eligible:
@@ -209,11 +211,12 @@ class RelativeResponsePolicy:
             estimate = current+delta/scale/weights
             if f['sy']+delta[1] > .45*f['height']:
                 continue
+            estimate = estimate[np.argmin(np.sum(estimate**2, axis=1))]
             scores[label] = [float(np.dot(estimate[:2],estimate[:2])), float(np.dot(estimate[2:],estimate[2:]))]
         if not scores:
             return self.result('hold', 'no_executable_approach' if eligible is not None else 'no_supported_approach', f)
         best = min(scores, key=lambda label: sum(scores[label]))
-        if np.dot(current,current)-sum(scores[best]) <= .025:
+        if current_error-sum(scores[best]) <= .025:
             return self.result('hold', 'no_predicted_two_view_gain', f)
         return self.result(best, 'two_view_response_improvement', f, predictedDelta=self.responses[best]['delta'],
                            viewVotes=[min(scores,key=lambda a:scores[a][i]) for i in (0,1)])

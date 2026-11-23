@@ -305,8 +305,8 @@ def capture(plan, root, session, stopping, mailbox, context_mailbox=None, active
     def publish(value):
         # Detailed observation-only calibration records stay in decisions.jsonl.
         # The bounded mailbox carries the vote, not the variable-size evidence table.
-        if 'timedPick' in value:
-            value = {k:v for k,v in value.items() if k != 'timedPick'}
+        if 'timedPick' in value or 'goalSetProposal' in value:
+            value = {k:v for k,v in value.items() if k not in ('timedPick', 'goalSetProposal')}
         packet = json.dumps(dict(value, session=session), allow_nan=False).encode()
         with mailbox.get_lock():
             mailbox.get_obj().value = packet
@@ -380,6 +380,10 @@ def capture(plan, root, session, stopping, mailbox, context_mailbox=None, active
                     candidates = _read_context(candidate_mailbox, session, boot)
                     vote = response_vote(policy, side, near, earliest, active, close, measure=shoulder_entry,
                                          candidates=candidates, require_candidates=candidate_mailbox is not None)
+                    if plan.get('compareApproachGoals') and vote.get('features'):
+                        comparison = policy.decide(vote['features'], compare_goal_set=True,
+                                                   eligible=candidates['labels'] if candidates else None)
+                        vote['goalSetProposal'] = {key: comparison[key] for key in ('action', 'reason')}
                 else:
                     vote = policy.predict(side, near)
                 if observer:
