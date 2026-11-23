@@ -210,6 +210,28 @@ def shallow_color_core_height(image, full_box):
     return heights[0]
 
 
+def observe_open_start(image):
+    """Read the open start view where a horizontal backdrop crosses the lower ROI."""
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    policy = observer_policy(version=3)
+    # Remove thin horizontal structures while retaining vertical finger pixels.
+    dark = np.uint8(hsv[:, :, 2] < policy['blackMaximumValue']) * 255
+    finger_image = hsv.copy()
+    finger_image[:, :, 2] = 255 - cv2.morphologyEx(dark, cv2.MORPH_OPEN, np.ones((17, 1), np.uint8))
+    left, right = [_tip(finger_image, [x, 35, end, 140], policy)
+                   for x, end in ((20, 160), (160, 300))]
+    l, r = np.array(left['point']), np.array(right['point'])
+    gap = float(r[0]-l[0])
+    _require(gap >= policy['minimumGapPx'] and abs(l[1]-r[1]) <= policy['maximumTipYDifferencePx'],
+             'near_open_start_tips_not_separated')
+    policy['objectRoi'] = [0, 0, 320, 240]
+    obj, _ = _object(hsv, policy)
+    x, y, w, h = obj['bbox']
+    _require(x > 0 and y > 0 and x+w < 320 and y+h < 240, 'near_open_start_target_clipped')
+    return dict(components=dict(left=left,right=right),object=obj,
+                state=[*(obj['center']-(l+r)/2),gap])
+
+
 class NearGripperTipObserver:
     def __init__(self, *, policy_version=1):
         self.policy = observer_policy(version=policy_version); self.binding = digest(self.policy)

@@ -113,12 +113,17 @@ def load_policy(plan):
         from learning.relative_response_policy import RelativeResponsePolicy
         ref = plan['responsePolicy']
         evaluation = ref.get('approachEvaluation', 'demonstrated_goal')
+        open_start = ref.get('openStartApproach', False)
+        if type(open_start) is not bool or (open_start and (
+                evaluation != 'close_coordinates' or 'developmentPick' in plan or plan.get('terminalPickVerification'))):
+            raise ValueError('open_start_requires_close_coordinate_approach')
         if evaluation != 'demonstrated_goal' and 'developmentPick' in plan:
             raise ValueError('close_coordinate_evaluation_requires_relative_response_policy')
         policy = RelativeResponsePolicy(_decode_json(verified(Path(ref['artifact']), ref['sha256'])),
                                         view_id=plan['external']['viewConfigurationId'],
                                         approach_evaluation=evaluation,
-                                        check_shallow_color_core=plan.get('terminalPickVerification') is True)
+                                        check_shallow_color_core=plan.get('terminalPickVerification') is True,
+                                        open_start_approach=open_start)
         for label, profile in plan['profiles'].items():
             if label not in policy.responses or profile['command'] != policy.responses[label]['command']:
                 raise ValueError('response_profile_mismatch')
@@ -246,6 +251,9 @@ def response_vote(policy, side, near, earliest, active, close, *, measure=False,
     vote.update(activeCommandId=active['commandId'] if active_ready else None,
                 activeAcknowledgedAt=active['after'] if active_ready else None,
                 closeCommandId=close['receipt']['commandId'] if close_ready else None)
+    for key in ('nearObservationMode', 'sideObservationMode'):
+        if key in (vote.get('features') or {}):
+            vote[key] = vote['features'][key]
     if candidates is not None:
         vote['eligibleActions'] = candidates['labels']
         vote['candidateVerifiedOffAt'] = candidates['after']
@@ -417,6 +425,9 @@ def capture(plan, root, session, stopping, mailbox, context_mailbox=None, active
                 previous_pair = {key: vote[key] for key in ('action', 'extClock', 'nearClock', 'frameId', 'nearFrameId')}
                 if 'responsePolicy' in plan:
                     previous_pair.update(activeCommandId=vote['activeCommandId'], closeCommandId=vote['closeCommandId'])
+                    for key in ('nearObservationMode', 'sideObservationMode'):
+                        if key in vote:
+                            previous_pair[key] = vote[key]
                 if candidate_mailbox is not None:
                     previous_pair['candidateVerifiedOffAt'] = vote.get('candidateVerifiedOffAt')
                 log.write(json.dumps(vote, allow_nan=False)+'\n')

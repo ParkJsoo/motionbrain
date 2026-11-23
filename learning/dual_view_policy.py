@@ -187,6 +187,7 @@ class VisualControl:
         return (not sample.get('activeCommandId') and not first.get('activeCommandId')
                 and sample.get('closeCommandId') == first.get('closeCommandId')
                 and sample.get('candidateVerifiedOffAt') == first.get('candidateVerifiedOffAt')
+                and all(first.get(k) == sample.get(k) for k in ('nearObservationMode', 'sideObservationMode'))
                 and all(first[k] != sample[k] for k in ('frameId','nearFrameId'))
                 and all(first[k]['sourceEarliest'] < sample[k]['sourceEarliest']
                         for k in ('extClock','nearClock')))

@@ -5,12 +5,15 @@ import cv2
 import numpy as np
 
 from learning.dual_view_policy import ACTIONS
-from learning.near_gripper_tip_observer import NearGripperTipObserver, shallow_color_core_height
-from learning.open_side_approach import LEGACY_SIDE_VIEW, WIDE_SIDE_VIEW, observe_open_side
+from learning.near_gripper_tip_observer import (NearGripperTipObserver, observe_open_start,
+                                                shallow_color_core_height)
+from learning.open_side_approach import (LEGACY_SIDE_VIEW, WIDE_SIDE_VIEW, observe_open_side,
+                                         observe_open_start_side)
 
 SCHEMA = 'motionbrain.relative_response_policy.v1'
 COORDS = ('sx', 'sy', 'nx', 'ny', 'gap')
 APPROACH = ('wrist/up', 'wrist/down', 'elbow/up', 'elbow/down', 'shoulder/down')
+OPEN_START_ACTIONS = (*APPROACH, 'base/left', 'base/right')
 
 
 def distal_depth(rgb, box):
@@ -97,11 +100,12 @@ def closed_by_controller(receipt):
 
 class RelativeResponsePolicy:
     def __init__(self, artifact, *, view_id=LEGACY_SIDE_VIEW, approach_evaluation="demonstrated_goal",
-                 check_shallow_color_core=False):
+                 check_shallow_color_core=False, open_start_approach=False):
         if approach_evaluation not in ("demonstrated_goal", "close_coordinates"):
             raise ValueError("invalid_approach_evaluation")
         self.approach_evaluation = approach_evaluation
         self.check_shallow_color_core = check_shallow_color_core
+        self.open_start_approach = open_start_approach
         if artifact['schema'] != SCHEMA or set(artifact['responses']) != set(ACTIONS):
             raise ValueError('relative_response_schema')
         self.view_id = view_id
@@ -136,12 +140,27 @@ class RelativeResponsePolicy:
 
     def observe(self, side, near):
         rgb = np.asarray(side.convert('RGB'))
-        observed = observe_open_side(rgb, view_id=self.view_id)
+        try:
+            observed = observe_open_side(rgb, view_id=self.view_id)
+        except ValueError as exc:
+            if (not self.open_start_approach or self.view_id != LEGACY_SIDE_VIEW
+                    or str(exc) != 'side_forearm_pair_missing_or_ambiguous'):
+                raise
+            observed = observe_open_start_side(rgb)
         image = cv2.cvtColor(np.asarray(near.convert('RGB')), cv2.COLOR_RGB2BGR)
         ok, encoded = cv2.imencode('.png', image)
         if not ok:
             raise ValueError('gripper_image_conversion')
-        g = self.near.observe(encoded.tobytes())
+        fallback = False
+        try:
+            g = self.near.observe(encoded.tobytes())
+        except ValueError as exc:
+            if (not self.open_start_approach or self.view_id != LEGACY_SIDE_VIEW
+                    or str(exc) != 'near_tip_missing_or_ambiguous'
+                    or observed['sideOffsetPx'][1] > -.5*observed['box'][3]):
+                raise
+            g = observe_open_start(image)
+            fallback = True
         left, right = (g['components'][k]['bbox'] for k in ('left', 'right'))
         bx, by, bw, bh = g['object']['bbox']
         box = observed['box']
@@ -149,7 +168,11 @@ class RelativeResponsePolicy:
                     width=box[2], height=box[3], sideBox=box, objectWidth=bw, objectHeight=bh,
                     leftMargin=bx-left[0]-left[2], rightMargin=right[0]-bx-bw,
                     nearTop=by-max(left[1]+left[3], right[1]+right[3]), distalDepth=distal_depth(rgb, box))
-        if self.check_shallow_color_core and 50 < bh <= 53:
+        if fallback:
+            features['nearObservationMode'] = 'open_start'
+        if observed['trackingMode'] == 'open_start_paired_markers':
+            features['sideObservationMode'] = 'open_start'
+        if self.check_shallow_color_core and not fallback and 50 < bh <= 53:
             height = shallow_color_core_height(image, (bx, by, bw, bh))
             if height is not None:
                 features['shallowColorCoreHeight'] = height
@@ -206,6 +229,11 @@ class RelativeResponsePolicy:
         q = normalized(f)
         if not np.isfinite(q).all() or (q < self.bounds[0]).any() or (q > self.bounds[1]).any():
             return self.result('hold', 'outside_demonstrated_visual_extent', f)
+        modes = ('nearObservationMode', 'sideObservationMode')
+        open_start = any(f.get(key) == 'open_start' for key in modes)
+        if open_start and (close_receipt is not None or f['sy'] > -.5*f['height']
+                           or (active_action is not None and active_action['label'] not in OPEN_START_ACTIONS)):
+            return self.result('hold', 'open_start_observation_requires_approach', f)
         if active_action is not None:
             label = active_action['label']
             start = active_action['startFeatures']
@@ -216,7 +244,8 @@ class RelativeResponsePolicy:
             delta = np.array(model['delta'])
             # Only channels with resolvable displacement can measure completion.
             channels = model['progressChannels']
-            if channels and all(movement[i]/delta[i] >= model['stepFraction'] for i in channels):
+            if (channels and all(f.get(k) == start.get(k) for k in modes)
+                    and all(movement[i]/delta[i] >= model['stepFraction'] for i in channels)):
                 return self.result('hold', 'learned_step_observed', f, measuredProgress=[
                     float(movement[i]/delta[i]) for i in channels], stepFraction=model['stepFraction'])
         if close_receipt is not None:

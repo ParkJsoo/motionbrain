@@ -3,7 +3,7 @@ import unittest
 import cv2
 import numpy as np
 
-from learning.open_side_approach import LEGACY_SIDE_VIEW, observe_open_side, observe_side_tip
+from learning.open_side_approach import LEGACY_SIDE_VIEW, observe_open_side, observe_open_start_side, observe_side_tip
 
 
 def scene(object_x=849, object_y=662, object_height=206):
@@ -50,6 +50,26 @@ class OpenSideApproachTest(unittest.TestCase):
         frame[460:492, 854:858] = 238
         with self.assertRaisesRegex(ValueError, 'jaw_contour'):
             observe_open_side(frame)
+
+    def test_open_start_can_reject_background_markers_by_original_jaw_region(self):
+        frame = scene(object_y=682, object_height=180)
+        for center in ((1679, 948), (1747, 916)):
+            cv2.circle(frame, center, 17, (85, 150, 97), -1)
+        with self.assertRaisesRegex(ValueError, 'forearm_pair'):
+            observe_open_side(frame)
+        self.assertEqual(observe_open_start_side(frame)['toolPoint'], [762, 475.5])
+        frame = scene(object_y=520, object_height=180)
+        for center in ((1679, 948), (1747, 916)):
+            cv2.circle(frame, center, 17, (85, 150, 97), -1)
+        with self.assertRaisesRegex(ValueError, 'forearm_pair'):
+            observe_open_start_side(frame)
+
+    def test_open_start_preserves_a_clipped_candidate_above_the_table(self):
+        frame = scene(object_y=682, object_height=180)
+        for center in ((1679, 770), (1747, 738)):
+            cv2.circle(frame, center, 17, (85, 150, 97), -1)
+        with self.assertRaisesRegex(ValueError, 'side_jaw_search_region_clipped'):
+            observe_open_start_side(frame)
 
     def test_single_forearm_mark_needs_wrist_and_connected_jaw(self):
         for hidden in ((1154, 353), (1218, 322)):

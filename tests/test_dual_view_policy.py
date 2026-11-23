@@ -44,6 +44,19 @@ class DualViewTest(unittest.TestCase):
         with self.assertRaisesRegex(PoseRejected, 'invalid_measured_start_pose'):
             catalog.request('wrist/down', float('nan'), boot, 'move')
 
+    def test_admission_rejects_mixed_open_start_landmarks(self):
+        first = pair('wrist/down', 1.1, 1)
+        live = dict(pair('wrist/down', 1.2, 2), previousPair=first)
+        control = VisualControl(lambda: live, .69, .69, clock=lambda: 1.25)
+        for key in ('nearObservationMode', 'sideObservationMode'):
+            with self.subTest(key=key):
+                live[key] = 'open_start'
+                self.assertIsNone(control.admission(live, 1.))
+                first[key] = 'open_start'
+                self.assertIsNotNone(control.admission(live, 1.))
+                del live[key]
+                del first[key]
+
     def test_visual_dispatch_reserve_refuses_valid_but_old_pair_before_submit(self):
         clock = FakeClock()
         port = VisualPort(clock)

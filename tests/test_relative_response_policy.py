@@ -78,6 +78,15 @@ class RelativeResponseTest(unittest.TestCase):
         image = cv2.cvtColor(field, cv2.COLOR_HSV2BGR)
         self.assertIsNone(shallow_color_core_height(image, (138, 91, 41, 53)))
 
+    def test_open_start_landmarks_cannot_select_contact_actions(self):
+        policy = RelativeResponsePolicy(artifact(), approach_evaluation='close_coordinates', open_start_approach=True)
+        state = dict(features(), nearObservationMode='open_start')
+        self.assertEqual(policy.decide(state)['action'], 'wrist/down')
+        self.assertEqual(policy.decide(state, close_receipt={})['action'], 'hold')
+        self.assertEqual(policy.decide(state, active_action={'label':'shoulder/up'})['action'], 'hold')
+        close = dict(state, sx=6, sy=32, ny=18, distalDepth=[55, 55, 55])
+        self.assertEqual(policy.decide(close)['action'], 'hold')
+
     def test_color_core_is_opt_in_and_preserves_other_close_checks(self):
         data = artifact()
         baseline = RelativeResponsePolicy(data)

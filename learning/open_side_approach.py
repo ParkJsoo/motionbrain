@@ -7,7 +7,7 @@ import numpy as np
 from learning.pink_prism_height import open_scene_prism_candidate
 
 
-def _forearm_region(hsv):
+def _forearm_regions(hsv):
     # 전완에 붙은 녹색 표식 두 개로 탐색 창의 중심·크기를 정한다.
     mask = cv2.inRange(hsv, (45, 24, 50), (90, 180, 230))
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
@@ -26,14 +26,19 @@ def _forearm_region(hsv):
             if left_clipped or right_clipped:
                 raise ValueError('side_forearm_marker_clipped')
             pairs.append((left, right, span))
-    if not pairs:
-        return None
-    if len(pairs) != 1:
-        raise ValueError('side_forearm_pair_missing_or_ambiguous')
-    left, right, span = pairs[0]
     # 표식 축의 연장점은 창을 배치하는 용도다. 반환할 집게 끝은 원본 픽셀에서 측정한다.
-    cx, cy = left - 2.6 * (right - left) + (0., .22 * span)
-    return cx, cy, span
+    out = []
+    for left, right, span in pairs:
+        cx, cy = left - 2.6 * (right - left) + (0., .22 * span)
+        out.append((cx, cy, span))
+    return out
+
+
+def _forearm_region(hsv):
+    pairs = _forearm_regions(hsv)
+    if len(pairs) > 1:
+        raise ValueError('side_forearm_pair_missing_or_ambiguous')
+    return pairs[0] if pairs else None
 
 
 def _paired_marker_tip(rgb, cx, cy, span):
@@ -242,6 +247,30 @@ def observe_open_side(rgb, *, view_id=None, diagnose_green_core=False):
     return dict(box=list(box), toolPoint=[tip_x, tip_y],
                 trackingMode=mode,
                 sideOffsetPx=[tip_x - (bx + bw / 2), tip_y - by])
+
+
+def observe_open_start_side(rgb):
+    """Use a unique original-pixel jaw contour when a second green pair is visible."""
+    box = open_scene_prism_candidate(rgb)
+    if box is None:
+        raise ValueError('side_single_upright_prism_required')
+    bx, by, bw, bh = box
+    regions = _forearm_regions(cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV))
+    tips = []
+    for region in regions:
+        try:
+            tips.append(_paired_marker_tip(rgb, *region))
+        except ValueError as exc:
+            # A search entirely below the table-supported object cannot
+            # describe the raised jaw. Other clipped or ambiguous pairs veto.
+            _, cy, span = region
+            if str(exc) != 'side_jaw_search_region_clipped' or round(cy-1.3*span) < by+bh:
+                raise
+    if len(tips) != 1 or tips[0][1]-by > -.5*bh:
+        raise ValueError('side_forearm_pair_missing_or_ambiguous')
+    tip_x, tip_y = tips[0]
+    return dict(box=list(box), toolPoint=[tip_x, tip_y], trackingMode='open_start_paired_markers',
+                sideOffsetPx=[tip_x-(bx+bw/2),tip_y-by])
 
 
 if __name__ == '__main__':

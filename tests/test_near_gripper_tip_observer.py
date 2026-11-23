@@ -5,7 +5,7 @@ import unittest
 import cv2
 import numpy as np
 
-from learning.near_gripper_tip_observer import NearGripperTipObserver, validate_observation
+from learning.near_gripper_tip_observer import NearGripperTipObserver, observe_open_start, validate_observation
 
 
 def image(gap=140., object_width=55):
@@ -42,6 +42,16 @@ class TipObserverTests(unittest.TestCase):
             else: pixels = image(8.)
             with self.subTest(mode=mode), self.assertRaises(ValueError):
                 NearGripperTipObserver().observe(encoded(pixels))
+
+    def test_open_start_ignores_backdrop_line_but_requires_both_fingers(self):
+        pixels = image()
+        pixels[80:83, 20:300] = 30
+        with self.assertRaisesRegex(ValueError, 'near_tip_missing_or_ambiguous'):
+            NearGripperTipObserver(policy_version=3).observe(encoded(pixels))
+        self.assertAlmostEqual(observe_open_start(pixels)['state'][2], 140.)
+        pixels[20:100, 70:110] = 180
+        with self.assertRaisesRegex(ValueError, 'near_tip_missing_or_ambiguous'):
+            observe_open_start(pixels)
 
     def test_missing_or_duplicate_object_rejected(self):
         for mode in ['missing', 'duplicate']:
