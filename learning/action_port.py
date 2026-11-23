@@ -163,7 +163,7 @@ class BoundedActionHTTP:
 
     def lookup(self, request):
         with self._deadline():
-            result = self.reader.lookup_action(request)
+            result = self.reader.lookup_action(request, propagate_transport=True)
         if result.get("lookupStatus") != "matched_record":
             raise DeviceReadError("action_lookup_unverified")
         return result["record"]
@@ -171,6 +171,11 @@ class BoundedActionHTTP:
     def outputs(self):
         with self._deadline():
             return self.reader.outputs()
+
+    def verify_armed_off(self, boot, cursor):
+        with self._deadline():
+            receipt, _ = self.transport.get("controller", "/collection_status")
+        self.verify_off_cursor(_object(receipt), boot, cursor, state="ARMED")
 
     def cancel(self, request):
         r = canonical_request(request)

@@ -158,6 +158,12 @@ def main(argv=None):
             or any(p.get(key) is not True for key in
                    ('ackAlignedGripperCapture', 'asyncActionLookup', 'refreshExpiredDispatch')))):
         raise ValueError('terminal_pick_requires_close_lift_plan')
+    recover_cancel_reads = p.get('recoverCancelledReads', False)
+    if type(recover_cancel_reads) is not bool or (recover_cancel_reads and (
+            not pose_aware or short_joint or args.measure_shoulder_entry
+            or any(p.get(key) is not True for key in
+                   ('ackAlignedGripperCapture', 'asyncActionLookup', 'refreshExpiredDispatch')))):
+        raise ValueError('cancel_read_recovery_requires_fresh_pose_aware_execution')
     if 'forearmApproachObserver' in p and not args.observe:
         parser.error('forearmApproachObserver requires --observe')
     if 'wristHeightProposal' in p and (not args.observe or 'developmentPick' not in p):
@@ -317,7 +323,8 @@ def main(argv=None):
                                           finish_after=('shoulder/up' if terminal_pick else
                                                         'elbow/up' if 'developmentPick' in p else None),
                                           lookup_worker=lookup_worker, refresh_expired_dispatch=refresh_expired_dispatch,
-                                          on_off_pose=on_off_pose if pose_aware else None, terminal_pick=terminal_pick)
+                                          on_off_pose=on_off_pose if pose_aware else None, terminal_pick=terminal_pick,
+                                          recover_cancel_reads=recover_cancel_reads)
                 if measurement_status is not None and outcome in ('action_budget', 'device_stopped'):
                     outcome = measurement_status
             if outcome == 'observe_after_lift':

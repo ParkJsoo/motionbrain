@@ -10,7 +10,7 @@ from urllib.parse import urlsplit
 from learning.action_execution import canonical_request, checked_record
 
 from learning.controller_latency import deadline
-from learning.device_adapter import DeviceReadAdapter, DeviceReadError, ReadOnlyHTTP
+from learning.device_adapter import DeviceReadAdapter, DeviceReadError, ReadOnlyHTTP, TransientDeviceReadError
 
 
 MAX_PACKET_BYTES = 2048
@@ -41,7 +41,7 @@ def _receive(channel):
 def _lookup(reader, request, timeout):
     # The spawned main thread can impose a total HTTP deadline.
     with deadline(timeout):
-        outcome = reader.lookup_action(request)
+        outcome = reader.lookup_action(request, propagate_transport=True)
         if outcome.get('lookupStatus') != 'matched_record':
             raise DeviceReadError('action_lookup_unverified')
         record = checked_record(outcome['record'],request)
@@ -60,6 +60,8 @@ def _serve(channel, origin, timeout):
             request = canonical_request(_receive(channel))
             try:
                 record = _lookup(reader, request, timeout)
+            except (TransientDeviceReadError, OSError):
+                record = 'transport_unavailable'
             except Exception:
                 record = None
             _send(channel, [request['bootId'], request['commandId'], record])
@@ -76,9 +78,13 @@ class _Pending:
         if timeout != 0 or not self.worker.process.is_alive():
             raise DeviceReadError('lookup_worker_response_missing')
         boot, cid, record = _receive(self.worker.channel)
-        if (boot, cid) != self.binding or record is None:
+        if (boot, cid) != self.binding:
             raise DeviceReadError('lookup_worker_response_unverified')
         self.worker.pending = None
+        if record == 'transport_unavailable':
+            raise TransientDeviceReadError('lookup_worker_transport_unavailable')
+        if not isinstance(record, dict):
+            raise DeviceReadError('lookup_worker_response_unverified')
         return record
 
 
@@ -148,7 +154,10 @@ class ActionLookupWorker:
                     raise ValueError('previous_lookup_still_in_flight')
                 # A verified cancellation can leave one obsolete GET response queued.
                 # Consume and validate it before assigning the pipe to another action.
-                self.pending.result(timeout=0)
+                try:
+                    self.pending.result(timeout=0)
+                except TransientDeviceReadError:
+                    pass  # A bound transport failure has been consumed.
             self.owner = binding
 
         try:

@@ -31,7 +31,7 @@ class ActionLookupWorkerTest(unittest.TestCase):
         reader = Mock()
         reader.lookup_action.return_value = dict(lookupStatus='matched_record',record=dict(record,noise='x'*10000))
         self.assertEqual(_lookup(reader, req, .16), record)
-        reader.lookup_action.assert_called_once_with(req)
+        reader.lookup_action.assert_called_once_with(req, propagate_transport=True)
         reader.lookup_action.return_value = {'lookupStatus':'unverified'}
         with self.assertRaises(DeviceReadError):
             _lookup(reader, req, .16)

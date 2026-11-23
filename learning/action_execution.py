@@ -19,6 +19,7 @@ from pathlib import Path
 
 from learning.runner import _action_matches, KNOWN_TERMINAL
 from learning.action_journal import BoundedActionJournal
+from learning.device_adapter import TransientDeviceReadError
 
 SCHEMA = "motionbrain.host_bounded_action.v1"
 FIELDS = {"bootId", "commandId", "kind", "motor", "pwm", "durationMs", "targetDegrees", "percent"}
@@ -265,7 +266,7 @@ class BoundedActionExecutor:
                 self.failed = True
                 return self._result(cid, "outcome_unknown", "journal_unavailable")
 
-    def confirm(self, cid, *, confirmed_request, dispatch_guard, motion_feedback=None, lookup_worker=None):
+    def confirm(self, cid, *, confirmed_request, dispatch_guard, motion_feedback=None, lookup_worker=None, recover_cancel_reads=False):
         """Caller must confirm the exact displayed request and supply a fresh gate.
 
         The guard runs after journal reservation and all preflight I/O, immediately
@@ -318,6 +319,8 @@ class BoundedActionExecutor:
             visual_cancel = False
             cancel_applied = False
             cancel_timing = {}
+            identity = None
+            read_stage = None
             try:
                 # Crash after this write is conservatively unknown, even if the
                 # final observation gate later stops the call before transport.
@@ -349,8 +352,10 @@ class BoundedActionExecutor:
                     if self.stop_requested.is_set():
                         raise InterruptedError("operator_stop_requested")
                     if record["state"] in KNOWN_TERMINAL:
-                        outputs = selected_outputs(self.port.outputs(), record, baseline,
-                            allow_rolled_history=rolled_history)
+                        read_stage = 'terminal_outputs'
+                        output_log = self.port.outputs()
+                        read_stage = None
+                        outputs = selected_outputs(output_log, record, baseline, allow_rolled_history=rolled_history)
                         action = {"request": r, "record": record, "outputLog": outputs,
                             "startHostBounds": start_bounds,
                             "outputOffHostBounds": self._bounds(started, received, "terminal_round_trip"),
@@ -390,6 +395,7 @@ class BoundedActionExecutor:
                     previous = received
                     if lookup is None:
                         lookup_count += 1
+                        read_stage = 'action_lookup'
                         observed = self.port.lookup(r)
                     else:
                         if pending_lookup is None:
@@ -397,8 +403,10 @@ class BoundedActionExecutor:
                             pending_lookup = lookup.begin()
                         if not pending_lookup.done():
                             continue
+                        read_stage = 'action_lookup'
                         observed = pending_lookup.result(timeout=0)
                         pending_lookup = None
+                    read_stage = None
                     record = checked_record(observed, r)
                     if (record["ordinal"], record["startedAtMs"]) != identity:
                         raise ValueError("action_identity_changed")
@@ -415,11 +423,54 @@ class BoundedActionExecutor:
                                  **(baseline_evidence if attempted else {}), **cancel_timing))
                 if attempted:
                     # One best-effort targeted cancel, durably reserved first.
-                    # Even a cancel acknowledgement never changes this unknown.
                     result = self.cancel(cid)
+                if (recover_cancel_reads is True and r['kind'] == 'pulse' and rolled_history and read_stage
+                        and identity is not None
+                        and isinstance(exc, (OSError, TransientDeviceReadError)) and not self.stop_requested.is_set()):
+                    cancelled = (record if visual_cancel and cancel_applied else
+                                 result.get('cancelRecord') if result.get('cancelApplied') else None)
+                    if cancelled is not None and (cancelled['state'], cancelled['reason']) == ('cancelled', 'cancelled'):
+                        result = self._recover_after_cancel_read(
+                            r, identity, cancelled, baseline, start_bounds,
+                            {**result, 'cancelRecord': cancelled, 'cancelConfirmed': True}, read_stage)
                 if not isinstance(exc, Exception):
                     raise
                 return result
+
+    def _recover_after_cancel_read(self, request, identity, cancelled, baseline, start, unknown, stage):
+        """One bounded read sequence for an already acknowledged and cancelled action."""
+        cid = request['commandId']
+        try:
+            record = checked_record(self.port.lookup(request), request)
+            if record != cancelled or (record['ordinal'], record['startedAtMs']) != identity:
+                raise ValueError('cancelled_record_changed')
+            output = selected_outputs(self.port.outputs(), record, baseline, allow_rolled_history=True)
+            entries = output['entries']
+            driven = [i for i, e in enumerate(entries) if e['pwm']]
+            pwm = request['pwm']
+            if not driven or any(not 0 < entries[i]['pwm']*pwm <= pwm*pwm for i in driven):
+                raise ValueError('cancel_recovery_output_direction_or_limit')
+            off = next(e for e in entries[driven[-1]+1:] if e['motor'] == request['motor'] and e['pwm'] == 0)
+            if (off['atMs']-record['startedAtMs']) % 2**32 > request['durationMs']+1:
+                raise ValueError('cancel_recovery_output_deadline_exceeded')
+            cursor = output['entries'][-1]['sequence']
+            self.port.verify_armed_off(request['bootId'], cursor)
+            if self.stop_requested.is_set():
+                raise InterruptedError('operator_stop_requested')
+            end = self._bounds(start['earliest'], self._now(), 'verified_off_recovery')
+        except Exception as exc:
+            return self._save(cid, 'outcome_unknown', {**unknown, 'failedReadStage': stage,
+                                                       'recoveryReadError': type(exc).__name__})
+        action = dict(request=request, record=record, outputLog=output, startHostBounds=start,
+                      outputOffHostBounds=end, outputSequenceBounds=dict(first=output['entries'][0]['sequence'],
+                      last=cursor, evidenceRef='host-journal:'+cid))
+        recovered = self._result(cid, 'known_terminal', 'controller_output_off', True,
+                                 action=action, cancelAttempted=True, cancelConfirmed=True,
+                                 recoveredAfterReadError=True, failedReadStage=stage,
+                                 originalReadError=unknown['reason'],
+                                 **{k: unknown[k] for k in ('cancelHostBounds','lookupOutstandingAtCancel')
+                                    if k in unknown})
+        return self._save(cid, 'known_terminal', recovered)
 
     def _bounds(self, start, end, method):
         return dict(clockId=self.port.host_clock_id, earliest=start, latest=end,
@@ -439,7 +490,10 @@ class BoundedActionExecutor:
             result = {**row["result"], "cancelAttempted": True, "cancelConfirmed": False}
             self._save(cid, "outcome_unknown", result)
             try:
-                record = checked_record(self.port.cancel(row["request"]["action"]), row["request"]["action"])
+                reply = self.port.cancel(row["request"]["action"])
+                record = checked_record(reply, row["request"]["action"])
+                if reply.get('cancelApplied') is True:
+                    result['cancelApplied'] = True
                 result.update(cancelConfirmed=record["state"] in KNOWN_TERMINAL and record["outputOff"], cancelRecord=record)
             except Exception as exc:
                 result["cancelError"] = type(exc).__name__

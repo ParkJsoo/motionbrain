@@ -25,6 +25,10 @@ class DeviceReadError(RuntimeError):
     pass
 
 
+class TransientDeviceReadError(DeviceReadError):
+    pass
+
+
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         raise DeviceReadError("redirect_refused")
@@ -105,10 +109,12 @@ class ReadOnlyHTTP:
             ended = self.clock.monotonic()
             receipt["receivedMonotonic"] = ended
             if (not started <= receipt["headersAvailableMonotonic"]
-                    <= receipt["bodyReadCompletedMonotonic"] <= ended or ended - started > self.timeout):
+                    <= receipt["bodyReadCompletedMonotonic"] <= ended):
+                raise DeviceReadError("request_interval_invalid_or_over_budget")
+            if ended - started > self.timeout:
                 # Socket timeout is per blocking operation, not an end-to-end
                 # guarantee. Reject overruns even if a slow peer completed.
-                raise DeviceReadError("request_interval_invalid_or_over_budget")
+                raise TransientDeviceReadError("request_interval_invalid_or_over_budget")
             if "connectionTiming" in receipt:
                 stamps = [started, *(receipt["connectionTiming"].get(k) for k in TRACE_STAMPS),
                           receipt["headersAvailableMonotonic"]]
@@ -185,7 +191,7 @@ class DeviceReadAdapter:
             previous = entry["sequence"]
         return value
 
-    def lookup_action(self, request):
+    def lookup_action(self, request, *, propagate_transport=False):
         """Read-only reconciliation evidence. Never updates a host journal.
 
         Missing/boot mismatch/transport failure cannot prove non-execution.
@@ -212,7 +218,9 @@ class DeviceReadAdapter:
             return {"executionState": "known_terminal" if terminal else "outcome_unknown",
                     "lookupStatus": "matched_record", "record": record,
                     "automaticRetry": False, "physicalArrivalVerified": False}
-        except (DeviceReadError, OSError, ValueError):
+        except (DeviceReadError, OSError, ValueError) as exc:
+            if propagate_transport and isinstance(exc, (TransientDeviceReadError, OSError)):
+                raise
             return {"executionState": "outcome_unknown", "lookupStatus": "unverified", "automaticRetry": False,
                     "physicalArrivalVerified": False}
 

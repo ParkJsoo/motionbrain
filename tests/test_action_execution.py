@@ -261,6 +261,125 @@ class ActionExecutionTest(unittest.TestCase):
         self.assertEqual(self.port.posts, [r])
         self.assertEqual(self.port.cancels, [r])
 
+    def test_cancel_read_recovery_verifies_the_original_action_without_another_write(self):
+        from learning.device_adapter import DeviceReadError, TransientDeviceReadError
+
+        for stage, invalid, expected in (
+                ('action_lookup', None, 'known_terminal'),
+                ('terminal_outputs', None, 'known_terminal'),
+                ('action_lookup', 'ownership', 'outcome_unknown'),
+                ('action_lookup', 'record', 'outcome_unknown'),
+                ('action_lookup', 'pwm', 'outcome_unknown'),
+                ('action_lookup', 'off', 'outcome_unknown'),
+                ('action_lookup', 'structural', 'outcome_unknown'),
+                ('action_lookup', 'late', 'outcome_unknown')):
+            with self.subTest(stage=stage, invalid=invalid):
+                path = self.root / f'{stage}-{invalid}.sqlite'
+                clock = FakeClock()
+                port = FakePort(clock)
+                port.allow_rolled_history = True
+                port.preflight = lambda r: dict(FakePort.log(r['bootId'], []), verifiedOffSequence=0)
+                port.verify_armed_off = lambda *_: None
+                if invalid == 'off':
+                    port.verify_armed_off = lambda *_: (_ for _ in ()).throw(DeviceReadError('wrong_cursor'))
+                expected_failure = {'action_lookup': True, 'terminal_outputs': True}
+
+                def lookup(r):
+                    if stage == 'action_lookup' and expected_failure.pop(stage, False):
+                        raise (DeviceReadError if invalid == 'structural' else TransientDeviceReadError)('read_error')
+                    return dict(port.last_record, **({'ordinal': 2} if invalid == 'record' else {}))
+
+                def outputs():
+                    if stage == 'terminal_outputs' and expected_failure.pop(stage, False):
+                        raise (DeviceReadError if invalid == 'structural' else TransientDeviceReadError)('read_error')
+                    log = FakePort.outputs(port)
+                    if invalid == 'pwm':
+                        log['entries'][0]['pwm'] = -60
+                    return log
+
+                port.lookup = lookup
+                port.outputs = outputs
+                def cancel(r):
+                    value = FakePort.cancel(port,r)
+                    if invalid == 'late':
+                        value.update(endedAtMs=100102, elapsedMs=102, overrunMs=2)
+                        port.last_record.update(value)
+                    return dict(value, cancelApplied=invalid != 'ownership')
+                port.cancel = cancel
+                core = BoundedActionExecutor(path, port, limits(), clock=clock)
+                try:
+                    core.propose(request())
+                    result = core.confirm('first', confirmed_request=request(), dispatch_guard=lambda _:None,
+                        motion_feedback=lambda *_:'cancel' if stage == 'terminal_outputs' else 'continue',
+                        recover_cancel_reads=True)
+                    self.assertEqual(result['executionState'], expected)
+                    self.assertEqual(port.posts, [request()])
+                    self.assertEqual(port.cancels, [request()])
+                    if expected == 'known_terminal':
+                        self.assertTrue(result['recoveredAfterReadError'])
+                        self.assertTrue(result['cancelConfirmed'])
+                        self.assertEqual(result['failedReadStage'], stage)
+                        self.assertEqual(result['action']['outputSequenceBounds']['last'], 2)
+                        self.assertTrue(core.journal.readiness()['ready'])
+                        replay = core.confirm('first', confirmed_request=request(), dispatch_guard=lambda _:None)
+                        self.assertTrue(replay['replayed'])
+                        self.assertEqual(port.posts, [request()])
+                        self.assertEqual(port.cancels, [request()])
+                    else:
+                        self.assertFalse(core.journal.readiness()['ready'])
+                finally:
+                    core.close()
+
+    def test_bound_async_read_failure_recovery_leaves_worker_ready_for_next_command(self):
+        import socket
+        from learning.action_lookup_worker import ActionLookupWorker, _origin_key, _receive, _send
+
+        clock = FakeClock()
+        port = FakePort(clock)
+        port.allow_rolled_history = True
+        port.preflight = lambda r: dict(FakePort.log(r['bootId'], []), verifiedOffSequence=0)
+        port.verify_armed_off = lambda *_: None
+        port.lookup = lambda _: dict(port.last_record)
+        port.cancel = lambda r: dict(FakePort.cancel(port,r), cancelApplied=True)
+        origin = port.transport.bases['controller']
+        worker = ActionLookupWorker(origin)
+        worker.bound_origin = _origin_key(origin)
+        core = BoundedActionExecutor(self.root/'async-recovery.sqlite', port, limits(), clock=clock)
+
+        def confirm(r):
+            core.propose(r)
+            return core.confirm(r['commandId'], confirmed_request=r, dispatch_guard=lambda _:None,
+                                motion_feedback=lambda _r,_at:'continue', lookup_worker=worker,
+                                recover_cancel_reads=True)
+
+        host, peer = socket.socketpair(type=socket.SOCK_DGRAM)
+        with host, peer:
+            worker.channel = host
+            worker.process = SimpleNamespace(is_alive=lambda:True)
+            try:
+                first, second = request(), request('next')
+                _send(peer, [first['bootId'],first['commandId'],'transport_unavailable'])
+                result = confirm(first)
+                self.assertTrue(result['recoveredAfterReadError'])
+                self.assertIsNone(worker.pending)
+                self.assertEqual(_receive(peer), first)
+
+                record = {k:v for k,v in second.items() if k!='pwm'}
+                record.update(requestedPwm=30, ordinal=1, state='completed', reason='duration_elapsed',
+                              startedAtMs=100000, endedAtMs=100100, elapsedMs=100, overrunMs=0,
+                              outputOff=True, targetReached=False)
+                def next_outputs():
+                    port.last_record.update(record)
+                    return FakePort.outputs(port)
+                port.outputs = next_outputs
+                _send(peer, [second['bootId'],second['commandId'],record])
+                self.assertEqual(confirm(second)['executionState'], 'known_terminal')
+                self.assertEqual(_receive(peer), second)
+                self.assertEqual(port.posts, [first,second])
+                self.assertEqual(port.cancels, [first])
+            finally:
+                core.close()
+
     def test_async_terminal_uses_identity_and_output_validation(self):
         from concurrent.futures import Future
         r = request()
