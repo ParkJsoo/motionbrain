@@ -16,7 +16,7 @@ Of the OWI-535's five DC axes, the shoulder (M4) has direct joint-angle feedback
 
 This Rerun replay shows a recorded pair from a manual grasp demonstration, with the external camera on the left and the gripper camera on the right. Rerun overlays the detected parts on the same image the collector received. Some of the black upper-arm rail remains visible outside the teal mask. [Overlay method and checks across poses (Korean)](docs/live-observation.md#광각-부품-표시-검증)
 
-Across ten shoulder-lowering actions in two held-out-by-turn setups, adding both images, part visibility and planar kinematics reduced mean side-view displacement vector error from 4.74px to 3.23px. The command mean was more accurate in the gripper view. [Offline comparison by episode (Korean)](docs/evidence/2026-11-22-offline-episode-comparison.md)
+Across ten shoulder-lowering actions in two held-out-by-turn setups, adding both images, part visibility and planar kinematics reduced mean side-view displacement vector error from 4.74px to 3.23px. The command mean was more accurate in the gripper view. [Offline comparison by episode (Korean)](docs/evidence/2026-11-22-offline-episode-comparison.md) In two separate wide-view demonstrations, a rotation measured during an elbow sweep predicted the wrist marker with mean position errors of 3.08px during picking and 9.32px during placing (four time points each). [Sweep transfer and pre-close goal evaluation (Korean)](docs/evidence/2026-11-22-sweep-goal-response.md)
 
 ![Physical control, visual observation, learning and evaluation in MotionBrain](docs/assets/overview.en.svg)
 
