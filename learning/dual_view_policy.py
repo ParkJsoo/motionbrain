@@ -172,9 +172,11 @@ class VisualControl:
             return 'hold'
         return sample['action']
 
-    def admission(self, sample, after):
+    def admission(self, sample, after, *, candidate_boundary=None):
         now = self.clock()
         if not usable(sample, after, now, self.age, self.skew):
+            return None
+        if candidate_boundary is not None and sample.get('candidateVerifiedOffAt') != candidate_boundary:
             return None
         first = sample.get('previousPair')
         if (not usable(first, after, now, self.age, self.skew)
@@ -205,14 +207,14 @@ class VisualControl:
         if sample['action'] != label:
             raise ValueError('visual_start_changed')
 
-    def wait_for_fresh_admission(self, label, boundary, *, sleep):
+    def wait_for_fresh_admission(self, label, boundary, *, sleep, candidate_boundary=None):
         """A reserved request can proceed only if two new pairs still select it."""
         deadline = self.clock() + 3.
         while self.clock() < deadline:
             sample = self.latest()
             if sample and sample.get('fault'):
                 raise ValueError('camera_stopped_during_admission_refresh')
-            pairs = self.admission(sample, boundary)
+            pairs = self.admission(sample, boundary, candidate_boundary=candidate_boundary)
             if pairs:
                 if sample['action'] != label:
                     raise ValueError('model_choice_changed_during_admission_refresh')
@@ -221,7 +223,8 @@ class VisualControl:
         raise ValueError('fresh_pair_timeout_during_admission_refresh')
 
     def dispatch_admission(self, label, boundary, verify_pose, *, synchronize=False,
-                           gripper_gate=None, sleep=time.sleep, before_aligned_pose=None):
+                           gripper_gate=None, sleep=time.sleep, before_aligned_pose=None,
+                           candidate_boundary=None):
         """Keep the last pose verification next to submit; optionally align it with a new vote."""
         clocks = ('extClock', 'nearClock')
         if synchronize or gripper_gate is not None:
@@ -239,7 +242,7 @@ class VisualControl:
                 ready = (gripper_gate.paused.is_set() if gripper_gate is not None else
                          all(sample[k]['sourceEarliest'] > initial[k]['sourceEarliest'] for k in clocks)
                          and all(sample[k] != initial[k] for k in ('frameId', 'nearFrameId')))
-                pairs = self.admission(sample, boundary) if ready else None
+                pairs = self.admission(sample, boundary, candidate_boundary=candidate_boundary) if ready else None
                 if pairs:
                     if before_aligned_pose is not None:
                         before_aligned_pose(pairs)
@@ -254,6 +257,7 @@ class VisualControl:
         first = current.get('previousPair') if isinstance(current,dict) else None
         if (not usable(first,boundary,now,3.,self.skew) or not usable(current,boundary,now,3.,self.skew)
                 or not self._independent(first,current)
+                or (candidate_boundary is not None and current.get('candidateVerifiedOffAt') != candidate_boundary)
                 or first['action'] != label or first.get('fault')
                 or (gripper_gate is not None and not gripper_gate.paused.is_set())
                 or (aligned and any(current[k]['sourceEarliest'] < sample[k]['sourceEarliest'] for k in clocks))):
@@ -308,8 +312,10 @@ def run_actions(control, catalog, executor, boot, off_pose, max_actions, record,
     close_id = None
     for _ in range(max_actions):
         starting_angle, boundary = off_pose()
+        candidate_menu = None
         if on_off_pose is not None:
-            on_off_pose(catalog.eligible_at(starting_angle), boundary)
+            candidate_menu = catalog.eligible_at(starting_angle)
+            on_off_pose(candidate_menu, boundary)
         deadline = control.clock() + 3
         while control.clock() < deadline:
             sample = control.latest()
@@ -360,19 +366,26 @@ def run_actions(control, catalog, executor, boot, off_pose, max_actions, record,
         final_boundary = boundary
 
         def guard(req):
-            nonlocal feedback, admission, final_boundary
+            nonlocal feedback, admission, final_boundary, candidate_menu
             def verify_pose():
                 angle, proved_at = read_start_pose()
                 if catalog.request(label, angle, boot, cid) != req:
                     raise ValueError('pose_or_profile_changed')
-                return proved_at
+                return angle, proved_at
+
+            def verify_dispatch_pose():
+                angle, _ = verify_pose()
+                if candidate_menu is not None and candidate_menu != catalog.eligible_at(angle):
+                    raise ValueError('pose_candidate_menu_changed')
+
             def check_admission():
                 def remember_aligned_pose(pairs):
                     gate_timing.setdefault('alignedPoseAdmissions', []).append(pair_ids(pairs))
 
-                checked = control.dispatch_admission(label, final_boundary, verify_pose,
+                candidate_boundary = final_boundary if on_off_pose is not None else None
+                checked = control.dispatch_admission(label, final_boundary, verify_dispatch_pose,
                     synchronize=sync_dispatch, gripper_gate=gripper_gate, sleep=sleep,
-                    before_aligned_pose=remember_aligned_pose)
+                    before_aligned_pose=remember_aligned_pose, candidate_boundary=candidate_boundary)
                 if terminal_pick and any(pair.get('closeCommandId') != close_id for pair in checked):
                     raise ValueError('terminal_pick_context_changed')
                 if side_stop:
@@ -381,7 +394,8 @@ def run_actions(control, catalog, executor, boot, off_pose, max_actions, record,
                         trace.append(dict(sideStop=veto))
                         raise ValueError('side_stop_before_submit')
                     latest = control.latest()
-                    if (not control.admission(latest, final_boundary) or latest['action'] != label
+                    if (not control.admission(latest, final_boundary, candidate_boundary=candidate_boundary)
+                            or latest['action'] != label
                             or not side_stop.covers(latest['frameId'])
                             or latest['lastDissent'].get(label, 0) > min(
                                 checked[1][key]['sourceEarliest'] for key in ('extClock', 'nearClock'))):
@@ -403,9 +417,13 @@ def run_actions(control, catalog, executor, boot, off_pose, max_actions, record,
                     'expiredPairs': [[x[k] for k in ('frameId','nearFrameId')] for x in admission]}
                 admission = None
                 try:
-                    final_boundary = verify_pose()
+                    angle, final_boundary = verify_pose()
+                    if on_off_pose is not None:
+                        candidate_menu = catalog.eligible_at(angle)
+                        on_off_pose(candidate_menu, final_boundary)
                     refresh['offConfirmedAt'] = final_boundary
-                    fresh = control.wait_for_fresh_admission(label, final_boundary, sleep=sleep)
+                    fresh = control.wait_for_fresh_admission(label, final_boundary, sleep=sleep,
+                        candidate_boundary=final_boundary if on_off_pose is not None else None)
                     refresh['pairs'] = [[x[k] for k in ('frameId','nearFrameId')] for x in fresh]
                     admission = check_admission()
                 except ValueError as retry_error:

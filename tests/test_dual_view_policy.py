@@ -211,6 +211,87 @@ class DualViewTest(unittest.TestCase):
                 else:
                     self.assertIsNone(refresh)
 
+    def test_dispatch_refresh_waits_for_votes_using_refreshed_pose_menu(self):
+        for returns_new_votes in (False, True):
+            with self.subTest(returns_new_votes=returns_new_votes), tempfile.TemporaryDirectory() as tmp:
+                clock = FakeClock()
+                wrist, shoulder = 'wrist/down', 'shoulder/down'
+                catalog = Catalog({
+                    wrist: {'command': command(*ACTIONS[wrist])},
+                    shoulder: {'command': dict(command(*ACTIONS[shoulder]), targetDegrees=213)},
+                })
+                menus = []
+                reads = 0
+
+                class SlowPreflight(VisualPort):
+                    def preflight(self, request):
+                        baseline = super().preflight(request)
+                        clock.sleep(.70)
+                        return baseline
+
+                def off_pose():
+                    nonlocal reads
+                    reads += 1
+                    return (212.95 if reads <= 3 else 214.27), clock.monotonic()
+
+                def publish(labels, confirmed_at):
+                    menus.append((labels, confirmed_at))
+
+                def linked_pairs(label, first_stamp, epoch):
+                    first = dict(pair(label, first_stamp, first_stamp), candidateVerifiedOffAt=epoch)
+                    return dict(pair(label, first_stamp+.01, first_stamp+.01),
+                                candidateVerifiedOffAt=epoch, previousPair=first)
+
+                def latest():
+                    if clock.monotonic() < 100.75:
+                        return linked_pairs(wrist, 100.005, menus[0][1])
+                    if returns_new_votes and len(menus) == 2 and clock.monotonic() > 100.85:
+                        return linked_pairs(shoulder, 100.78, menus[-1][1])
+                    return linked_pairs(wrist, clock.monotonic()-.02, menus[0][1])
+
+                port = SlowPreflight(clock)
+                control = VisualControl(latest, .69, .69, clock=clock.monotonic)
+                records = []
+                core = BoundedActionExecutor(Path(tmp)/'commands.db', port, catalog, clock=clock)
+                try:
+                    outcome = run_actions(control, catalog, core, 'a'*32, off_pose, 1, records.append,
+                        sleep=clock.sleep, refresh_expired_dispatch=True, on_off_pose=publish)
+                finally:
+                    core.close()
+                self.assertEqual(outcome, 'not_sent')
+                self.assertEqual(port.posts, [])
+                self.assertEqual([set(menu) for menu, _ in menus], [{wrist}, {shoulder, wrist}])
+                self.assertGreater(menus[1][1], menus[0][1])
+                expected = ('model_choice_changed_during_admission_refresh' if returns_new_votes else
+                            'fresh_pair_timeout_during_admission_refresh')
+                self.assertEqual(records[0]['dispatchRefresh']['reason'], expected)
+
+    def test_final_pose_rejects_changed_menu_before_submit(self):
+        clock = FakeClock()
+        wrist, shoulder = 'wrist/down', 'shoulder/down'
+        catalog = Catalog({
+            wrist: {'command': command(*ACTIONS[wrist])},
+            shoulder: {'command': dict(command(*ACTIONS[shoulder]), targetDegrees=213)},
+        })
+        port = VisualPort(clock)
+        readings = iter((212.95, 212.95, 214.27))
+        first = dict(pair(wrist, 100.005, 1), candidateVerifiedOffAt=clock.monotonic())
+        sample = dict(pair(wrist, 100.013, 2),
+                      candidateVerifiedOffAt=first['candidateVerifiedOffAt'], previousPair=first)
+        control = VisualControl(lambda: sample, .69, .69, clock=clock.monotonic)
+        records = []
+        with tempfile.TemporaryDirectory() as tmp:
+            core = BoundedActionExecutor(Path(tmp)/'commands.db', port, catalog, clock=clock)
+            try:
+                outcome = run_actions(control, catalog, core, 'a'*32,
+                    lambda: (next(readings), clock.monotonic()), 1, records.append,
+                    sleep=clock.sleep, on_off_pose=Mock())
+            finally:
+                core.close()
+        self.assertEqual(outcome, 'not_sent')
+        self.assertEqual(port.posts, [])
+        self.assertEqual(records[0]['finalAdmissionError'], 'pose_candidate_menu_changed')
+
     def test_model_hold_cancels_with_status_lookup_outstanding(self):
         clock = FakeClock()
         port = VisualPort(clock)
