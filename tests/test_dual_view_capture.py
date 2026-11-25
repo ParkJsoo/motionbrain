@@ -162,7 +162,7 @@ class DemonstrationBindingTest(unittest.TestCase):
         from tools.run_dual_view_policy import main
         with self.assertRaises(SystemExit):
             main(['--plan',str(self.root/'absent'),'--execute','--allow-observation-stop'])
-        for failure in (None,'body deadline','recording_source_stall','recording_ended'):
+        for failure in (None,'body deadline','recording_source_stall','recording_ended','side observer failure'):
             run=self.root/(failure or 'ok')
             run.mkdir()
             helper=run/'helper'
@@ -190,7 +190,7 @@ class DemonstrationBindingTest(unittest.TestCase):
                 t=time.monotonic()
                 key='near:'+str(i)
                 camera.frames=[dict(frameIndex=i,frameId='side:'+str(i),
-                                    sourceEarliest=t,sourceLatest=t,stdoutReadAt=t)]
+                                    imageSha256=f'image:{i}',sourceEarliest=t,sourceLatest=t,stdoutReadAt=t)]
                 near._bindings[key]={'folder':str(i)}
                 return dict(frame={'frameId':key},sourceEarliest=t,sourceLatest=t,persistedAt=t)
             def check_camera():
@@ -202,17 +202,40 @@ class DemonstrationBindingTest(unittest.TestCase):
             with ExitStack() as mocks:
                 for name,obj in [('ActionRecorder',camera),('GripperObservationSource',near)]:
                     mocks.enter_context(patch('learning.dual_view_capture.'+name,return_value=obj))
-                for name in ('side_image','gripper_image'):
-                    mocks.enter_context(patch('learning.dual_view_capture.'+name))
+                decode_side=mocks.enter_context(patch('learning.dual_view_capture.side_image'))
+                mocks.enter_context(patch('learning.dual_view_capture.gripper_image'))
                 policy=mocks.enter_context(patch('learning.dual_view_capture.load_policy'))
                 policy.return_value.predict.side_effect=lambda *_: {'action':'hold'}
+                mailbox=ctx.Array('c',8192)
+                observed=[]
+
+                def observe_side(image, pair):
+                    self.assertIs(image, decode_side.return_value)
+                    self.assertEqual(json.loads(mailbox.value)['frameId'], pair['frameId'])
+                    observed.append((pair['frameId'],pair['imageSha256']))
+                    pair['extClock'].clear()
+                    if failure=='side observer failure' and pair['frameId']=='side:4':
+                        raise ValueError(failure)
+
                 expectation=nullcontext()
                 if failure is not None:
                     error=TimeoutError if failure=='body deadline' else ValueError
                     expectation=self.assertRaisesRegex(error,failure)
                 with expectation:
-                    capture(plan,run,'test',ctx.Event(),ctx.Array('c',8192),allow_observation_stop=True)
+                    capture(plan,run,'test',ctx.Event(),mailbox,allow_observation_stop=True,on_decoded_side=observe_side)
+                self.assertTrue(json.loads(mailbox.value)['fault'])
             rows=(run/'decisions.jsonl').read_text().splitlines()
             self.assertEqual(len(rows),3 if failure=='body deadline' else 4)
+            self.assertEqual(decode_side.call_count,len(rows))
+            self.assertEqual(observed,[(f'side:{i}',f'image:{i}') for i in range(1,len(rows)+1)])
+            self.assertTrue(all(json.loads(row)['extClock'] for row in rows))
             camera.close.assert_called_once()
             near.close.assert_called_once()
+
+    def test_decoded_side_callback_requires_read_only_capture(self):
+        callback = Mock()
+        for options in ({}, {'allow_observation_stop': True, 'active_mailbox': object()},
+                        {'allow_observation_stop': True, 'gripper_gate': object()}):
+            with self.subTest(options=options), self.assertRaisesRegex(ValueError, 'requires_observation_only'):
+                capture({},self.root,'test',None,None,on_decoded_side=callback,**options)
+        callback.assert_not_called()

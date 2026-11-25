@@ -314,7 +314,10 @@ def _side_for_gripper(camera, stopping, boundary, deadline, *, clock=time.monoto
 
 def capture(plan, root, session, stopping, mailbox, context_mailbox=None, active_mailbox=None, *,
             allow_observation_stop=False, gripper_gate=None, shoulder_entry=False, candidate_mailbox=None,
-            short_measurement=None):
+            short_measurement=None, on_decoded_side=None):
+    if on_decoded_side is not None and (not allow_observation_stop or not callable(on_decoded_side)
+            or any(context is not None for context in (context_mailbox, active_mailbox, candidate_mailbox, gripper_gate))):
+        raise ValueError('decoded_side_callback_requires_observation_only')
     root = Path(root)
     def publish(value):
         # Detailed observation-only calibration records stay in decisions.jsonl.
@@ -433,6 +436,12 @@ def capture(plan, root, session, stopping, mailbox, context_mailbox=None, active
                 log.write(json.dumps(vote, allow_nan=False)+'\n')
                 log.flush()
                 publish(vote)
+                if on_decoded_side is not None:
+                    # Do not expose the mutable decision or admission clocks to the observer.
+                    on_decoded_side(side, dict(frameId=vote['frameId'], nearFrameId=vote['nearFrameId'],
+                        imageSha256=frame['imageSha256'], decidedAt=vote['decidedAt'], action=vote['action'],
+                        hasFeatures=vote.get('features') is not None,
+                        extClock=vote['extClock'].copy(), nearClock=vote['nearClock'].copy()))
                 emitted += 1
         if emitted == 0 and not stopping.is_set():
             raise ValueError("no_paired_observations")
