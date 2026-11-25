@@ -199,15 +199,19 @@ def _select_action_outputs(log, record, baseline_last, *, terminal_cursor=None):
 
 
 class BoundedActionExecutor:
-    def __init__(self, journal_path, port, limits, *, clock=time, ttl_seconds=20, max_polls=20, poll_interval=.05):
+    def __init__(self, journal_path, port, limits, *, clock=time, ttl_seconds=20, max_polls=20,
+                 poll_interval=.05, async_feedback_interval=None):
         if not Path(journal_path).is_absolute() or str(journal_path) == ":memory:":
             raise ValueError("persistent_absolute_journal_required")
         if (not finite(ttl_seconds) or not 0 < ttl_seconds <= 20
                 or type(max_polls) is not int or not 1 <= max_polls <= 200
-                or not finite(poll_interval) or not 0 < poll_interval <= 1):
+                or not finite(poll_interval) or not 0 < poll_interval <= 1
+                or (async_feedback_interval is not None and (
+                    not finite(async_feedback_interval) or not 0 < async_feedback_interval <= poll_interval))):
             raise ValueError("invalid_executor_budget")
         self.port, self.limits, self.clock = port, limits, clock
         self.ttl, self.max_polls, self.poll_interval = ttl_seconds, max_polls, poll_interval
+        self.async_feedback_interval = async_feedback_interval
         self.lock, self.failed = threading.RLock(), False
         self.stop_requested = threading.Event()
         self.journal = BoundedActionJournal(str(journal_path), 10000)
@@ -347,6 +351,7 @@ class BoundedActionExecutor:
                 start_bounds = self._bounds(started, received, "submit_round_trip")
                 deadline = started + r["durationMs"]/1000 + 1.0
                 pending_lookup = None
+                next_lookup_at = None
                 lookup_count = 0
                 while True:
                     if self.stop_requested.is_set():
@@ -366,7 +371,8 @@ class BoundedActionExecutor:
                             result.update(cancelAttempted=True, cancelConfirmed=cancel_applied and record['state'] == 'cancelled'
                                           and record['reason'] == 'cancelled', **cancel_timing)
                         return self._save(cid, "known_terminal", result)
-                    if (record["state"] != "running" or self._now() >= deadline
+                    checked_at = self._now()
+                    if (record["state"] != "running" or checked_at >= deadline
                             or (pending_lookup is None and lookup_count >= self.max_polls)):
                         raise TimeoutError("terminal_not_confirmed")
                     if motion_feedback is not None:
@@ -391,7 +397,22 @@ class BoundedActionExecutor:
                                     or record['state'] not in KNOWN_TERMINAL):
                                 raise ValueError('visual_cancel_unverified')
                             continue
-                    self.clock.sleep(self.poll_interval)
+                    if lookup is not None and self.async_feedback_interval is not None:
+                        if next_lookup_at is None:
+                            next_lookup_at = self._now() + self.poll_interval
+                        # Extra visual checks leave the next controller lookup on its original schedule.
+                        wake_at = min(next_lookup_at, checked_at + self.async_feedback_interval, deadline)
+                        self.clock.sleep(max(0., wake_at - self._now()))
+                        if self._now() < next_lookup_at:
+                            if pending_lookup is None or not pending_lookup.done():
+                                continue
+                            # Read an available reply before another visual check. Its
+                            # original poll slot stays reserved, so this does not add a GET.
+                            next_lookup_at += self.poll_interval
+                        else:
+                            next_lookup_at = None
+                    else:
+                        self.clock.sleep(self.poll_interval)
                     previous = received
                     if lookup is None:
                         lookup_count += 1

@@ -254,7 +254,8 @@ def main(argv=None):
             pose = IdlePose(port, p['controllerBootId'], shoulder_entry=args.measure_shoulder_entry,
                             boundary_margin=boundary_margin)
             pose()
-            executor = BoundedActionExecutor(ROOT/'.local'/'dual-view-actions.sqlite', port, catalog, max_polls=200)
+            executor = BoundedActionExecutor(ROOT/'.local'/'dual-view-actions.sqlite', port, catalog, max_polls=200,
+                                             async_feedback_interval=.02 if short_joint == 'wrist' and async_lookup else None)
         def interrupt(signum, frame):
             raise KeyboardInterrupt()
         viewer = None

@@ -190,6 +190,73 @@ class ActionExecutionTest(unittest.TestCase):
         self.port.running_reads=100
         result=self.run_action();self.assertEqual(result['executionState'],'outcome_unknown')
         self.assertEqual(self.port.reads,20);self.assertEqual(len(self.port.cancels),1)
+
+    def test_faster_async_feedback_preserves_controller_lookup_cadence(self):
+        for veto in (False, True):
+            with self.subTest(veto=veto):
+                self.core.close()
+                self.port = FakePort(self.clock)
+                self.core = self.make(async_feedback_interval=.02)
+                self.port.running_reads = 2
+                started = self.clock.now
+                lookup_times = []
+                feedback_times = []
+
+                def elapsed():
+                    return round(self.clock.now - started, 6)
+
+                def begin(req):
+                    lookup_times.append(elapsed())
+                    return SimpleNamespace(done=lambda: True, result=lambda **_: self.port.lookup(req))
+
+                def feedback(req, ack):
+                    feedback_times.append(elapsed())
+                    return 'cancel' if veto and elapsed() >= .055 else 'continue'
+
+                self.port.cancel = lambda req: dict(FakePort.cancel(self.port, req), cancelApplied=True)
+                r = request(str(veto))
+                self.core.propose(r)
+                result = self.core.confirm(r['commandId'], confirmed_request=r, dispatch_guard=lambda _: None,
+                                           motion_feedback=feedback, lookup_worker=LookupWorkerFixture(begin))
+
+                self.assertEqual(result['executionState'], 'known_terminal', result)
+                self.assertEqual(lookup_times, [.05] if veto else [.05, .10, .15])
+                self.assertEqual(feedback_times[:5], [0, .02, .04, .05, .07])
+                self.assertEqual(self.port.posts, [r])
+                self.assertEqual(self.port.cancels, [r] if veto else [])
+                if veto:
+                    self.assertTrue(result['cancelConfirmed'])
+                    self.assertEqual(feedback_times[-1], .07)
+
+    def test_faster_feedback_reads_ready_terminal_reply_before_cancelling(self):
+        self.core.close()
+        self.core = self.make(async_feedback_interval=.02)
+        self.port.running_reads = 1
+        started = self.clock.now
+        lookup_times = []
+
+        def elapsed():
+            return round(self.clock.now - started, 6)
+
+        def begin(req):
+            lookup_times.append(elapsed())
+            ready_at = self.clock.now + .01
+            return SimpleNamespace(done=lambda: self.clock.now >= ready_at,
+                                   result=lambda **_: self.port.lookup(req))
+
+        def feedback(req, ack):
+            return 'cancel' if elapsed() >= .17 else 'continue'
+
+        r = request()
+        self.core.propose(r)
+        result = self.core.confirm(r['commandId'], confirmed_request=r, dispatch_guard=lambda _: None,
+                                   motion_feedback=feedback, lookup_worker=LookupWorkerFixture(begin))
+
+        self.assertEqual(result['executionState'], 'known_terminal', result)
+        self.assertEqual(result['action']['record']['state'], 'completed')
+        self.assertEqual(lookup_times, [.05, .15])
+        self.assertEqual(self.port.cancels, [])
+
     def test_visual_cancel_while_slow_get_is_pending(self):
         self.core.close()
         self.core = self.make(poll_interval=.008,max_polls=1)
