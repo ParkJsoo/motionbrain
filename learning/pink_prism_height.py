@@ -1,6 +1,7 @@
 """Locate the upright pink prism in the fixed side-camera lift-height setup."""
 
 import cv2
+import numpy as np
 
 
 def open_scene_prism_candidate(rgb):
@@ -9,9 +10,17 @@ def open_scene_prism_candidate(rgb):
     The aspect and fill checks describe an unobstructed view of the known
     prism. The returned envelope is a candidate, not a lift-height reference.
     """
-    height, width = rgb.shape[:2]
-    mask = cv2.inRange(cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV),
+    boxes = _upright_candidates(_pink_mask(rgb))
+    return boxes[0] if boxes and len(boxes) == 1 else None
+
+
+def _pink_mask(rgb):
+    return cv2.inRange(cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV),
                        (147, 95, 95), (179, 255, 255))
+
+
+def _upright_candidates(mask):
+    height, width = mask.shape
     candidates = []
     for x, y, w, h, area in cv2.connectedComponentsWithStats(mask)[2][1:]:
         if h < 24 or w < 8 or not 0.22 <= w / h <= 0.41 or area < 0.80 * w * h:
@@ -19,7 +28,47 @@ def open_scene_prism_candidate(rgb):
         if x == 0 or y == 0 or x + w == width or y + h == height:
             return None
         candidates.append((int(x), int(y), int(w), int(h)))
-    return candidates[0] if len(candidates) == 1 else None
+    return candidates
+
+
+def jaw_occluded_prism_candidate(rgb, tip):
+    """턱이 가린 내부 간격만 연결한다. 물체의 위·아래 끝은 분홍 픽셀에서 읽는다."""
+    mask = _pink_mask(rgb)
+    original = _upright_candidates(mask)
+    if original is None or len(original) > 1:
+        return None
+    x, y = map(round, tip)
+    x0, y0 = max(0, x-3), max(0, y-80)
+    roi = np.s_[y0:y+81, x0:x+100]
+    pink = mask[roi]
+    dark = np.uint8(rgb[roi].max(axis=2) < 90)
+    _, labels = cv2.connectedComponents(dark)
+    near_tip = labels[max(0, y-y0-4):y-y0+5, x-x0:x-x0+5]
+    ids = np.unique(near_tip[near_tip != 0])
+    if len(ids) == 1:
+        # 턱 안쪽 표식도 가림 영역에 속한다. 바깥 윤곽의 2px 색 경계만 허용한다.
+        contours, _ = cv2.findContours(np.uint8(labels == ids[0]), cv2.RETR_EXTERNAL,
+                                       cv2.CHAIN_APPROX_SIMPLE)
+        jaw = np.zeros_like(dark)
+        cv2.drawContours(jaw, contours, -1, 1, cv2.FILLED)
+        support = cv2.dilate(jaw, np.ones((5, 5), np.uint8))
+        for col in range(pink.shape[1]):
+            seen = np.flatnonzero(pink[:, col])
+            for k in np.flatnonzero(np.diff(seen) > 1):
+                gap = slice(seen[k]+1, seen[k+1])
+                if (gap.stop-gap.start <= 65 and support[gap, col].all()
+                        and jaw[gap, col].any()):
+                    pink[gap, col] = 255
+    repaired = _upright_candidates(mask)
+    if not repaired or len(repaired) != 1:
+        return None
+    if original:
+        # 복원 뒤 다른 물체가 유일한 후보가 되어도 원래 물체를 대체하지 못한다.
+        ox, oy, ow, oh = original[0]
+        rx, ry, rw, rh = repaired[0]
+        if not (rx <= ox and ry <= oy and ox+ow <= rx+rw and oy+oh <= ry+rh):
+            return None
+    return repaired[0]
 
 
 def pink_prism_box(rgb, reference_height):

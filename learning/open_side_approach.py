@@ -4,7 +4,7 @@ from itertools import combinations
 import cv2
 import numpy as np
 
-from learning.pink_prism_height import open_scene_prism_candidate
+from learning.pink_prism_height import jaw_occluded_prism_candidate, open_scene_prism_candidate
 
 
 def _forearm_regions(hsv):
@@ -89,14 +89,44 @@ def _compact_patches(hsv, lower, upper, limits, *, remove_thin_edges=False):
             yield center, (x, y, w, h), labels[y:y+h, x:x+w] == label
 
 
-def _single_marker_tip(rgb, hsv):
+class _SingleJawMissing(ValueError):
+    """단일 전완 표식 경로에서 유효한 후보가 하나도 없는 경우."""
+
+
+def _has_distal_mark(hsv, component, left, tip_y):
+    # 노란 표식이 동일한 검은 턱 내부에 있어야 한다. 가까운 배경색은 제외한다.
+    lo, hi = max(0, tip_y-28), min(component.shape[0], tip_y+29)
+    roi = np.s_[lo:hi, left:left+40]
+    yellow = cv2.inRange(hsv[roi], (15, 55, 60), (40, 255, 255))
+    contours, _ = cv2.findContours(component[roi].astype(np.uint8), cv2.RETR_EXTERNAL,
+                                   cv2.CHAIN_APPROX_SIMPLE)
+    inside = np.zeros(yellow.shape, np.uint8)
+    cv2.drawContours(inside, contours, -1, 255, cv2.FILLED)
+    stats = cv2.connectedComponentsWithStats(yellow)[2][1:]
+    marks = [(x, y, w, h) for x, y, w, h, area in stats if 8 <= w <= 30 and
+             8 <= h <= 29 and area >= .45*w*h]
+    if len(marks) != 1:
+        return False
+    x, y, w, h = marks[0]
+    patch = np.s_[y:y+h, x:x+w]
+    return (0 < x and x+w < yellow.shape[1] and 0 < y and y+h < yellow.shape[0]
+            and np.all(inside[patch][yellow[patch] != 0]))
+
+
+def _single_marker_tip(rgb, hsv, *, marked_wrist=False, green_core=False):
     # 표식 하나만으로 팔 방향을 외삽할 수 없다. 전완의 녹색 표식과
     # 손목에 붙은 작은 분홍 표식을 독립 판독하고 손목에 연결된 턱 윤곽을 찾는다.
-    greens = list(_compact_patches(hsv, (45, 23, 50), (95, 170, 230), (16, 58, 15, 58, 220)))
+    greens = list(_compact_patches(hsv, (45, 23, 50), (95, 170, 230), (16, 58, 15, 58, 220),
+                                  remove_thin_edges=green_core))
     wrists = _compact_patches(hsv, (135, 25, 45), (179, 230, 235), (14, 43, 10, 34, 105))
     candidates = []
     for wrist, (x, y, w, h), patch in wrists:
-        if not any(130 < g[0]-wrist[0] < 325 and 50 < wrist[1]-g[1] < 240 for g, _, _ in greens):
+        if marked_wrist:
+            neighbours = [g for g, _, _ in greens if 18 <= g[0]-wrist[0] <= 45
+                          and abs(g[1]-wrist[1]) < g[0]-wrist[0]]
+            if not neighbours:
+                continue
+        elif not any(130 < g[0]-wrist[0] < 325 and 50 < wrist[1]-g[1] < 240 for g, _, _ in greens):
             continue
         wx, wy = np.rint(wrist).astype(int)
         x0, x1, y0, y1 = wx-252, wx+54, wy-150, wy+150
@@ -119,7 +149,14 @@ def _single_marker_tip(rgb, hsv):
             tip = (int(x0 + left), float(y0 + np.median(ys)))
             dx, dy = wrist - tip
             if 150 <= dx <= 226 and abs(dy) < 114 and 168 <= np.hypot(dx, dy) <= 232:
+                if marked_wrist and not _has_distal_mark(
+                        hsv[y0:y1, x0:x1], labels == label, left, round(tip[1])-y0):
+                    continue
+                if marked_wrist and len(neighbours) != 1:
+                    raise ValueError('side_single_marker_jaw_missing_or_ambiguous')
                 candidates.append(tip)
+    if not candidates:
+        raise _SingleJawMissing('side_single_marker_jaw_missing_or_ambiguous')
     if len(candidates) != 1:
         raise ValueError('side_single_marker_jaw_missing_or_ambiguous')
     return candidates[0]
@@ -249,6 +286,27 @@ def observe_open_side(rgb, *, view_id=None, diagnose_green_core=False):
                 sideOffsetPx=[tip_x - (bx + bw / 2), tip_y - by])
 
 
+def observe_open_side_height(rgb, *, view_id):
+    """등록한 측면 영상 한 장으로 열린 턱 끝이 물체 높이 범위에 있는지 검사한다."""
+    if view_id != LEGACY_SIDE_VIEW:
+        raise ValueError('height_check_requires_registered_legacy_view')
+    try:
+        tip, mode = observe_side_tip(rgb, view_id=view_id)
+    except _SingleJawMissing:
+        hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
+        try:
+            tip = _single_marker_tip(rgb, hsv, marked_wrist=True)
+        except _SingleJawMissing:
+            tip = _single_marker_tip(rgb, hsv, marked_wrist=True, green_core=True)
+        mode = 'wrist_and_distal_mark'
+    box = jaw_occluded_prism_candidate(rgb, tip)
+    if box is None:
+        raise ValueError('side_single_upright_prism_required')
+    y_offset = tip[1] - box[1]
+    return dict(box=list(box), toolPoint=list(tip), trackingMode=mode,
+                withinHeight=0 <= y_offset < box[3], tipOffsetFromTopPx=y_offset)
+
+
 def observe_open_start_side(rgb):
     """Use a unique original-pixel jaw contour when a second green pair is visible."""
     box = open_scene_prism_candidate(rgb)
@@ -279,7 +337,11 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('image', help='외부 카메라의 1920×1080 정지 영상')
-    image = cv2.imread(parser.parse_args().image)
+    parser.add_argument('--height-check', action='store_true', help='등록된 기본 측면 구도의 턱 높이 검사')
+    args = parser.parse_args()
+    image = cv2.imread(args.image)
     if image is None:
         parser.error('측면 영상을 읽을 수 없습니다.')
-    print(json.dumps(observe_open_side(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))))
+    rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    result = observe_open_side_height(rgb, view_id=LEGACY_SIDE_VIEW) if args.height_check else observe_open_side(rgb)
+    print(json.dumps(result))
